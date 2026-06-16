@@ -79,6 +79,31 @@ PyTorch et les poids sont installés automatiquement).
 
 ---
 
+## Partager avec des collègues (réseau local)
+
+Vos collègues peuvent générer des images depuis leur **Mac/PC**, en utilisant
+**votre** machine (et ses GPU), sans rien installer : juste un lien dans Safari.
+
+1. Sur votre PC, lancez **`run-lan.bat`** (au lieu de `run.bat`).
+2. L'adresse à partager s'affiche, par ex. :
+   ```
+   →  http://192.168.1.42:7860
+   ```
+3. Vos collègues (sur le **même Wi-Fi/réseau**) ouvrent cette adresse dans leur
+   navigateur. C'est tout.
+
+Options :
+- **Mot de passe** : `run-lan.bat --auth nom:motdepasse` (demandé à la connexion).
+- **Pare-feu** : au premier lancement, Windows peut demander d'autoriser Python —
+  acceptez (réseaux privés). Sinon, autorisez le port 7860 dans le pare-feu.
+- **Raccourci sur le Mac** : dans Safari, *Partager → Ajouter au Dock* (ou un
+  marque-page) pour un accès « façon application ».
+
+> Les générations tournent **sur votre PC** : ne l'éteignez pas pendant l'usage.
+> Une seule génération à la fois est traitée (file d'attente automatique).
+
+---
+
 ## Architecture
 
 ```

@@ -34,7 +34,7 @@ def _patch_gradio_client() -> None:
 
 _patch_gradio_client()
 
-from atelier import APP_NAME, __version__, hardware, settings
+from atelier import APP_NAME, __version__, hardware, net, settings
 from atelier.ui.generate_tab import build_generate_tab
 from atelier.ui.library_tab import build_library_tab
 from atelier.ui.settings_tab import build_settings_tab
@@ -80,32 +80,51 @@ def build_app() -> gr.Blocks:
     return demo
 
 
+def _print_lan_banner(port: int, auth: bool) -> None:
+    urls = [f"http://{ip}:{port}" for ip in net.lan_ips()]
+    line = "═" * 64
+    print("\n" + line)
+    print("  ATELIER est accessible sur le réseau local !")
+    print("  Partagez cette adresse à vos collègues (Mac/PC, même Wi-Fi),")
+    print("  à ouvrir dans Safari ou Chrome :")
+    for u in urls or [f"http://<IP-de-ce-PC>:{port}"]:
+        print(f"      →  {u}")
+    if auth:
+        print("  (un identifiant/mot de passe leur sera demandé)")
+    print("  Si l'accès échoue : autorisez le port dans le pare-feu Windows.")
+    print(line + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description=f"{APP_NAME} {__version__}")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=7860)
-    ap.add_argument("--share", action="store_true")
+    ap.add_argument("--share", action="store_true",
+                    help="lien public temporaire gradio.live")
+    ap.add_argument("--listen", action="store_true",
+                    help="exposer sur le réseau local (0.0.0.0)")
+    ap.add_argument("--auth", default=None,
+                    help="protéger par mot de passe : utilisateur:motdepasse")
     args = ap.parse_args()
-    demo = build_app().queue()
 
-    # Repli automatique de port si 7860 est déjà pris (instance précédente, etc.).
-    last_err: OSError | None = None
-    for port in range(args.port, args.port + 25):
-        try:
-            demo.launch(server_name=args.host, server_port=port,
-                        share=args.share, inbrowser=True, show_api=False)
-            return
-        except OSError as exc:
-            last_err = exc
-            msg = str(exc).lower()
-            if any(s in msg for s in ("empty port", "address already in use",
-                                      "cannot find")):
-                print(f"Port {port} occupé — essai sur {port + 1}…")
-                continue
-            raise
-    raise SystemExit(
-        f"Aucun port libre entre {args.port} et {args.port + 24}.\n"
-        f"Fermez l'instance précédente ou passez --port. ({last_err})")
+    host = "0.0.0.0" if args.listen else args.host
+    auth = None
+    if args.auth and ":" in args.auth:
+        u, p = args.auth.split(":", 1)
+        auth = (u, p)
+
+    demo = build_app().queue()
+    port = net.find_free_port(args.port, host=host)
+
+    if args.listen:
+        _print_lan_banner(port, auth is not None)
+
+    demo.launch(server_name=host, server_port=port, share=args.share,
+                auth=auth, inbrowser=not args.listen, show_api=False)
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
