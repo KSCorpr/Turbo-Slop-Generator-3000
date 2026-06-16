@@ -70,11 +70,10 @@ sélectionnez-les (jusqu'à 2) avec leur poids dans l'onglet Génération. La sy
 `<lora:nom:poids>` est transmise au moteur.
 
 ### Upscale
-Installation séparée (PyTorch) car ce sont de gros modèles :
-```bash
-python scripts/setup_upscalers.py seedvr2      # SeedVR2-3B (qualité max)
-python scripts/setup_upscalers.py nvidia-pid   # NVIDIA PiD (rapide, 4K)
-```
+Ces moteurs reposent sur PyTorch (gros téléchargement). **Aucune commande à
+taper** : ouvrez l'onglet **Upscale → « Installer les moteurs d'upscale »** et
+cliquez sur le bouton du moteur voulu (le code est récupéré en ZIP, sans git ;
+PyTorch et les poids sont installés automatiquement).
 - **SeedVR2-3B** — [`ByteDance-Seed/SeedVR2-3B`](https://huggingface.co/ByteDance-Seed/SeedVR2-3B)
 - **NVIDIA PiD** — [`nvidia/PiD`](https://huggingface.co/nvidia/PiD) · code [`nv-tlabs/PiD`](https://github.com/nv-tlabs/PiD)
 

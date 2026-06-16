@@ -10,25 +10,34 @@ import os
 from pathlib import Path
 from typing import Callable, Iterator
 
-from . import settings
+from . import quant, settings
 from .registry import BaseModel, Component
 
 
-def _pick_file(repo: str, pattern: str, files: list[str]) -> str | None:
-    if pattern in files:
-        return pattern
-    cands = [f for f in files if fnmatch.fnmatch(f, pattern) or
-             fnmatch.fnmatch(Path(f).name, pattern)]
-    if not cands:
-        # repli : tout fichier contenant la base du motif (avant le 1er joker)
-        base = pattern.split("*")[0].split("{")[0].rstrip("-_.")
-        if base:
-            cands = [f for f in files if base.lower() in f.lower()]
-    if not cands:
-        return None
-    # On écarte explicitement les projecteurs vision (mmproj) pour les encodeurs.
-    cands = [c for c in cands if "mmproj" not in c.lower()] or cands
-    return sorted(cands, key=lambda f: len(f))[0]
+def _fn(f: str, pattern: str) -> bool:
+    return fnmatch.fnmatch(f, pattern) or fnmatch.fnmatch(Path(f).name, pattern)
+
+
+def _pick_file(comp: Component, files: list[str]) -> str | None:
+    requested = comp.requested()
+    if requested in files:
+        return requested
+
+    # 1) correspondance directe sur le motif demandé (nom ou chemin)
+    direct = [f for f in files if _fn(f, requested)]
+    if direct:
+        return sorted(direct, key=len)[0]
+
+    # 2) repli quant-tolérant : même motif de base, quant le plus proche
+    if comp.token:
+        cands = [f for f in files if _fn(f, comp.base_glob())]
+        cands = [c for c in cands if "mmproj" not in c.lower()] or cands
+        if cands and comp.quant:
+            chosen = quant.best([Path(c).name for c in cands], comp.quant)
+            return next((c for c in cands if Path(c).name == chosen), cands[0])
+        if cands:
+            return sorted(cands, key=len)[0]
+    return None
 
 
 def download_component(comp: Component,
@@ -43,10 +52,11 @@ def download_component(comp: Component,
                            "pip install -r requirements.txt") from exc
 
     files = list_repo_files(comp.repo)
-    chosen = _pick_file(comp.repo, comp.match, files)
+    chosen = _pick_file(comp, files)
     if not chosen:
         raise RuntimeError(
-            f"Aucun fichier de {comp.repo} ne correspond à « {comp.match} ».")
+            f"Aucun fichier de {comp.repo} ne correspond à "
+            f"« {comp.requested()} » ni au motif « {comp.base_glob()} ».")
 
     local_dir = settings.model_repo_dir(comp.repo)
     dest = local_dir / chosen

@@ -32,6 +32,28 @@ def is_installed(upscaler_id: str) -> bool:
     return (settings.UPSCALERS_REPO_DIR / upscaler_id).is_dir()
 
 
+def install_stream(upscaler_id: str):
+    """Installe un upscaler en sous-process (Python embarqué) en streamant le log.
+
+    Permet de tout déclencher depuis l'interface, sans ligne de commande.
+    """
+    setup = settings.ROOT / "scripts" / "setup_upscalers.py"
+    cmd = [sys.executable, str(setup), upscaler_id]
+    buf: list[str] = [f"$ {' '.join(cmd)}", ""]
+    yield "\n".join(buf)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, cwd=str(settings.ROOT))
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        buf.append(line.rstrip("\n"))
+        yield "\n".join(buf[-500:])
+    code = proc.wait()
+    buf.append("")
+    buf.append("✅ Installation terminée." if code == 0
+               else f"❌ Échec (code {code}). Voir le journal ci-dessus.")
+    yield "\n".join(buf[-500:])
+
+
 def _gpu_index() -> int | None:
     prefs = settings.load_prefs()
     if prefs.get("gpu_index") is not None:

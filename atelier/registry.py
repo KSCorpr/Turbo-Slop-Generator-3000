@@ -10,15 +10,35 @@ from typing import Any
 
 import yaml
 
-from . import hardware, settings
+from . import hardware, quant, settings
 
 
 @dataclass
 class Component:
     role: str            # diffusion | uncond | vae | text_encoder
     repo: str
-    match: str           # motif avec jokers {quant}/{enc_quant} déjà résolus
-    quantizable: bool
+    template: str        # ex "ideogram4-{quant}.gguf" ou "vae/*.safetensors"
+    quant: str | None    # quant résolu si le motif contient un token, sinon None
+
+    @property
+    def token(self) -> str | None:
+        if "{quant}" in self.template:
+            return "{quant}"
+        if "{enc_quant}" in self.template:
+            return "{enc_quant}"
+        return None
+
+    def requested(self) -> str:
+        """Nom/motif exact souhaité (token remplacé par le quant choisi)."""
+        if self.token and self.quant:
+            return self.template.replace(self.token, self.quant)
+        return self.template
+
+    def base_glob(self) -> str:
+        """Motif quant-agnostique (token remplacé par *) pour le repli."""
+        if self.token:
+            return self.template.replace(self.token, "*")
+        return self.template
 
 
 @dataclass
@@ -54,22 +74,25 @@ def _catalog() -> dict[str, Any]:
 def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
     """(quant diffusion, quant encodeur) après prise en compte des préférences."""
     prof = hardware.auto_profile(prefs.get("gpu_index"))
-    quant = prefs.get("quant") or prof.quant
-    enc_quant = prefs.get("enc_quant") or prof.enc_quant
-    return quant, enc_quant
+    q_diff = prefs.get("quant") or prof.quant
+    q_enc = prefs.get("enc_quant") or prof.enc_quant
+    return q_diff, q_enc
 
 
 def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
-    quant, enc_quant = effective_quants(prefs)
+    q_diff, q_enc = effective_quants(prefs)
     out: list[BaseModel] = []
     for m in _catalog().get("base_models", []):
         comps: list[Component] = []
         for role, spec in (m.get("sources") or {}).items():
-            match = (spec["match"]
-                     .replace("{quant}", quant)
-                     .replace("{enc_quant}", enc_quant))
-            comps.append(Component(role, spec["repo"], match,
-                                   bool(spec.get("quantizable"))))
+            template = spec["match"]
+            if "{enc_quant}" in template:
+                q = q_enc
+            elif "{quant}" in template:
+                q = q_diff
+            else:
+                q = None
+            comps.append(Component(role, spec["repo"], template, q))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),
@@ -98,26 +121,43 @@ def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
 # --------------------------------------------------------------------------- #
 #  Résolution des chemins locaux + statut
 # --------------------------------------------------------------------------- #
+def _match(files: list[Path], repo_dir: Path, pattern: str) -> list[Path]:
+    out = []
+    for p in files:
+        rel = p.relative_to(repo_dir).as_posix()
+        if fnmatch.fnmatch(p.name, pattern) or fnmatch.fnmatch(rel, pattern):
+            out.append(p)
+    return out
+
+
 def resolve_component_path(comp: Component) -> Path | None:
-    """Cherche sur le disque le fichier correspondant au motif. None si absent."""
+    """Cherche sur le disque le fichier correspondant au composant. None si absent."""
     repo_dir = settings.model_repo_dir(comp.repo)
     if not repo_dir.exists():
         return None
-    pattern = comp.match
-    # Correspondance exacte d'abord (gère aussi les motifs avec sous-dossier).
-    exact = repo_dir / pattern
-    if "*" not in pattern and exact.is_file():
+
+    requested = comp.requested()
+    exact = repo_dir / requested
+    if "*" not in requested and exact.is_file():
         return exact
-    # Sinon, on teste le motif sur le nom ET sur le chemin relatif (sous-dossiers).
-    matches = []
-    for p in repo_dir.rglob("*"):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(repo_dir).as_posix()
-        if fnmatch.fnmatch(p.name, pattern) or fnmatch.fnmatch(rel, pattern):
-            matches.append(p)
-    matches.sort(key=lambda p: len(p.relative_to(repo_dir).as_posix()))
-    return matches[0] if matches else None
+
+    files = [p for p in repo_dir.rglob("*") if p.is_file()]
+
+    # 1) correspondance directe sur le motif demandé
+    direct = _match(files, repo_dir, requested)
+    if direct:
+        return min(direct, key=lambda p: len(p.relative_to(repo_dir).as_posix()))
+
+    # 2) repli quant-tolérant : tout fichier du même motif de base, quant le + proche
+    if comp.token:
+        cands = _match(files, repo_dir, comp.base_glob())
+        cands = [c for c in cands if "mmproj" not in c.name.lower()] or cands
+        if cands and comp.quant:
+            chosen = quant.best([c.name for c in cands], comp.quant)
+            return next((c for c in cands if c.name == chosen), cands[0])
+        if cands:
+            return cands[0]
+    return None
 
 
 def model_is_ready(model: BaseModel) -> bool:
