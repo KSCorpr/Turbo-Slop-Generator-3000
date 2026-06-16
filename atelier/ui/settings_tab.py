@@ -1,0 +1,85 @@
+"""Onglet Réglages : matériel détecté, optimisations auto/manuelles, quant."""
+from __future__ import annotations
+
+import gradio as gr
+
+from .. import hardware, settings
+
+QUANTS = ["Q3_K", "Q4_K_S", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
+
+
+def _gpu_choices() -> list[tuple[str, int]]:
+    return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
+            for g in hardware.detect_gpus()]
+
+
+def _profile_md() -> str:
+    prefs = settings.load_prefs()
+    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    flags = [k for k, v in prof.flags().items() if v]
+    lines = [hardware.summary_text(), "",
+             "**Profil automatique :**",
+             f"- Diffusion : `{prof.quant}` · Encodeur : `{prof.enc_quant}`",
+             f"- Optimisations : `{', '.join(flags) or 'aucune'}`"]
+    lines += [f"- {n}" for n in prof.notes]
+    return "\n".join(lines)
+
+
+def build_settings_tab():
+    with gr.Tab("⚙️ Réglages"):
+        gr.Markdown("### Matériel & optimisations")
+        profile_md = gr.Markdown(_profile_md())
+
+        prefs = settings.load_prefs()
+
+        with gr.Row():
+            auto = gr.Checkbox(value=prefs.get("auto_optimize", True),
+                               label="Optimisation automatique (selon GPU + RAM)")
+            gpu = gr.Dropdown(label="GPU à utiliser",
+                              choices=_gpu_choices(),
+                              value=prefs.get("gpu_index"))
+
+        with gr.Row():
+            quant = gr.Dropdown(label="Quant. diffusion (vide = auto)",
+                                choices=["auto"] + QUANTS,
+                                value=prefs.get("quant") or "auto")
+            enc_quant = gr.Dropdown(label="Quant. encodeur (vide = auto)",
+                                    choices=["auto"] + QUANTS,
+                                    value=prefs.get("enc_quant") or "auto")
+
+        gr.Markdown("**Réglages manuels** (utilisés si l'auto est décochée)")
+        f = prefs.get("flags", {})
+        with gr.Row():
+            fa = gr.Checkbox(value=f.get("diffusion_fa", True), label="Flash attention")
+            offload = gr.Checkbox(value=f.get("offload_to_cpu", True), label="Offload CPU")
+            tiling = gr.Checkbox(value=f.get("vae_tiling", True), label="VAE tiling")
+        with gr.Row():
+            clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False), label="CLIP sur CPU")
+            vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False), label="VAE sur CPU")
+
+        hf_ep = gr.Textbox(value=prefs.get("hf_endpoint", "https://huggingface.co"),
+                           label="Endpoint Hugging Face (miroir éventuel)")
+
+        save = gr.Button("💾 Enregistrer", variant="primary")
+        saved = gr.Markdown("")
+
+        def do_save(auto, gpu, quant, enc_quant, fa, offload, tiling,
+                    clip_cpu, vae_cpu, hf_ep):
+            p = settings.load_prefs()
+            p["auto_optimize"] = bool(auto)
+            p["gpu_index"] = gpu if gpu is not None else None
+            p["quant"] = None if quant == "auto" else quant
+            p["enc_quant"] = None if enc_quant == "auto" else enc_quant
+            p["flags"] = {
+                "diffusion_fa": bool(fa), "offload_to_cpu": bool(offload),
+                "vae_tiling": bool(tiling), "clip_on_cpu": bool(clip_cpu),
+                "vae_on_cpu": bool(vae_cpu),
+            }
+            p["hf_endpoint"] = hf_ep or "https://huggingface.co"
+            settings.save_prefs(p)
+            return gr.update(value=_profile_md()), "✅ Réglages enregistrés."
+
+        save.click(do_save,
+                   inputs=[auto, gpu, quant, enc_quant, fa, offload, tiling,
+                           clip_cpu, vae_cpu, hf_ep],
+                   outputs=[profile_md, saved])

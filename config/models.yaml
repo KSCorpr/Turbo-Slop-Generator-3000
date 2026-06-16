@@ -1,0 +1,102 @@
+# ============================================================================
+#  Atelier — Bibliothèque de modèles
+# ----------------------------------------------------------------------------
+#  Source unique de vérité : téléchargement à la demande, recommandations selon
+#  le matériel, et réglages automatiques par modèle (steps/cfg/sampler/...).
+#
+#  Jokers dans `match` :
+#    {quant}     -> quantification du modèle de diffusion (selon VRAM)
+#    {enc_quant} -> quantification de l'encodeur de texte (selon RAM, en offload)
+#  Le téléchargeur interroge l'API Hugging Face et choisit le meilleur fichier.
+# ============================================================================
+
+base_models:
+
+  # --------------------------------------------------------------------------
+  - id: zimage-turbo
+    name: "Z-Image Turbo"
+    family: zimage
+    tags: [turbo, rapide, polyvalent]
+    description: >
+      Modèle « Turbo » très rapide (8 étapes, CFG 1.0). Excellent rapport
+      vitesse/qualité, idéal pour itérer. Recommandé en premier sur petite VRAM.
+    sources:
+      diffusion:
+        repo: unsloth/Z-Image-Turbo-GGUF
+        match: "Z-Image-Turbo-{quant}.gguf"
+        quantizable: true
+      vae:
+        repo: unsloth/Z-Image-Turbo-GGUF
+        match: "*ae*.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-4B-GGUF
+        match: "Qwen3-4B-{enc_quant}.gguf"
+        quantizable: true
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      width: 1024
+      height: 1024
+      supports_negative: false
+    vram_min_gb: 6
+
+  # --------------------------------------------------------------------------
+  - id: ideogram-4
+    name: "Ideogram 4"
+    family: ideogram
+    tags: [qualité, typographie, affiches]
+    description: >
+      Modèle haut de gamme, excellent en composition et en texte dans l'image.
+      Plus lourd (encodeur Qwen3-VL-8B). Conseillé à partir de ~10 Go de VRAM.
+    sources:
+      diffusion:
+        repo: leejet/ideogram-4-GGUF
+        match: "ideogram4-{quant}.gguf"
+        quantizable: true
+      uncond:
+        repo: leejet/ideogram-4-GGUF
+        match: "ideogram4_uncond-{quant}.gguf"
+        quantizable: true
+      vae:
+        repo: leejet/ideogram-4-GGUF
+        match: "flux2_ae.safetensors"
+      text_encoder:
+        # Encodeur vision-langage ; on ne prend que la partie texte (pas le mmproj).
+        repo: unsloth/Qwen3-VL-8B-Instruct-1M-GGUF
+        match: "*{enc_quant}.gguf"
+        quantizable: true
+    defaults:
+      steps: 28
+      cfg_scale: 4.0
+      sampler: euler
+      width: 1024
+      height: 1024
+      supports_negative: true
+    vram_min_gb: 10
+
+# ============================================================================
+#  Upscalers (PyTorch, installés à la demande via scripts/setup_upscalers.py)
+# ============================================================================
+upscalers:
+
+  - id: seedvr2
+    name: "SeedVR2-3B"
+    engine: pytorch
+    tags: [restauration, qualité-max]
+    description: >
+      Restauration/upscale par diffusion (ByteDance). Qualité maximale, plus lent.
+    weights_repo: ByteDance-Seed/SeedVR2-3B
+    code_repo: https://github.com/ByteDance-Seed/SeedVR.git
+    vram_min_gb: 10
+
+  - id: nvidia-pid
+    name: "NVIDIA PiD"
+    engine: pytorch
+    tags: [rapide, 4k, diffusion-pixel]
+    description: >
+      Pixel Diffusion Decoder de NVIDIA. Upscale 4×/8× très rapide, compatible
+      Z-Image. Pensé pour les cartes RTX récentes.
+    weights_repo: nvidia/PiD
+    code_repo: https://github.com/nv-tlabs/PiD.git
+    vram_min_gb: 12

@@ -1,0 +1,28 @@
+# Modèles, binaires, dépôts clonés (volumineux)
+models/
+loras/
+bin/
+vendor/
+upscalers_repo/
+
+# Environnement portable
+python/
+venv/
+.venv/
+runtime/
+
+# Données utilisateur & sorties
+userdata/
+outputs/
+tmp/
+hf_cache/
+.cache/
+
+# Caches Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Divers
+*.log
+.DS_Store

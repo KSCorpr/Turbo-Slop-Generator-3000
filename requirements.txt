@@ -1,0 +1,20 @@
+# Interface web moderne
+# Gradio 5 (UI propre, thème custom, exécution locale)
+gradio>=5.9,<6
+
+# Bibliothèque de modèles : téléchargement à la demande depuis Hugging Face
+# NB : <1.0 — huggingface_hub 1.0 retire des symboles encore utilisés en amont.
+huggingface_hub>=0.26,<1.0
+hf_transfer>=0.1.6
+
+# Utilitaires
+PyYAML>=6.0
+Pillow>=10.2
+requests>=2.31
+
+# ---------------------------------------------------------------------------
+# PyTorch n'est PAS listé ici : la génération (Ideogram 4 / Z-Image) passe par
+# stable-diffusion.cpp (binaire natif, GGUF). PyTorch n'est nécessaire que pour
+# les upscalers SeedVR2 / NVIDIA PiD, installés à la demande par
+# `scripts/setup_upscalers.py` avec la bonne build CUDA.
+# ---------------------------------------------------------------------------
