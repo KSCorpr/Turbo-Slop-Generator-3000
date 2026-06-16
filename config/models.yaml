@@ -50,14 +50,14 @@ base_models:
       Modèle haut de gamme, excellent en composition et en texte dans l'image.
       Plus lourd (encodeur Qwen3-VL-8B). Conseillé à partir de ~10 Go de VRAM.
     sources:
+      # Le dépôt leejet/ideogram-4-GGUF ne propose qu'un seul quant : Q4_0
+      # (diffusion + uncond, ~5,6 Go chacun). On pointe dessus directement.
       diffusion:
         repo: leejet/ideogram-4-GGUF
-        match: "ideogram4-{quant}.gguf"
-        quantizable: true
+        match: "ideogram4-Q4_0.gguf"
       uncond:
         repo: leejet/ideogram-4-GGUF
-        match: "ideogram4_uncond-{quant}.gguf"
-        quantizable: true
+        match: "ideogram4_uncond-Q4_0.gguf"
       vae:
         repo: Comfy-Org/Ideogram-4
         match: "vae/*.safetensors"
