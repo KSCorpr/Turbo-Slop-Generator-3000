@@ -17,8 +17,9 @@ from .canvas import CANVAS_MARKUP, READ_BOXES_JS
 
 SAMPLERS = ["euler", "euler_a", "heun", "dpm++2m", "dpm++2mv2", "dpm2",
             "ipndm", "lcm", "ddim_trailing"]
-SCHEDULES = ["discrete", "karras", "exponential", "ays", "gits",
-             "smoothstep", "sgm_uniform"]
+SCHEDULES = ["auto", "discrete", "karras", "exponential", "ays", "gits",
+             "smoothstep", "sgm_uniform", "simple", "kl_optimal", "lcm",
+             "bong_tangent"]
 RATIOS: dict[str, tuple[int, int]] = {
     "Carré 1:1 — 1024×1024": (1024, 1024),
     "Paysage 3:2 — 1216×832": (1216, 832),
@@ -119,8 +120,8 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False):
                 with gr.Row():
                     sampler = gr.Dropdown(SAMPLERS, value=d.get("sampler", "euler"),
                                           label="Sampler")
-                    schedule = gr.Dropdown(SCHEDULES, value="discrete",
-                                           label="Schedule (bruit)")
+                    schedule = gr.Dropdown(SCHEDULES, value="auto",
+                                           label="Scheduler (sigmas)")
                 with gr.Row():
                     seed = gr.Number(value=-1, label="Seed (-1 = aléatoire)",
                                      precision=0)
