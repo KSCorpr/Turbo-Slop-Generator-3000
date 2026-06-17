@@ -97,9 +97,33 @@ def _latest_release_with_assets() -> dict:
 
 
 def _download(url: str) -> bytes:
+    """Télécharge en streaming avec affichage de la progression.
+
+    timeout=120 s par opération socket : un vrai blocage lève une erreur au lieu
+    de figer l'installation indéfiniment.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": "atelier"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return r.read()
+    with urllib.request.urlopen(req, timeout=120) as r:
+        total = int(r.headers.get("Content-Length", 0) or 0)
+        buf = bytearray()
+        got = 0
+        last = 0
+        while True:
+            block = r.read(262144)  # 256 Kio
+            if not block:
+                break
+            buf += block
+            got += len(block)
+            step = (total / 20) if total else 5_000_000
+            if got - last >= step:
+                last = got
+                if total:
+                    print(f"     {got/1e6:6.1f} / {total/1e6:.1f} Mo "
+                          f"({got * 100 // total}%)", flush=True)
+                else:
+                    print(f"     {got/1e6:6.1f} Mo téléchargés…", flush=True)
+        print(f"     terminé ({got/1e6:.1f} Mo).", flush=True)
+        return bytes(buf)
 
 
 def _extract(blob: bytes, name: str) -> None:
