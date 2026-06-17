@@ -148,53 +148,89 @@ _MIRRORS = ["https://ghfast.top/", "https://ghproxy.net/", "https://gh.llkk.cc/"
 
 
 def _download(url: str) -> bytes:
-    """Télécharge avec progression. Essaie le direct (3 fois) puis des miroirs."""
+    """Télécharge un fichier de façon ROBUSTE puis renvoie son contenu.
+
+    Le CDN des releases GitHub coupe souvent la connexion en cours de route.
+    On télécharge donc dans un fichier .part avec REPRISE (HTTP Range) : si la
+    connexion lâche, on relance là où on s'était arrêté au lieu de tout refaire.
+    Direct d'abord (avec reprise, nombreux essais), puis miroirs en secours.
+    """
+    BIN_DIR.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c for c in url.split("/")[-1] if c.isalnum() or c in "._-")
+    tmp = BIN_DIR / ("._part_" + (safe or "download"))
+
+    try:
+        return _resumable(url, tmp, retries=10, resume=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"   Direct indisponible ({exc}). Essai via miroirs…", flush=True)
+
+    for m in _MIRRORS:
+        try:
+            print(f"   Miroir : {m.split('/')[2]}", flush=True)
+            if tmp.exists():
+                tmp.unlink()
+            return _resumable(m + url, tmp, retries=3, resume=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"     (miroir échoué : {exc})", flush=True)
+    raise RuntimeError("téléchargement impossible (direct + miroirs)")
+
+
+def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
+    """Télécharge `url` dans `tmp` avec reprise, puis renvoie les octets."""
     import time
-    attempts = [(url, 3)] + [(m + url, 1) for m in _MIRRORS]
-    last_exc = None
-    for i, (cand, tries) in enumerate(attempts):
-        if i > 0:
-            print(f"   Tentative via miroir : {cand.split('/')[2]}", flush=True)
-        for attempt in range(1, tries + 1):
-            try:
-                return _download_once(cand)
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                print(f"     (échec : {exc})", flush=True)
-                if attempt < tries:
-                    time.sleep(2 * attempt)
-    raise RuntimeError(f"téléchargement impossible (direct + miroirs) : {last_exc}")
-
-
-def _download_once(url: str) -> bytes:
-    """Télécharge en streaming avec progression. Utilise requests si dispo
-    (gère proprement les redirections du CDN GitHub, contrairement à urllib)."""
-    buf = bytearray()
-    got = last = 0
-    if requests is not None:
-        # timeout=(connexion 15 s, lecture 120 s) : un blocage lève une erreur.
-        with requests.get(url, headers=_UA, stream=True, timeout=(10, 120)) as r:
-            r.raise_for_status()
-            total = int(r.headers.get("Content-Length", 0) or 0)
-            for chunk in r.iter_content(262144):
-                if not chunk:
-                    continue
-                buf += chunk
-                got += len(chunk)
-                last = _progress(got, total, last)
-    else:
+    if requests is None:  # repli minimal sans reprise
         req = urllib.request.Request(url, headers=_UA)
         with urllib.request.urlopen(req, timeout=120) as r:
-            total = int(r.headers.get("Content-Length", 0) or 0)
-            while True:
-                block = r.read(262144)
-                if not block:
+            return r.read()
+
+    total = None
+    last_print = 0
+    for attempt in range(1, retries + 1):
+        existing = tmp.stat().st_size if (resume and tmp.exists()) else 0
+        headers = dict(_UA)
+        if existing:
+            headers["Range"] = f"bytes={existing}-"
+        try:
+            with requests.get(url, headers=headers, stream=True,
+                              timeout=(10, 45)) as r:
+                if r.status_code == 416:  # déjà complet
                     break
-                buf += block
-                got += len(block)
-                last = _progress(got, total, last)
-    print(f"     terminé ({got/1e6:.1f} Mo).", flush=True)
-    return bytes(buf)
+                r.raise_for_status()
+                if r.status_code == 206:  # reprise acceptée
+                    cr = r.headers.get("Content-Range", "")
+                    if "/" in cr:
+                        try:
+                            total = int(cr.rsplit("/", 1)[1])
+                        except ValueError:
+                            pass
+                    mode = "ab"
+                else:  # 200 : pas de reprise -> on repart de zéro
+                    existing = 0
+                    cl = r.headers.get("Content-Length")
+                    total = int(cl) if cl else None
+                    mode = "wb"
+                got = existing
+                with open(tmp, mode) as f:
+                    for chunk in r.iter_content(262144):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        got += len(chunk)
+                        last_print = _progress(got, total or 0, last_print)
+            if total is None or tmp.stat().st_size >= total:
+                break  # terminé
+            raise IOError(f"interrompu à {tmp.stat().st_size}/{total} octets")
+        except Exception as exc:  # noqa: BLE001
+            if attempt >= retries:
+                raise
+            print(f"     (coupure : {exc} — reprise {attempt+1}/{retries}…)",
+                  flush=True)
+            time.sleep(min(2 * attempt, 8))
+
+    data = tmp.read_bytes()
+    tmp.unlink(missing_ok=True)
+    print(f"     terminé ({len(data)/1e6:.1f} Mo).", flush=True)
+    return data
 
 
 def _extract(blob: bytes, name: str) -> None:
