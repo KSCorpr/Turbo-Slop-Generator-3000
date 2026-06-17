@@ -17,6 +17,7 @@ import argparse
 import io
 import json
 import platform
+import socket
 import sys
 import tarfile
 import urllib.request
@@ -32,6 +33,23 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
 _UA = {"User-Agent": "atelier"}
+
+
+def _force_ipv4():
+    """Force la résolution IPv4 uniquement.
+
+    Sur beaucoup de réseaux Windows, IPv6 est annoncé mais non routable : Python
+    tente l'IPv6 du CDN GitHub et reste bloqué (pas de Happy-Eyeballs comme les
+    navigateurs). On filtre getaddrinfo pour ne garder que l'IPv4.
+    """
+    _orig = socket.getaddrinfo
+
+    def _ipv4_only(host, *args, **kwargs):
+        res = _orig(host, *args, **kwargs)
+        v4 = [r for r in res if r[0] == socket.AF_INET]
+        return v4 or res
+
+    socket.getaddrinfo = _ipv4_only
 
 
 def _fetch_json(url: str):
@@ -163,7 +181,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", choices=["cuda", "cpu"], default="cuda")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--allow-ipv6", action="store_true",
+                    help="ne pas forcer l'IPv4 (par défaut on force l'IPv4)")
     args = ap.parse_args()
+
+    if not args.allow_ipv6:
+        _force_ipv4()
 
     print("Recherche de la dernière release stable-diffusion.cpp…")
     rel = _latest_release_with_assets()
