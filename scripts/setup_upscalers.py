@@ -72,6 +72,34 @@ def sh(cmd: list[str]):
     subprocess.check_call(cmd)
 
 
+CU121 = "https://download.pytorch.org/whl/cu121"
+
+
+def ensure_torch_cuda():
+    """Garantit un PyTorch CUDA fonctionnel (réinstalle si CPU/absent)."""
+    cuda_ok = False
+    try:
+        import torch
+        cuda_ok = torch.cuda.is_available()
+    except Exception:  # noqa: BLE001
+        cuda_ok = False
+    if cuda_ok:
+        print("PyTorch CUDA déjà opérationnel.")
+    else:
+        print("Installation de PyTorch CUDA 12.1 (build GPU, volumineux)…")
+        # --force-reinstall : un torch CPU peut être déjà présent (« déjà
+        # satisfait ») et ne serait pas remplacé sans cela.
+        sh([sys.executable, "-m", "pip", "install", "--force-reinstall",
+            "--no-cache-dir", "torch==2.3.0", "torchvision==0.18.0",
+            "--index-url", CU121])
+
+
+def pin_numpy():
+    """torch/torchvision 2.3 sont compilés pour NumPy 1.x -> on fige < 2."""
+    print("Verrouillage de NumPy < 2 (compatibilité torch 2.3)…")
+    sh([sys.executable, "-m", "pip", "install", "numpy>=1.24,<2"])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("upscaler_id",
@@ -89,11 +117,10 @@ def main():
 
     # --- Cas paquet pip (ex. AuraSR) : pas de git, poids auto au 1er run -----
     if up.pip_package:
-        print("Installation de PyTorch (CUDA 12.1)… (volumineux)")
-        sh([sys.executable, "-m", "pip", "install", "torch", "torchvision",
-            "--index-url", "https://download.pytorch.org/whl/cu121"])
+        ensure_torch_cuda()
         print(f"Installation de {up.pip_package}…")
         sh([sys.executable, "-m", "pip", "install", up.pip_package])
+        pin_numpy()  # aura-sr peut retirer numpy<2 -> on re-fige en dernier
         repo_dir.mkdir(parents=True, exist_ok=True)  # marqueur « installé »
         print(f"\n[OK] {up.name} installe. Disponible dans l'onglet Upscale.")
         return
@@ -106,9 +133,7 @@ def main():
         print(f"Code déjà présent : {repo_dir}")
 
     # 2. PyTorch CUDA 12.1 ----------------------------------------------------
-    print("\nInstallation de PyTorch (CUDA 12.1)… (volumineux)")
-    sh([sys.executable, "-m", "pip", "install", "torch", "torchvision",
-        "--index-url", "https://download.pytorch.org/whl/cu121"])
+    ensure_torch_cuda()
 
     # 3. Dépendances du dépôt -------------------------------------------------
     req = repo_dir / "requirements.txt"
@@ -130,6 +155,7 @@ def main():
         print(f"[ERREUR] Echec du telechargement des poids : {exc}")
         raise SystemExit(1)
 
+    pin_numpy()  # les deps du dépôt peuvent réintroduire NumPy 2
     print(f"\n[OK] {up.name} installe. Disponible dans l'onglet Upscale.")
 
 
