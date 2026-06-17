@@ -14,10 +14,14 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.util
 import io
 import json
 import platform
+import shutil
 import socket
+import subprocess
 import sys
 import tarfile
 import urllib.request
@@ -39,6 +43,93 @@ def _has_sd_cli() -> bool:
     names = ("sd-cli.exe", "sd.exe") if platform.system() == "Windows" \
         else ("sd-cli", "sd")
     return any(any(BIN_DIR.rglob(n)) for n in names) if BIN_DIR.exists() else False
+
+
+# DLL du runtime CUDA 12 nécessaires à la build CUDA de stable-diffusion.cpp.
+_CUDA_DLLS = ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll")
+
+
+def _cuda_runtime_present() -> bool:
+    return all((BIN_DIR / d).is_file() for d in _CUDA_DLLS) or \
+        bool(list(BIN_DIR.rglob("cudart64_12.dll")))
+
+
+def _pip(*args: str) -> None:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", *args])
+
+
+def _copy_dlls_from(root: Path) -> int:
+    """Copie les DLL CUDA trouvées sous `root` (récursif) vers bin/."""
+    n = 0
+    wanted = {d.lower() for d in _CUDA_DLLS}
+    for dll in root.rglob("*.dll"):
+        if dll.name.lower() in wanted and not (BIN_DIR / dll.name).exists():
+            shutil.copy(dll, BIN_DIR / dll.name)
+            print(f"     + {dll.name}", flush=True)
+            n += 1
+    return n
+
+
+def _torch_lib_dir() -> Path | None:
+    spec = importlib.util.find_spec("torch")
+    if not spec or not spec.submodule_search_locations:
+        return None
+    lib = Path(list(spec.submodule_search_locations)[0]) / "lib"
+    return lib if lib.is_dir() else None
+
+
+def _nvidia_pkg_dir() -> Path | None:
+    importlib.invalidate_caches()
+    spec = importlib.util.find_spec("nvidia")
+    if spec and spec.submodule_search_locations:
+        return Path(list(spec.submodule_search_locations)[0])
+    return None
+
+
+def ensure_cuda_runtime() -> bool:
+    """Met les DLL du runtime CUDA dans bin/ via des sources qui marchent
+    partout (PyPI), SANS dépendre du CDN des releases GitHub.
+
+    Ordre : déjà présent -> torch/lib (si torch CUDA installé) -> wheels NVIDIA
+    PyPI -> en dernier recours, torch CUDA puis copie.
+    """
+    BIN_DIR.mkdir(parents=True, exist_ok=True)
+    if _cuda_runtime_present():
+        print("Runtime CUDA déjà présent dans bin/.")
+        return True
+
+    # 1) Réutiliser les DLL embarquées par un torch CUDA déjà installé.
+    lib = _torch_lib_dir()
+    if lib and (lib / "cudart64_12.dll").is_file():
+        print("Copie des DLL CUDA depuis torch/lib…")
+        if _copy_dlls_from(lib) >= 2:
+            return True
+
+    # 2) Wheels NVIDIA depuis PyPI (léger, et PyPI fonctionne sur votre réseau).
+    try:
+        print("Récupération du runtime CUDA via PyPI (nvidia-*-cu12)…")
+        _pip("nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12")
+        nv = _nvidia_pkg_dir()
+        if nv and _copy_dlls_from(nv) >= 2:
+            return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"   (wheels NVIDIA indisponibles : {exc})", flush=True)
+
+    # 3) Dernier recours : torch CUDA (volumineux) puis copie des DLL.
+    try:
+        print("Installation de PyTorch CUDA 12.1 (fournit le runtime CUDA)…")
+        # --force-reinstall : un torch CPU peut déjà être « satisfait » et ne
+        # serait pas remplacé par la build CUDA sans cela.
+        _pip("--force-reinstall", "--no-cache-dir",
+             "torch==2.3.0", "torchvision==0.18.0",
+             "--index-url", "https://download.pytorch.org/whl/cu121")
+        lib = _torch_lib_dir()
+        if lib and _copy_dlls_from(lib) >= 2:
+            return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"   (échec torch : {exc})", flush=True)
+
+    return _cuda_runtime_present()
 
 
 def _force_ipv4():
@@ -277,23 +368,15 @@ def main():
         print(f"Téléchargement (binaire) : {best['name']}")
         _extract(_download(best["browser_download_url"]), best["name"])
 
-    # Runtime CUDA (Windows) : nécessaire à côté du binaire. NON bloquant :
-    # en cas d'échec on continue (téléchargement manuel possible, ou CUDA déjà
-    # installé sur la machine).
+    # Runtime CUDA (Windows) : récupéré via PyPI (pas le CDN GitHub, qui est
+    # peu fiable sur certains réseaux).
     if args.variant == "cuda" and platform.system().lower() == "windows":
-        cudart = _find_cudart(assets)
-        if cudart:
-            print(f"Téléchargement (runtime CUDA) : {cudart['name']}")
-            try:
-                _extract(_download(cudart["browser_download_url"]), cudart["name"])
-            except Exception as exc:  # noqa: BLE001
-                print(f"\n⚠️ Échec du téléchargement du runtime CUDA : {exc}")
-                print("   Le binaire est en place. Si sd-cli ne démarre pas, "
-                      "récupérez ce fichier manuellement et dézippez-le dans bin\\ :")
-                print(f"   {cudart['browser_download_url']}")
+        if ensure_cuda_runtime():
+            print("Runtime CUDA en place.")
         else:
-            print("⚠️ Runtime CUDA (cudart) introuvable dans la release ; "
-                  "si sd-cli ne démarre pas, installez le CUDA Toolkit 12.")
+            print("⚠️ Runtime CUDA non installé. Si sd-cli ne démarre pas, "
+                  "installez le CUDA Toolkit 12, ou un upscaler (qui installe "
+                  "PyTorch CUDA) depuis l'onglet Upscale.")
 
     print(f"Décompressé dans {BIN_DIR}. Binaire sd-cli prêt.")
 
