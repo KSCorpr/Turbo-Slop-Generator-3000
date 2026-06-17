@@ -142,19 +142,28 @@ def _progress(got: int, total: int, last: int) -> int:
     return last
 
 
-def _download(url: str, retries: int = 3) -> bytes:
-    """Télécharge avec progression et réessais (le CDN peut stagner)."""
+# Miroirs GitHub (essayés seulement si le téléchargement direct échoue).
+# Utiles sur les réseaux qui filtrent/ralentissent le CDN des releases GitHub.
+_MIRRORS = ["https://ghfast.top/", "https://ghproxy.net/", "https://gh.llkk.cc/"]
+
+
+def _download(url: str) -> bytes:
+    """Télécharge avec progression. Essaie le direct (3 fois) puis des miroirs."""
     import time
-    for attempt in range(1, retries + 1):
-        try:
-            return _download_once(url)
-        except Exception as exc:  # noqa: BLE001
-            if attempt >= retries:
-                raise
-            print(f"     (tentative {attempt} échouée : {exc} — nouvel essai…)",
-                  flush=True)
-            time.sleep(2 * attempt)
-    raise RuntimeError("téléchargement impossible")
+    attempts = [(url, 3)] + [(m + url, 1) for m in _MIRRORS]
+    last_exc = None
+    for i, (cand, tries) in enumerate(attempts):
+        if i > 0:
+            print(f"   Tentative via miroir : {cand.split('/')[2]}", flush=True)
+        for attempt in range(1, tries + 1):
+            try:
+                return _download_once(cand)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                print(f"     (échec : {exc})", flush=True)
+                if attempt < tries:
+                    time.sleep(2 * attempt)
+    raise RuntimeError(f"téléchargement impossible (direct + miroirs) : {last_exc}")
 
 
 def _download_once(url: str) -> bytes:
@@ -164,7 +173,7 @@ def _download_once(url: str) -> bytes:
     got = last = 0
     if requests is not None:
         # timeout=(connexion 15 s, lecture 120 s) : un blocage lève une erreur.
-        with requests.get(url, headers=_UA, stream=True, timeout=(15, 120)) as r:
+        with requests.get(url, headers=_UA, stream=True, timeout=(10, 120)) as r:
             r.raise_for_status()
             total = int(r.headers.get("Content-Length", 0) or 0)
             for chunk in r.iter_content(262144):

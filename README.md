@@ -106,6 +106,23 @@ Options :
 
 ---
 
+## Distribuer à vos amis (paquet portable)
+
+Pour partager le GUI sans que vos amis aient à installer quoi que ce soit :
+
+1. Sur une machine où **tout fonctionne déjà** (Python + moteur `bin\` en place),
+   lancez **`make_portable.bat`**.
+2. Cela crée `FederallImageGenerator3000-portable.zip` contenant le code, le
+   **Python portable** et le **moteur** — mais pas les modèles.
+3. Vos amis **décompressent** et lancent **`run.bat`**. Aucun téléchargement
+   GitHub : ils récupèrent seulement les **modèles** depuis l'onglet
+   Bibliothèque (via Hugging Face).
+
+Ainsi, même si le réseau de l'un d'eux filtre GitHub, ça marche — le moteur est
+déjà inclus dans le ZIP.
+
+---
+
 ## Architecture
 
 ```
