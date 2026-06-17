@@ -1,5 +1,9 @@
-"""Onglet Génération : text-to-image / image-to-image, réglages auto par modèle,
-LoRA. Le moteur est stable-diffusion.cpp (GGUF).
+"""Onglets de génération, un par modèle (sections séparées Z-Image / Ideogram).
+
+`build_generative_tab(model_id, title, is_ideogram)` construit un onglet complet
+text-to-image / image-to-image pour UN modèle donné. Pour Ideogram 4, un canvas
+de composition permet de dessiner les boîtes (objets/texte) et de fabriquer le
+prompt JSON structuré.
 """
 from __future__ import annotations
 
@@ -9,13 +13,12 @@ import gradio as gr
 
 from .. import ideogram_prompt, registry, settings
 from ..engine import generate as gen_engine
+from .canvas import CANVAS_MARKUP, READ_BOXES_JS
 
 SAMPLERS = ["euler", "euler_a", "heun", "dpm++2m", "dpm++2mv2", "dpm2",
             "ipndm", "lcm", "ddim_trailing"]
 SCHEDULES = ["discrete", "karras", "exponential", "ays", "gits",
              "smoothstep", "sgm_uniform"]
-
-# Formats prédéfinis (multiples de 64, ~1 Mpx) compatibles Ideogram 4 et Z-Image.
 RATIOS: dict[str, tuple[int, int]] = {
     "Carré 1:1 — 1024×1024": (1024, 1024),
     "Paysage 3:2 — 1216×832": (1216, 832),
@@ -29,69 +32,55 @@ RATIOS: dict[str, tuple[int, int]] = {
 }
 
 
-def _model_choices() -> list[tuple[str, str]]:
-    prefs = settings.load_prefs()
-    choices: list[tuple[str, str]] = []
-    for m in registry.load_base_models(prefs):
-        ready = registry.model_is_ready(m)
-        mark = "●" if ready else "○ (à télécharger)"
-        choices.append((f"{m.name} {mark}", m.id))
-    return choices
+def _defaults(model_id: str) -> dict:
+    m = registry.get_base_model(model_id, settings.load_prefs())
+    return m.defaults if m else {}
 
 
-def _defaults_for(model_id: str):
-    prefs = settings.load_prefs()
-    m = registry.get_base_model(model_id, prefs)
-    if not m:
-        return {}
-    return m.defaults
+def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False):
+    d = _defaults(model_id)
 
+    with gr.Tab(title):
+        m = registry.get_base_model(model_id, settings.load_prefs())
+        ready = m is not None and registry.model_is_ready(m)
+        status = ("<span class='status-ok'>● modèle prêt</span>" if ready
+                  else "<span class='status-missing'>○ à télécharger "
+                       "(onglet Bibliothèque)</span>")
+        gr.Markdown(f"### {title} — text-to-image & image-to-image  ·  {status}")
 
-def build_generate_tab():
-    with gr.Tab("🎨 Génération"):
+        # ----- Composition visuelle (Ideogram uniquement) -----------------
+        ie_widgets = {}
+        if is_ideogram:
+            with gr.Accordion("🖼️ Composition visuelle — dessinez les zones "
+                              "(canvas)", open=True):
+                gr.HTML(CANVAS_MARKUP)
+                with gr.Row():
+                    ie_mode = gr.Radio(["art_style", "photo"], value="art_style",
+                                       label="Mode")
+                    ie_hl = gr.Textbox(label="Description générale", scale=3)
+                with gr.Row():
+                    ie_aes = gr.Textbox(label="Esthétique")
+                    ie_light = gr.Textbox(label="Lumière")
+                with gr.Row():
+                    ie_med = gr.Textbox(label="Medium")
+                    ie_style = gr.Textbox(label="Style artistique / Photo")
+                ie_bg = gr.Textbox(label="Arrière-plan", lines=2)
+                ie_colors = gr.Textbox(label="Palette globale (#hex)",
+                                       placeholder="#E7C84B, #1B3A5B")
+                boxes_holder = gr.Textbox(visible=False)
+                ie_build = gr.Button("🧱 Construire le prompt depuis le canvas "
+                                     "→ Prompt", variant="secondary")
+                ie_widgets = dict(mode=ie_mode, hl=ie_hl, aes=ie_aes, light=ie_light,
+                                  med=ie_med, style=ie_style, bg=ie_bg,
+                                  colors=ie_colors, boxes=boxes_holder, build=ie_build)
+
         with gr.Row():
-            # ---------------- Colonne entrées ----------------
+            # ----- Entrées -----
             with gr.Column(scale=3):
-                model = gr.Dropdown(
-                    label="Modèle de base", choices=_model_choices(),
-                    value=(_model_choices()[0][1] if _model_choices() else None),
-                )
-                model_info = gr.Markdown("")
-
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
-                                      visible=True)
-
-                with gr.Accordion("🧠 Éditeur de prompt Ideogram 4 (JSON, optionnel)",
-                                  open=False):
-                    gr.Markdown(
-                        "Construit le **prompt structuré JSON** qu'Ideogram 4 "
-                        "comprend le mieux (style + composition + texte). "
-                        "Remplissez, puis cliquez sur *Construire* : le résultat "
-                        "remplace le Prompt ci-dessus. *(Conçu pour Ideogram 4.)*")
-                    ie_mode = gr.Radio(["art_style", "photo"], value="art_style",
-                                       label="Mode")
-                    ie_hl = gr.Textbox(label="Description générale (high level)",
-                                       lines=2)
-                    with gr.Row():
-                        ie_aes = gr.Textbox(label="Esthétique")
-                        ie_light = gr.Textbox(label="Lumière")
-                    with gr.Row():
-                        ie_med = gr.Textbox(label="Medium")
-                        ie_style = gr.Textbox(label="Style artistique / Photo")
-                    ie_bg = gr.Textbox(label="Arrière-plan", lines=2)
-                    ie_colors = gr.Textbox(
-                        label="Palette globale (#hex, séparés par des virgules)",
-                        placeholder="#E7C84B, #1B3A5B")
-                    ie_elements = gr.Dataframe(
-                        headers=ideogram_prompt.ELEMENT_HEADERS,
-                        value=ideogram_prompt.EXAMPLE_ELEMENTS,
-                        datatype=["str", "str", "str", "number", "number",
-                                  "number", "number", "str"],
-                        row_count=(1, "dynamic"), col_count=(8, "fixed"),
-                        label="Éléments / boîtes — coordonnées bbox en 0–1000")
-                    ie_build = gr.Button("🧱 Construire le prompt JSON → Prompt")
+                                      visible=d.get("supports_negative", False))
 
                 with gr.Accordion("🖼️ Image de départ (image-to-image)", open=False):
                     init_image = gr.Image(label="Source", type="pil", height=300)
@@ -100,11 +89,13 @@ def build_generate_tab():
 
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():
-                        lora1 = gr.Dropdown(label="LoRA 1", choices=gen_engine.list_loras(),
+                        lora1 = gr.Dropdown(label="LoRA 1",
+                                            choices=gen_engine.list_loras(),
                                             value=None, allow_custom_value=False)
                         lora1_w = gr.Slider(0.0, 1.5, value=0.8, step=0.05, label="Poids")
                     with gr.Row():
-                        lora2 = gr.Dropdown(label="LoRA 2", choices=gen_engine.list_loras(),
+                        lora2 = gr.Dropdown(label="LoRA 2",
+                                            choices=gen_engine.list_loras(),
                                             value=None, allow_custom_value=False)
                         lora2_w = gr.Slider(0.0, 1.5, value=0.8, step=0.05, label="Poids")
                     with gr.Row():
@@ -116,22 +107,28 @@ def build_generate_tab():
                                     value="Carré 1:1 — 1024×1024",
                                     label="Format (ratio)")
                 with gr.Row():
-                    width = gr.Slider(256, 2048, value=1024, step=16, label="Largeur")
-                    height = gr.Slider(256, 2048, value=1024, step=16, label="Hauteur")
+                    width = gr.Slider(256, 2048, value=d.get("width", 1024), step=16,
+                                      label="Largeur")
+                    height = gr.Slider(256, 2048, value=d.get("height", 1024), step=16,
+                                       label="Hauteur")
                 with gr.Row():
-                    steps = gr.Slider(1, 60, value=8, step=1, label="Étapes")
-                    cfg = gr.Slider(1.0, 12.0, value=1.0, step=0.1, label="CFG")
+                    steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
+                                      label="Étapes")
+                    cfg = gr.Slider(1.0, 12.0, value=d.get("cfg_scale", 1.0),
+                                    step=0.1, label="CFG")
                 with gr.Row():
-                    sampler = gr.Dropdown(SAMPLERS, value="euler", label="Sampler")
+                    sampler = gr.Dropdown(SAMPLERS, value=d.get("sampler", "euler"),
+                                          label="Sampler")
                     schedule = gr.Dropdown(SCHEDULES, value="discrete",
                                            label="Schedule (bruit)")
                 with gr.Row():
-                    seed = gr.Number(value=-1, label="Seed (-1 = aléatoire)", precision=0)
+                    seed = gr.Number(value=-1, label="Seed (-1 = aléatoire)",
+                                     precision=0)
                     batch = gr.Slider(1, 8, value=1, step=1, label="Images")
 
-                run = gr.Button("✨ Générer", variant="primary", size="lg")
+                run = gr.Button(f"✨ Générer ({title})", variant="primary", size="lg")
 
-            # ---------------- Colonne sorties ----------------
+            # ----- Sorties -----
             with gr.Column(scale=4):
                 gallery = gr.Gallery(label="Résultats", columns=2, height=680,
                                      object_fit="contain", show_label=True,
@@ -139,34 +136,7 @@ def build_generate_tab():
                 logbox = gr.Textbox(label="Journal", lines=14, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
 
-        # ---------------- Comportements ----------------
-        def on_model_change(model_id):
-            prefs = settings.load_prefs()
-            m = registry.get_base_model(model_id, prefs) if model_id else None
-            if not m:
-                return (gr.update(), gr.update(), gr.update(), gr.update(),
-                        gr.update(), gr.update(), gr.update())
-            d = m.defaults
-            ready = registry.model_is_ready(m)
-            tags = " ".join(f"`{t}`" for t in m.tags)
-            status = ("<span class='status-ok'>● prêt</span>" if ready
-                      else "<span class='status-missing'>○ à télécharger "
-                           "(onglet Bibliothèque)</span>")
-            info = f"{status} · {tags}\n\n{m.description}"
-            supports_neg = d.get("supports_negative", True)
-            return (
-                gr.update(value=info),
-                gr.update(value=d.get("steps", 8)),
-                gr.update(value=d.get("cfg_scale", 1.0)),
-                gr.update(value=d.get("sampler", "euler")),
-                gr.update(value=d.get("width", 1024)),
-                gr.update(value=d.get("height", 1024)),
-                gr.update(visible=supports_neg),
-            )
-
-        model.change(on_model_change, inputs=[model],
-                     outputs=[model_info, steps, cfg, sampler, width, height, negative])
-
+        # ----- Comportements -----
         def refresh_loras():
             choices = gen_engine.list_loras()
             return gr.update(choices=choices), gr.update(choices=choices)
@@ -174,7 +144,6 @@ def build_generate_tab():
         refresh_lora.click(refresh_loras, outputs=[lora1, lora2])
 
         def clear_loras():
-            # Désélectionne les LoRA et remet les poids par défaut.
             return (gr.update(value=None), gr.update(value=0.8),
                     gr.update(value=None), gr.update(value=0.8))
 
@@ -182,30 +151,32 @@ def build_generate_tab():
 
         def on_ratio(label):
             w, h = RATIOS.get(label, (0, 0))
-            if not w:  # « Personnalisé » : on laisse les sliders tels quels
+            if not w:
                 return gr.update(), gr.update()
             return gr.update(value=w), gr.update(value=h)
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
 
-        def build_ideogram(mode, hl, aes, light, med, style, bg, colors, df):
-            rows = df.values.tolist() if hasattr(df, "values") else (df or [])
-            js = ideogram_prompt.build_prompt(mode, hl, aes, light, med, style,
-                                              bg, colors, rows)
-            return gr.update(value=js)
+        if is_ideogram:
+            def build_ideogram(boxes_json, mode, hl, aes, light, med, style,
+                               bg, colors):
+                rows = ideogram_prompt.boxes_json_to_rows(boxes_json)
+                js = ideogram_prompt.build_prompt(mode, hl, aes, light, med, style,
+                                                  bg, colors, rows)
+                return gr.update(value=js)
 
-        ie_build.click(
-            build_ideogram,
-            inputs=[ie_mode, ie_hl, ie_aes, ie_light, ie_med, ie_style, ie_bg,
-                    ie_colors, ie_elements],
-            outputs=[prompt])
+            ie_widgets["build"].click(
+                build_ideogram,
+                inputs=[ie_widgets["boxes"], ie_widgets["mode"], ie_widgets["hl"],
+                        ie_widgets["aes"], ie_widgets["light"], ie_widgets["med"],
+                        ie_widgets["style"], ie_widgets["bg"], ie_widgets["colors"]],
+                outputs=[prompt],
+                js=READ_BOXES_JS,
+            )
 
-        def do_generate(model_id, prompt, negative, init_image, strength,
-                        width, height, steps, cfg, sampler, schedule, seed, batch,
-                        lora1, lora1_w, lora2, lora2_w,
-                        progress=gr.Progress()):
-            if not model_id:
-                raise gr.Error("Sélectionnez un modèle.")
+        def do_generate(prompt, negative, init_image, strength, width, height,
+                        steps, cfg, sampler, schedule, seed, batch,
+                        lora1, lora1_w, lora2, lora2_w, progress=gr.Progress()):
             if not (prompt or "").strip() and init_image is None:
                 raise gr.Error("Saisissez un prompt (ou une image de départ).")
 
@@ -219,15 +190,14 @@ def build_generate_tab():
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
 
-            # Suit la progression réelle : sd-cli imprime « étape/total ».
             total = max(1, int(steps))
             step_re = re.compile(rf"(\d+)\s*/\s*{total}\b")
 
             def log(line: str):
                 logs.append(line)
-                m = step_re.search(line)
-                if m:
-                    cur = min(int(m.group(1)), total)
+                mt = step_re.search(line)
+                if mt:
+                    cur = min(int(mt.group(1)), total)
                     progress(0.05 + 0.9 * cur / total,
                              desc=f"Génération… étape {cur}/{total}")
 
@@ -243,16 +213,12 @@ def build_generate_tab():
                 logs.append(f"\n[ERREUR] {exc}")
                 return [], "\n".join(logs)
             progress(1.0, desc="Terminé")
-            # On renvoie les CHEMINS .png (et non des objets image) : le
-            # téléchargement conserve ainsi le nom de fichier et l'extension.
             return [str(p) for p in outs], "\n".join(logs)
 
         run.click(
             do_generate,
-            inputs=[model, prompt, negative, init_image, strength, width, height,
+            inputs=[prompt, negative, init_image, strength, width, height,
                     steps, cfg, sampler, schedule, seed, batch,
                     lora1, lora1_w, lora2, lora2_w],
             outputs=[gallery, logbox],
         )
-
-        return {"model": model}

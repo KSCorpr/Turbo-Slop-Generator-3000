@@ -35,19 +35,22 @@ def _patch_gradio_client() -> None:
 _patch_gradio_client()
 
 from atelier import APP_NAME, __version__, hardware, net, settings
-from atelier.ui.generate_tab import build_generate_tab
+from atelier.ui.canvas import CANVAS_JS
+from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
 from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.upscale_tab import build_upscale_tab
 
-# Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS.
-_FORCE_LIGHT = (
+# Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS,
+# et injecte le JS du canvas de composition (gr.HTML ne peut pas exécuter de JS).
+_HEAD = (
     "<script>"
     "if(!new URLSearchParams(window.location.search).has('__theme')){"
     "const u=new URL(window.location);u.searchParams.set('__theme','light');"
     "window.location.replace(u);}"
     "</script>"
+    f"<script>{CANVAS_JS}</script>"
 )
 
 
@@ -57,7 +60,7 @@ def build_app() -> gr.Blocks:
     sd_cli = settings.find_sd_cli()
 
     with gr.Blocks(title=f"{APP_NAME} {__version__}", theme=theme(), css=CSS,
-                   head=_FORCE_LIGHT) as demo:
+                   head=_HEAD) as demo:
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
             f"<div class='sub'>Génération d'images locale · Ideogram 4 · "
@@ -72,7 +75,8 @@ def build_app() -> gr.Blocks:
                         "Vérifiez vos pilotes / `nvidia-smi`.")
 
         with gr.Tabs():
-            build_generate_tab()
+            build_generative_tab("zimage-turbo", "🌀 Z-Image Turbo")
+            build_generative_tab("ideogram-4", "🖋️ Ideogram 4", is_ideogram=True)
             build_library_tab()
             build_upscale_tab()
             build_settings_tab()

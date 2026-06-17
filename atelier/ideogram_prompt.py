@@ -21,6 +21,32 @@ import json
 import re
 
 
+def boxes_json_to_rows(raw: str | None) -> list[list]:
+    """Convertit les boîtes dessinées sur le canvas (JSON) en lignes d'éléments.
+
+    Format d'entrée : liste d'objets {x1,y1,x2,y2 (0–1000), type, text, desc, color}.
+    Sortie : lignes [type, texte, desc, x1, y1, x2, y2, couleurs] pour build_prompt.
+    """
+    if not raw:
+        return []
+    try:
+        boxes = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    rows = []
+    for b in boxes or []:
+        if not isinstance(b, dict):
+            continue
+        rows.append([
+            b.get("type", "obj"),
+            b.get("text", ""),
+            b.get("desc", ""),
+            b.get("x1", 0), b.get("y1", 0), b.get("x2", 0), b.get("y2", 0),
+            b.get("color", ""),
+        ])
+    return rows
+
+
 def parse_colors(raw: str | None, limit: int = 16) -> list[str]:
     """Extrait des couleurs #RRGGBB (mises en MAJUSCULES) d'une chaîne libre."""
     if not raw:
