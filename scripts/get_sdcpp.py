@@ -23,13 +23,23 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+try:
+    import requests  # plus robuste qu'urllib sur les redirections GitHub (Windows)
+except ImportError:
+    requests = None
+
 ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
+_UA = {"User-Agent": "atelier"}
 
 
 def _fetch_json(url: str):
-    req = urllib.request.Request(url, headers={"User-Agent": "atelier"})
+    if requests is not None:
+        r = requests.get(url, headers=_UA, timeout=60)
+        r.raise_for_status()
+        return r.json()
+    req = urllib.request.Request(url, headers=_UA)
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode())
 
@@ -96,34 +106,47 @@ def _latest_release_with_assets() -> dict:
     sys.exit("Aucune release avec archives trouvée.")
 
 
-def _download(url: str) -> bytes:
-    """Télécharge en streaming avec affichage de la progression.
+def _progress(got: int, total: int, last: int) -> int:
+    step = (total / 20) if total else 5_000_000
+    if got - last >= step:
+        if total:
+            print(f"     {got/1e6:6.1f} / {total/1e6:.1f} Mo ({got*100//total}%)",
+                  flush=True)
+        else:
+            print(f"     {got/1e6:6.1f} Mo téléchargés…", flush=True)
+        return got
+    return last
 
-    timeout=120 s par opération socket : un vrai blocage lève une erreur au lieu
-    de figer l'installation indéfiniment.
-    """
-    req = urllib.request.Request(url, headers={"User-Agent": "atelier"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        total = int(r.headers.get("Content-Length", 0) or 0)
-        buf = bytearray()
-        got = 0
-        last = 0
-        while True:
-            block = r.read(262144)  # 256 Kio
-            if not block:
-                break
-            buf += block
-            got += len(block)
-            step = (total / 20) if total else 5_000_000
-            if got - last >= step:
-                last = got
-                if total:
-                    print(f"     {got/1e6:6.1f} / {total/1e6:.1f} Mo "
-                          f"({got * 100 // total}%)", flush=True)
-                else:
-                    print(f"     {got/1e6:6.1f} Mo téléchargés…", flush=True)
-        print(f"     terminé ({got/1e6:.1f} Mo).", flush=True)
-        return bytes(buf)
+
+def _download(url: str) -> bytes:
+    """Télécharge en streaming avec progression. Utilise requests si dispo
+    (gère proprement les redirections du CDN GitHub, contrairement à urllib)."""
+    buf = bytearray()
+    got = last = 0
+    if requests is not None:
+        # timeout=(connexion 15 s, lecture 120 s) : un blocage lève une erreur.
+        with requests.get(url, headers=_UA, stream=True, timeout=(15, 120)) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0) or 0)
+            for chunk in r.iter_content(262144):
+                if not chunk:
+                    continue
+                buf += chunk
+                got += len(chunk)
+                last = _progress(got, total, last)
+    else:
+        req = urllib.request.Request(url, headers=_UA)
+        with urllib.request.urlopen(req, timeout=120) as r:
+            total = int(r.headers.get("Content-Length", 0) or 0)
+            while True:
+                block = r.read(262144)
+                if not block:
+                    break
+                buf += block
+                got += len(block)
+                last = _progress(got, total, last)
+    print(f"     terminé ({got/1e6:.1f} Mo).", flush=True)
+    return bytes(buf)
 
 
 def _extract(blob: bytes, name: str) -> None:
