@@ -7,7 +7,7 @@ import re
 
 import gradio as gr
 
-from .. import registry, settings
+from .. import ideogram_prompt, registry, settings
 from ..engine import generate as gen_engine
 
 SAMPLERS = ["euler", "euler_a", "heun", "dpm++2m", "dpm++2mv2", "dpm2",
@@ -60,6 +60,36 @@ def build_generate_tab():
                                     placeholder="Décrivez l'image…")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
                                       visible=True)
+
+                with gr.Accordion("🧠 Éditeur de prompt Ideogram 4 (JSON, optionnel)",
+                                  open=False):
+                    gr.Markdown(
+                        "Construit le **prompt structuré JSON** qu'Ideogram 4 "
+                        "comprend le mieux (style + composition + texte). "
+                        "Remplissez, puis cliquez sur *Construire* : le résultat "
+                        "remplace le Prompt ci-dessus. *(Conçu pour Ideogram 4.)*")
+                    ie_mode = gr.Radio(["art_style", "photo"], value="art_style",
+                                       label="Mode")
+                    ie_hl = gr.Textbox(label="Description générale (high level)",
+                                       lines=2)
+                    with gr.Row():
+                        ie_aes = gr.Textbox(label="Esthétique")
+                        ie_light = gr.Textbox(label="Lumière")
+                    with gr.Row():
+                        ie_med = gr.Textbox(label="Medium")
+                        ie_style = gr.Textbox(label="Style artistique / Photo")
+                    ie_bg = gr.Textbox(label="Arrière-plan", lines=2)
+                    ie_colors = gr.Textbox(
+                        label="Palette globale (#hex, séparés par des virgules)",
+                        placeholder="#E7C84B, #1B3A5B")
+                    ie_elements = gr.Dataframe(
+                        headers=ideogram_prompt.ELEMENT_HEADERS,
+                        value=ideogram_prompt.EXAMPLE_ELEMENTS,
+                        datatype=["str", "str", "str", "number", "number",
+                                  "number", "number", "str"],
+                        row_count=(1, "dynamic"), col_count=(8, "fixed"),
+                        label="Éléments / boîtes — coordonnées bbox en 0–1000")
+                    ie_build = gr.Button("🧱 Construire le prompt JSON → Prompt")
 
                 with gr.Accordion("🖼️ Image de départ (image-to-image)", open=False):
                     init_image = gr.Image(label="Source", type="pil", height=220)
@@ -143,6 +173,18 @@ def build_generate_tab():
             return gr.update(value=w), gr.update(value=h)
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
+
+        def build_ideogram(mode, hl, aes, light, med, style, bg, colors, df):
+            rows = df.values.tolist() if hasattr(df, "values") else (df or [])
+            js = ideogram_prompt.build_prompt(mode, hl, aes, light, med, style,
+                                              bg, colors, rows)
+            return gr.update(value=js)
+
+        ie_build.click(
+            build_ideogram,
+            inputs=[ie_mode, ie_hl, ie_aes, ie_light, ie_med, ie_style, ie_bg,
+                    ie_colors, ie_elements],
+            outputs=[prompt])
 
         def do_generate(model_id, prompt, negative, init_image, strength,
                         width, height, steps, cfg, sampler, seed, batch,
