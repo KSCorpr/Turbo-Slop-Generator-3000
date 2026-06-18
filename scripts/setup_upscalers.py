@@ -88,6 +88,15 @@ def _torch_cuda_ok() -> bool:
         return False
 
 
+def _clean_broken_dists():
+    """Supprime les paquets à moitié désinstallés (dossiers « ~* ») laissés par
+    une install pip interrompue (ex. « ~bb » après un échec sur tbb)."""
+    sp = Path(sys.executable).parent / "Lib" / "site-packages"
+    if sp.is_dir():
+        for p in sp.glob("~*"):
+            shutil.rmtree(p, ignore_errors=True)
+
+
 def ensure_torch_cuda():
     """Garantit un PyTorch CUDA fonctionnel sans verrouiller de DLL.
 
@@ -95,6 +104,7 @@ def ensure_torch_cuda():
     verrouillés -> « Accès refusé »). On désinstalle seulement torch/torchvision
     puis on réinstalle la build CUDA ; les libs annexes (tbb/mkl/numpy) restent.
     """
+    _clean_broken_dists()
     if _torch_cuda_ok():
         print("PyTorch CUDA déjà opérationnel.")
         return
