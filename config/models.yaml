@@ -83,8 +83,9 @@ base_models:
     family: flux2
     tags: [qualité, rapide, distillé]
     description: >
-      FLUX.2 Klein 9B (distillé, rapide : 4 pas, CFG 1.0). Très haute qualité
-      d'image. Lourd (encodeur Qwen3-8B) : conseillé à partir de ~12 Go de VRAM.
+      FLUX.2 Klein 9B en GGUF (distillé, rapide : 4 pas, CFG 1.0). Très haute
+      qualité d'image. Diffusion Q4 ≈ 5 Go en VRAM ; encodeur Qwen3-8B déchargé
+      en RAM. Tourne sur 10–12 Go de VRAM (plus lent que Z-Image).
     sources:
       diffusion:
         repo: unsloth/FLUX.2-klein-9B-GGUF
@@ -105,7 +106,7 @@ base_models:
       width: 1024
       height: 1024
       supports_negative: false
-    vram_min_gb: 12
+    vram_min_gb: 10
 
 # ============================================================================
 #  Upscalers (PyTorch, installés à la demande via scripts/setup_upscalers.py)
