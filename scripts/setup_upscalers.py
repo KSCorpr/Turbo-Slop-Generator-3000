@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import re
 import shutil
 import subprocess
 import sys
@@ -135,9 +136,21 @@ def _download_model_file(url: str, dest: Path):
     if "drive.google.com" in url:
         sh([sys.executable, "-m", "pip", "install", "gdown"])
         import gdown
-        gdown.download(url, str(dest), quiet=False, fuzzy=True)
-        if not dest.is_file():
-            raise RuntimeError("gdown n'a pas pu récupérer le fichier Google Drive.")
+        # On passe par l'ID du fichier (param le plus stable entre versions de
+        # gdown ; 'fuzzy' a disparu de download() dans gdown 6.x).
+        m = re.search(r"(?:id=|/d/)([A-Za-z0-9_-]{20,})", url)
+        file_id = m.group(1) if m else None
+        try:
+            if file_id:
+                gdown.download(id=file_id, output=str(dest), quiet=False)
+            else:
+                gdown.download(url, str(dest), quiet=False)
+        except TypeError:
+            gdown.download(url=url, output=str(dest), quiet=False)
+        if not dest.is_file() or dest.stat().st_size == 0:
+            raise RuntimeError(
+                "gdown n'a pas pu récupérer le fichier Google Drive "
+                "(quota/partage ?). Réessayez plus tard.")
         return
 
     import requests
