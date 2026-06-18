@@ -18,11 +18,42 @@ from .canvas import CANVAS_MARKUP, READ_BOXES_JS
 
 TURBO_LORA_REPO = "ostris/ideogram_4_turbotime_lora"
 
-SAMPLERS = ["euler", "euler_a", "heun", "dpm++2m", "dpm++2mv2", "dpm2",
-            "ipndm", "lcm", "ddim_trailing"]
-SCHEDULES = ["auto", "discrete", "karras", "exponential", "ays", "gits",
-             "smoothstep", "sgm_uniform", "simple", "kl_optimal", "lcm",
-             "bong_tangent"]
+# (libellé affiché, valeur réelle passée à sd-cli). Liste complète des
+# sampling methods réellement supportées par stable-diffusion.cpp.
+SAMPLERS = [
+    ("Euler", "euler"),
+    ("Euler Ancestral", "euler_a"),
+    ("Heun", "heun"),
+    ("DPM2", "dpm2"),
+    ("DPM++ 2S Ancestral", "dpm++2s_a"),
+    ("DPM++ 2M", "dpm++2m"),
+    ("DPM++ 2M v2", "dpm++2mv2"),
+    ("iPNDM", "ipndm"),
+    ("iPNDM v", "ipndm_v"),
+    ("LCM", "lcm"),
+    ("DDIM Trailing", "ddim_trailing"),
+    ("TCD", "tcd"),
+    ("Res Multistep", "res_multistep"),
+    ("Res 2S", "res_2s"),
+    ("ER SDE", "er_sde"),
+    ("Euler CFG++", "euler_cfg_pp"),
+    ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
+]
+# Schedulers (sigmas) réellement supportés par stable-diffusion.cpp.
+SCHEDULES = [
+    ("Auto (modèle)", "auto"),
+    ("Discrete", "discrete"),
+    ("Karras", "karras"),
+    ("Exponential", "exponential"),
+    ("AYS", "ays"),
+    ("GITS", "gits"),
+    ("Smoothstep", "smoothstep"),
+    ("SGM Uniform", "sgm_uniform"),
+    ("Simple", "simple"),
+    ("KL Optimal", "kl_optimal"),
+    ("LCM", "lcm"),
+    ("Bong Tangent", "bong_tangent"),
+]
 RATIOS: dict[str, tuple[int, int]] = {
     "Carré 1:1 — 1024×1024": (1024, 1024),
     "Paysage 3:2 — 1216×832": (1216, 832),
