@@ -75,23 +75,34 @@ def sh(cmd: list[str]):
 CU121 = "https://download.pytorch.org/whl/cu121"
 
 
-def ensure_torch_cuda():
-    """Garantit un PyTorch CUDA fonctionnel (réinstalle si CPU/absent)."""
-    cuda_ok = False
+def _torch_cuda_ok() -> bool:
+    """Teste la dispo CUDA dans un SOUS-PROCESS (sans charger torch ici, sinon
+    ses DLL — tbb/mkl — seraient verrouillées et la réinstall échouerait)."""
     try:
-        import torch
-        cuda_ok = torch.cuda.is_available()
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 3)"],
+            timeout=240)
+        return r.returncode == 0
     except Exception:  # noqa: BLE001
-        cuda_ok = False
-    if cuda_ok:
+        return False
+
+
+def ensure_torch_cuda():
+    """Garantit un PyTorch CUDA fonctionnel sans verrouiller de DLL.
+
+    On évite --force-reinstall (qui voudrait remplacer tbb/mkl, souvent
+    verrouillés -> « Accès refusé »). On désinstalle seulement torch/torchvision
+    puis on réinstalle la build CUDA ; les libs annexes (tbb/mkl/numpy) restent.
+    """
+    if _torch_cuda_ok():
         print("PyTorch CUDA déjà opérationnel.")
-    else:
-        print("Installation de PyTorch CUDA 12.1 (build GPU, volumineux)…")
-        # --force-reinstall : un torch CPU peut être déjà présent (« déjà
-        # satisfait ») et ne serait pas remplacé sans cela.
-        sh([sys.executable, "-m", "pip", "install", "--force-reinstall",
-            "--no-cache-dir", "torch==2.3.0", "torchvision==0.18.0",
-            "--index-url", CU121])
+        return
+    print("Mise en place de PyTorch CUDA 12.1 (build GPU, volumineux)…")
+    subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
+                     "torch", "torchvision"])
+    sh([sys.executable, "-m", "pip", "install", "--no-cache-dir",
+        "torch==2.3.0", "torchvision==0.18.0", "--index-url", CU121])
 
 
 def pin_numpy():

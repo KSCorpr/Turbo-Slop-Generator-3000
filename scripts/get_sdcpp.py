@@ -118,10 +118,11 @@ def ensure_cuda_runtime() -> bool:
     # 3) Dernier recours : torch CUDA (volumineux) puis copie des DLL.
     try:
         print("Installation de PyTorch CUDA 12.1 (fournit le runtime CUDA)…")
-        # --force-reinstall : un torch CPU peut déjà être « satisfait » et ne
-        # serait pas remplacé par la build CUDA sans cela.
-        _pip("--force-reinstall", "--no-cache-dir",
-             "torch==2.3.0", "torchvision==0.18.0",
+        # On évite --force-reinstall (verrouille tbb/mkl). On désinstalle juste
+        # torch/torchvision puis on réinstalle la build CUDA.
+        subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
+                         "torch", "torchvision"])
+        _pip("--no-cache-dir", "torch==2.3.0", "torchvision==0.18.0",
              "--index-url", "https://download.pytorch.org/whl/cu121")
         lib = _torch_lib_dir()
         if lib and _copy_dlls_from(lib) >= 2:
