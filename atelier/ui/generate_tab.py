@@ -104,11 +104,15 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                 ie_colors = gr.Textbox(label="Palette globale (#hex)",
                                        placeholder="#E7C84B, #1B3A5B")
                 boxes_holder = gr.Textbox(visible=False)
-                ie_build = gr.Button("🧱 Construire le prompt depuis le canvas "
-                                     "→ Prompt", variant="secondary")
+                with gr.Row():
+                    ie_build = gr.Button("🧱 Construire depuis le canvas → Prompt",
+                                         variant="secondary")
+                    ie_text2json = gr.Button("✍️ Convertir le Prompt en JSON "
+                                             "Ideogram", variant="secondary")
                 ie_widgets = dict(mode=ie_mode, hl=ie_hl, aes=ie_aes, light=ie_light,
                                   med=ie_med, style=ie_style, bg=ie_bg,
-                                  colors=ie_colors, boxes=boxes_holder, build=ie_build)
+                                  colors=ie_colors, boxes=boxes_holder, build=ie_build,
+                                  text2json=ie_text2json)
 
         with gr.Row():
             # ----- Entrées -----
@@ -225,6 +229,24 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                 outputs=[prompt],
                 js=READ_BOXES_JS,
             )
+
+            def text_to_json(plain, mode, aes, light, med, style, colors):
+                # Convertit un prompt classique en JSON Ideogram (format
+                # d'entraînement) : le texte devient la description générale.
+                if not (plain or "").strip():
+                    raise gr.Error("Écrivez d'abord un prompt classique.")
+                js = ideogram_prompt.build_prompt(
+                    mode, high_level=plain, aesthetics=aes, lighting=light,
+                    medium=med, style_or_photo=style, background="",
+                    global_colors=colors, element_rows=[])
+                return gr.update(value=js)
+
+            ie_widgets["text2json"].click(
+                text_to_json,
+                inputs=[prompt, ie_widgets["mode"], ie_widgets["aes"],
+                        ie_widgets["light"], ie_widgets["med"],
+                        ie_widgets["style"], ie_widgets["colors"]],
+                outputs=[prompt])
 
         def do_generate(system_prompt, prompt, negative, init_image, strength,
                         width, height, steps, cfg, sampler, schedule, seed, batch,
