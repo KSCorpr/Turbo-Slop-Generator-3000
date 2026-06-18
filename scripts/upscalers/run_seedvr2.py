@@ -45,6 +45,57 @@ def _patch_distributed_for_windows():
     dist.init_process_group = _patched
 
 
+def _install_flash_attn_shim():
+    """Fournit un `flash_attn` minimal basé sur PyTorch SDPA.
+
+    flash-attn ne se compile pas sous Windows ; SeedVR2 ne s'en sert que pour
+    `flash_attn_varlen_func`. On reproduit ce calcul (attention par segment
+    défini par cu_seqlens) avec scaled_dot_product_attention.
+    """
+    import types
+    try:
+        import flash_attn  # vrai paquet déjà là ?
+        return
+    except Exception:
+        pass
+
+    import torch
+    import torch.nn.functional as F
+
+    def _seg(q, k, v, scale, causal):  # (s,h,d) -> SDPA (h,s,d) -> (s,h,d)
+        out = F.scaled_dot_product_attention(
+            q.transpose(0, 1), k.transpose(0, 1), v.transpose(0, 1),
+            dropout_p=0.0, is_causal=causal, scale=scale)
+        return out.transpose(0, 1)
+
+    def flash_attn_varlen_func(q, k, v, cu_seqlens_q, cu_seqlens_k,
+                               max_seqlen_q=None, max_seqlen_k=None,
+                               dropout_p=0.0, softmax_scale=None, causal=False,
+                               **kwargs):
+        cq = cu_seqlens_q.tolist()
+        ck = cu_seqlens_k.tolist()
+        outs = []
+        for i in range(len(cq) - 1):
+            outs.append(_seg(q[cq[i]:cq[i + 1]], k[ck[i]:ck[i + 1]],
+                             v[ck[i]:ck[i + 1]], softmax_scale, causal))
+        return torch.cat(outs, dim=0)
+
+    def flash_attn_func(q, k, v, dropout_p=0.0, softmax_scale=None,
+                        causal=False, **kwargs):  # (b,s,h,d)
+        o = F.scaled_dot_product_attention(
+            q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2),
+            dropout_p=0.0, is_causal=causal, scale=softmax_scale)
+        return o.transpose(1, 2)
+
+    m = types.ModuleType("flash_attn")
+    m.flash_attn_varlen_func = flash_attn_varlen_func
+    m.flash_attn_func = flash_attn_func
+    m.__version__ = "0.0.0-sdpa-shim"
+    sys.modules["flash_attn"] = m
+    print("[SeedVR2] flash-attn absent -> shim PyTorch SDPA activé "
+          "(plus lent mais fonctionne sous Windows).", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-dir", required=True)
@@ -75,6 +126,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     _patch_distributed_for_windows()
+    _install_flash_attn_shim()
 
     import torch
     # Résolution cible = taille de l'image × facteur (NaResize vise sqrt(h*w)).
