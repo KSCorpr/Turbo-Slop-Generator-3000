@@ -28,7 +28,10 @@ def build_creative_tab():
         gr.Markdown(
             "### Upscale créatif (façon Magnific / Topaz Wonder)\n"
             "Pré-agrandit l'image, puis **ré-invente le détail** via un modèle de "
-            "diffusion (img2img). Le curseur *Créativité* dose le détail ajouté.")
+            "diffusion (img2img **par tuiles**, recollées avec fondu). Le curseur "
+            "*Créativité* dose le détail ajouté.\n\n"
+            "> ⚠️ Le modèle se recharge à chaque tuile : **×2 = 4 tuiles** (rapide), "
+            "**×4 = 16 tuiles** (long). **Z-Image Turbo** est le plus rapide pour ça.")
         with gr.Row():
             with gr.Column(scale=3):
                 image = gr.Image(label="Image à agrandir", type="pil", height=380)
