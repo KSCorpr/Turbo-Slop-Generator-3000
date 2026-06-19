@@ -74,6 +74,32 @@ def sh(cmd: list[str]):
 
 
 CU121 = "https://download.pytorch.org/whl/cu121"
+CU128 = "https://download.pytorch.org/whl/cu128"
+
+
+def _gpu_arch() -> str:
+    try:
+        from atelier import hardware
+        gpus = hardware.detect_gpus()
+        if gpus:
+            return max(gpus, key=lambda g: g.vram_gb).arch
+    except Exception:  # noqa: BLE001
+        pass
+    return "unknown"
+
+
+def _torch_install_args():
+    """Choisit la build PyTorch/CUDA selon le GPU détecté.
+
+    - Blackwell (RTX 50xx, sm_120) : nécessite CUDA 12.8+ et un torch récent.
+    - Turing/Ampere/Ada/Pascal : cu121 + torch 2.3.0 (stable et éprouvé).
+    """
+    arch = _gpu_arch()
+    if arch == "blackwell":
+        print("GPU Blackwell détecté -> PyTorch CUDA 12.8 (récent).")
+        return ["torch", "torchvision", "--index-url", CU128]
+    print(f"GPU {arch} -> PyTorch 2.3.0 CUDA 12.1.")
+    return ["torch==2.3.0", "torchvision==0.18.0", "--index-url", CU121]
 
 
 def _torch_cuda_ok() -> bool:
@@ -109,11 +135,11 @@ def ensure_torch_cuda():
     if _torch_cuda_ok():
         print("PyTorch CUDA déjà opérationnel.")
         return
-    print("Mise en place de PyTorch CUDA 12.1 (build GPU, volumineux)…")
+    print("Mise en place de PyTorch CUDA (build GPU, volumineux)…")
     subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
                      "torch", "torchvision"])
     sh([sys.executable, "-m", "pip", "install", "--no-cache-dir",
-        "torch==2.3.0", "torchvision==0.18.0", "--index-url", CU121])
+        *_torch_install_args()])
 
 
 def pin_numpy():
