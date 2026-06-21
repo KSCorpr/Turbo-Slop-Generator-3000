@@ -44,7 +44,7 @@ echo [3/4] Telechargement du moteur stable-diffusion.cpp (CUDA)...
 "%PY%" scripts\get_sdcpp.py --variant cuda || goto :error
 
 echo [4/4] Dossiers utilisateur...
-"%PY%" -c "from atelier import settings; settings.ensure_dirs()"
+for %%d in (models loras outputs tmp userdata) do if not exist "%%d" md "%%d"
 
 echo.
 echo ============================================================

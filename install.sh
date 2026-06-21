@@ -30,7 +30,7 @@ echo "[3/4] Telechargement du moteur stable-diffusion.cpp (CUDA)..."
 python scripts/get_sdcpp.py --variant cuda
 
 echo "[4/4] Dossiers utilisateur..."
-python -c "from atelier import settings; settings.ensure_dirs()"
+mkdir -p models loras outputs tmp userdata
 
 echo
 echo "============================================================"
