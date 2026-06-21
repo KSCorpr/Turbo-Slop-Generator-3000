@@ -40,44 +40,11 @@ base_models:
       width: 1024
       height: 1024
       supports_negative: false
+    presets:
+      - {name: "⚡ Rapide (recommandé)", sampler: res_multistep, scheduler: simple, steps: 8,  cfg_scale: 1.0}
+      - {name: "Net (euler · sgm)",       sampler: euler,         scheduler: sgm_uniform, steps: 9,  cfg_scale: 1.0}
+      - {name: "Détail (dpm++ 2M)",       sampler: dpm++2m,       scheduler: simple, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 6
-
-  # --------------------------------------------------------------------------
-  - id: ideogram-4
-    name: "Ideogram 4"
-    family: ideogram
-    tags: [qualité, typographie, affiches]
-    description: >
-      Modèle haut de gamme, excellent en composition et en texte dans l'image.
-      Plus lourd (encodeur Qwen3-VL-8B). Conseillé à partir de ~10 Go de VRAM.
-    sources:
-      # Le dépôt leejet/ideogram-4-GGUF ne propose qu'un seul quant : Q4_0
-      # (diffusion + uncond, ~5,6 Go chacun). On pointe dessus directement.
-      diffusion:
-        repo: leejet/ideogram-4-GGUF
-        match: "ideogram4-Q4_0.gguf"
-      uncond:
-        repo: leejet/ideogram-4-GGUF
-        match: "ideogram4_uncond-Q4_0.gguf"
-      vae:
-        repo: Comfy-Org/Ideogram-4
-        match: "vae/*.safetensors"
-      text_encoder:
-        # Encodeur vision-langage ; on ne prend que la partie texte (pas le mmproj).
-        repo: unsloth/Qwen3-VL-8B-Instruct-1M-GGUF
-        match: "*{enc_quant}.gguf"
-        quantizable: true
-    defaults:
-      # Doc officielle : guidance ~7.0, ~20 pas (preset V4_DEFAULT_20),
-      # sampler Euler (flow-matching). CFG asymétrique = pas de prompt négatif.
-      steps: 20
-      cfg_scale: 7.0
-      sampler: euler
-      scheduler: auto
-      width: 1024
-      height: 1024
-      supports_negative: false
-    vram_min_gb: 10
 
   # --------------------------------------------------------------------------
   - id: flux2-klein-9b
@@ -109,6 +76,10 @@ base_models:
       width: 1024
       height: 1024
       supports_negative: false
+    presets:
+      - {name: "⚡ Rapide (recommandé)", sampler: euler,         scheduler: simple, steps: 4,  cfg_scale: 1.0}
+      - {name: "Équilibré (res ms)",     sampler: res_multistep, scheduler: simple, steps: 6,  cfg_scale: 1.0}
+      - {name: "Qualité (dpm++ 2M)",     sampler: dpm++2m,       scheduler: simple, steps: 10, cfg_scale: 1.0}
     vram_min_gb: 10
 
 # ============================================================================

@@ -51,6 +51,7 @@ class BaseModel:
     components: list[Component]
     defaults: dict[str, Any]
     vram_min_gb: float
+    presets: list[dict] = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -101,6 +102,7 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),
             components=comps, defaults=m.get("defaults", {}),
             vram_min_gb=float(m.get("vram_min_gb", 0)),
+            presets=m.get("presets", []),
         ))
     return out
 

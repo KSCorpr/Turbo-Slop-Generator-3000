@@ -83,8 +83,6 @@ def build_app() -> gr.Blocks:
                                  tabs=tabs, pending_upscale=pending_upscale)
             build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B",
                                  tabs=tabs, pending_upscale=pending_upscale)
-            build_generative_tab("ideogram-4", "🖋️ Ideogram 4", is_ideogram=True,
-                                 tabs=tabs, pending_upscale=pending_upscale)
             build_library_tab()
             upscale_input = build_upscale_tab(tab_id="upscale")
             build_creative_tab()

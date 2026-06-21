@@ -73,6 +73,11 @@ def _defaults(model_id: str) -> dict:
     return m.defaults if m else {}
 
 
+def _presets(model_id: str) -> list[dict]:
+    m = registry.get_base_model(model_id, settings.load_prefs())
+    return list(m.presets) if (m and m.presets) else []
+
+
 def _ratio_label(w: int, h: int) -> str:
     """Libellé de format correspondant à une résolution, sinon « Personnalisé »."""
     for label, (rw, rh) in RATIOS.items():
@@ -178,6 +183,12 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                                       label="Étapes")
                     cfg = gr.Slider(1.0, 12.0, value=d.get("cfg_scale", 1.0),
                                     step=0.1, label="CFG")
+                preset_list = _presets(model_id)
+                preset = gr.Dropdown(
+                    [p["name"] for p in preset_list],
+                    value=(preset_list[0]["name"] if preset_list else None),
+                    label="Préréglage (sampler/scheduler/pas)",
+                    visible=bool(preset_list))
                 with gr.Row():
                     sampler = gr.Dropdown(SAMPLERS, value=d.get("sampler", "euler"),
                                           label="Sampler")
@@ -232,6 +243,19 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
             return gr.update(value=w), gr.update(value=h)
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
+
+        if preset_list:
+            def apply_preset(name):
+                for p in preset_list:
+                    if p["name"] == name:
+                        return (gr.update(value=p.get("sampler", "euler")),
+                                gr.update(value=p.get("scheduler", "auto")),
+                                gr.update(value=int(p.get("steps", 8))),
+                                gr.update(value=float(p.get("cfg_scale", 1.0))))
+                return gr.update(), gr.update(), gr.update(), gr.update()
+
+            preset.change(apply_preset, inputs=[preset],
+                          outputs=[sampler, schedule, steps, cfg])
 
         if is_ideogram:
             def build_ideogram(boxes_json, mode, hl, aes, light, med, style,
