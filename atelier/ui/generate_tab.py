@@ -8,7 +8,7 @@ import re
 
 import gradio as gr
 
-from .. import registry, settings
+from .. import registry, settings, styles
 from ..engine import generate as gen_engine
 
 # (libellé affiché, valeur réelle sd-cli). Samplers supportés par sd.cpp.
@@ -79,6 +79,17 @@ def build_generative_tab(model_id: str, title: str,
                         label="Appliqué en tête de chaque génération", lines=2,
                         placeholder="ex. : style aquarelle, palette pastel, "
                                     "éclairage doux")
+                    with gr.Row():
+                        style_pick = gr.Dropdown(
+                            styles.list_styles(), value=None, scale=3,
+                            label="Styles enregistrés", allow_custom_value=False)
+                        style_name = gr.Textbox(
+                            label="Nom du style à enregistrer", scale=2,
+                            placeholder="ex. : Aquarelle pastel")
+                    with gr.Row():
+                        style_save = gr.Button("💾 Enregistrer", size="sm")
+                        style_del = gr.Button("🗑️ Supprimer", size="sm")
+                        style_refresh = gr.Button("↻ Rafraîchir", size="sm")
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
@@ -210,6 +221,35 @@ def build_generative_tab(model_id: str, title: str,
 
         refresh_custom.click(_refresh_custom,
                              outputs=[custom_diff, custom_vae, custom_enc])
+
+        # --- Styles enregistrés (prompt système) ---
+        def _load_style(name):
+            return gr.update(value=styles.get_style(name))
+
+        style_pick.change(_load_style, inputs=[style_pick],
+                          outputs=[system_prompt])
+
+        def _save_style(name, text):
+            try:
+                saved = styles.save_style(name, text)
+            except ValueError as exc:
+                raise gr.Error(str(exc))
+            return (gr.update(choices=styles.list_styles(), value=saved),
+                    gr.update(value=""))
+
+        style_save.click(_save_style, inputs=[style_name, system_prompt],
+                         outputs=[style_pick, style_name])
+
+        def _delete_style(name):
+            styles.delete_style(name)
+            return gr.update(choices=styles.list_styles(), value=None)
+
+        style_del.click(_delete_style, inputs=[style_pick], outputs=[style_pick])
+
+        def _refresh_styles():
+            return gr.update(choices=styles.list_styles())
+
+        style_refresh.click(_refresh_styles, outputs=[style_pick])
 
         if cn is not None:
             def _install_cn():
