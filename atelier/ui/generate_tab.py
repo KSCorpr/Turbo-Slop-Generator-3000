@@ -1,9 +1,5 @@
-"""Onglets de génération, un par modèle (sections séparées Z-Image / Ideogram).
-
-`build_generative_tab(model_id, title, is_ideogram)` construit un onglet complet
-text-to-image / image-to-image pour UN modèle donné. Pour Ideogram 4, un canvas
-de composition permet de dessiner les boîtes (objets/texte) et de fabriquer le
-prompt JSON structuré.
+"""Onglet de génération (un par modèle) : text-to-image / image-to-image,
+presets sampler/scheduler, LoRA, fichiers locaux, envoi vers l'upscale.
 """
 from __future__ import annotations
 
@@ -12,47 +8,24 @@ import re
 
 import gradio as gr
 
-from .. import downloader, ideogram_prompt, registry, settings
+from .. import registry, settings
 from ..engine import generate as gen_engine
-from .canvas import CANVAS_MARKUP, READ_BOXES_JS
 
-TURBO_LORA_REPO = "ostris/ideogram_4_turbotime_lora"
-UNCOND_LORA_REPO = "ostris/ideogram_4_unconditional_lora"
-
-# (libellé affiché, valeur réelle passée à sd-cli). Liste complète des
-# sampling methods réellement supportées par stable-diffusion.cpp.
+# (libellé affiché, valeur réelle sd-cli). Samplers supportés par sd.cpp.
 SAMPLERS = [
-    ("Euler", "euler"),
-    ("Euler Ancestral", "euler_a"),
-    ("Heun", "heun"),
-    ("DPM2", "dpm2"),
-    ("DPM++ 2S Ancestral", "dpm++2s_a"),
-    ("DPM++ 2M", "dpm++2m"),
-    ("DPM++ 2M v2", "dpm++2mv2"),
-    ("iPNDM", "ipndm"),
-    ("iPNDM v", "ipndm_v"),
-    ("LCM", "lcm"),
-    ("DDIM Trailing", "ddim_trailing"),
-    ("TCD", "tcd"),
-    ("Res Multistep", "res_multistep"),
-    ("Res 2S", "res_2s"),
-    ("ER SDE", "er_sde"),
-    ("Euler CFG++", "euler_cfg_pp"),
-    ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
+    ("Euler", "euler"), ("Euler Ancestral", "euler_a"), ("Heun", "heun"),
+    ("DPM2", "dpm2"), ("DPM++ 2S Ancestral", "dpm++2s_a"), ("DPM++ 2M", "dpm++2m"),
+    ("DPM++ 2M v2", "dpm++2mv2"), ("iPNDM", "ipndm"), ("iPNDM v", "ipndm_v"),
+    ("LCM", "lcm"), ("DDIM Trailing", "ddim_trailing"), ("TCD", "tcd"),
+    ("Res Multistep", "res_multistep"), ("Res 2S", "res_2s"), ("ER SDE", "er_sde"),
+    ("Euler CFG++", "euler_cfg_pp"), ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
 ]
-# Schedulers (sigmas) réellement supportés par stable-diffusion.cpp.
+# Schedulers (sigmas) supportés par sd.cpp.
 SCHEDULES = [
-    ("Auto (modèle)", "auto"),
-    ("Discrete", "discrete"),
-    ("Karras", "karras"),
-    ("Exponential", "exponential"),
-    ("AYS", "ays"),
-    ("GITS", "gits"),
-    ("Smoothstep", "smoothstep"),
-    ("SGM Uniform", "sgm_uniform"),
-    ("Simple", "simple"),
-    ("KL Optimal", "kl_optimal"),
-    ("LCM", "lcm"),
+    ("Auto (modèle)", "auto"), ("Discrete", "discrete"), ("Karras", "karras"),
+    ("Exponential", "exponential"), ("AYS", "ays"), ("GITS", "gits"),
+    ("Smoothstep", "smoothstep"), ("SGM Uniform", "sgm_uniform"),
+    ("Simple", "simple"), ("KL Optimal", "kl_optimal"), ("LCM", "lcm"),
     ("Bong Tangent", "bong_tangent"),
 ]
 RATIOS: dict[str, tuple[int, int]] = {
@@ -79,14 +52,13 @@ def _presets(model_id: str) -> list[dict]:
 
 
 def _ratio_label(w: int, h: int) -> str:
-    """Libellé de format correspondant à une résolution, sinon « Personnalisé »."""
     for label, (rw, rh) in RATIOS.items():
         if rw == w and rh == h:
             return label
     return "Personnalisé (sliders)"
 
 
-def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
+def build_generative_tab(model_id: str, title: str,
                          tabs=None, pending_upscale=None, upscale_tab_id="upscale"):
     d = _defaults(model_id)
 
@@ -97,36 +69,6 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                   else "<span class='status-missing'>○ à télécharger "
                        "(onglet Bibliothèque)</span>")
         gr.Markdown(f"### {title} — text-to-image & image-to-image  ·  {status}")
-
-        # ----- Composition visuelle (Ideogram uniquement) -----------------
-        ie_widgets = {}
-        if is_ideogram:
-            with gr.Accordion("🖼️ Composition visuelle — dessinez les zones "
-                              "(canvas)", open=True):
-                gr.HTML(CANVAS_MARKUP)
-                with gr.Row():
-                    ie_mode = gr.Radio(["art_style", "photo"], value="art_style",
-                                       label="Mode")
-                    ie_hl = gr.Textbox(label="Description générale", scale=3)
-                with gr.Row():
-                    ie_aes = gr.Textbox(label="Esthétique")
-                    ie_light = gr.Textbox(label="Lumière")
-                with gr.Row():
-                    ie_med = gr.Textbox(label="Medium")
-                    ie_style = gr.Textbox(label="Style artistique / Photo")
-                ie_bg = gr.Textbox(label="Arrière-plan", lines=2)
-                ie_colors = gr.Textbox(label="Palette globale (#hex)",
-                                       placeholder="#E7C84B, #1B3A5B")
-                boxes_holder = gr.Textbox(visible=False)
-                with gr.Row():
-                    ie_build = gr.Button("🧱 Construire depuis le canvas → Prompt",
-                                         variant="secondary")
-                    ie_text2json = gr.Button("✍️ Convertir le Prompt en JSON "
-                                             "Ideogram", variant="secondary")
-                ie_widgets = dict(mode=ie_mode, hl=ie_hl, aes=ie_aes, light=ie_light,
-                                  med=ie_med, style=ie_style, bg=ie_bg,
-                                  colors=ie_colors, boxes=boxes_holder, build=ie_build,
-                                  text2json=ie_text2json)
 
         with gr.Row():
             # ----- Entrées -----
@@ -161,20 +103,13 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                     with gr.Row():
                         refresh_lora = gr.Button("↻ Rafraîchir la liste", size="sm")
                         clear_lora = gr.Button("✖ Vider les LoRA", size="sm")
-                    if is_ideogram:
-                        with gr.Row():
-                            turbo_lora = gr.Button("⚡ Turbo LoRA (accélère)",
-                                                   size="sm")
-                            uncond_lora = gr.Button("✨ Unconditional LoRA "
-                                                    "(qualité)", size="sm")
                     gr.Markdown(f"Déposez vos fichiers LoRA dans `{settings.LORA_DIR}`")
 
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
                     gr.Markdown(
                         "Pour utiliser un modèle **téléchargé ailleurs** : déposez "
                         f"le(s) fichier(s) dans `{settings.CUSTOM_DIR}` puis "
-                        "sélectionnez-le ci-dessous. Vide = modèle du catalogue. "
-                        "Le VAE/encodeur non remplacés viennent de l'onglet courant.")
+                        "sélectionnez-le ci-dessous. Vide = modèle du catalogue.")
                     custom_diff = gr.Dropdown(gen_engine.list_custom_models(),
                                               value=None, label="Diffusion (local)")
                     with gr.Row():
@@ -214,9 +149,6 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                 flow_shift = gr.Slider(
                     0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
                     label="Flow shift (0 = auto · ~3 = + de structure)")
-                if is_ideogram:
-                    quality_preset = gr.Button("🎯 Préréglage Qualité "
-                                               "(DPM++ 2M · 28 pas)", size="sm")
                 with gr.Row():
                     seed = gr.Number(value=-1, label="Seed (-1 = aléatoire)",
                                      precision=0)
@@ -230,9 +162,8 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                                      height=680, object_fit="contain",
                                      show_label=True, format="png",
                                      show_download_button=True)
-                with gr.Row():
-                    send_upscale = gr.Button("📤 Envoyer l'image sélectionnée "
-                                             "vers l'Upscale")
+                send_upscale = gr.Button("📤 Envoyer l'image sélectionnée "
+                                         "vers l'Upscale")
                 logbox = gr.Textbox(label="Journal", lines=12, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
 
@@ -280,41 +211,6 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        if is_ideogram:
-            def build_ideogram(boxes_json, mode, hl, aes, light, med, style,
-                               bg, colors):
-                rows = ideogram_prompt.boxes_json_to_rows(boxes_json)
-                js = ideogram_prompt.build_prompt(mode, hl, aes, light, med, style,
-                                                  bg, colors, rows)
-                return gr.update(value=js)
-
-            ie_widgets["build"].click(
-                build_ideogram,
-                inputs=[ie_widgets["boxes"], ie_widgets["mode"], ie_widgets["hl"],
-                        ie_widgets["aes"], ie_widgets["light"], ie_widgets["med"],
-                        ie_widgets["style"], ie_widgets["bg"], ie_widgets["colors"]],
-                outputs=[prompt],
-                js=READ_BOXES_JS,
-            )
-
-            def text_to_json(plain, mode, aes, light, med, style, colors):
-                # Convertit un prompt classique en JSON Ideogram (format
-                # d'entraînement) : le texte devient la description générale.
-                if not (plain or "").strip():
-                    raise gr.Error("Écrivez d'abord un prompt classique.")
-                js = ideogram_prompt.build_prompt(
-                    mode, high_level=plain, aesthetics=aes, lighting=light,
-                    medium=med, style_or_photo=style, background="",
-                    global_colors=colors, element_rows=[])
-                return gr.update(value=js)
-
-            ie_widgets["text2json"].click(
-                text_to_json,
-                inputs=[prompt, ie_widgets["mode"], ie_widgets["aes"],
-                        ie_widgets["light"], ie_widgets["med"],
-                        ie_widgets["style"], ie_widgets["colors"]],
-                outputs=[prompt])
-
         def do_generate(system_prompt, prompt, negative, init_image, strength,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
@@ -323,12 +219,10 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
             if not (prompt or "").strip() and init_image is None:
                 raise gr.Error("Saisissez un prompt (ou une image de départ).")
 
-            # Prompt système appliqué en préfixe (style réutilisable).
             full_prompt = prompt or ""
             if (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")
 
-            # Seed concrète : on la fixe nous-mêmes pour pouvoir l'afficher.
             base_seed = int(seed)
             if base_seed < 0:
                 base_seed = random.randint(0, 2**31 - 1)
@@ -371,7 +265,6 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                 return [], "\n".join(logs), []
             progress(1.0, desc="Terminé")
             paths = [str(p) for p in outs]
-            # sd-cli incrémente la seed par image (base, base+1, …) -> légendes.
             items = [(p, f"seed {base_seed + i}") for i, p in enumerate(paths)]
             return items, "\n".join(logs), paths
 
@@ -384,18 +277,11 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
             outputs=[gallery, logbox, last_paths],
         )
 
-        if is_ideogram:
-            quality_preset.click(
-                lambda: (gr.update(value="dpm++2m"), gr.update(value=28)),
-                outputs=[sampler, steps])
-
-        # Suivi de l'image sélectionnée dans la galerie.
         def _on_select(evt: gr.SelectData):
             return evt.index
 
         gallery.select(_on_select, outputs=[sel_index])
 
-        # Envoi vers l'onglet Upscale (si câblé par app.py).
         if pending_upscale is not None and tabs is not None:
             def _send(paths, idx):
                 if not paths:
@@ -407,19 +293,3 @@ def build_generative_tab(model_id: str, title: str, is_ideogram: bool = False,
                                outputs=[pending_upscale, tabs])
         else:
             send_upscale.visible = False
-
-        # Turbo LoRA Ideogram : télécharge ostris/ideogram_4_turbotime_lora et
-        # l'active (réduit fortement le nombre d'étapes).
-        if is_ideogram:
-            def _enable_lora(repo, new_steps):
-                try:
-                    name = downloader.download_lora(repo)
-                except Exception as exc:  # noqa: BLE001
-                    raise gr.Error(f"Échec du téléchargement du LoRA : {exc}")
-                return (gr.update(choices=gen_engine.list_loras(), value=name),
-                        gr.update(value=1.0), gr.update(value=new_steps))
-
-            turbo_lora.click(lambda: _enable_lora(TURBO_LORA_REPO, 8),
-                             outputs=[lora1, lora1_w, steps])
-            uncond_lora.click(lambda: _enable_lora(UNCOND_LORA_REPO, 20),
-                              outputs=[lora1, lora1_w, steps])

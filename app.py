@@ -35,7 +35,6 @@ def _patch_gradio_client() -> None:
 _patch_gradio_client()
 
 from atelier import APP_NAME, __version__, hardware, net, settings
-from atelier.ui.canvas import CANVAS_JS
 from atelier.ui.creative_tab import build_creative_tab
 from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
@@ -43,15 +42,13 @@ from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.upscale_tab import build_upscale_tab
 
-# Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS,
-# et injecte le JS du canvas de composition (gr.HTML ne peut pas exécuter de JS).
+# Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS.
 _HEAD = (
     "<script>"
     "if(!new URLSearchParams(window.location.search).has('__theme')){"
     "const u=new URL(window.location);u.searchParams.set('__theme','light');"
     "window.location.replace(u);}"
     "</script>"
-    f"<script>{CANVAS_JS}</script>"
 )
 
 
