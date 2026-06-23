@@ -57,8 +57,11 @@ def build_library_tab():
         def refresh_cards():
             p = settings.load_prefs()
             r = registry.recommend(p)
-            return [gr.update(value=_card_md(m, r))
-                    for m in registry.load_base_models(p)]
+            ups = [gr.update(value=_card_md(m, r))
+                   for m in registry.load_base_models(p)]
+            # Avec une seule carte, Gradio attend une valeur unique (pas une
+            # liste), sinon la liste est passée telle quelle au Markdown.
+            return ups[0] if len(ups) == 1 else ups
 
         refresh.click(refresh_cards, outputs=cards)
 
