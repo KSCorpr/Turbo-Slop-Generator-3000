@@ -95,10 +95,15 @@ def build_generative_tab(model_id: str, title: str,
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
                                       visible=d.get("supports_negative", False))
 
-                with gr.Accordion("🖼️ Image de départ (image-to-image)", open=False):
-                    init_image = gr.Image(label="Source", type="pil", height=300)
-                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
-                                         label="Force de transformation")
+                with gr.Accordion("🖼️ Image de référence (édition d'image)",
+                                  open=False):
+                    gr.Markdown(
+                        "Flux.2 est un modèle d'**édition** : fournissez une image "
+                        "et décrivez la modification dans le prompt (ex. *« change "
+                        "la couleur de la voiture en rouge »*). L'édition est "
+                        "pilotée par le prompt (pas de curseur de force).")
+                    init_image = gr.Image(label="Image à éditer", type="pil",
+                                          height=300)
 
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():
@@ -256,7 +261,7 @@ def build_generative_tab(model_id: str, title: str,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        def do_generate(system_prompt, prompt, negative, init_image, strength,
+        def do_generate(system_prompt, prompt, negative, init_image,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc,
@@ -265,8 +270,9 @@ def build_generative_tab(model_id: str, title: str,
             import threading
             import time
 
-            if not (prompt or "").strip() and init_image is None:
-                raise gr.Error("Saisissez un prompt (ou une image de départ).")
+            if not (prompt or "").strip():
+                raise gr.Error("Saisissez un prompt "
+                               "(décrivez l'image, ou la modification à appliquer).")
 
             full_prompt = prompt or ""
             if (system_prompt or "").strip():
@@ -277,10 +283,10 @@ def build_generative_tab(model_id: str, title: str,
                 base_seed = random.randint(0, 2**31 - 1)
 
             settings.ensure_dirs()
-            init_path = None
+            ref_path = None
             if init_image is not None:
-                init_path = settings.TMP_DIR / "i2i_init.png"
-                init_image.save(init_path)
+                ref_path = settings.TMP_DIR / "edit_ref.png"
+                init_image.save(ref_path)
 
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
@@ -304,7 +310,7 @@ def build_generative_tab(model_id: str, title: str,
                         cfg_scale=float(cfg), width=int(width), height=int(height),
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
                         schedule=schedule, flow_shift=float(flow_shift or 0.0),
-                        init_image=init_path, strength=float(strength), loras=loras,
+                        ref_image=ref_path, loras=loras,
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
@@ -367,7 +373,7 @@ def build_generative_tab(model_id: str, title: str,
 
         gen_evt = run.click(
             do_generate,
-            inputs=[system_prompt, prompt, negative, init_image, strength, width,
+            inputs=[system_prompt, prompt, negative, init_image, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc],

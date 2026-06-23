@@ -59,8 +59,9 @@ class GenRequest:
     height: int = 1024
     seed: int = -1
     batch_count: int = 1
-    init_image: Path | None = None
+    init_image: Path | None = None     # img2img classique (-i + --strength)
     strength: float = 0.6
+    ref_image: Path | None = None      # édition (-r / --ref-image, Flux.2)
     lora_dir: Path | None = None       # --lora-model-dir
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)
     flags: dict[str, bool] = field(default_factory=dict)
@@ -88,7 +89,7 @@ def _require(*paths: Path | None) -> None:
 
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
-             req.t5xxl, req.clip_l, req.uncond_model, req.init_image)
+             req.t5xxl, req.clip_l, req.uncond_model, req.init_image, req.ref_image)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
     if req.model_path:
@@ -127,6 +128,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--flow-shift", f"{req.flow_shift}"]
     if req.init_image:
         cmd += ["-i", str(req.init_image), "--strength", f"{req.strength}"]
+    if req.ref_image:
+        # Édition d'image (Flux.2 / Kontext) : pilotée par le prompt, sans strength.
+        cmd += ["-r", str(req.ref_image)]
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 

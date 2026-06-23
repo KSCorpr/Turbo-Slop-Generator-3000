@@ -111,6 +111,7 @@ def generate(
     flow_shift: float = 0.0,
     init_image: Path | None = None,
     strength: float = 0.6,
+    ref_image: Path | None = None,
     loras: list[tuple[str, float]] | None = None,
     diffusion_override: Path | None = None,
     vae_override: Path | None = None,
@@ -176,7 +177,7 @@ def generate(
         schedule="" if schedule in (None, "", "auto") else schedule,
         flow_shift=float(flow_shift or 0.0),
         width=width, height=height, seed=seed, batch_count=batch_count,
-        init_image=init_image, strength=strength,
+        init_image=init_image, strength=strength, ref_image=ref_image,
         lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
     )

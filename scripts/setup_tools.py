@@ -69,7 +69,7 @@ def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
     ensure_torch_cuda()
     print("Installation de diffusers + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30",
+    sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30,<0.32",
         "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
     print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, ~6,6 Go)…")
