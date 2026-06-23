@@ -102,8 +102,7 @@ def build_generative_tab(model_id: str, title: str,
                         "et décrivez la modification dans le prompt (ex. *« change "
                         "la couleur de la voiture en rouge »*). L'édition est "
                         "pilotée par le prompt (pas de curseur de force).")
-                    init_image = gr.Image(label="Image à éditer", type="pil",
-                                          height=300)
+                    init_image = gr.Image(label="Image à éditer", type="pil")
 
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():

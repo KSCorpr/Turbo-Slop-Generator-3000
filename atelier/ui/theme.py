@@ -50,5 +50,10 @@ CSS = f"""
 .status-ok {{ color:#16a34a; font-weight:600; }}
 .status-missing {{ color:#d97706; font-weight:600; }}
 .log-box textarea {{ font-family: ui-monospace, monospace; font-size:.8rem; }}
+/* Images (upload/preview) : éviter le collapse de largeur sur les ratios non
+   carrés -> l'image s'inscrit en entier dans son cadre. */
+[data-testid="image"] img, .image-frame img, .image-container img {{
+    object-fit: contain !important; width: 100% !important;
+    max-height: 65vh; }}
 footer {{ display:none !important; }}
 """
