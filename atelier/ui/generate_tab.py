@@ -98,14 +98,17 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Accordion("🖼️ Image de référence (édition d'image)",
                                   open=False):
                     gr.Markdown(
-                        "Flux.2 est un modèle d'**édition** : fournissez une image "
-                        "et décrivez la modification dans le prompt (ex. *« change "
-                        "la couleur de la voiture en rouge »*). L'édition est "
-                        "pilotée par le prompt (pas de curseur de force).  \n"
-                        "⏱️ L'édition est **plus lourde** que la génération (l'image "
-                        "de référence ajoute des tokens) → restez sur le preset "
-                        "**⚡ Rapide (4 pas)** et une résolution **≤ 1024** pour que "
-                        "ça reste rapide.")
+                        "**Éditer une image existante.** Chargez une image, puis "
+                        "décrivez **la modification** dans le prompt — inutile de "
+                        "tout redécrire :  \n"
+                        "• *« remplace le ciel par un coucher de soleil »*  \n"
+                        "• *« transforme la voiture en version cyberpunk »*  \n"
+                        "• *« ajoute de la neige au sol »*  \n"
+                        "Le **format de sortie s'adapte automatiquement** à votre "
+                        "image. L'édition est pilotée par le prompt (pas de curseur "
+                        "de force).  \n"
+                        "⏱️ Plus lourde que la génération → restez sur **⚡ Rapide "
+                        "(4 pas)** et une résolution **≤ 1024**.")
                     init_image = gr.Image(label="Image à éditer", type="pil")
 
                 with gr.Accordion("🧩 LoRA", open=False):
@@ -250,6 +253,22 @@ def build_generative_tab(model_id: str, title: str,
             return gr.update(value=w), gr.update(value=h)
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
+
+        def _fit_to_ref(img):
+            """Édition : cale la sortie sur le format de l'image de référence
+            (côté long plafonné à 1024 px pour rester rapide, multiples de 16)."""
+            if img is None:
+                return gr.update(), gr.update(), gr.update()
+            w0, h0 = img.size
+            longest = max(w0, h0) or 1
+            sc = 1024 / longest if longest > 1024 else 1.0
+            w = max(256, min(2048, int(round(w0 * sc / 16)) * 16))
+            h = max(256, min(2048, int(round(h0 * sc / 16)) * 16))
+            return (gr.update(value=w), gr.update(value=h),
+                    gr.update(value="Personnalisé (sliders)"))
+
+        init_image.upload(_fit_to_ref, inputs=[init_image],
+                          outputs=[width, height, ratio])
 
         if preset_list:
             def apply_preset(name):
