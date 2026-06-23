@@ -44,7 +44,7 @@ def install_depth():
     model_dir = settings.ROOT / "tools_repo" / "depth" / "model"
     ensure_torch_cuda()
     print("Installation de transformers…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45", "pillow"])
+    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5", "pillow"])
     print(f"\nTéléchargement du modèle de profondeur ({DEPTH_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
@@ -56,7 +56,7 @@ def install_bg():
     model_dir = settings.ROOT / "tools_repo" / "bg" / "model"
     ensure_torch_cuda()
     print("Installation de transformers…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45",
+    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5",
         "scikit-image", "pillow"])
     print(f"\nTéléchargement du modèle de suppression d'arrière-plan ({BG_REPO})…")
     from huggingface_hub import snapshot_download
@@ -70,7 +70,7 @@ def install_upscale():
     ensure_torch_cuda()
     print("Installation de diffusers + accelerate…")
     sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30",
-        "transformers>=4.45", "accelerate", "safetensors", "omegaconf", "pillow"])
+        "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
     print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, ~6,6 Go)…")
     hf_hub_download(repo_id=SDXL_REPO, filename=SDXL_FILE, local_dir=str(base))
