@@ -17,8 +17,9 @@ def build_creative_tab(tab_id="creative"):
             "**SDXL + ControlNet Tile** : ré-invente le détail par tuiles, "
             "ancrées sur l'image agrandie → tuiles cohérentes, **fondu sans "
             "couture**. Le curseur *Créativité* dose le détail ajouté.\n\n"
-            "> ⚠️ Offload CPU activé pour tenir sur 11–12 Go : robuste mais "
-            "**lent** (chaque tuile = une passe SDXL). ×2 = 4 tuiles, ×4 = 16.")
+            "> ⚠️ Chaque tuile = une passe SDXL → c'est **lent** (le modèle reste "
+            "sur le GPU si la VRAM le permet, sinon offload CPU). **×2 conseillé** ; "
+            "×4/×8 = beaucoup de tuiles. Sortie plafonnée à 4096 px.")
 
         with gr.Accordion("⚙️ Installer l'upscale créatif (en 1 clic)",
                           open=not tools.upscale_is_installed()):
@@ -52,10 +53,13 @@ def build_creative_tab(tab_id="creative"):
                     "<small>Pas assez de détail / trop flou ? **Baissez la "
                     "fidélité** (≈0,4) et **montez la créativité** (≈0,5). Trop de "
                     "dérive ? L'inverse.</small>")
-                run = gr.Button("✨ Upscaler", variant="primary", size="lg")
+                with gr.Row():
+                    run = gr.Button("✨ Upscaler", variant="primary",
+                                    size="lg", scale=3)
+                    stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
             with gr.Column(scale=4):
-                result = gr.Image(label="Résultat", height=620, format="png",
-                                  show_download_button=True)
+                result = gr.Image(label="Aperçu (résolution complète dans outputs/)",
+                                  height=620, format="png", show_download_button=True)
                 logbox = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                     elem_classes="log-box")
 
@@ -74,9 +78,26 @@ def build_creative_tab(tab_id="creative"):
                 logs.append(f"\n[ERREUR] {exc}")
                 return None, "\n".join(logs)
             progress(1.0, desc="Terminé")
-            return str(out), "\n".join(logs)
+            # Aperçu RÉDUIT pour l'affichage : servir une image énorme via Gradio
+            # déclenche un bug HTTP (Content-Length). La pleine résolution est
+            # enregistrée dans outputs/.
+            from PIL import Image as _PILImage
+            try:
+                im = _PILImage.open(out)
+                logs.append(f"\n✅ Image pleine résolution ({im.width}x{im.height}) "
+                            f"enregistrée : {out}")
+                disp = im
+                if max(im.size) > 1600:
+                    r = 1600 / max(im.size)
+                    disp = im.resize((max(1, int(im.width * r)),
+                                      max(1, int(im.height * r))))
+                return disp, "\n".join(logs)
+            except Exception:  # noqa: BLE001
+                return str(out), "\n".join(logs)
 
-        run.click(do_creative, inputs=[image, scale, creativity, cn_scale, prompt],
-                  outputs=[result, logbox])
+        evt = run.click(do_creative,
+                        inputs=[image, scale, creativity, cn_scale, prompt],
+                        outputs=[result, logbox])
+        stop.click(lambda: tools.cancel(), outputs=None, cancels=[evt])
 
     return image

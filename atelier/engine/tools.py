@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -22,6 +23,27 @@ BG_MODEL_DIR = TOOLS_DIR / "bg" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
+
+# Registre des sous-process d'outils en cours (pour le bouton « Annuler »).
+_ACTIVE: set[subprocess.Popen] = set()
+_LOCK = threading.Lock()
+_CANCELLED = False
+
+
+def cancel() -> str:
+    """Termine le(s) sous-process d'outil en cours (upscale, etc.)."""
+    global _CANCELLED
+    with _LOCK:
+        procs = list(_ACTIVE)
+    if not procs:
+        return "Aucune tâche en cours."
+    _CANCELLED = True
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+    return "⏹️ Tâche annulée."
 
 
 class ToolError(RuntimeError):
@@ -102,20 +124,31 @@ def _to_src(image: Image.Image | str | Path, prefix: str) -> Path:
 
 def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
               err_msg: str) -> None:
+    global _CANCELLED
     env = dict(os.environ)
     gi = _gpu_index()
     if gi is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gi)
     if log:
         log("$ " + " ".join(cmd))
+    _CANCELLED = False
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1, cwd=str(settings.ROOT), env=env,
                             encoding="utf-8", errors="replace")
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if log:
-            log(line.rstrip("\n"))
-    if proc.wait() != 0:
+    with _LOCK:
+        _ACTIVE.add(proc)
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            if log:
+                log(line.rstrip("\n"))
+        code = proc.wait()
+    finally:
+        with _LOCK:
+            _ACTIVE.discard(proc)
+    if _CANCELLED:
+        raise ToolError("Annulé par l'utilisateur.")
+    if code != 0:
         raise ToolError(err_msg)
 
 

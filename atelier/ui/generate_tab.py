@@ -139,8 +139,11 @@ def build_generative_tab(model_id: str, title: str,
                                                  value=None, label="VAE (local)")
                         custom_enc = gr.Dropdown(gen_engine.list_custom_models(),
                                                  value=None, label="Encodeur (local)")
-                    refresh_custom = gr.Button("↻ Rafraîchir les fichiers locaux",
-                                               size="sm")
+                    with gr.Row():
+                        refresh_custom = gr.Button("↻ Rafraîchir les fichiers locaux",
+                                                   size="sm")
+                        clear_custom = gr.Button("✖ Vider les champs perso",
+                                                 size="sm")
 
                 ratio = gr.Dropdown(list(RATIOS.keys()),
                                     value=_ratio_label(d.get("width", 1024),
@@ -216,6 +219,12 @@ def build_generative_tab(model_id: str, title: str,
 
         refresh_custom.click(_refresh_custom,
                              outputs=[custom_diff, custom_vae, custom_enc])
+
+        def _clear_custom():
+            return gr.update(value=None), gr.update(value=None), gr.update(value=None)
+
+        clear_custom.click(_clear_custom,
+                           outputs=[custom_diff, custom_vae, custom_enc])
 
         # --- Styles enregistrés (prompt système) ---
         def _load_style(name):

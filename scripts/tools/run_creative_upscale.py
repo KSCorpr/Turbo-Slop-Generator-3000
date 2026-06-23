@@ -40,7 +40,7 @@ def main():
     ap.add_argument("--scale", type=int, default=2)
     ap.add_argument("--creativity", type=float, default=0.35)  # strength img2img
     ap.add_argument("--cn-scale", type=float, default=0.6)
-    ap.add_argument("--steps", type=int, default=30)
+    ap.add_argument("--steps", type=int, default=24)
     ap.add_argument("--cfg", type=float, default=5.0)
     ap.add_argument("--prompt", default="")
     ap.add_argument("--tile", type=int, default=1024)   # résolution native SDXL
@@ -95,6 +95,14 @@ def main():
     img = Image.open(args.input).convert("RGB")
     tw = max(512, int(round(img.width * args.scale / 8)) * 8)
     th = max(512, int(round(img.height * args.scale / 8)) * 8)
+    # Plafond : au-delà, le nombre de tuiles (donc le temps) et la taille du
+    # fichier explosent. On limite le côté long à 4096 px.
+    cap = 4096
+    if max(tw, th) > cap:
+        r = cap / max(tw, th)
+        tw = max(512, int(round(tw * r / 8)) * 8)
+        th = max(512, int(round(th * r / 8)) * 8)
+        print(f"[upscale] cible plafonnée à {tw}x{th} (max {cap}px).", flush=True)
     print(f"[upscale] {img.width}x{img.height} -> {tw}x{th} (Lanczos puis raffinage)…",
           flush=True)
     # Pré-agrandissement + léger affinage : donne des bords nets au ControlNet
