@@ -43,13 +43,13 @@ def main():
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--cfg", type=float, default=5.0)
     ap.add_argument("--prompt", default="")
-    ap.add_argument("--tile", type=int, default=1024)
-    ap.add_argument("--overlap", type=int, default=256)
+    ap.add_argument("--tile", type=int, default=1024)   # résolution native SDXL
+    ap.add_argument("--overlap", type=int, default=160)
     args = ap.parse_args()
 
     import numpy as np
     import torch
-    from PIL import Image
+    from PIL import Image, ImageFilter
     try:
         from diffusers import (AutoencoderKL, ControlNetModel,
                                DPMSolverMultistepScheduler,
@@ -70,24 +70,40 @@ def main():
         pipe.scheduler.config, use_karras_sigmas=True)
     pipe.set_progress_bar_config(disable=True)
     if torch.cuda.is_available():
-        # Offload CPU : un seul module sur le GPU à la fois -> VRAM mini.
-        pipe.enable_model_cpu_offload()
         try:
             pipe.enable_vae_tiling()
         except Exception:  # noqa: BLE001
             pass
+        free, _ = torch.cuda.mem_get_info()
+        if free >= int(9.5 * 1024 ** 3):
+            # Assez de VRAM libre -> modèle résident sur le GPU (BIEN plus rapide :
+            # pas de rechargement par tuile).
+            pipe.to("cuda")
+            print(f"[upscale] VRAM libre {free/1e9:.1f} Go -> modèle résident GPU "
+                  "(rapide).", flush=True)
+        else:
+            # VRAM serrée -> offload CPU (un module à la fois, plus lent).
+            pipe.enable_model_cpu_offload()
+            print(f"[upscale] VRAM libre {free/1e9:.1f} Go -> offload CPU "
+                  "(plus lent).", flush=True)
 
-    prompt = args.prompt or ("high quality, sharp focus, intricate details, "
-                             "photorealistic, masterpiece")
-    negative = ("blurry, low quality, jpeg artifacts, oversaturated, "
-                "deformed, oversmooth")
+    prompt = args.prompt or ("high quality, sharp focus, fine intricate details, "
+                             "crisp textures, photorealistic, 8k, masterpiece")
+    negative = ("blurry, soft, low quality, jpeg artifacts, oversaturated, "
+                "deformed, oversmooth, plastic")
 
     img = Image.open(args.input).convert("RGB")
     tw = max(512, int(round(img.width * args.scale / 8)) * 8)
     th = max(512, int(round(img.height * args.scale / 8)) * 8)
     print(f"[upscale] {img.width}x{img.height} -> {tw}x{th} (Lanczos puis raffinage)…",
           flush=True)
-    base = img.resize((tw, th), Image.LANCZOS)
+    # Pré-agrandissement + léger affinage : donne des bords nets au ControlNet
+    # (qui sinon reproduit le flou du Lanczos).
+    base = img.resize((tw, th), Image.LANCZOS).filter(
+        ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
+
+    def _sharpen(im):
+        return im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
 
     common = dict(prompt=prompt, negative_prompt=negative,
                   num_inference_steps=int(args.steps), strength=float(args.creativity),
@@ -104,7 +120,7 @@ def main():
     # Petite cible -> une seule passe.
     if max(tw, th) <= args.tile:
         print("[upscale] raffinage en 1 passe…", flush=True)
-        res = refine(base).resize((tw, th))
+        res = _sharpen(refine(base).resize((tw, th)))
         res.save(dest)
         print(f"[upscale] image écrite : {dest}", flush=True)
         return
@@ -134,7 +150,7 @@ def main():
             wsum[y1:y2, x1:x2] += mask
 
     final = (acc / np.clip(wsum, 1e-6, None)).clip(0, 255).astype("uint8")
-    Image.fromarray(final).save(dest)
+    _sharpen(Image.fromarray(final)).save(dest)
     print(f"[upscale] image écrite : {dest}", flush=True)
 
 

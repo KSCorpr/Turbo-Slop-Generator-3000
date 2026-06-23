@@ -41,13 +41,17 @@ def build_creative_tab(tab_id="creative"):
                 image = gr.Image(label="Image à agrandir", type="pil", height=380)
                 scale = gr.Radio([2, 4, 8], value=2,
                                  label="Facteur (×8 = très long, beaucoup de tuiles)")
-                creativity = gr.Slider(0.15, 0.6, value=0.35, step=0.05,
-                                       label="Créativité (détail ajouté / dérive)")
-                cn_scale = gr.Slider(0.3, 1.0, value=0.6, step=0.05,
-                                     label="Fidélité à l'original (ControlNet Tile)")
+                creativity = gr.Slider(0.15, 0.7, value=0.4, step=0.05,
+                                       label="Créativité (détail inventé — ↑ = plus)")
+                cn_scale = gr.Slider(0.2, 1.0, value=0.5, step=0.05,
+                                     label="Fidélité à l'original (↓ = plus de détail inventé)")
                 prompt = gr.Textbox(
                     label="Prompt (optionnel — guide le détail)", lines=2,
                     placeholder="highly detailed, sharp focus, intricate details")
+                gr.Markdown(
+                    "<small>Pas assez de détail / trop flou ? **Baissez la "
+                    "fidélité** (≈0,4) et **montez la créativité** (≈0,5). Trop de "
+                    "dérive ? L'inverse.</small>")
                 run = gr.Button("✨ Upscaler", variant="primary", size="lg")
             with gr.Column(scale=4):
                 result = gr.Image(label="Résultat", height=620, format="png",
