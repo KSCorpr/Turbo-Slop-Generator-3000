@@ -70,18 +70,18 @@ def main():
         pipe.scheduler.config, use_karras_sigmas=True)
     pipe.set_progress_bar_config(disable=True)
     if torch.cuda.is_available():
-        # GPU EXCLUSIF : tous les modules sur le GPU, AUCUN offload CPU. L'attention
-        # slicing + le VAE tiling gardent le pic mémoire bas (~8 Go) pour tenir sur
-        # 11-12 Go. (Si OOM -> message clair, voir refine().)
+        # GPU EXCLUSIF : tous les modules sur le GPU, AUCUN offload CPU. On garde
+        # l'attention RAPIDE (SDPA, défaut de diffusers/torch 2.x) — PAS de
+        # attention slicing qui ralentirait. Le VAE tiling suffit à contenir la
+        # mémoire de décodage. (Si OOM -> message clair, voir refine().)
         pipe.to("cuda")
-        for _enable in ("enable_vae_tiling", "enable_attention_slicing"):
-            try:
-                getattr(pipe, _enable)()
-            except Exception:  # noqa: BLE001
-                pass
+        try:
+            pipe.enable_vae_tiling()
+        except Exception:  # noqa: BLE001
+            pass
         total = torch.cuda.get_device_properties(0).total_memory
-        print(f"[upscale] {total/1e9:.0f} Go VRAM -> 100% sur le GPU (pas d'offload "
-              "CPU).", flush=True)
+        print(f"[upscale] {total/1e9:.0f} Go VRAM -> 100% sur le GPU (SDPA, pas "
+              "d'offload).", flush=True)
     else:
         print("[upscale] ATTENTION : pas de CUDA -> CPU (très lent). Réinstallez "
               "l'outil pour obtenir un PyTorch CUDA.", flush=True)
