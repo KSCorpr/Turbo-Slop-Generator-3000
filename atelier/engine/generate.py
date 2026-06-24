@@ -190,4 +190,57 @@ def generate(
     return paths
 
 
+def pid_upscale(image, prompt: str = "", target: int | None = None,
+                log: Callable[[str], None] | None = None):
+    """Upscale rapide via PiD (décodeur de diffusion en espace pixel, natif
+    sd.cpp) : encode l'image puis décode/agrandit vers ~2K en 4 pas, sur le GPU.
+    """
+    from PIL import Image
+    prefs = settings.load_prefs()
+    sd_cli = settings.find_sd_cli()
+    if sd_cli is None:
+        raise sdcpp.EngineError(
+            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
+
+    cfg = registry.pid_config()
+    paths = registry.pid_paths()
+    missing = [r for r in ("diffusion", "text_encoder", "vae")
+               if not (paths.get(r) and Path(paths[r]).is_file())]
+    if missing:
+        raise sdcpp.EngineError(
+            f"PiD non installé (composants manquants : {', '.join(missing)}). "
+            "Installez-le depuis l'onglet Upscale.")
+
+    settings.ensure_dirs()
+    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
+        else image.convert("RGB")
+    tgt = int(target or cfg.get("target", 2048))
+    longest = max(im.width, im.height) or 1
+    sc = tgt / longest
+    w = max(256, int(round(im.width * sc / 16)) * 16)
+    h = max(256, int(round(im.height * sc / 16)) * 16)
+    ref = settings.TMP_DIR / "pid_ref.png"
+    im.save(ref)
+    if log:
+        log(f"PiD : {im.width}x{im.height} -> {w}x{h} sur le GPU "
+            f"({cfg.get('steps', 4)} pas)…")
+
+    flags, gpu_index = _resolved_flags(prefs)
+    req = GenRequest(
+        diffusion_model=paths["diffusion"], text_encoder=paths["text_encoder"],
+        vae=paths["vae"], vae_format=cfg.get("vae_format", "flux"), rng="cpu",
+        ref_image=ref, prompt=prompt or "high quality, sharp, highly detailed",
+        steps=int(cfg.get("steps", 4)), cfg_scale=1.0, sampler="euler",
+        width=w, height=h, seed=-1, batch_count=1,
+        flags=flags, gpu_index=gpu_index,
+    )
+    out = sdcpp.unique_output("pid")
+    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+    res = sdcpp.collect_outputs(out, 1)
+    if not res:
+        raise sdcpp.EngineError("PiD n'a produit aucune image.")
+    return res[0]
+
+
 

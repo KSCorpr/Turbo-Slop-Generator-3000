@@ -77,13 +77,15 @@ Déposez vos `.safetensors` / `.gguf` dans le dossier **`loras/`**, puis
 sélectionnez-les (jusqu'à 2) avec leur poids dans l'onglet Génération. La syntaxe
 `<lora:nom:poids>` est transmise au moteur.
 
-### Upscale créatif (onglet ✨) — façon Magnific / Topaz Wonder
-**SDXL + ControlNet Tile** (diffusers, installable en 1 clic, ~9 Go) : pré-agrandit
-l'image puis **ré-invente le détail par tuiles**, chaque tuile étant **ancrée**
-sur l'image agrandie par le ControlNet Tile → tuiles cohérentes, **fondu sans
-couture**. Curseurs *créativité* et *fidélité (ControlNet)*, prompt optionnel.
-Offload CPU activé → tient sur 11–12 Go (robuste mais lent). ×2 = 4 tuiles,
-×4 = 16, ×8 = très long.
+### Upscale (onglet ✨) — deux méthodes
+- **⚡ PiD** (recommandé) — décodeur de diffusion en espace pixel de NVIDIA,
+  **natif stable-diffusion.cpp** : encode l'image puis décode/agrandit vers ~2K
+  en **4 pas, 100% GPU, sans PyTorch ni tuiles**. Rapide. Modèles :
+  [`Comfy-Org/PixelDiT`](https://huggingface.co/Comfy-Org/PixelDiT) (décodeur +
+  Gemma-2-2B) + VAE FLUX.1. (doc : `leejet/stable-diffusion.cpp` → `docs/pid.md`)
+- **🎨 Créatif (SDXL + ControlNet Tile)** — façon Magnific : ré-invente le détail
+  **par tuiles** (diffusers, ~9 Go, 100% GPU). Plus lent, plus « créatif ».
+  Curseurs *créativité* / *fidélité*. ×2 conseillé ; sortie plafonnée à 4096 px.
 
 ### Toolkit (onglet 🧰)
 Outils PyTorch installables en 1 clic (modèles téléchargés depuis Hugging Face) :

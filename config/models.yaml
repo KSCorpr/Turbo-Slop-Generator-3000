@@ -49,3 +49,24 @@ base_models:
     vram_min_gb: 10
 
 
+# ============================================================================
+#  PiD — décodeur de diffusion en espace pixel (NVIDIA), via stable-diffusion.cpp
+#  Upscale rapide GPU natif : encode l'image puis décode/agrandit vers ~2K en
+#  4 pas (pas de PyTorch, pas de tuiles).  doc : leejet/sd.cpp docs/pid.md
+# ============================================================================
+pid:
+  name: "PiD — upscale rapide (NVIDIA, GPU natif)"
+  target: 2048          # côté long visé (le modèle est entraîné 512->2048)
+  steps: 4
+  vae_format: flux
+  sources:
+    diffusion:
+      repo: Comfy-Org/PixelDiT
+      match: "pid_flux1_512_to_2048_4step_bf16.safetensors"
+    text_encoder:
+      repo: Comfy-Org/PixelDiT
+      match: "gemma_2_2b_it*.safetensors"
+    vae:
+      repo: camenduru/FLUX.1-dev-ungated
+      match: "ae.safetensors"
+

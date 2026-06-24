@@ -97,6 +97,30 @@ def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
 
 
 # --------------------------------------------------------------------------- #
+#  PiD (upscale natif sd.cpp)
+# --------------------------------------------------------------------------- #
+def pid_config() -> dict[str, Any]:
+    return _catalog().get("pid", {}) or {}
+
+
+def pid_components() -> list[Component]:
+    out: list[Component] = []
+    for role, spec in (pid_config().get("sources") or {}).items():
+        out.append(Component(role, spec["repo"], spec["match"], None))
+    return out
+
+
+def pid_paths() -> dict[str, Path | None]:
+    """{role: chemin local | None} pour les composants PiD."""
+    return {c.role: resolve_component_path(c) for c in pid_components()}
+
+
+def pid_ready() -> bool:
+    comps = pid_components()
+    return bool(comps) and all(resolve_component_path(c) is not None for c in comps)
+
+
+# --------------------------------------------------------------------------- #
 #  Résolution des chemins locaux + statut
 # --------------------------------------------------------------------------- #
 def _match(files: list[Path], repo_dir: Path, pattern: str) -> list[Path]:

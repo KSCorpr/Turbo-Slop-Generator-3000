@@ -61,7 +61,9 @@ class GenRequest:
     batch_count: int = 1
     init_image: Path | None = None     # img2img classique (-i + --strength)
     strength: float = 0.6
-    ref_image: Path | None = None      # édition (-r / --ref-image, Flux.2)
+    ref_image: Path | None = None      # édition (-r / --ref-image, Flux.2 / PiD)
+    vae_format: str = ""               # --vae-format (ex. "flux" pour PiD)
+    rng: str = ""                      # --rng (ex. "cpu" pour PiD)
     lora_dir: Path | None = None       # --lora-model-dir
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)
     flags: dict[str, bool] = field(default_factory=dict)
@@ -110,6 +112,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         if req.clip_l:
             cmd += ["--clip_l", str(req.clip_l)]
 
+    if req.vae_format:
+        cmd += ["--vae-format", req.vae_format]
     cmd += list(req.extra_flags)
     cmd += ["-p", req.prompt]
     if req.negative and req.cfg_scale > 1.0:
@@ -124,6 +128,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     ]
     if req.schedule:
         cmd += ["--scheduler", req.schedule]
+    if req.rng:
+        cmd += ["--rng", req.rng]
     if req.flow_shift and req.flow_shift > 0:
         cmd += ["--flow-shift", f"{req.flow_shift}"]
     if req.init_image:
