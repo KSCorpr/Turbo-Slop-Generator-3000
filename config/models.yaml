@@ -57,6 +57,7 @@ base_models:
 pid:
   name: "PiD — upscale rapide (NVIDIA, GPU natif)"
   target: 2048          # côté long visé (le modèle est entraîné 512->2048)
+  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
   steps: 4
   vae_format: flux
   sources:

@@ -214,15 +214,22 @@ def pid_upscale(image, prompt: str = "", target: int | None = None,
     settings.ensure_dirs()
     im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
         else image.convert("RGB")
+    # PiD est entraîné « base -> 4x » (ex. 512 -> 2048). On doit RESPECTER ce
+    # ratio : on réduit l'image de référence à ~base (côté long), et on sort à 4x.
+    # Sinon (ratio != 4x) le décodeur produit des artefacts « peinture ».
     tgt = int(target or cfg.get("target", 2048))
+    factor = int(cfg.get("factor", 4))
+    base = max(256, tgt // factor)
     longest = max(im.width, im.height) or 1
-    sc = tgt / longest
-    w = max(256, int(round(im.width * sc / 16)) * 16)
-    h = max(256, int(round(im.height * sc / 16)) * 16)
+    rsc = base / longest
+    rw = max(64, int(round(im.width * rsc / 16)) * 16)
+    rh = max(64, int(round(im.height * rsc / 16)) * 16)
+    ref_small = im.resize((rw, rh), Image.LANCZOS)
     ref = settings.TMP_DIR / "pid_ref.png"
-    im.save(ref)
+    ref_small.save(ref)
+    w, h = rw * factor, rh * factor   # sortie = base x4
     if log:
-        log(f"PiD : {im.width}x{im.height} -> {w}x{h} sur le GPU "
+        log(f"PiD : ref {rw}x{rh} -> sortie {w}x{h} (×{factor}) sur le GPU "
             f"({cfg.get('steps', 4)} pas)…")
 
     flags, gpu_index = _resolved_flags(prefs)
