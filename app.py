@@ -9,9 +9,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import warnings
 
 # Le Python portable n'ajoute pas le dossier projet au chemin d'import.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Avertissements bénins de Gradio (paramètres déplacés en v6.0) : on les masque
+# pour ne pas inquiéter inutilement au démarrage. L'usage actuel (5.x) est correct.
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="gradio")
 
 import gradio as gr
 
