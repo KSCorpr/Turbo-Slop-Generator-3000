@@ -65,7 +65,7 @@ base_models:
         quantizable: true
       text_encoder:
         repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "*Qwen3-VL-4B-Instruct*{enc_quant}*.gguf"
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
         quantizable: true
       vae:
         repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
@@ -101,7 +101,7 @@ base_models:
         quantizable: true
       text_encoder:
         repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "*Qwen3-VL-4B-Instruct*{enc_quant}*.gguf"
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
         quantizable: true
       vae:
         repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
