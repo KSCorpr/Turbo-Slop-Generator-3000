@@ -7,6 +7,9 @@ gradio>=5.9,<6
 # hf_transfer n'est volontairement PAS utilisé : sous Windows il provoque des
 # verrous de fichier (os error 32). Téléchargement HTTP standard = fiable.
 huggingface_hub>=0.26,<1.0
+# Accélère les téléchargements des dépôts « Xet » de HF (sinon repli HTTP +
+# avertissement). Paquet Rust avec wheels Windows précompilées.
+hf_xet
 
 # Utilitaires
 PyYAML>=6.0
