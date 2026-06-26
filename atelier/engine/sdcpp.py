@@ -160,6 +160,24 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     return cmd
 
 
+def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
+                      output: Path, repeats: int = 1,
+                      offload: bool = True) -> list[str]:
+    """Upscale ESRGAN natif sd.cpp (--mode upscale). Déterministe, 100% GPU.
+
+    `repeats` applique le modèle plusieurs fois (ex. un modèle ×2 appliqué 2 fois
+    = ×4). Aucun prompt/diffusion : c'est un réseau ESRGAN GGUF."""
+    _require(upscale_model, init_image)
+    cmd = [str(sd_cli), "--mode", "upscale", "-i", str(init_image),
+           "--upscale-model", str(upscale_model)]
+    if repeats and repeats > 1:
+        cmd += ["--upscale-repeats", str(int(repeats))]
+    if offload:
+        cmd.append("--offload-to-cpu")
+    cmd += ["-o", str(output), "-v"]
+    return cmd
+
+
 def build_vid_cmd(sd_cli: Path, *, diffusion: Path, vae: Path, audio_vae: Path,
                   llm: Path, connectors: Path, prompt: str, negative: str,
                   cfg_scale: float, steps: int, width: int, height: int,

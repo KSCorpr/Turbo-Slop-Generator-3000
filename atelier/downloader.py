@@ -115,6 +115,38 @@ def download_model(model: BaseModel,
     yield f"« {model.name} » est prêt. ✅"
 
 
+def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str]:
+    """Télécharge tous les upscalers ESRGAN GGUF (wbruna/upscalers-sdcpp-gguf)."""
+    from .registry import upscaler_config, upscalers_dir
+    settings.configure_hf_env()
+    settings.ensure_dirs()
+    cfg = upscaler_config()
+    repo = cfg.get("repo")
+    files = cfg.get("files") or []
+    if not repo or not files:
+        yield "Upscalers non configurés."
+        return
+    from huggingface_hub import hf_hub_download
+
+    local_dir = upscalers_dir()
+    local_dir.mkdir(parents=True, exist_ok=True)
+    yield f"Téléchargement de {len(files)} upscalers ESRGAN ({repo})…"
+    ok = 0
+    for fn in files:
+        dest = local_dir / fn
+        if dest.is_file():
+            ok += 1
+            yield f"  ✓ déjà présent : {fn}"
+            continue
+        try:
+            hf_hub_download(repo_id=repo, filename=fn, local_dir=str(local_dir))
+            ok += 1
+            yield f"  ↓ {fn}"
+        except Exception as exc:  # noqa: BLE001
+            yield f"  ✗ {fn} : {exc}"
+    yield f"Upscalers prêts ({ok}/{len(files)}). ✅"
+
+
 def download_ltx(log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge les composants de LTX-2.3 (diffusion 22B + Gemma-3-12B + VAE…)."""
     from .registry import ltx_components

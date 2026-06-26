@@ -86,6 +86,34 @@ base_models:
 
 
 # ============================================================================
+#  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
+#  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.
+#  Source : huggingface.co/wbruna/upscalers-sdcpp-gguf
+# ============================================================================
+upscalers:
+  name: "Upscalers ESRGAN (GGUF, sd.cpp)"
+  repo: wbruna/upscalers-sdcpp-gguf
+  files:
+    - 2x-ESRGAN.gguf
+    - 2xPSNR.gguf
+    - 2x_StarSample_V2.0.gguf
+    - 4xLSDIRplusC.gguf
+    - 4xLSDIRplusN.gguf
+    - 4xLSDIRplusR.gguf
+    - 4xNomos2_otf_esrgan.gguf
+    - 4xNomos8kSC.gguf
+    - 4xNomosWebPhoto_esrgan.gguf
+    - 4xUltrasharpV10.gguf
+    - 4x_NickelbackFS_72000_G.gguf
+    - 4x_Nickelback_70000G.gguf
+    - 4x_foolhardy_Remacri.gguf
+    - 4x_foolhardy_Remacri_ExtraSmoother.gguf
+    - RealESRGAN_x4plus.gguf
+    - RealESRGAN_x4plus_anime_6B.gguf
+    - smbss_2x_RRDB_Animation.gguf
+
+
+# ============================================================================
 #  LTX-2.3 — génération VIDÉO (Lightricks), via stable-diffusion.cpp (-M vid_gen)
 #  T2V / I2V / image début-fin.  ⚠️ 22B + Gemma-3-12B = TRÈS lourd (≥16 Go idéal).
 #  Sur 11-12 Go : quant basse (Q3/Q2) + offload, lent.  doc : sd.cpp docs/ltx2.md

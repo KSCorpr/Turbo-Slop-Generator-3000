@@ -124,6 +124,36 @@ def ltx_ready(prefs: dict[str, Any] | None = None) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+#  Upscalers ESRGAN (GGUF, natif sd.cpp --mode upscale)
+# --------------------------------------------------------------------------- #
+def upscaler_config() -> dict[str, Any]:
+    return _catalog().get("upscalers", {}) or {}
+
+
+def upscalers_dir() -> Path:
+    return settings.model_repo_dir(upscaler_config().get("repo", "upscalers"))
+
+
+def list_upscalers() -> list[str]:
+    """Noms des fichiers d'upscaler ESRGAN déjà téléchargés (triés)."""
+    d = upscalers_dir()
+    if not d.exists():
+        return []
+    return sorted(p.name for p in d.glob("*.gguf"))
+
+
+def upscaler_path(name: str) -> Path | None:
+    if not name:
+        return None
+    p = upscalers_dir() / name
+    return p if p.is_file() else None
+
+
+def upscalers_ready() -> bool:
+    return bool(list_upscalers())
+
+
+# --------------------------------------------------------------------------- #
 #  Résolution des chemins locaux + statut
 # --------------------------------------------------------------------------- #
 def _match(files: list[Path], repo_dir: Path, pattern: str) -> list[Path]:

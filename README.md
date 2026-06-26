@@ -108,11 +108,15 @@ images de référence** supplémentaires, puis décrivez la modification ou la
 combinaison voulue dans le prompt (chaque image est passée au moteur via `-r`).
 
 ### Toolkit (onglet 🧰)
-Outils PyTorch installables en 1 clic (modèles téléchargés depuis Hugging Face) :
+Outils utilitaires installables en 1 clic (modèles téléchargés depuis Hugging Face) :
 - **Profondeur** — *Depth Anything V2* (carte de profondeur).
 - **Sans arrière-plan** — *RMBG-1.4* (détourage → PNG transparent ; licence non
   commerciale).
 - **Détourage au clic** — *Segment Anything* (`facebook/sam-vit-base`).
+- **Agrandir (ESRGAN)** — upscale **simple** par réseau ESRGAN GGUF, **natif
+  sd.cpp** (`--mode upscale`) : déterministe, **100% GPU**, aucun PyTorch ni
+  prompt. Choix parmi tous les modèles de `wbruna/upscalers-sdcpp-gguf`
+  (×2/×4 selon le modèle ; « Répéter ×2 » enchaîne deux passes).
 
 ### Prompts sauvegardés
 Chaque image générée est accompagnée d'un `.txt` (style A1111) dans `outputs/`
