@@ -34,10 +34,16 @@ def _idx(q: str | None) -> int | None:
 
 
 def best(names: list[str], requested: str) -> str | None:
-    """Parmi `names`, renvoie celui dont le quant est le plus proche de `requested`.
+    """Parmi `names`, renvoie le quant le mieux adapté à `requested`.
 
-    Tri : distance de quant croissante, puis qualité supérieure, puis nom court.
-    Les fichiers sans quant reconnaissable sont fortement dépriorisés.
+    On ARRONDIT VERS LE BAS : à défaut du quant exact, on prend le plus gros
+    quant **inférieur ou égal** au demandé (pour respecter le budget VRAM). On
+    ne monte au-dessus que si AUCUN quant ≤ demandé n'existe. Monter en quant
+    (ex. Q5 demandé -> Q6 téléchargé) gonfle la VRAM et provoque OOM/lenteur :
+    c'est précisément ce qu'on évite ici.
+
+    Tri par paliers : (0) ≤ demandé, le plus proche par en-dessous ; (1) > demandé,
+    le plus proche par au-dessus ; (2) quant non reconnu. Départage : nom court.
     """
     if not names:
         return None
@@ -46,9 +52,11 @@ def best(names: list[str], requested: str) -> str | None:
     def key(name: str):
         qi = _idx(find_quant(name))
         if qi is None:
-            return (10_000, 0, len(name))
+            return (2, 0, len(name))
         if req is None:
             return (0, -qi, len(name))
-        return (abs(qi - req), -qi, len(name))
+        if qi <= req:
+            return (0, req - qi, len(name))   # ≤ demandé : le plus haut d'abord
+        return (1, qi - req, len(name))        # > demandé : le plus bas d'abord
 
     return sorted(names, key=key)[0]
