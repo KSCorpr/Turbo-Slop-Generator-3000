@@ -42,8 +42,7 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        d_image = gr.Image(label="Image source", type="pil",
-                                           height=420)
+                        d_image = gr.Image(label="Image source", type="pil")
                         d_run = gr.Button("🌐 Générer la profondeur",
                                           variant="primary", size="lg")
                     with gr.Column(scale=4):
@@ -81,8 +80,7 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        b_image = gr.Image(label="Image source", type="pil",
-                                           height=420)
+                        b_image = gr.Image(label="Image source", type="pil")
                         b_run = gr.Button("✂️ Détourer", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
@@ -123,7 +121,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                 with gr.Row():
                     with gr.Column(scale=3):
                         s_image = gr.Image(label="Image — cliquez sur l'objet",
-                                           type="pil", height=420)
+                                           type="pil")
                         s_info = gr.Markdown("Cliquez un point sur l'image.")
                         s_run = gr.Button("🪄 Extraire l'objet", variant="primary",
                                           size="lg")
