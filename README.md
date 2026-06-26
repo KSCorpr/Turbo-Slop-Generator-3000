@@ -191,6 +191,22 @@ With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
+### Multi-GPU (a second card)
+If you have two NVIDIA cards (e.g. an RTX 3060 + a GTX 1080 Ti), **Settings →
+🧮 Multi-GPU** lets you offload work onto the second card to free the generation
+GPU:
+- **PyTorch tools GPU** — runs the **prompt enhancer**, depth, background removal,
+  SAM and the **SDXL creative upscale** on the chosen card (via
+  `CUDA_VISIBLE_DEVICES`). Clean, recommended win: e.g. keep all PyTorch on the
+  1080 Ti so the 3060 is dedicated to generation.
+- **Text encoder GPU (⚠️ experimental)** — runs the sd.cpp text encoder (`te`) on
+  a second card while diffusion + VAE stay on the main one, via
+  `--backend diffusion=cuda0,vae=cuda0,te=cuda1` (with `CUDA_DEVICE_ORDER=PCI_BUS_ID`
+  so `cudaN` matches the `nvidia-smi` index). Off by default. The benefit is
+  modest — the encoder is already offloaded to RAM by default — and it is
+  untested across all setups, so try it and check the log. If a generation fails,
+  set it back to *Disabled*.
+
 ### Interface language
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
 **English**. The choice is saved to `userdata/`; **restart the app** (`run.bat` /

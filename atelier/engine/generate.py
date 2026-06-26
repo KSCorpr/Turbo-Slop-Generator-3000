@@ -167,6 +167,10 @@ def generate(
     lora_dir = settings.LORA_DIR if loras else None
     final_prompt = _apply_loras(prompt, loras or [])
 
+    # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU (ex. 1080 Ti).
+    enc_gpu = prefs.get("encoder_gpu_index")
+    split_gpu = enc_gpu is not None and enc_gpu != gpu_index
+
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
         text_encoder=enc, t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
@@ -180,10 +184,11 @@ def generate(
         init_image=init_image, strength=strength, ref_image=ref_image,
         lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
+        encoder_gpu_index=enc_gpu if split_gpu else None,
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+    sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
     paths = sdcpp.collect_outputs(out, batch_count)
     if save_prompt and paths:
         _write_prompt_sidecars(paths, req, model, int(seed))

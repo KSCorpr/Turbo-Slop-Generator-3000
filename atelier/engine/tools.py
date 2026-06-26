@@ -121,7 +121,11 @@ def install_upscale_stream():
 
 
 def _gpu_index() -> int | None:
+    """GPU sur lequel lancer les outils PyTorch. Priorité au GPU dédié aux
+    outils (ex. 1080 Ti), sinon le GPU de génération, sinon auto."""
     prefs = settings.load_prefs()
+    if prefs.get("tools_gpu_index") is not None:
+        return prefs["tools_gpu_index"]
     if prefs.get("gpu_index") is not None:
         return prefs["gpu_index"]
     prof = hardware.auto_profile()

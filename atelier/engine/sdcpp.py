@@ -69,6 +69,9 @@ class GenRequest:
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None
+    # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
+    # via --backend te=cudaX. None = encodeur sur le GPU principal / RAM.
+    encoder_gpu_index: int | None = None
 
 
 def _flag_args(flags: Mapping[str, bool]) -> list[str]:
@@ -156,6 +159,15 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
                 "--preview-interval", "1"]
     cmd += _flag_args(req.flags)
+    # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU. On épingle diffusion+VAE
+    # sur le GPU principal et l'encodeur (te) sur l'autre. Suppose un ordre CUDA
+    # par bus PCI (cudaN = index nvidia-smi N), forcé dans run() via env.
+    if (req.encoder_gpu_index is not None
+            and req.encoder_gpu_index != req.gpu_index):
+        g = req.gpu_index if req.gpu_index is not None else 0
+        e = req.encoder_gpu_index
+        cmd += ["--backend",
+                f"diffusion=cuda{g},vae=cuda{g},te=cuda{e}"]
     cmd += ["-o", str(output), "-v"]
     return cmd
 
@@ -209,10 +221,15 @@ def build_vid_cmd(sd_cli: Path, *, diffusion: Path, vae: Path, audio_vae: Path,
 
 
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
-        gpu_index: int | None = None) -> None:
+        gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED
     env = None
-    if gpu_index is not None:
+    if all_gpus:
+        # Split multi-GPU (encodeur sur un 2e GPU) : tous les GPU visibles, et
+        # ordre CUDA par bus PCI pour que cudaN corresponde à l'index nvidia-smi.
+        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+    elif gpu_index is not None:
         env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_index)}
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))

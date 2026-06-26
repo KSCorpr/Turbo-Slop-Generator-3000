@@ -465,6 +465,20 @@ _EN: dict[str, str] = {
     "Endpoint Hugging Face (miroir éventuel)":
         "Hugging Face endpoint (optional mirror)",
     "Langue de l'interface": "Interface language",
+    "#### 🧮 Multi-GPU (2e carte, ex. 1080 Ti)\n"
+    "Déchargez les **outils PyTorch** (améliorateur de prompt, "
+    "profondeur, détourage, upscale SDXL) et/ou l'**encodeur de "
+    "texte** sur une 2e carte pour libérer le GPU de génération.":
+        "#### 🧮 Multi-GPU (2nd card, e.g. 1080 Ti)\n"
+        "Offload the **PyTorch tools** (prompt enhancer, depth, cutout, SDXL "
+        "upscale) and/or the **text encoder** onto a 2nd card to free the "
+        "generation GPU.",
+    "GPU des outils PyTorch (enhancer, depth, SDXL…)":
+        "GPU for PyTorch tools (enhancer, depth, SDXL…)",
+    "Auto (même que génération)": "Auto (same as generation)",
+    "Encodeur de texte sur ce GPU (⚠️ expérimental)":
+        "Text encoder on this GPU (⚠️ experimental)",
+    "Désactivé (normal)": "Disabled (normal)",
     "🌐 Langue / Language (redémarrage requis)":
         "🌐 Langue / Language (restart required)",
     "✅ Réglages enregistrés.": "✅ Settings saved.",
