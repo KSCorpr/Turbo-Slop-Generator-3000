@@ -24,6 +24,11 @@ def build_library_tab():
         gr.Markdown("### Modèles de base\n"
                     "Téléchargement à la demande. La quantification est choisie "
                     "automatiquement selon votre VRAM/RAM (modifiable dans Réglages).")
+        gr.Markdown(
+            "> ℹ️ La quantification affichée (Réglages) est une **cible**. Si le "
+            "dépôt ne la propose pas, on télécharge le quant disponible le plus "
+            "proche **en dessous** (pour tenir dans la VRAM) — c'est indiqué dans "
+            "le journal et signalé après le téléchargement.")
 
         prefs = settings.load_prefs()
         models = registry.load_base_models(prefs)
@@ -50,6 +55,11 @@ def build_library_tab():
                     for msg in downloader.download_model(model, log=lines.append):
                         lines.append(msg)
                         yield "\n".join(lines)
+                    # Avertit visiblement si un quant a été remplacé par un repli.
+                    if any("⚠️" in line and "indisponible" in line for line in lines):
+                        gr.Warning(t("Quantification ajustée : le dépôt ne propose "
+                                     "pas le quant cible, repli sur le plus proche "
+                                     "disponible (voir le journal)."))
                 return handler
 
             def make_deleter(model_id):

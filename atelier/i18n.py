@@ -266,6 +266,18 @@ _EN: dict[str, str] = {
         "On-demand download. Quantization is chosen automatically from your "
         "VRAM/RAM (changeable in Settings).",
     "Journal des téléchargements": "Download log",
+    "> ℹ️ La quantification affichée (Réglages) est une **cible**. Si le "
+    "dépôt ne la propose pas, on télécharge le quant disponible le plus "
+    "proche **en dessous** (pour tenir dans la VRAM) — c'est indiqué dans "
+    "le journal et signalé après le téléchargement.":
+        "> ℹ️ The quantization shown (Settings) is a **target**. If the repo "
+        "doesn't offer it, the closest available quant **below** it is "
+        "downloaded (to fit your VRAM) — shown in the log and flagged after "
+        "the download.",
+    "Quantification ajustée : le dépôt ne propose pas le quant cible, repli "
+    "sur le plus proche disponible (voir le journal).":
+        "Quantization adjusted: the repo doesn't offer the target quant, fell "
+        "back to the closest available (see the log).",
     "⬇️ Télécharger": "⬇️ Download",
     "↻ Rafraîchir l'état": "↻ Refresh status",
     "● installé": "● installed",
