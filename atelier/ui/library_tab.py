@@ -5,12 +5,13 @@ from __future__ import annotations
 import gradio as gr
 
 from .. import downloader, registry, settings
+from ..i18n import t
 
 
 def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
     ready = registry.model_is_ready(model)
-    status = ("<span class='status-ok'>● installé</span>" if ready
-              else "<span class='status-missing'>○ non installé</span>")
+    status = (f"<span class='status-ok'>{t('● installé')}</span>" if ready
+              else f"<span class='status-missing'>{t('○ non installé')}</span>")
     tags = " ".join(f"<span class='tag'>{t}</span>" for t in model.tags)
     reco = " · ".join(recos.get(model.id, []))
     return (f"<div class='model-card'><h3>{model.name} &nbsp; {status}</h3>"
@@ -56,10 +57,11 @@ def build_library_tab():
                     p = settings.load_prefs()
                     model = registry.get_base_model(model_id, p)
                     deleted = registry.delete_model(model, p)
-                    msg = (f"🗑️ « {model.name} » supprimé : "
-                           f"{len(deleted)} fichier(s) effacé(s)." if deleted
-                           else f"Rien à supprimer pour « {model.name} » "
-                                "(non installé ou fichiers partagés).")
+                    msg = (t("🗑️ « {name} » supprimé : {n} fichier(s) "
+                             "effacé(s).").format(name=model.name, n=len(deleted))
+                           if deleted else
+                           t("Rien à supprimer pour « {name} » (non installé ou "
+                             "fichiers partagés).").format(name=model.name))
                     return _card_md(model, registry.recommend(p)), msg
                 return deleter
 

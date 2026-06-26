@@ -4,9 +4,11 @@ from __future__ import annotations
 import gradio as gr
 
 from .. import hardware, settings
+from ..i18n import t
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
+LANGS = [("Français", "fr"), ("English", "en")]
 
 
 def _gpu_choices() -> list[tuple[str, int]]:
@@ -19,9 +21,11 @@ def _profile_md() -> str:
     prof = hardware.auto_profile(prefs.get("gpu_index"))
     flags = [k for k, v in prof.flags().items() if v]
     lines = [hardware.summary_text(), "",
-             "**Profil automatique :**",
-             f"- Diffusion : `{prof.quant}` · Encodeur : `{prof.enc_quant}`",
-             f"- Optimisations : `{', '.join(flags) or 'aucune'}`"]
+             t("**Profil automatique :**"),
+             t("- Diffusion : `{quant}` · Encodeur : `{enc}`").format(
+                 quant=prof.quant, enc=prof.enc_quant),
+             t("- Optimisations : `{flags}`").format(
+                 flags=", ".join(flags) or t("aucune"))]
     lines += [f"- {n}" for n in prof.notes]
     return "\n".join(lines)
 
@@ -32,6 +36,23 @@ def build_settings_tab():
         profile_md = gr.Markdown(_profile_md())
 
         prefs = settings.load_prefs()
+
+        with gr.Row():
+            lang_dd = gr.Dropdown(
+                LANGS, value=prefs.get("lang", "fr"),
+                label="🌐 Langue / Language (redémarrage requis)")
+        lang_msg = gr.Markdown("")
+
+        def _save_lang(lang):
+            p = settings.load_prefs()
+            p["lang"] = lang
+            settings.save_prefs(p)
+            disp = {v: k for k, v in LANGS}.get(lang, lang)
+            return t("✅ Langue enregistrée. **Redémarrez l'application** "
+                     "(`run.bat` / `run.sh`) pour appliquer « {lang} »."
+                     ).format(lang=disp)
+
+        lang_dd.change(_save_lang, inputs=[lang_dd], outputs=[lang_msg])
 
         with gr.Row():
             auto = gr.Checkbox(value=prefs.get("auto_optimize", True),
@@ -87,7 +108,7 @@ def build_settings_tab():
             }
             p["hf_endpoint"] = hf_ep or "https://huggingface.co"
             settings.save_prefs(p)
-            return gr.update(value=_profile_md()), "✅ Réglages enregistrés."
+            return gr.update(value=_profile_md()), t("✅ Réglages enregistrés.")
 
         save.click(do_save,
                    inputs=[auto, gpu, quant, enc_quant, fa, offload, tiling,
@@ -124,8 +145,9 @@ def build_settings_tab():
                     gr.update(value=fl["clip_on_cpu"]),
                     gr.update(value=fl["vae_on_cpu"]),
                     gr.update(value=_profile_md()),
-                    f"✅ Optimisé pour **{label}** : diffusion `{prof.quant}`, "
-                    f"encodeur `{prof.enc_quant}` (optimisation auto désactivée).")
+                    t("✅ Optimisé pour **{label}** : diffusion `{quant}`, "
+                      "encodeur `{enc}` (optimisation auto désactivée).").format(
+                        label=label, quant=prof.quant, enc=prof.enc_quant))
             return handler
 
         gen_outputs = [auto, quant, enc_quant, fa, offload, tiling, clip_cpu,

@@ -253,11 +253,13 @@ def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
     prof = hardware.auto_profile(prefs.get("gpu_index"))
     vram = prof.gpu.vram_gb if prof.gpu else 0.0
     out: dict[str, list[str]] = {}
+    from .i18n import t
     for m in load_base_models(prefs):
         labels: list[str] = []
         if vram and vram >= m.vram_min_gb:
-            labels.append("✅ adapté à votre carte")
+            labels.append(t("✅ adapté à votre carte"))
         elif vram:
-            labels.append(f"⚠️ {m.vram_min_gb:.0f} Go conseillés (vous : {vram:.0f})")
+            labels.append(t("⚠️ {min} Go conseillés (vous : {vram})").format(
+                min=f"{m.vram_min_gb:.0f}", vram=f"{vram:.0f}"))
         out[m.id] = labels
     return out

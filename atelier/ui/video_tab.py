@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings
+from .. import downloader, i18n, registry, settings
 from ..engine import generate as gen_engine
+from ..i18n import t
 
 RATIOS = {
     "Paysage 16:9 — 1280×720": (1280, 720),
@@ -48,8 +49,8 @@ def build_video_tab(tab_id="video"):
         with gr.Row():
             with gr.Column(scale=3):
                 mode = gr.Radio(
-                    [("Texte → vidéo", "t2v"), ("Image → vidéo", "i2v"),
-                     ("Début → fin", "flf2v")], value="t2v", label="Mode")
+                    [(t("Texte → vidéo"), "t2v"), (t("Image → vidéo"), "i2v"),
+                     (t("Début → fin"), "flf2v")], value="t2v", label="Mode")
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez la scène / le mouvement…")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
@@ -59,8 +60,8 @@ def build_video_tab(tab_id="video"):
                                           visible=False)
                     end_image = gr.Image(label="Image de fin", type="pil",
                                          visible=False)
-                ratio = gr.Dropdown(list(RATIOS.keys()),
-                                    value="Léger 16:9 — 640×360", label="Format")
+                ratio = gr.Dropdown([t(k) for k in RATIOS],
+                                    value=t("Léger 16:9 — 640×360"), label="Format")
                 with gr.Row():
                     frames = gr.Slider(9, 121, value=33, step=8,
                                        label="Images (≈ durée × fps)")
@@ -89,13 +90,13 @@ def build_video_tab(tab_id="video"):
         def do_video(mode, prompt, negative, init_image, end_image, ratio,
                      frames, fps, steps, cfg_s, progress=gr.Progress()):
             if not (prompt or "").strip():
-                raise gr.Error("Saisissez un prompt.")
+                raise gr.Error(t("Saisissez un prompt."))
             if mode in ("i2v", "flf2v") and init_image is None:
-                raise gr.Error("Fournissez l'image de départ.")
+                raise gr.Error(t("Fournissez l'image de départ."))
             if mode == "flf2v" and end_image is None:
-                raise gr.Error("Fournissez l'image de fin.")
+                raise gr.Error(t("Fournissez l'image de fin."))
             settings.ensure_dirs()
-            w, h = RATIOS.get(ratio, (640, 360))
+            w, h = RATIOS.get(i18n.to_source(ratio), (640, 360))
             ip = ep = None
             if init_image is not None:
                 ip = settings.TMP_DIR / "ltx_start.png"; init_image.save(ip)

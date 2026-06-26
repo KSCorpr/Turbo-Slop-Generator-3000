@@ -8,9 +8,10 @@ import re
 
 import gradio as gr
 
-from .. import registry, settings, styles
+from .. import i18n, registry, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
+from ..i18n import t
 
 # (libellé affiché, valeur réelle sd-cli). Samplers supportés par sd.cpp.
 SAMPLERS = [
@@ -94,11 +95,12 @@ def build_generative_tab(model_id: str, title: str):
         # Famille « édition » (Flux.2/Kontext) : modification d'image via -r ;
         # sinon img2img classique (-i + force de transformation).
         is_edit = bool(m) and m.family == "flux2"
-        status = ("<span class='status-ok'>● modèle prêt</span>" if ready
-                  else "<span class='status-missing'>○ à télécharger "
-                       "(onglet Catalogue de modèles)</span>")
-        _mode = "édition d'image" if is_edit else "image-to-image"
-        gr.Markdown(f"### {title} — text-to-image & {_mode}  ·  {status}")
+        status = (f"<span class='status-ok'>{t('● modèle prêt')}</span>" if ready
+                  else "<span class='status-missing'>"
+                       f"{t('○ à télécharger (onglet Catalogue de modèles)')}</span>")
+        _mode = t("édition d'image") if is_edit else t("image-to-image")
+        gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
+            title=title, mode=_mode, status=status))
 
         with gr.Row():
             # ----- Entrées -----
@@ -198,13 +200,15 @@ def build_generative_tab(model_id: str, title: str):
                     with gr.Row():
                         refresh_lora = gr.Button("↻ Rafraîchir la liste", size="sm")
                         clear_lora = gr.Button("✖ Vider les LoRA", size="sm")
-                    gr.Markdown(f"Déposez vos fichiers LoRA dans `{settings.LORA_DIR}`")
+                    gr.Markdown(t("Déposez vos fichiers LoRA dans `{dir}`")
+                                .format(dir=settings.LORA_DIR))
 
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
-                    gr.Markdown(
+                    gr.Markdown(t(
                         "Pour utiliser un modèle **téléchargé ailleurs** : déposez "
-                        f"le(s) fichier(s) dans `{settings.CUSTOM_DIR}` puis "
+                        "le(s) fichier(s) dans `{dir}` puis "
                         "sélectionnez-le ci-dessous. Vide = modèle du catalogue.")
+                        .format(dir=settings.CUSTOM_DIR))
                     custom_diff = gr.Dropdown(gen_engine.list_custom_models(),
                                               value=None, label="Diffusion (local)")
                     with gr.Row():
@@ -218,10 +222,11 @@ def build_generative_tab(model_id: str, title: str):
                         clear_custom = gr.Button("✖ Vider les champs perso",
                                                  size="sm")
 
-                ratio = gr.Dropdown(list(ratios.keys()),
-                                    value=_ratio_label(ratios, d.get("width", 1024),
-                                                       d.get("height", 1024)),
-                                    label="Format (ratio)")
+                ratio = gr.Dropdown(
+                    [t(k) for k in ratios],
+                    value=t(_ratio_label(ratios, d.get("width", 1024),
+                                         d.get("height", 1024))),
+                    label="Format (ratio)")
                 with gr.Row():
                     width = gr.Slider(256, 2048, value=d.get("width", 1024), step=16,
                                       label="Largeur")
@@ -236,8 +241,8 @@ def build_generative_tab(model_id: str, title: str):
                                          "distillé). <1 ou >1 = expérimental.")
                 preset_list = _presets(model_id)
                 preset = gr.Dropdown(
-                    [p["name"] for p in preset_list],
-                    value=(preset_list[0]["name"] if preset_list else None),
+                    [t(p["name"]) for p in preset_list],
+                    value=(t(preset_list[0]["name"]) if preset_list else None),
                     label="Préréglage (sampler/scheduler/pas)",
                     visible=bool(preset_list))
                 with gr.Row():
@@ -259,8 +264,8 @@ def build_generative_tab(model_id: str, title: str):
                     batch = gr.Slider(1, 8, value=1, step=1, label="Images")
 
                 with gr.Row():
-                    run = gr.Button(f"✨ Générer ({title})", variant="primary",
-                                    size="lg", scale=3)
+                    run = gr.Button(t("✨ Générer ({title})").format(title=title),
+                                    variant="primary", size="lg", scale=3)
                     stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
 
             # ----- Sorties -----
@@ -330,7 +335,7 @@ def build_generative_tab(model_id: str, title: str):
         style_refresh.click(_refresh_styles, outputs=[style_pick])
 
         def on_ratio(label):
-            w, h = ratios.get(label, (0, 0))
+            w, h = ratios.get(i18n.to_source(label), (0, 0))
             if not w:
                 return gr.update(), gr.update()
             return gr.update(value=w), gr.update(value=h)
@@ -360,13 +365,14 @@ def build_generative_tab(model_id: str, title: str):
             w = max(256, min(2048, int(round(w0 * sc / 16)) * 16))
             h = max(256, min(2048, int(round(h0 * sc / 16)) * 16))
             return (gr.update(value=w), gr.update(value=h),
-                    gr.update(value=_CUSTOM_LABEL))
+                    gr.update(value=t(_CUSTOM_LABEL)))
 
         init_image.upload(_fit_to_ref, inputs=[init_image],
                           outputs=[width, height, ratio])
 
         if preset_list:
             def apply_preset(name):
+                name = i18n.to_source(name)
                 for p in preset_list:
                     if p["name"] == name:
                         return (gr.update(value=p.get("sampler", "euler")),
@@ -389,8 +395,8 @@ def build_generative_tab(model_id: str, title: str):
             import time
 
             if not (prompt or "").strip():
-                raise gr.Error("Saisissez un prompt "
-                               "(décrivez l'image, ou la modification à appliquer).")
+                raise gr.Error(t("Saisissez un prompt (décrivez l'image, ou la "
+                                 "modification à appliquer)."))
 
             full_prompt = prompt or ""
             if (system_prompt or "").strip():

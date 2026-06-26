@@ -191,6 +191,12 @@ With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
+### Interface language
+**Settings → 🌐 Langue / Language** switches the UI between **French** and
+**English**. The choice is saved to `userdata/`; **restart the app** (`run.bat` /
+`run.sh`) to apply it — Gradio builds the interface once at launch. Engine logs
+and progress hints stay in French.
+
 ---
 
 ## Upscaling

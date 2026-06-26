@@ -23,6 +23,7 @@ PREFS_FILE = USERDATA_DIR / "preferences.json"
 
 # Préférences par défaut (surchargées par l'onglet Réglages, persistées en JSON).
 DEFAULT_PREFS: dict[str, Any] = {
+    "lang": "fr",               # langue de l'interface : "fr" | "en"
     "gpu_index": None,          # None = auto (meilleure carte détectée)
     "auto_optimize": True,      # déduire les flags du matériel
     "quant": None,              # None = recommandé selon VRAM

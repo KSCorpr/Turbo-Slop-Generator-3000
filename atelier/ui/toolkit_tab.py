@@ -6,15 +6,17 @@ import gradio as gr
 from .. import downloader, registry, settings
 from ..engine import generate as gen_engine
 from ..engine import tools
+from ..i18n import t
 
 
 def _installer_block(title: str, note: str, stream_fn, installed: bool):
     """Accordéon d'installation 1 clic commun aux outils."""
-    with gr.Accordion(f"⚙️ Installer {title} (en 1 clic)", open=not installed):
+    with gr.Accordion(t("⚙️ Installer {title} (en 1 clic)").format(title=title),
+                      open=not installed):
         gr.Markdown(note)
         log = gr.Textbox(label="Journal d'installation", lines=10,
                          autoscroll=True, elem_classes="log-box")
-        btn = gr.Button(f"⬇️ Installer {title}")
+        btn = gr.Button(t("⬇️ Installer {title}").format(title=title))
 
         def _install():
             for msg in stream_fn():
@@ -56,7 +58,7 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 def do_depth(img, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error("Fournissez une image.")
+                        raise gr.Error(t("Fournissez une image."))
                     logs: list[str] = []
                     progress(0.1, desc="Profondeur…")
                     try:
@@ -96,7 +98,7 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 def do_bg(img, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error("Fournissez une image.")
+                        raise gr.Error(t("Fournissez une image."))
                     logs: list[str] = []
                     progress(0.1, desc="Détourage…")
                     try:
@@ -138,15 +140,16 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 def _on_click(evt: gr.SelectData):
                     x, y = int(evt.index[0]), int(evt.index[1])
-                    return (x, y), f"Point : ({x}, {y}). Cliquez « Extraire l'objet »."
+                    return (x, y), t("Point : ({x}, {y}). Cliquez "
+                                     "« Extraire l'objet ».").format(x=x, y=y)
 
                 s_image.select(_on_click, outputs=[s_point, s_info])
 
                 def do_sam(img, point, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error("Fournissez une image.")
+                        raise gr.Error(t("Fournissez une image."))
                     if not point:
-                        raise gr.Error("Cliquez d'abord sur un objet dans l'image.")
+                        raise gr.Error(t("Cliquez d'abord sur un objet dans l'image."))
                     logs: list[str] = []
                     progress(0.1, desc="Segmentation…")
                     try:
@@ -220,10 +223,10 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 def do_upscale(img, model, repeats, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error("Fournissez une image.")
+                        raise gr.Error(t("Fournissez une image."))
                     if not model:
-                        raise gr.Error("Choisissez un modèle d'upscale "
-                                       "(téléchargez-les d'abord).")
+                        raise gr.Error(t("Choisissez un modèle d'upscale "
+                                         "(téléchargez-les d'abord)."))
                     logs: list[str] = []
                     progress(0.1, desc="Agrandissement…")
                     try:
@@ -296,10 +299,10 @@ def build_toolkit_tab(tab_id="toolkit"):
                     from PIL import Image as _PILImage
 
                     if img is None:
-                        raise gr.Error("Fournissez une image.")
+                        raise gr.Error(t("Fournissez une image."))
                     if not tools.upscale_is_installed():
-                        raise gr.Error("Installez d'abord l'upscale créatif SDXL "
-                                       "(accordéon ci-dessus).")
+                        raise gr.Error(t("Installez d'abord l'upscale créatif SDXL "
+                                         "(accordéon ci-dessus)."))
                     settings.ensure_dirs()
                     preview_path = (settings.TMP_DIR /
                                     f"usdu_preview_{int(time.time()*1000)}.png")

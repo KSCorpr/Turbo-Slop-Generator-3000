@@ -10,6 +10,8 @@ import subprocess
 from dataclasses import dataclass, field
 from functools import lru_cache
 
+from .i18n import t
+
 
 # --------------------------------------------------------------------------- #
 #  Détection
@@ -215,8 +217,9 @@ def generation_profile(gen_key: str, vram_gb: float | None = None,
         vae_tiling=(vram < 12),
         clip_on_cpu=(vram < 8),
         vae_on_cpu=(vram < 6),
-        notes=[spec["note"], f"VRAM {vram:.0f} Go → diffusion {quant}, "
-                             f"encodeur {enc_quant}."],
+        notes=[t(spec["note"]),
+               t("VRAM {vram} Go → diffusion {quant}, encodeur {enc}.").format(
+                   vram=f"{vram:.0f}", quant=quant, enc=enc_quant)],
     )
 
 
@@ -234,12 +237,13 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
             gpu = max(gpus, key=lambda g: g.vram_gb)  # par défaut : la plus grosse
         if len(gpus) > 1:
             notes.append(
-                f"{len(gpus)} GPU détectés — calcul épinglé sur #{gpu.index} "
-                f"({gpu.name}). Modifiable dans Réglages.")
+                t("{n} GPU détectés — calcul épinglé sur #{idx} ({name}). "
+                  "Modifiable dans Réglages.").format(
+                    n=len(gpus), idx=gpu.index, name=gpu.name))
 
     if gpu is None:
-        notes.append("Aucun GPU NVIDIA détecté : mode CPU (très lent). "
-                     "Vérifiez les pilotes / nvidia-smi.")
+        notes.append(t("Aucun GPU NVIDIA détecté : mode CPU (très lent). "
+                       "Vérifiez les pilotes / nvidia-smi."))
         return Profile(None, ram, "Q4_K_M", "Q4_K_M",
                        diffusion_fa=False, offload_to_cpu=True, vae_tiling=True,
                        clip_on_cpu=True, vae_on_cpu=True, notes=notes)
@@ -251,8 +255,8 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
     # Flash attention : à partir de Turing (RTX 20xx). Désactivé sur Pascal.
     fa = gpu.arch in ("turing", "ampere", "ada", "blackwell")
     if gpu.arch == "pascal":
-        notes.append("Carte Pascal (GTX 10xx) : flash-attention désactivé "
-                     "(peu efficace), génération plus lente.")
+        notes.append(t("Carte Pascal (GTX 10xx) : flash-attention désactivé "
+                       "(peu efficace), génération plus lente."))
 
     profile = Profile(
         gpu=gpu, ram_gb=ram, quant=quant, enc_quant=enc_quant,
@@ -264,13 +268,16 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
         notes=notes,
     )
 
-    notes.append(f"VRAM {vram:.0f} Go ({gpu.arch}) -> diffusion en {quant}.")
+    notes.append(t("VRAM {vram} Go ({arch}) -> diffusion en {quant}.").format(
+        vram=f"{vram:.0f}", arch=gpu.arch, quant=quant))
     if ram:
-        notes.append(f"RAM {ram:.0f} Go -> encodeur de texte en {enc_quant} "
-                     "(déchargé en RAM, sans coût VRAM).")
+        notes.append(t("RAM {ram} Go -> encodeur de texte en {enc} "
+                       "(déchargé en RAM, sans coût VRAM).").format(
+                        ram=f"{ram:.0f}", enc=enc_quant))
     if vram < 10:
-        notes.append("VRAM serrée : préférez des résolutions ≤ 768 px et une "
-                     "quantification plus basse (la génération sera plus lente).")
+        notes.append(t("VRAM serrée : préférez des résolutions ≤ 768 px et une "
+                       "quantification plus basse (la génération sera plus "
+                       "lente)."))
     return profile
 
 
@@ -279,10 +286,12 @@ def summary_text() -> str:
     gpus = detect_gpus()
     ram = detect_ram_gb()
     if not gpus:
-        return f"⚠️ Aucun GPU NVIDIA détecté · RAM {ram:.0f} Go"
-    lines = [f"RAM système : **{ram:.0f} Go**", "", "**GPU détectés :**"]
+        return t("⚠️ Aucun GPU NVIDIA détecté · RAM {ram} Go").format(
+            ram=f"{ram:.0f}")
+    lines = [t("RAM système : **{ram} Go**").format(ram=f"{ram:.0f}"), "",
+             t("**GPU détectés :**")]
     for g in gpus:
-        tc = "tensor cores" if g.tensor_cores else "sans tensor cores"
+        tc = t("tensor cores") if g.tensor_cores else t("sans tensor cores")
         lines.append(f"- #{g.index} — {g.name} · {g.vram_gb:.0f} Go · "
                      f"{g.arch} ({tc})")
     return "\n".join(lines)

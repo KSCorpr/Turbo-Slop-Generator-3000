@@ -56,7 +56,7 @@ def _disable_brotli() -> None:
 _patch_gradio_client()
 _disable_brotli()
 
-from atelier import APP_NAME, __version__, hardware, net, settings
+from atelier import APP_NAME, __version__, hardware, i18n, net, settings
 from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
 from atelier.ui.settings_tab import build_settings_tab
@@ -76,15 +76,20 @@ _HEAD = (
 
 def build_app() -> gr.Blocks:
     settings.ensure_dirs()
+    # Langue de l'interface : lue dans les préférences, appliquée à la
+    # construction (le shim traduit les libellés statiques).
+    i18n.init_from_prefs()
+    i18n.install_gradio_patch()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
 
     with gr.Blocks(title=f"{APP_NAME} {__version__}", theme=theme(), css=CSS,
                    head=_HEAD) as demo:
+        _subtitle = i18n.t("Génération d'images locale")
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
-            f"<div class='sub'>Génération d'images locale · Flux.2 Klein 9B · "
-            f"Krea 2 Turbo · v{__version__}</div></div>")
+            f"<div class='sub'>{_subtitle} · "
+            f"Flux.2 Klein 9B · Krea 2 Turbo · v{__version__}</div></div>")
 
         if sd_cli is None:
             gr.Markdown("> ⚠️ **Binaire `sd-cli` introuvable.** Lancez "
@@ -109,14 +114,17 @@ def _print_lan_banner(port: int, auth: bool) -> None:
     urls = [f"http://{ip}:{port}" for ip in net.lan_ips()]
     line = "═" * 64
     print("\n" + line)
-    print(f"  {APP_NAME} est accessible sur le réseau local !")
-    print("  Partagez cette adresse à vos collègues (Mac/PC, même Wi-Fi),")
-    print("  à ouvrir dans Safari ou Chrome :")
+    print("  " + i18n.t("{app} est accessible sur le réseau local !").format(
+        app=APP_NAME))
+    print("  " + i18n.t("Partagez cette adresse à vos collègues "
+                        "(Mac/PC, même Wi-Fi),"))
+    print("  " + i18n.t("à ouvrir dans Safari ou Chrome :"))
     for u in urls or [f"http://<IP-de-ce-PC>:{port}"]:
         print(f"      →  {u}")
     if auth:
-        print("  (un identifiant/mot de passe leur sera demandé)")
-    print("  Si l'accès échoue : autorisez le port dans le pare-feu Windows.")
+        print("  " + i18n.t("(un identifiant/mot de passe leur sera demandé)"))
+    print("  " + i18n.t("Si l'accès échoue : autorisez le port dans le "
+                        "pare-feu Windows."))
     print(line + "\n")
 
 
