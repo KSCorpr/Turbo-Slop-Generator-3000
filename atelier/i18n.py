@@ -46,45 +46,33 @@ def to_source(s):
 
 
 # --------------------------------------------------------------------------- #
-#  Shim Gradio : traduit les textes d'affichage statiques à la construction.
+#  Traduction APRÈS construction : on parcourt l'arbre des composants et on
+#  traduit les textes d'affichage en place. AUCUN monkeypatch des constructeurs
+#  (qui cassait l'introspection Gradio -> page blanche). Sans effet en mode FR.
 # --------------------------------------------------------------------------- #
-_TEXT_KW = ("label", "info", "placeholder")
-# Classes dont le 1er argument positionnel (ou value=) est un texte d'affichage.
-_FIRST_IS_TEXT = ("Markdown", "HTML", "Button", "Tab", "TabItem", "Accordion")
+def translate_blocks(demo) -> None:
+    """Traduit les libellés/markdown d'un Blocks déjà construit (mode EN).
 
-
-def install_gradio_patch() -> None:
-    """Enrobe les constructeurs Gradio pour traduire les libellés statiques.
-
-    Ne traduit PAS les `choices` (souvent utilisés comme clés) ni les `value`
-    des champs de saisie (données utilisateur). Sans effet en mode FR."""
-    import gradio as gr
-
-    names = ["Markdown", "HTML", "Button", "Tab", "TabItem", "Accordion",
-             "Textbox", "Slider", "Dropdown", "Radio", "Checkbox", "Number",
-             "Image", "Gallery", "Video", "File", "Dataframe"]
-    for name in names:
-        cls = getattr(gr, name, None)
-        if cls is None or getattr(cls, "_i18n_patched", False):
-            continue
-        orig = cls.__init__
-        first_is_text = name in _FIRST_IS_TEXT
-
-        def make(orig_init, first_text):
-            def __init__(self, *args, **kwargs):
-                if _LANG == "en":
-                    if first_text and args and isinstance(args[0], str):
-                        args = (t(args[0]),) + args[1:]
-                    if first_text and isinstance(kwargs.get("value"), str):
-                        kwargs["value"] = t(kwargs["value"])
-                    for k in _TEXT_KW:
-                        if isinstance(kwargs.get(k), str):
-                            kwargs[k] = t(kwargs[k])
-                return orig_init(self, *args, **kwargs)
-            return __init__
-
-        cls.__init__ = make(orig, first_is_text)
-        cls._i18n_patched = True
+    Mute `label`/`info`/`placeholder` sur tous les composants, et `value` sur
+    les composants de texte (Markdown/HTML/Button). Ne touche ni aux `choices`
+    (traduits explicitement là où ils servent de clé) ni aux `value` des champs
+    de saisie (données)."""
+    if _LANG != "en":
+        return
+    try:
+        import gradio as gr
+        text_value = (gr.Markdown, gr.HTML, gr.Button)
+        for comp in list(getattr(demo, "blocks", {}).values()):
+            for attr in ("label", "info", "placeholder"):
+                v = getattr(comp, attr, None)
+                if isinstance(v, str):
+                    setattr(comp, attr, t(v))
+            if isinstance(comp, text_value):
+                v = getattr(comp, "value", None)
+                if isinstance(v, str):
+                    comp.value = t(v)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # --------------------------------------------------------------------------- #

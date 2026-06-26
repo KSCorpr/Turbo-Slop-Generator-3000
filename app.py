@@ -76,10 +76,9 @@ _HEAD = (
 
 def build_app() -> gr.Blocks:
     settings.ensure_dirs()
-    # Langue de l'interface : lue dans les préférences, appliquée à la
-    # construction (le shim traduit les libellés statiques).
+    # Langue de l'interface : lue dans les préférences. Les chaînes dynamiques
+    # sont traduites à la construction (via t()), le reste après coup.
     i18n.init_from_prefs()
-    i18n.install_gradio_patch()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
 
@@ -107,6 +106,7 @@ def build_app() -> gr.Blocks:
             build_video_tab()
             build_settings_tab()
 
+    i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)
     return demo
 
 
