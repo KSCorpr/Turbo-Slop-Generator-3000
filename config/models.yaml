@@ -50,51 +50,14 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
-  - id: krea2
-    name: "Krea 2"
-    family: krea2
-    tags: [qualité, photoréalisme, krea]
-    description: >
-      Krea 2 (base) en GGUF — modèle Krea, supporté nativement par
-      stable-diffusion.cpp. Diffusion GGUF + encodeur Qwen3-VL-4B (via --llm,
-      déchargé en RAM) + VAE WAN 2.1. Réglages par défaut prudents (≈20 pas) :
-      à ajuster selon tes essais.
-    sources:
-      diffusion:
-        repo: realrebelai/KREA-2_GGUFs
-        match: "BASE/Krea-2-Base-{quant}.gguf"
-        quantizable: true
-      text_encoder:
-        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
-        quantizable: true
-      vae:
-        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
-        match: "*wan_2.1_vae.safetensors"
-    defaults:
-      steps: 20
-      cfg_scale: 5.0
-      sampler: euler
-      scheduler: simple
-      width: 1024
-      height: 1024
-      supports_negative: true
-    presets:
-      - {name: "📷 Qualité (recommandé)", sampler: euler,   scheduler: simple, steps: 20, cfg_scale: 5.0}
-      - {name: "Détaillé (dpm++ 2M)",     sampler: dpm++2m, scheduler: simple, steps: 28, cfg_scale: 4.5}
-      - {name: "Guidage fort",            sampler: euler,   scheduler: simple, steps: 24, cfg_scale: 7.0}
-    vram_min_gb: 10
-
-  # --------------------------------------------------------------------------
   - id: krea2-turbo
     name: "Krea 2 Turbo"
     family: krea2
     tags: [rapide, distillé, krea]
     description: >
-      Krea 2 « Turbo » (distillé) en GGUF — variante rapide (peu d'étapes) du
-      modèle Krea 2. Mêmes encodeur (Qwen3-VL-4B) et VAE (WAN 2.1) que la base.
-      Idéal pour comparer vitesse/qualité face à Krea 2 « Raw ». Réglages par
-      défaut prudents (≈6 pas) : à ajuster selon tes essais.
+      Krea 2 « Turbo » (distillé) en GGUF — variante rapide (8 pas, CFG 1.0) du
+      modèle Krea 2. Encodeur Qwen3-VL-4B (via --llm, déchargé en RAM) + VAE
+      WAN 2.1. Photoréalisme, idéal sur 11–12 Go en Q4_K_M.
     sources:
       diffusion:
         repo: realrebelai/KREA-2_GGUFs
@@ -120,29 +83,6 @@ base_models:
       - {name: "Très rapide (4 pas)", sampler: euler,   scheduler: simple, steps: 4,  cfg_scale: 1.0}
       - {name: "Qualité (12 pas)",    sampler: dpm++2m, scheduler: simple, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
-
-
-# ============================================================================
-#  PiD — décodeur de diffusion en espace pixel (NVIDIA), via stable-diffusion.cpp
-#  Upscale rapide GPU natif : encode l'image puis décode/agrandit vers ~2K en
-#  4 pas (pas de PyTorch, pas de tuiles).  doc : leejet/sd.cpp docs/pid.md
-# ============================================================================
-pid:
-  name: "PiD — upscale rapide (NVIDIA, GPU natif)"
-  target: 2048          # côté long visé (le modèle est entraîné 512->2048)
-  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
-  steps: 4
-  vae_format: flux
-  sources:
-    diffusion:
-      repo: Comfy-Org/PixelDiT
-      match: "pid_flux1_512_to_2048_4step_bf16.safetensors"
-    text_encoder:
-      repo: Comfy-Org/PixelDiT
-      match: "gemma_2_2b_it*.safetensors"
-    vae:
-      repo: camenduru/FLUX.1-dev-ungated
-      match: "ae.safetensors"
 
 
 # ============================================================================

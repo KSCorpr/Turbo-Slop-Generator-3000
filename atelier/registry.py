@@ -97,30 +97,6 @@ def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
 
 
 # --------------------------------------------------------------------------- #
-#  PiD (upscale natif sd.cpp)
-# --------------------------------------------------------------------------- #
-def pid_config() -> dict[str, Any]:
-    return _catalog().get("pid", {}) or {}
-
-
-def pid_components() -> list[Component]:
-    out: list[Component] = []
-    for role, spec in (pid_config().get("sources") or {}).items():
-        out.append(Component(role, spec["repo"], spec["match"], None))
-    return out
-
-
-def pid_paths() -> dict[str, Path | None]:
-    """{role: chemin local | None} pour les composants PiD."""
-    return {c.role: resolve_component_path(c) for c in pid_components()}
-
-
-def pid_ready() -> bool:
-    comps = pid_components()
-    return bool(comps) and all(resolve_component_path(c) is not None for c in comps)
-
-
-# --------------------------------------------------------------------------- #
 #  LTX-2.3 (vidéo, natif sd.cpp)
 # --------------------------------------------------------------------------- #
 def ltx_config() -> dict[str, Any]:
@@ -199,11 +175,11 @@ def missing_components(model: BaseModel) -> list[Component]:
 
 def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:
     """Supprime les fichiers téléchargés de ce modèle, SANS toucher aux fichiers
-    partagés avec un autre modèle (encodeur/VAE communs) ni avec PiD.
+    partagés avec un autre modèle (encodeur/VAE communs).
     Retourne la liste des fichiers supprimés."""
     mine = {resolve_component_path(c) for c in model.components}
     mine.discard(None)
-    # Fichiers utilisés par les AUTRES modèles + PiD : à préserver.
+    # Fichiers utilisés par les AUTRES modèles : à préserver.
     shared: set = set()
     for other in load_base_models(prefs):
         if other.id == model.id:
@@ -212,10 +188,6 @@ def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:
             p = resolve_component_path(c)
             if p:
                 shared.add(p)
-    for c in pid_components():
-        p = resolve_component_path(c)
-        if p:
-            shared.add(p)
 
     deleted: list[str] = []
     repo_dirs: set[Path] = set()

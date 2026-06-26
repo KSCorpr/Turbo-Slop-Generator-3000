@@ -10,6 +10,7 @@ import gradio as gr
 
 from .. import registry, settings, styles
 from ..engine import generate as gen_engine
+from ..engine import tools
 
 # (libellé affiché, valeur réelle sd-cli). Samplers supportés par sd.cpp.
 SAMPLERS = [
@@ -28,17 +29,41 @@ SCHEDULES = [
     ("Simple", "simple"), ("KL Optimal", "kl_optimal"), ("LCM", "lcm"),
     ("Bong Tangent", "bong_tangent"),
 ]
-RATIOS: dict[str, tuple[int, int]] = {
+# Préréglages de résolution PAR FAMILLE de modèle, alignés sur les résolutions
+# natives d'entraînement (le modèle rend mieux sur ces formats).
+#
+#  • Flux.2 Klein : entraîné en ~1 MP, grille de 32 px, gère jusqu'à ~4 MP.
+#    Formats natifs documentés : 1024², 1248×832, 1184×880, 1392×752, 1568×672…
+#  • Krea 2 : famille SDXL/1024, multiples de 64 px : 1024², 1152×896, 1216×832,
+#    1344×768, etc. (+ option 2K via VAE WAN).
+RATIOS_FLUX2: dict[str, tuple[int, int]] = {
     "Carré 1:1 — 1024×1024": (1024, 1024),
+    "Carré 1:1 — 1440×1440 (2K)": (1440, 1440),
+    "Paysage 3:2 — 1248×832": (1248, 832),
+    "Portrait 2:3 — 832×1248": (832, 1248),
+    "Paysage 4:3 — 1184×880": (1184, 880),
+    "Portrait 3:4 — 880×1184": (880, 1184),
+    "Large 16:9 — 1392×752": (1392, 752),
+    "Vertical 9:16 — 752×1392": (752, 1392),
+    "Cinéma 21:9 — 1568×672": (1568, 672),
+    "Personnalisé (sliders)": (0, 0),
+}
+RATIOS_KREA2: dict[str, tuple[int, int]] = {
+    "Carré 1:1 — 1024×1024": (1024, 1024),
+    "Carré 1:1 — 1536×1536 (2K)": (1536, 1536),
     "Paysage 3:2 — 1216×832": (1216, 832),
     "Portrait 2:3 — 832×1216": (832, 1216),
     "Paysage 4:3 — 1152×896": (1152, 896),
     "Portrait 3:4 — 896×1152": (896, 1152),
     "Large 16:9 — 1344×768": (1344, 768),
     "Vertical 9:16 — 768×1344": (768, 1344),
-    "Cinéma 21:9 — 1536×640": (1536, 640),
     "Personnalisé (sliders)": (0, 0),
 }
+_CUSTOM_LABEL = "Personnalisé (sliders)"
+
+
+def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
+    return RATIOS_KREA2 if family == "krea2" else RATIOS_FLUX2
 
 
 def _defaults(model_id: str) -> dict:
@@ -51,20 +76,21 @@ def _presets(model_id: str) -> list[dict]:
     return list(m.presets) if (m and m.presets) else []
 
 
-def _ratio_label(w: int, h: int) -> str:
-    for label, (rw, rh) in RATIOS.items():
+def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
+    for label, (rw, rh) in ratios.items():
         if rw == w and rh == h:
             return label
-    return "Personnalisé (sliders)"
+    return _CUSTOM_LABEL
 
 
-def build_generative_tab(model_id: str, title: str,
-                         tabs=None, pending_upscale=None, upscale_tab_id="creative"):
+def build_generative_tab(model_id: str, title: str, tabs=None):
     d = _defaults(model_id)
 
     with gr.Tab(title):
         m = registry.get_base_model(model_id, settings.load_prefs())
         ready = m is not None and registry.model_is_ready(m)
+        family = m.family if m else "flux2"
+        ratios = _ratios_for(family)
         # Famille « édition » (Flux.2/Kontext) : modification d'image via -r ;
         # sinon img2img classique (-i + force de transformation).
         is_edit = bool(m) and m.family == "flux2"
@@ -96,10 +122,31 @@ def build_generative_tab(model_id: str, title: str,
                         style_refresh = gr.Button("↻ Rafraîchir", size="sm")
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
+                with gr.Row():
+                    enhance_btn = gr.Button("✨ Améliorer le prompt (IA)",
+                                            size="sm", scale=3)
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
                                       visible=d.get("supports_negative", False))
 
-                _acc_title = ("🖼️ Image de référence (édition d'image)" if is_edit
+                with gr.Accordion("✨ Améliorateur de prompt — installer (1 clic)",
+                                  open=not tools.enhance_is_installed()):
+                    gr.Markdown(
+                        "Petit LLM (**Qwen2.5-3B-Instruct**, PyTorch ~6 Go) qui "
+                        "réécrit votre idée en un prompt **anglais** détaillé "
+                        "(sujet, lumière, cadrage, style). Chargé puis déchargé à "
+                        "chaque appel : **aucun conflit de VRAM** avec la "
+                        "génération. Aucune commande à taper.")
+                    enh_log = gr.Textbox(label="Journal d'installation", lines=6,
+                                         autoscroll=True, elem_classes="log-box")
+                    enh_inst = gr.Button("⬇️ Installer l'améliorateur de prompt")
+
+                    def _install_enh():
+                        for msg in tools.install_enhance_stream():
+                            yield msg
+
+                    enh_inst.click(_install_enh, outputs=[enh_log])
+
+                _acc_title = ("🖼️ Images de référence (édition d'image)" if is_edit
                               else "🖼️ Image de départ (image-to-image)")
                 with gr.Accordion(_acc_title, open=False):
                     if is_edit:
@@ -109,7 +156,10 @@ def build_generative_tab(model_id: str, title: str,
                             "couleur de la voiture en rouge »*, *« ajoute de la "
                             "neige »*). Édition pilotée par le prompt (pas de "
                             "curseur de force). Le format de sortie s'adapte à "
-                            "votre image.")
+                            "votre image. Vous pouvez ajouter **2 images de "
+                            "référence** supplémentaires pour combiner des éléments "
+                            "(ex. *« mets le personnage de l'image 1 dans le décor "
+                            "de l'image 2 »*).")
                     else:
                         gr.Markdown(
                             "Partez d'une image : décrivez le rendu voulu et réglez "
@@ -119,6 +169,15 @@ def build_generative_tab(model_id: str, title: str,
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")
+                    if is_edit:
+                        with gr.Row():
+                            ref_image2 = gr.Image(label="Référence 2 (option)",
+                                                  type="pil")
+                            ref_image3 = gr.Image(label="Référence 3 (option)",
+                                                  type="pil")
+                    else:
+                        ref_image2 = gr.State(None)
+                        ref_image3 = gr.State(None)
                     strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
                                          label="Force de transformation",
                                          visible=not is_edit)
@@ -159,8 +218,8 @@ def build_generative_tab(model_id: str, title: str,
                         clear_custom = gr.Button("✖ Vider les champs perso",
                                                  size="sm")
 
-                ratio = gr.Dropdown(list(RATIOS.keys()),
-                                    value=_ratio_label(d.get("width", 1024),
+                ratio = gr.Dropdown(list(ratios.keys()),
+                                    value=_ratio_label(ratios, d.get("width", 1024),
                                                        d.get("height", 1024)),
                                     label="Format (ratio)")
                 with gr.Row():
@@ -212,8 +271,6 @@ def build_generative_tab(model_id: str, title: str,
                                      height=420, object_fit="contain",
                                      show_label=True, format="png",
                                      show_download_button=True)
-                send_upscale = gr.Button("📤 Envoyer l'image sélectionnée "
-                                         "vers l'Upscale créatif")
                 logbox = gr.Textbox(label="Journal", lines=10, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
 
@@ -276,12 +333,24 @@ def build_generative_tab(model_id: str, title: str,
         style_refresh.click(_refresh_styles, outputs=[style_pick])
 
         def on_ratio(label):
-            w, h = RATIOS.get(label, (0, 0))
+            w, h = ratios.get(label, (0, 0))
             if not w:
                 return gr.update(), gr.update()
             return gr.update(value=w), gr.update(value=h)
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
+
+        # --- Améliorateur de prompt (LLM) ---
+        def _enhance(text):
+            try:
+                better = tools.enhance_prompt(text or "")
+            except tools.ToolError as exc:
+                raise gr.Error(str(exc))
+            except Exception as exc:  # noqa: BLE001
+                raise gr.Error(f"Échec de l'amélioration : {exc}")
+            return gr.update(value=better)
+
+        enhance_btn.click(_enhance, inputs=[prompt], outputs=[prompt])
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ
@@ -294,7 +363,7 @@ def build_generative_tab(model_id: str, title: str,
             w = max(256, min(2048, int(round(w0 * sc / 16)) * 16))
             h = max(256, min(2048, int(round(h0 * sc / 16)) * 16))
             return (gr.update(value=w), gr.update(value=h),
-                    gr.update(value="Personnalisé (sliders)"))
+                    gr.update(value=_CUSTOM_LABEL))
 
         init_image.upload(_fit_to_ref, inputs=[init_image],
                           outputs=[width, height, ratio])
@@ -312,7 +381,8 @@ def build_generative_tab(model_id: str, title: str,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        def do_generate(system_prompt, prompt, negative, init_image, strength,
+        def do_generate(system_prompt, prompt, negative, init_image, ref_image2,
+                        ref_image3, strength,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc,
@@ -334,16 +404,20 @@ def build_generative_tab(model_id: str, title: str,
                 base_seed = random.randint(0, 2**31 - 1)
 
             settings.ensure_dirs()
-            # Modèle d'édition (Flux.2) -> image via -r (ref_image) ; sinon
+            # Modèle d'édition (Flux.2) -> image(s) via -r (ref_image) ; sinon
             # img2img classique via -i (init_image) + force.
-            init_path = ref_path = None
-            if init_image is not None:
-                p = settings.TMP_DIR / ("edit_ref.png" if is_edit else "i2i_init.png")
-                init_image.save(p)
-                if is_edit:
-                    ref_path = p
-                else:
-                    init_path = p
+            init_path = None
+            ref_paths: list = []
+            if is_edit:
+                # Édition multi-référence : jusqu'à 3 images (-r répété).
+                for i, im in enumerate((init_image, ref_image2, ref_image3)):
+                    if im is not None:
+                        rp = settings.TMP_DIR / f"edit_ref{i + 1}.png"
+                        im.save(rp)
+                        ref_paths.append(rp)
+            elif init_image is not None:
+                init_path = settings.TMP_DIR / "i2i_init.png"
+                init_image.save(init_path)
 
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
@@ -368,7 +442,7 @@ def build_generative_tab(model_id: str, title: str,
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
                         schedule=schedule, flow_shift=float(flow_shift or 0.0),
                         init_image=init_path, strength=float(strength),
-                        ref_image=ref_path, loras=loras,
+                        ref_image=(ref_paths or None), loras=loras,
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
@@ -434,7 +508,8 @@ def build_generative_tab(model_id: str, title: str,
 
         gen_evt = run.click(
             do_generate,
-            inputs=[system_prompt, prompt, negative, init_image, strength, width,
+            inputs=[system_prompt, prompt, negative, init_image, ref_image2,
+                    ref_image3, strength, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc],
@@ -446,15 +521,3 @@ def build_generative_tab(model_id: str, title: str,
             return evt.index
 
         gallery.select(_on_select, outputs=[sel_index])
-
-        if pending_upscale is not None and tabs is not None:
-            def _send(paths, idx):
-                if not paths:
-                    raise gr.Error("Générez d'abord une image.")
-                i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
-                return paths[i], gr.Tabs(selected=upscale_tab_id)
-
-            send_upscale.click(_send, inputs=[last_paths, sel_index],
-                               outputs=[pending_upscale, tabs])
-        else:
-            send_upscale.visible = False

@@ -1,20 +1,19 @@
 # 🟢 GEN.Ai Image Workshop
 
 Studio d'inférence d'images **local**, moderne et léger, pensé pour les artistes.
-Génère avec **Flux.2 Klein 9B** (GGUF), avec **bibliothèque de modèles à la
-demande**, **optimisations automatiques selon votre carte RTX et votre RAM**,
-**LoRA**, **presets sampler/scheduler**, **styles enregistrés**, **upscale
-créatif façon Magnific** et un **Toolkit** (profondeur, détourage).
+Génère avec **Flux.2 Klein 9B** et **Krea 2 Turbo** (GGUF), avec **catalogue de
+modèles à la demande**, **optimisations automatiques selon votre carte RTX et
+votre RAM**, **LoRA**, **presets sampler/scheduler**, **résolutions natives par
+modèle**, **styles enregistrés**, **améliorateur de prompt (IA)** et un
+**Toolkit** (profondeur, détourage, SAM).
 
 Aucun ComfyUI, aucune usine à gaz : une interface web claire.
 
 | Onglet | Rôle |
 |---|---|
-| 🟣 **Flux.2 Klein** | rapide (4 pas) · text-to-image & édition d'image, presets, styles, LoRA |
-| 🎨 **Krea 2** | qualité · text-to-image (GGUF, encodeur Qwen3-VL, VAE WAN 2.1) |
-| 🎨 **Krea 2 / ⚡ Turbo** | qualité / rapide (GGUF, encodeur Qwen3-VL, VAE WAN 2.1) |
+| 🟣 **Flux.2 Klein** | rapide (4 pas) · text-to-image & **édition multi-référence**, presets, styles, LoRA |
+| ⚡ **Krea 2 Turbo** | photoréalisme rapide (8 pas, GGUF, encodeur Qwen3-VL, VAE WAN 2.1) |
 | 📚 **Catalogue de modèles** | recommandations selon le matériel, téléchargement / suppression à la demande |
-| ✨ **Upscale** | PiD (sd.cpp) · SDXL+ControlNet Tile (PyTorch) · Flux Klein tuilé |
 | 🧰 **Toolkit** | profondeur · suppression d'arrière-plan · détourage au clic (SAM) |
 | 🎬 **Vidéo (LTX-2.3)** | texte→vidéo, image→vidéo, début→fin (sd.cpp, ⚠️ 22B très lourd) |
 | ⚙️ **Réglages** | matériel détecté, quantification, optimisations (auto/manuel) |
@@ -80,25 +79,32 @@ Déposez vos `.safetensors` / `.gguf` dans le dossier **`loras/`**, puis
 sélectionnez-les (jusqu'à 2) avec leur poids dans l'onglet Génération. La syntaxe
 `<lora:nom:poids>` est transmise au moteur.
 
-### Upscale (onglet ✨) — trois méthodes
-- **⚡ PiD** — décodeur NVIDIA **natif sd.cpp** : ~2K en 4 pas, **100% GPU**,
-  sans PyTorch ni tuiles. Rapide. (`Comfy-Org/PixelDiT` + VAE FLUX.1.)
-- **🎨 SDXL + ControlNet Tile** (recommandé) — façon Magnific, **PyTorch**, modèle
-  **résident** sur le GPU (rapide) + tuiles cohérentes (ControlNet Tile) + fondu
-  cosinus. ~9 Go à installer (SDXL + ControlNet + VAE). Curseurs *créativité* /
-  *fidélité*. Tient sur 11–12 Go.
-- **🟣 Flux.2 Klein tuilé** (sd.cpp) — léger (rien à installer de plus, utilise le
-  Klein du catalogue) mais **lent** (recharge par tuile).
+### Résolutions natives
+Chaque modèle propose des **formats alignés sur ses résolutions d'entraînement**
+(le rendu est meilleur dessus) :
+- **Flux.2 Klein** : ~1 MP, grille 32 px — 1024², 1248×832, 1184×880, 1392×752,
+  1568×672… (+ option 2K).
+- **Krea 2** : famille 1024 (multiples de 64) — 1024², 1216×832, 1152×896,
+  1344×768… (+ option 2K).
 
-### Toolkit (onglet 🧰)
-Profondeur (*Depth Anything V2*), suppression d'arrière-plan (*RMBG-1.4*) et
-**détourage d'objet au clic** (*Segment Anything*, `facebook/sam-vit-base`).
+### Améliorateur de prompt (IA)
+Bouton **« ✨ Améliorer le prompt »** dans l'onglet de génération : un petit LLM
+(*Qwen2.5-3B-Instruct*, PyTorch ~6 Go, installable en 1 clic) réécrit votre idée
+en un prompt **anglais** détaillé (sujet, lumière, cadrage, style), prêt à
+générer. Le modèle est chargé puis déchargé à chaque appel → **aucun conflit de
+VRAM** avec la génération.
+
+### Édition multi-référence (Flux.2 Klein)
+Dans l'accordéon *Images de référence*, chargez l'image à éditer et jusqu'à **2
+images de référence** supplémentaires, puis décrivez la modification ou la
+combinaison voulue dans le prompt (chaque image est passée au moteur via `-r`).
 
 ### Toolkit (onglet 🧰)
 Outils PyTorch installables en 1 clic (modèles téléchargés depuis Hugging Face) :
 - **Profondeur** — *Depth Anything V2* (carte de profondeur).
 - **Sans arrière-plan** — *RMBG-1.4* (détourage → PNG transparent ; licence non
   commerciale).
+- **Détourage au clic** — *Segment Anything* (`facebook/sam-vit-base`).
 
 ### Prompts sauvegardés
 Chaque image générée est accompagnée d'un `.txt` (style A1111) dans `outputs/`
@@ -163,15 +169,15 @@ atelier/
   engine/
     sdcpp.py                 # construction/exécution des commandes sd-cli (+ LoRA)
     generate.py              # pipeline de génération (modèle + matériel + LoRA)
-    tools.py                 # outils PyTorch (profondeur, détourage, upscale) en sous-process
+    tools.py                 # outils PyTorch (profondeur, détourage, SAM, prompt) en sous-process
   ui/
     theme.py                 # thème clair moderne + CSS
-    generate_tab.py · creative_tab.py · library_tab.py · toolkit_tab.py · settings_tab.py
+    generate_tab.py · library_tab.py · toolkit_tab.py · video_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # télécharge le binaire stable-diffusion.cpp
   _torch_setup.py            # helpers d'installation PyTorch CUDA (partagés)
-  setup_tools.py             # installe les outils PyTorch (depth, rembg, upscale SDXL)
-  tools/run_*.py             # runners d'inférence (sous-process : depth, rembg, upscale)
+  setup_tools.py             # installe les outils PyTorch (depth, rembg, sam, enhance)
+  tools/run_*.py             # runners d'inférence (sous-process : depth, rembg, sam, enhance)
 ```
 
 ---
@@ -184,7 +190,6 @@ scripts/
   `python\python.exe scripts\get_sdcpp.py --variant cuda`
   (récupère la build **win-cuda12** *et* le runtime **cudart** côte à côte).
 - **« Aucun GPU NVIDIA détecté »** → vérifiez les pilotes / `nvidia-smi`.
-- **Modèle « à télécharger »** → onglet Bibliothèque → bouton Télécharger.
+- **Modèle « à télécharger »** → onglet Catalogue de modèles → bouton Télécharger.
 - **Out of memory** → Réglages : baissez la quantification, activez offload/tiling,
-  ou réduisez la résolution / le facteur d'upscale créatif.
-- **Upscale créatif en OOM** → baissez le facteur (×2) ou la résolution source.
+  ou réduisez la résolution.

@@ -111,7 +111,7 @@ def generate(
     flow_shift: float = 0.0,
     init_image: Path | None = None,
     strength: float = 0.6,
-    ref_image: Path | None = None,
+    ref_image: "Path | list[Path] | None" = None,
     loras: list[tuple[str, float]] | None = None,
     diffusion_override: Path | None = None,
     vae_override: Path | None = None,
@@ -190,67 +190,6 @@ def generate(
     return paths
 
 
-def pid_upscale(image, prompt: str = "", target: int | None = None,
-                preview_path: Path | None = None,
-                log: Callable[[str], None] | None = None):
-    """Upscale rapide via PiD (décodeur de diffusion en espace pixel, natif
-    sd.cpp) : encode l'image puis décode/agrandit vers ~2K en 4 pas, sur le GPU.
-    """
-    from PIL import Image
-    prefs = settings.load_prefs()
-    sd_cli = settings.find_sd_cli()
-    if sd_cli is None:
-        raise sdcpp.EngineError(
-            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
-
-    cfg = registry.pid_config()
-    paths = registry.pid_paths()
-    missing = [r for r in ("diffusion", "text_encoder", "vae")
-               if not (paths.get(r) and Path(paths[r]).is_file())]
-    if missing:
-        raise sdcpp.EngineError(
-            f"PiD non installé (composants manquants : {', '.join(missing)}). "
-            "Installez-le depuis l'onglet Upscale.")
-
-    settings.ensure_dirs()
-    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
-        else image.convert("RGB")
-    # PiD est entraîné « base -> 4x » (ex. 512 -> 2048). On doit RESPECTER ce
-    # ratio : on réduit l'image de référence à ~base (côté long), et on sort à 4x.
-    # Sinon (ratio != 4x) le décodeur produit des artefacts « peinture ».
-    tgt = int(target or cfg.get("target", 2048))
-    factor = int(cfg.get("factor", 4))
-    base = max(256, tgt // factor)
-    longest = max(im.width, im.height) or 1
-    rsc = base / longest
-    rw = max(64, int(round(im.width * rsc / 16)) * 16)
-    rh = max(64, int(round(im.height * rsc / 16)) * 16)
-    ref_small = im.resize((rw, rh), Image.LANCZOS)
-    ref = settings.TMP_DIR / "pid_ref.png"
-    ref_small.save(ref)
-    w, h = rw * factor, rh * factor   # sortie = base x4
-    if log:
-        log(f"PiD : ref {rw}x{rh} -> sortie {w}x{h} (×{factor}) sur le GPU "
-            f"({cfg.get('steps', 4)} pas)…")
-
-    flags, gpu_index = _resolved_flags(prefs)
-    req = GenRequest(
-        diffusion_model=paths["diffusion"], text_encoder=paths["text_encoder"],
-        vae=paths["vae"], vae_format=cfg.get("vae_format", "flux"), rng="cpu",
-        ref_image=ref, prompt=prompt or "high quality, sharp, highly detailed",
-        steps=int(cfg.get("steps", 4)), cfg_scale=1.0, sampler="euler",
-        width=w, height=h, seed=-1, batch_count=1,
-        preview_path=preview_path, flags=flags, gpu_index=gpu_index,
-    )
-    out = sdcpp.unique_output("pid")
-    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
-    res = sdcpp.collect_outputs(out, 1)
-    if not res:
-        raise sdcpp.EngineError("PiD n'a produit aucune image.")
-    return res[0]
-
-
 def generate_video(prompt: str, negative: str = "", mode: str = "t2v",
                    init_image: Path | None = None, end_image: Path | None = None,
                    width: int = 1280, height: int = 720, frames: int = 33,
@@ -292,117 +231,4 @@ def generate_video(prompt: str, negative: str = "", mode: str = "t2v",
     if found:
         return found[0]
     raise sdcpp.EngineError("LTX-2.3 n'a produit aucune vidéo.")
-
-
-def _feather_mask(h: int, w: int, fade: int):
-    import numpy as np
-    fy = np.ones(h, np.float32)
-    fx = np.ones(w, np.float32)
-    f = max(1, min(fade, h // 2, w // 2))
-    ramp = 0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, f, dtype=np.float32))
-    fy[:f] = ramp; fy[-f:] = ramp[::-1]
-    fx[:f] = ramp; fx[-f:] = ramp[::-1]
-    return (fy[:, None] * fx[None, :])[:, :, None]
-
-
-def klein_tiled_upscale(image, scale: int, prompt: str = "", steps: int = 4,
-                        preview_path: Path | None = None,
-                        log: Callable[[str], None] | None = None,
-                        tile: int = 1024, overlap: int = 192):
-    """Upscale créatif 100% GPU via Flux.2 Klein (sd.cpp) — façon KleinTiledUpscaler.
-
-    Pré-agrandit (Lanczos + léger affinage), puis raffine PAR TUILES en mode
-    ÉDITION Klein (-r) avec un prompt de détail, et recolle avec un fondu cosinus.
-    Aucun PyTorch : sd.cpp gère GPU + offload RAM. Petite cible -> une seule passe.
-    """
-    import time
-    import numpy as np
-    from PIL import Image, ImageFilter
-
-    settings.ensure_dirs()
-    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
-        else image.convert("RGB")
-    tw = max(512, int(round(im.width * scale / 16)) * 16)
-    th = max(512, int(round(im.height * scale / 16)) * 16)
-    cap = 4096
-    if max(tw, th) > cap:
-        r = cap / max(tw, th)
-        tw = max(512, int(round(tw * r / 16)) * 16)
-        th = max(512, int(round(th * r / 16)) * 16)
-        if log:
-            log(f"Cible plafonnée à {tw}x{th} (max {cap}px).")
-    if log:
-        log(f"Pré-agrandissement {im.width}x{im.height} -> {tw}x{th} (Lanczos)…")
-    base = im.resize((tw, th), Image.LANCZOS).filter(
-        ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
-
-    p = prompt or ("high quality, sharp focus, fine intricate details, "
-                   "crisp textures, photorealistic")
-    common = dict(model_id="flux2-klein-9b", prompt=p, negative="",
-                  steps=int(steps), cfg_scale=1.0, sampler="euler",
-                  schedule="simple", seed=-1, batch_count=1, save_prompt=False)
-
-    def _sharpen(img):
-        return img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=50, threshold=2))
-
-    # Petite cible -> une seule passe (édition Klein, pas de tuiles).
-    if max(tw, th) <= tile:
-        bp = settings.TMP_DIR / "klein_up.png"
-        base.save(bp)
-        if log:
-            log(f"Raffinage Klein (1 passe, {steps} pas)…")
-        outs = generate(width=tw, height=th, ref_image=bp, log=log, **common)
-        if not outs:
-            raise sdcpp.EngineError("Le raffinage Klein n'a produit aucune image.")
-        out = settings.OUTPUT_DIR / f"klein-up-{time.strftime('%Y%m%d-%H%M%S')}.png"
-        _sharpen(Image.open(outs[0]).convert("RGB")).save(out)
-        return out
-
-    # Grande cible -> tuiles + fondu (le modèle se recharge à chaque tuile : long).
-    t = max(512, (tile // 16) * 16)
-    step = max(64, t - overlap)
-    ys = list(range(0, max(1, th), step))
-    xs = list(range(0, max(1, tw), step))
-    total = len(ys) * len(xs)
-    if log:
-        log(f"Raffinage Klein par tuiles : {total} tuiles de {t}px "
-            "(le modèle se recharge par tuile — c'est long).")
-    acc = np.zeros((th, tw, 3), np.float32)
-    wsum = np.zeros((th, tw, 1), np.float32)
-    n = 0
-    for y in ys:
-        for x in xs:
-            y2, x2 = min(y + t, th), min(x + t, tw)
-            y1, x1 = max(0, y2 - t), max(0, x2 - t)
-            tp = settings.TMP_DIR / "klein_tile.png"
-            base.crop((x1, y1, x2, y2)).save(tp)
-            n += 1
-            if log:
-                log(f"  tuile {n}/{total}…")
-            outs = generate(width=x2 - x1, height=y2 - y1, ref_image=tp, **common)
-            if not outs:
-                raise sdcpp.EngineError("Une tuile Klein n'a produit aucune image.")
-            res = Image.open(outs[0]).convert("RGB").resize((x2 - x1, y2 - y1))
-            arr = np.asarray(res, np.float32)
-            mask = _feather_mask(y2 - y1, x2 - x1, overlap)
-            acc[y1:y2, x1:x2] += arr * mask
-            wsum[y1:y2, x1:x2] += mask
-            if preview_path:   # aperçu : image assemblée jusqu'ici
-                cur = (acc / np.clip(wsum, 1e-6, None)).clip(0, 255).astype("uint8")
-                pv = Image.fromarray(cur)
-                if max(pv.size) > 1280:
-                    r = 1280 / max(pv.size)
-                    pv = pv.resize((int(pv.width * r), int(pv.height * r)))
-                try:
-                    pv.save(preview_path)
-                except OSError:
-                    pass
-    final = (acc / np.clip(wsum, 1e-6, None)).clip(0, 255).astype("uint8")
-    out = settings.OUTPUT_DIR / f"klein-up-{time.strftime('%Y%m%d-%H%M%S')}.png"
-    _sharpen(Image.fromarray(final)).save(out)
-    if log:
-        log(f"Image finale : {out}")
-    return out
-
-
 

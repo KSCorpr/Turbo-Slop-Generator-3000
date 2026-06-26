@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """GEN.Ai Image Workshop — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B, GGUF) · Catalogue de modèles · Upscale créatif ·
-Toolkit (profondeur, détourage) · Réglages.
+Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Catalogue de
+modèles · Toolkit (profondeur, détourage, SAM) · Vidéo (LTX-2.3) · Réglages.
 """
 from __future__ import annotations
 
@@ -57,7 +57,6 @@ _patch_gradio_client()
 _disable_brotli()
 
 from atelier import APP_NAME, __version__, hardware, net, settings
-from atelier.ui.creative_tab import build_creative_tab
 from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
 from atelier.ui.settings_tab import build_settings_tab
@@ -85,7 +84,7 @@ def build_app() -> gr.Blocks:
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
             f"<div class='sub'>Génération d'images locale · Flux.2 Klein 9B · "
-            f"upscale créatif · v{__version__}</div></div>")
+            f"Krea 2 Turbo · v{__version__}</div></div>")
 
         if sd_cli is None:
             gr.Markdown("> ⚠️ **Binaire `sd-cli` introuvable.** Lancez "
@@ -95,31 +94,13 @@ def build_app() -> gr.Blocks:
             gr.Markdown("> ⚠️ **Aucun GPU NVIDIA détecté** (mode CPU très lent). "
                         "Vérifiez vos pilotes / `nvidia-smi`.")
 
-        # État partagé : image en attente d'envoi vers l'onglet Upscale.
-        pending_upscale = gr.State(None)
-
         with gr.Tabs() as tabs:
-            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B",
-                                 tabs=tabs, pending_upscale=pending_upscale)
-            build_generative_tab("krea2", "🎨 Krea 2",
-                                 tabs=tabs, pending_upscale=pending_upscale)
-            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo",
-                                 tabs=tabs, pending_upscale=pending_upscale)
+            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B", tabs=tabs)
+            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo", tabs=tabs)
             build_library_tab()
-            creative_input = build_creative_tab(tab_id="creative")
             build_toolkit_tab()
             build_video_tab()
             build_settings_tab()
-
-        # Quand on arrive sur un onglet : si une image est en attente, la charger
-        # dans l'entrée de l'Upscale créatif puis vider l'état.
-        def _consume_pending(p):
-            if p:
-                return gr.update(value=p), None
-            return gr.update(), p
-
-        tabs.select(_consume_pending, inputs=[pending_upscale],
-                    outputs=[creative_input, pending_upscale])
 
     return demo
 

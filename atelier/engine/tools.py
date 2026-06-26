@@ -21,7 +21,7 @@ TOOLS_DIR = settings.ROOT / "tools_repo"
 DEPTH_MODEL_DIR = TOOLS_DIR / "depth" / "model"
 BG_MODEL_DIR = TOOLS_DIR / "bg" / "model"
 SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
-UPSCALE_DIR = TOOLS_DIR / "upscale"
+ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -69,13 +69,8 @@ def sam_is_installed() -> bool:
     return _model_present(SAM_MODEL_DIR)
 
 
-def upscale_is_installed() -> bool:
-    base = UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
-    cn = UPSCALE_DIR / "controlnet"
-    vae = UPSCALE_DIR / "vae"
-    return (base.is_file()
-            and cn.is_dir() and any(cn.glob("*.safetensors"))
-            and vae.is_dir() and any(vae.glob("*.safetensors")))
+def enhance_is_installed() -> bool:
+    return _model_present(ENHANCE_MODEL_DIR)
 
 
 def _install_stream(tool: str):
@@ -110,8 +105,8 @@ def install_sam_stream():
     yield from _install_stream("sam")
 
 
-def install_upscale_stream():
-    yield from _install_stream("upscale")
+def install_enhance_stream():
+    yield from _install_stream("enhance")
 
 
 def _gpu_index() -> int | None:
@@ -218,27 +213,29 @@ def sam_segment(image, x: int, y: int,
     return _collect(out_dir, "sam", stamp)
 
 
-def creative_upscale(image, scale: int = 2, prompt: str = "",
-                     creativity: float = 0.35, cn_scale: float = 0.6,
-                     preview_path: Path | None = None,
-                     log: Callable[[str], None] | None = None) -> Path:
-    """Upscale créatif SDXL + ControlNet Tile (façon Magnific), par tuiles."""
-    if not upscale_is_installed():
-        raise ToolError("L'upscale SDXL n'est pas installé "
-                        "(bouton « Installer » de l'onglet Upscale).")
-    src = _to_src(image, "creative")
+def enhance_prompt(prompt: str,
+                   log: Callable[[str], None] | None = None) -> str:
+    """Améliore un prompt brut via un petit LLM instruct (transformers).
+
+    Renvoie UNIQUEMENT le prompt enrichi en anglais (prêt à injecter dans le
+    champ Prompt). S'exécute en sous-process (chargé puis déchargé : aucun
+    conflit VRAM avec la génération sd.cpp)."""
+    if not enhance_is_installed():
+        raise ToolError("L'améliorateur de prompt n'est pas installé "
+                        "(accordéon « ✨ Améliorer » de l'onglet de génération).")
+    if not (prompt or "").strip():
+        raise ToolError("Saisissez d'abord un prompt à améliorer.")
+    settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out_dir = settings.TMP_DIR / f"creative_out_{stamp}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    runner = settings.ROOT / "scripts" / "tools" / "run_creative_upscale.py"
-    cmd = [sys.executable, str(runner),
-           "--base-model", str(UPSCALE_DIR / "sd_xl_base_1.0.safetensors"),
-           "--controlnet", str(UPSCALE_DIR / "controlnet"),
-           "--vae", str(UPSCALE_DIR / "vae"),
-           "--input", str(src), "--output-dir", str(out_dir),
-           "--scale", str(int(scale)), "--creativity", str(float(creativity)),
-           "--cn-scale", str(float(cn_scale)), "--prompt", prompt or ""]
-    if preview_path:
-        cmd += ["--preview-path", str(preview_path)]
-    _run_tool(cmd, log, "L'upscale SDXL a échoué (voir le journal).")
-    return _collect(out_dir, "creative", stamp)
+    out_file = settings.TMP_DIR / f"enhance_{stamp}.txt"
+    runner = settings.ROOT / "scripts" / "tools" / "run_enhance.py"
+    cmd = [sys.executable, str(runner), "--model-dir", str(ENHANCE_MODEL_DIR),
+           "--prompt", prompt, "--output", str(out_file)]
+    _run_tool(cmd, log, "L'amélioration du prompt a échoué (voir le journal).")
+    try:
+        text = out_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    if not text:
+        raise ToolError("L'améliorateur n'a renvoyé aucun texte (voir le journal).")
+    return text

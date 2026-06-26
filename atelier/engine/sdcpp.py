@@ -61,7 +61,8 @@ class GenRequest:
     batch_count: int = 1
     init_image: Path | None = None     # img2img classique (-i + --strength)
     strength: float = 0.6
-    ref_image: Path | None = None      # édition (-r / --ref-image, Flux.2 / PiD)
+    # édition (-r / --ref-image, Flux.2) : un chemin OU une liste (multi-référence)
+    ref_image: "Path | list[Path] | None" = None
     vae_format: str = ""               # --vae-format (ex. "flux" pour PiD)
     rng: str = ""                      # --rng (ex. "cpu" pour PiD)
     lora_dir: Path | None = None       # --lora-model-dir
@@ -89,9 +90,19 @@ def _require(*paths: Path | None) -> None:
                 "Téléchargez le modèle depuis l'onglet Catalogue de modèles.")
 
 
+def _ref_list(ref) -> list[Path]:
+    """Normalise ref_image (chemin unique ou liste) en liste de chemins."""
+    if ref is None:
+        return []
+    if isinstance(ref, (list, tuple)):
+        return [Path(r) for r in ref if r]
+    return [Path(ref)]
+
+
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
+    refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
-             req.t5xxl, req.clip_l, req.uncond_model, req.init_image, req.ref_image)
+             req.t5xxl, req.clip_l, req.uncond_model, req.init_image, *refs)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
     if req.model_path:
@@ -134,9 +145,10 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--flow-shift", f"{req.flow_shift}"]
     if req.init_image:
         cmd += ["-i", str(req.init_image), "--strength", f"{req.strength}"]
-    if req.ref_image:
-        # Édition d'image (Flux.2 / Kontext) : pilotée par le prompt, sans strength.
-        cmd += ["-r", str(req.ref_image)]
+    for r in refs:
+        # Édition d'image (Flux.2) : pilotée par le prompt, sans strength.
+        # Plusieurs « -r » = édition multi-référence (combine les images).
+        cmd += ["-r", str(r)]
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
@@ -144,17 +156,6 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
                 "--preview-interval", "1"]
     cmd += _flag_args(req.flags)
-    cmd += ["-o", str(output), "-v"]
-    return cmd
-
-
-def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
-                      output: Path, offload: bool = True) -> list[str]:
-    _require(upscale_model, init_image)
-    cmd = [str(sd_cli), "--mode", "upscale", "-i", str(init_image),
-           "--upscale-model", str(upscale_model)]
-    if offload:
-        cmd.append("--offload-to-cpu")
     cmd += ["-o", str(output), "-v"]
     return cmd
 

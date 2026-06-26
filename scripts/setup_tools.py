@@ -5,7 +5,7 @@ Outils :
   depth   -> Depth Anything V2 (Small) : carte de profondeur.
   bg      -> RMBG-1.4 : suppression d'arrière-plan (PNG transparent).
   sam     -> Segment Anything (facebook/sam-vit-base) : extraction d'objet au clic.
-  upscale -> SDXL + ControlNet Tile : upscale créatif (façon Magnific).
+  enhance -> Qwen2.5-3B-Instruct : améliore un prompt brut (LLM).
 
 Réutilise les helpers torch CUDA de _torch_setup (build adaptée au GPU,
 sans verrouiller de DLL). Lançable depuis l'interface ou en ligne :
@@ -36,11 +36,8 @@ DEPTH_REPO = "depth-anything/Depth-Anything-V2-Small-hf"
 BG_REPO = "briaai/RMBG-1.4"
 # Segment Anything (base, ~375 Mo) via transformers, depuis HF.
 SAM_REPO = "facebook/sam-vit-base"
-# Upscale créatif : SDXL base (1 fichier) + ControlNet Tile + VAE fp16-fix.
-SDXL_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
-SDXL_FILE = "sd_xl_base_1.0.safetensors"
-CN_TILE_REPO = "xinsir/controlnet-tile-sdxl-1.0"
-VAE_FIX_REPO = "madebyollin/sdxl-vae-fp16-fix"
+# Améliorateur de prompt : petit LLM instruct (~6 Go fp16), tourne en sous-process.
+ENHANCE_REPO = "Qwen/Qwen2.5-3B-Instruct"
 
 
 def install_depth():
@@ -80,28 +77,24 @@ def install_sam():
     print("\n[OK] Segment Anything installé. Disponible dans l'onglet Toolkit.")
 
 
-def install_upscale():
-    base = settings.ROOT / "tools_repo" / "upscale"
+def install_enhance():
+    model_dir = settings.ROOT / "tools_repo" / "enhance" / "model"
     ensure_torch_cuda()
-    print("Installation de diffusers + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30,<0.32",
-        "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
-    from huggingface_hub import hf_hub_download, snapshot_download
-    print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, ~6,6 Go)…")
-    hf_hub_download(repo_id=SDXL_REPO, filename=SDXL_FILE, local_dir=str(base))
-    print(f"\nTéléchargement du ControlNet Tile ({CN_TILE_REPO}, ~2,5 Go)…")
-    snapshot_download(repo_id=CN_TILE_REPO, local_dir=str(base / "controlnet"),
-                      allow_patterns=["*.json", "*.safetensors"])
-    print(f"\nTéléchargement de la VAE fp16-fix ({VAE_FIX_REPO})…")
-    snapshot_download(repo_id=VAE_FIX_REPO, local_dir=str(base / "vae"),
-                      allow_patterns=["*.json", "*.safetensors"])
+    print("Installation de transformers + accelerate…")
+    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5",
+        "accelerate", "safetensors"])
+    print(f"\nTéléchargement de l'améliorateur de prompt ({ENHANCE_REPO}, ~6 Go)…")
+    from huggingface_hub import snapshot_download
+    snapshot_download(repo_id=ENHANCE_REPO, local_dir=str(model_dir),
+                      allow_patterns=["*.json", "*.safetensors", "*.txt",
+                                      "tokenizer*", "vocab*", "merges*"])
     pin_numpy()
-    print("\n[OK] Upscale créatif SDXL installé. Disponible dans l'onglet ✨.")
+    print("\n[OK] Améliorateur de prompt installé. Bouton « ✨ Améliorer ».")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("tool", choices=["depth", "bg", "sam", "upscale"])
+    ap.add_argument("tool", choices=["depth", "bg", "sam", "enhance"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -110,8 +103,8 @@ def main():
         install_bg()
     elif args.tool == "sam":
         install_sam()
-    elif args.tool == "upscale":
-        install_upscale()
+    elif args.tool == "enhance":
+        install_enhance()
 
 
 if __name__ == "__main__":

@@ -80,5 +80,5 @@ def build_library_tab():
         refresh.click(refresh_cards, outputs=cards)
 
         gr.Markdown(
-            "---\n*Upscale créatif (par tuiles) et outils (profondeur, "
-            "détourage) sont dans leurs onglets dédiés.*")
+            "---\n*Les outils (profondeur, détourage, SAM, améliorateur de "
+            "prompt) et la vidéo (LTX-2.3) sont dans leurs onglets dédiés.*")
