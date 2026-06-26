@@ -40,6 +40,15 @@ def build_settings_tab():
                               choices=_gpu_choices(),
                               value=prefs.get("gpu_index"))
 
+        gr.Markdown(
+            "#### ⚡ Optimiser pour ma génération de carte (1 clic)\n"
+            "Applique un préréglage adapté (quantification + offload + tiling) "
+            "calé sur la VRAM réelle de la carte sélectionnée. Désactive "
+            "l'optimisation automatique.")
+        with gr.Row():
+            gen_btns = {key: gr.Button(spec["label"], size="sm")
+                        for key, spec in hardware.GENERATIONS.items()}
+
         with gr.Row():
             quant = gr.Dropdown(label="Quant. diffusion (vide = auto)",
                                 choices=["auto"] + QUANTS,
@@ -84,3 +93,42 @@ def build_settings_tab():
                    inputs=[auto, gpu, quant, enc_quant, fa, offload, tiling,
                            clip_cpu, vae_cpu, hf_ep],
                    outputs=[profile_md, saved])
+
+        # --- Optimisation curatée par génération de carte (1 clic) ---
+        def _apply_generation(gen_key):
+            def handler(gpu_idx):
+                p = settings.load_prefs()
+                gpus = hardware.detect_gpus()
+                g = next((x for x in gpus if x.index == gpu_idx), None) \
+                    if gpu_idx is not None else None
+                if g is None and gpus:
+                    g = max(gpus, key=lambda x: x.vram_gb)
+                vram = g.vram_gb if g else None
+                prof = hardware.generation_profile(
+                    gen_key, vram, hardware.detect_ram_gb())
+                fl = prof.flags()
+                p["auto_optimize"] = False
+                p["quant"] = prof.quant
+                p["enc_quant"] = prof.enc_quant
+                p["flags"] = fl
+                if g is not None:
+                    p["gpu_index"] = g.index
+                settings.save_prefs(p)
+                label = hardware.GENERATIONS[gen_key]["label"]
+                return (
+                    gr.update(value=False), gr.update(value=prof.quant),
+                    gr.update(value=prof.enc_quant),
+                    gr.update(value=fl["diffusion_fa"]),
+                    gr.update(value=fl["offload_to_cpu"]),
+                    gr.update(value=fl["vae_tiling"]),
+                    gr.update(value=fl["clip_on_cpu"]),
+                    gr.update(value=fl["vae_on_cpu"]),
+                    gr.update(value=_profile_md()),
+                    f"✅ Optimisé pour **{label}** : diffusion `{prof.quant}`, "
+                    f"encodeur `{prof.enc_quant}` (optimisation auto désactivée).")
+            return handler
+
+        gen_outputs = [auto, quant, enc_quant, fa, offload, tiling, clip_cpu,
+                       vae_cpu, profile_md, saved]
+        for key, btn in gen_btns.items():
+            btn.click(_apply_generation(key), inputs=[gpu], outputs=gen_outputs)

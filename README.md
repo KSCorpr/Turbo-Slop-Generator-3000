@@ -69,6 +69,14 @@ L'application détecte votre GPU (via `nvidia-smi`) et votre RAM, puis choisit s
 Multi-GPU : la plus grosse carte est utilisée par défaut, modifiable dans
 **Réglages**. Tout est surchargeable manuellement (mode auto décochable).
 
+### Optimisation par génération de carte (1 clic)
+Dans **Réglages**, quatre boutons appliquent un préréglage curaté selon la
+génération : **RTX 20xx** (Turing), **RTX 30xx** (Ampere), **RTX 40xx** (Ada),
+**RTX 50xx** (Blackwell). Le préréglage est calé sur la **VRAM réelle** de la
+carte sélectionnée (quantification + offload + VAE tiling), avec un léger biais
+*vitesse* sur les anciennes générations et *qualité* sur les récentes. Pratique
+pour basculer vite d'une machine à l'autre (ex. 2080 Ti → Q4_K_M, 4090 → Q8_0).
+
 ### Presets & styles
 Un menu **Préréglage** propose des combos éprouvés (Flux.2 Klein → 4 pas /
 CFG 1.0 / **euler + simple**). L'accordéon **Prompt système / style** permet

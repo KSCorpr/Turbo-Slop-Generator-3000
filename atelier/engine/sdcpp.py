@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Mapping
 
 from .. import settings
 

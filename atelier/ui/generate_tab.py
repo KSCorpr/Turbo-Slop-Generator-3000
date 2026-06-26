@@ -83,7 +83,7 @@ def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
     return _CUSTOM_LABEL
 
 
-def build_generative_tab(model_id: str, title: str, tabs=None):
+def build_generative_tab(model_id: str, title: str):
     d = _defaults(model_id)
 
     with gr.Tab(title):
@@ -273,9 +273,6 @@ def build_generative_tab(model_id: str, title: str, tabs=None):
                                      show_download_button=True)
                 logbox = gr.Textbox(label="Journal", lines=10, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
-
-        last_paths = gr.State([])
-        sel_index = gr.State(0)
 
         # ----- Comportements -----
         def refresh_loras():
@@ -494,17 +491,17 @@ def build_generative_tab(model_id: str, title: str, tabs=None):
                 now = time.time()
                 if new_prev or (now - last_emit) >= 0.5:
                     last_emit = now
-                    yield gr.update(), prev, "\n".join(logs[-400:]), gr.update()
+                    yield gr.update(), prev, "\n".join(logs[-400:])
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
                 # On garde la dernière frame d'aperçu (pas de flash vers le vide).
-                yield [], gr.update(), "\n".join(logs), []
+                yield [], gr.update(), "\n".join(logs)
                 return
             progress(1.0, desc="Terminé")
             paths = state.get("outs", [])
             items = [(p, f"seed {base_seed + i}") for i, p in enumerate(paths)]
-            yield items, gr.update(), "\n".join(logs), paths
+            yield items, gr.update(), "\n".join(logs)
 
         gen_evt = run.click(
             do_generate,
@@ -513,11 +510,6 @@ def build_generative_tab(model_id: str, title: str, tabs=None):
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc],
-            outputs=[gallery, preview, logbox, last_paths],
+            outputs=[gallery, preview, logbox],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
-
-        def _on_select(evt: gr.SelectData):
-            return evt.index
-
-        gallery.select(_on_select, outputs=[sel_index])

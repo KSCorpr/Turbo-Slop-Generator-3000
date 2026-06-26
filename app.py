@@ -94,9 +94,9 @@ def build_app() -> gr.Blocks:
             gr.Markdown("> ⚠️ **Aucun GPU NVIDIA détecté** (mode CPU très lent). "
                         "Vérifiez vos pilotes / `nvidia-smi`.")
 
-        with gr.Tabs() as tabs:
-            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B", tabs=tabs)
-            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo", tabs=tabs)
+        with gr.Tabs():
+            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B")
+            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo")
             build_library_tab()
             build_toolkit_tab()
             build_video_tab()
