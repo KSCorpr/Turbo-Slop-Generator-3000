@@ -61,7 +61,7 @@ def build_creative_tab(tab_id="creative"):
 
         with gr.Row():
             with gr.Column(scale=3):
-                image = gr.Image(label="Image à agrandir", type="pil", height=380)
+                image = gr.Image(label="Image à agrandir", type="pil")
                 prompt = gr.Textbox(
                     label="Prompt (optionnel — guide le détail)", lines=2,
                     placeholder="highly detailed, sharp focus, intricate details")

@@ -56,9 +56,9 @@ def build_video_tab(tab_id="video"):
                                       value=cfg.get("negative", ""))
                 with gr.Row():
                     init_image = gr.Image(label="Image (début)", type="pil",
-                                          height=200, visible=False)
+                                          visible=False)
                     end_image = gr.Image(label="Image de fin", type="pil",
-                                         height=200, visible=False)
+                                         visible=False)
                 ratio = gr.Dropdown(list(RATIOS.keys()),
                                     value="Léger 16:9 — 640×360", label="Format")
                 with gr.Row():
