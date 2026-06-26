@@ -9,6 +9,17 @@ editing, two upscalers, video, and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
+> **Credits & honesty.** All the heavy lifting — the inference engine, GGUF
+> support, CUDA kernels — comes from **Leejet’s
+> [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)**. This
+> project is just a friendly local UI on top of it; full credit and thanks to
+> Leejet and the sd.cpp contributors.
+>
+> This GUI was **vibe-coded with [Claude](https://claude.ai/code)** (Anthropic) —
+> built iteratively in plain language rather than hand-written line by line. Treat
+> it accordingly: it’s a hobby tool, not battle-tested production software. Read
+> the code, test before relying on it, and report anything that breaks.
+
 | Tab | What it does |
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
@@ -34,6 +45,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Models & sources](#models--sources)
 - [Project layout](#project-layout)
 - [Troubleshooting](#troubleshooting)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -343,3 +355,22 @@ scripts/
   `CUDA: True/False`; if False, fix NVIDIA drivers and reinstall the tool.
 - **Creative SDXL upscale OOM** → lower the scale or tile size (it auto-offloads
   under 12 GB, but a huge target can still exceed memory).
+
+---
+
+## Acknowledgments
+
+- **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** by
+  **Leejet** and contributors — the inference engine this whole project rests on.
+  Huge thanks.
+- **[Gradio](https://github.com/gradio-app/gradio)** for the web UI.
+- Model authors on **Hugging Face**: Flux.2 Klein (Black Forest Labs / Comfy-Org),
+  Krea 2, Qwen3 / Qwen3-VL (Alibaba), WAN 2.1 VAE, LTX-2.3 (Lightricks),
+  Depth Anything V2, RMBG-1.4 (BRIA, **non-commercial**), Segment Anything (Meta),
+  SDXL (Stability AI), and the ESRGAN upscalers collected by `wbruna`. Please
+  respect each model’s individual license.
+- **Built with [Claude](https://claude.ai/code)** (Anthropic) — vibe-coded
+  iteratively in natural language.
+
+This is an independent hobby project and is not affiliated with or endorsed by
+any of the above.
