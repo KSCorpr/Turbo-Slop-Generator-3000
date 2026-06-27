@@ -343,9 +343,12 @@ def build_generative_tab(model_id: str, title: str):
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
 
         # --- Améliorateur de prompt (LLM) ---
+        # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
+        _enh_style = "krea2" if family == "krea2" else "generic"
+
         def _enhance(text):
             try:
-                better = tools.enhance_prompt(text or "")
+                better = tools.enhance_prompt(text or "", style=_enh_style)
             except tools.ToolError as exc:
                 raise gr.Error(str(exc))
             except Exception as exc:  # noqa: BLE001

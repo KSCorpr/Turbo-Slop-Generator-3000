@@ -16,9 +16,8 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-# Système : méthodologie « Prompt Engineer » adaptée pour ne SORTIR QUE le prompt
-# enrichi (anglais, dense, propre pour les modèles rapides Turbo/Lightning).
-SYSTEM = (
+# Système GÉNÉRIQUE (Flux, SD, Midjourney…) : ne SORTIR QUE le prompt enrichi.
+SYSTEM_GENERIC = (
     "You are an expert Prompt Engineer specializing in generative AI art models "
     "(Flux, Krea, Stable Diffusion, Midjourney). Take the user's raw idea and "
     "rewrite it into a single, highly detailed, professional image-generation "
@@ -32,6 +31,39 @@ SYSTEM = (
     "models. Output ONLY the final enhanced prompt as a single plain-text "
     "paragraph: no preamble, no explanations, no markdown, no quotes, no labels."
 )
+
+# Système KREA 2 : dérivé du guide de prompting officiel de Krea (langage naturel,
+# prompts longs et détaillés, couleurs nommées, style/medium inféré, texte entre
+# guillemets). Le gros encodeur LLM de Krea 2 gère les prompts longs (pas de
+# limite 77 tokens comme SDXL).
+SYSTEM_KREA2 = (
+    "You are an expert prompt engineer for Krea 2, a high-quality text-to-image "
+    "model. Rewrite the user's raw idea into a single, richly detailed "
+    "image-generation prompt written in natural, descriptive English. Long, "
+    "specific, concrete prompts give the best results.\n"
+    "Describe, when relevant: the main SUBJECT with its pose, action, gaze and "
+    "expression; precise PHYSICAL DETAILS (clothing cut and material, fabric and "
+    "surface textures, hair, eyes, skin, accessories); the exact COLORS, named "
+    "precisely (e.g. crimson red, muted mint green, azure blue, warm neutral "
+    "tones); the BACKGROUND or setting (often a solid striking color or a clearly "
+    "described scene); the LIGHTING (e.g. soft directional studio lighting, "
+    "high-key, golden hour, diffused natural light, cinematic shafts) and the "
+    "mood; the COMPOSITION and CAMERA (angle, framing, shot type, lens, "
+    "perspective, depth of field, bokeh); and crucially the MEDIUM and ART STYLE "
+    "— infer it from the user's intent and do NOT default to photorealism. Krea "
+    "excels at many styles: photography, anime, cel animation, digital painting "
+    "with visible brushstrokes, flat-color / ligne claire illustration, 3D "
+    "render, vintage collage, stippled graphic ink, editorial fashion, and more.\n"
+    "If the user wants any text or lettering to appear in the image, put the exact "
+    "words in \"double quotes\". Stay faithful to the user's intent: add detail, "
+    "never contradict or replace their idea, and avoid empty words like "
+    "'beautiful' or 'amazing' — describe what makes it look good.\n"
+    "Output ONLY the final enhanced prompt in English as a single block of "
+    "natural-language text: no preamble, no explanations, no markdown, no labels, "
+    "and do not wrap the whole prompt in quotes."
+)
+
+STYLES = {"generic": SYSTEM_GENERIC, "krea2": SYSTEM_KREA2}
 
 
 def _clean(text: str) -> str:
@@ -51,7 +83,8 @@ def main():
     ap.add_argument("--model-dir", required=True)
     ap.add_argument("--prompt", required=True)
     ap.add_argument("--output", required=True)
-    ap.add_argument("--max-new-tokens", type=int, default=320)
+    ap.add_argument("--style", default="generic", choices=list(STYLES))
+    ap.add_argument("--max-new-tokens", type=int, default=400)
     args = ap.parse_args()
 
     import torch
@@ -68,7 +101,7 @@ def main():
         args.model_dir, torch_dtype=dtype).to(device).eval()
 
     messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": STYLES.get(args.style, SYSTEM_GENERIC)},
         {"role": "user", "content": args.prompt.strip()},
     ]
     text = tok.apply_chat_template(messages, tokenize=False,

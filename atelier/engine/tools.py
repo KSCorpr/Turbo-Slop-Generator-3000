@@ -243,13 +243,13 @@ def sam_segment(image, x: int, y: int,
     return _collect(out_dir, "sam", stamp)
 
 
-def enhance_prompt(prompt: str,
+def enhance_prompt(prompt: str, style: str = "generic",
                    log: Callable[[str], None] | None = None) -> str:
     """Améliore un prompt brut via un petit LLM instruct (transformers).
 
-    Renvoie UNIQUEMENT le prompt enrichi en anglais (prêt à injecter dans le
-    champ Prompt). S'exécute en sous-process (chargé puis déchargé : aucun
-    conflit VRAM avec la génération sd.cpp)."""
+    `style` choisit le system prompt : "krea2" (guide Krea) ou "generic"
+    (Flux/SD/MJ). Renvoie UNIQUEMENT le prompt enrichi en anglais. S'exécute en
+    sous-process (chargé puis déchargé : aucun conflit VRAM avec sd.cpp)."""
     if not enhance_is_installed():
         raise ToolError("L'améliorateur de prompt n'est pas installé "
                         "(accordéon « ✨ Améliorer » de l'onglet de génération).")
@@ -260,7 +260,8 @@ def enhance_prompt(prompt: str,
     out_file = settings.TMP_DIR / f"enhance_{stamp}.txt"
     runner = settings.ROOT / "scripts" / "tools" / "run_enhance.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(ENHANCE_MODEL_DIR),
-           "--prompt", prompt, "--output", str(out_file)]
+           "--prompt", prompt, "--output", str(out_file),
+           "--style", style if style in ("generic", "krea2") else "generic"]
     # Améliorateur = TEXTE → GPU secondaire dédié au texte (ex. 1080 Ti).
     _run_tool(cmd, log, "L'amélioration du prompt a échoué (voir le journal).",
               gpu_index=_text_gpu_index())
