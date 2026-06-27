@@ -60,7 +60,7 @@ def main():
 
     import numpy as np
     import torch
-    from PIL import Image, ImageFilter
+    from PIL import Image
     try:
         from diffusers import AutoencoderKL, StableDiffusionXLImg2ImgPipeline
     except ImportError:
@@ -99,8 +99,12 @@ def main():
     elif device == "cuda":
         pipe.to("cuda")
     try:
-        pipe.enable_vae_tiling()
         pipe.enable_attention_slicing()
+        # Le VAE tiling découpe le décodage spatialement et laisse une GRILLE
+        # fine sur les zones lisses (peau, fond). On ne l'active qu'en VRAM
+        # serrée, où il est nécessaire pour éviter l'OOM.
+        if args.low_vram:
+            pipe.enable_vae_tiling()
     except Exception:  # noqa: BLE001
         pass
 
@@ -114,8 +118,9 @@ def main():
               flush=True)
     print(f"[usdu] pré-agrandissement {src.width}x{src.height} -> {tw}x{th} "
           "(Lanczos)…", flush=True)
-    base = src.resize((tw, th), Image.LANCZOS).filter(
-        ImageFilter.UnsharpMask(radius=2, percent=80, threshold=2))
+    # Base Lanczos PROPRE (pas de pré-accentuation : elle introduit des halos et
+    # du grain que la diffusion fige ensuite). SDXL ajoute le détail net.
+    base = src.resize((tw, th), Image.LANCZOS)
 
     prompt = args.prompt or ("highly detailed, sharp focus, intricate fine "
                              "textures, photorealistic, high quality")
@@ -170,8 +175,9 @@ def main():
                     pass
 
     final = (acc / np.clip(wsum, 1e-6, None)).clip(0, 255).astype("uint8")
-    result = Image.fromarray(final).filter(
-        ImageFilter.UnsharpMask(radius=1.2, percent=45, threshold=2))
+    # Pas d'accentuation finale : SDXL fournit déjà un rendu net ; une passe
+    # UnsharpMask ne ferait que ré-amplifier grain et coutures.
+    result = Image.fromarray(final)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / (Path(args.input).stem + "_usdu.png")
