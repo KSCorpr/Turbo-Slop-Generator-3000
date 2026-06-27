@@ -58,9 +58,21 @@ def main():
                     help="force du ControlNet (↑ = plus fidèle à la structure)")
     args = ap.parse_args()
 
+    import warnings
+    # Bruits connus et inoffensifs : flash-attention non compilé (PyTorch utilise
+    # un autre noyau) et troncature CLIP à 77 tokens (limite SDXL ; pour un
+    # upscale, un prompt court suffit largement).
+    warnings.filterwarnings("ignore", message=".*[Ff]lash attention.*")
+    warnings.filterwarnings("ignore", message=".*CLIP can only handle.*")
+
     import numpy as np
     import torch
     from PIL import Image
+    try:
+        from transformers.utils import logging as _hf_logging
+        _hf_logging.set_verbosity_error()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from diffusers import AutoencoderKL, StableDiffusionXLImg2ImgPipeline
     except ImportError:

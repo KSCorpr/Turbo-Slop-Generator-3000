@@ -264,9 +264,11 @@ def build_toolkit_tab(tab_id="toolkit"):
                     with gr.Column(scale=3):
                         c_image = gr.Image(label="Image à agrandir", type="pil")
                         c_prompt = gr.Textbox(
-                            label="Prompt (optionnel — guide le détail)", lines=2,
-                            placeholder="highly detailed, sharp focus, "
-                                        "intricate textures")
+                            label="Prompt (optionnel — guide le détail, COURT : "
+                                  "~77 tokens max SDXL ; inutile de recopier le "
+                                  "prompt de génération)", lines=2,
+                            placeholder="highly detailed skin texture, sharp "
+                                        "focus, photorealistic")
                         c_scale = gr.Slider(1.5, 4.0, value=2.0, step=0.5,
                                             label="Facteur d'agrandissement")
                         c_denoise = gr.Slider(

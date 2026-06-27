@@ -408,10 +408,10 @@ _EN: dict[str, str] = {
     "l'installateur pour l'activer.":
         "ControlNet not installed: upscaling without it. Re-run the installer "
         "to enable it.",
-    "Prompt (optionnel — guide le détail)":
-        "Prompt (optional — guides the detail)",
-    "highly detailed, sharp focus, intricate textures":
-        "highly detailed, sharp focus, intricate textures",
+    "Prompt (optionnel — guide le détail, COURT : ~77 tokens max SDXL ; "
+    "inutile de recopier le prompt de génération)":
+        "Prompt (optional — guides the detail, KEEP IT SHORT: ~77 tokens max "
+        "for SDXL; no need to copy the generation prompt)",
     "Facteur d'agrandissement": "Upscale factor",
     "Créativité (débruitage — ↑ = détail inventé)":
         "Creativity (denoise — ↑ = invented detail)",
