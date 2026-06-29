@@ -55,16 +55,16 @@ base_models:
     tags: [rapide, distillé, krea]
     description: >
       Krea 2 « Turbo » (distillé) en GGUF — variante rapide (8 pas, CFG 1.0) du
-      modèle Krea 2. Encodeur Qwen3-VL-4B (via --llm, déchargé en RAM) + VAE
-      WAN 2.1. Photoréalisme, idéal sur 11–12 Go en Q4_K_M.
+      modèle Krea 2. Encodeur Qwen3-VL-4B **abliteré (non censuré)** (via --llm,
+      déchargé en RAM) + VAE WAN 2.1. Photoréalisme, idéal sur 11–12 Go en Q4_K_M.
     sources:
       diffusion:
         repo: realrebelai/KREA-2_GGUFs
         match: "TURBO/Krea-2-Turbo-{quant}.gguf"
         quantizable: true
       text_encoder:
-        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        repo: noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF
+        match: "Huihui-Qwen3-VL-4B-Instruct-abliterated-{enc_quant}.gguf"
         quantizable: true
       vae:
         repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
