@@ -72,6 +72,19 @@ generation). **PyTorch is only installed on demand** for the optional Toolkit
 tools (depth, background removal, SAM, prompt enhancer, creative SDXL upscale),
 each via its own one-click installer.
 
+### Updating by copy-paste — run maintenance afterwards
+If you update by extracting the repo ZIP over your existing folder (keeping
+`python/`, `bin/`, `models/`…), copy-paste **adds and overwrites files but never
+deletes** the ones removed upstream — they linger as orphans, and stale
+`__pycache__` can confuse Python. After each copy-paste update, run:
+```bat
+maintenance.bat      ::  Windows   (./maintenance.sh on Linux/Mac)
+```
+It deletes obsolete files, purges `__pycache__` and `tmp/`, then verifies that
+everything compiles, the model catalog is valid, and the dependencies + `sd-cli`
+engine are present. It never touches `models/`, `loras/`, `outputs/`, `userdata/`,
+`python/` or `bin/`.
+
 ---
 
 ## Quick start
