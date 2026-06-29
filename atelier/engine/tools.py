@@ -225,8 +225,9 @@ def bg_remove(image, log: Callable[[str], None] | None = None) -> Path:
 
 
 def sam_segment(image, x: int, y: int,
-                log: Callable[[str], None] | None = None) -> Path:
-    """Segment Anything : extrait l'objet au point (x, y) -> PNG transparent."""
+                log: Callable[[str], None] | None = None) -> tuple[Path, Path | None]:
+    """Segment Anything au point (x, y). Renvoie (découpage PNG transparent,
+    aperçu overlay) — l'overlay montre la zone sélectionnée en surbrillance."""
     if not sam_is_installed():
         raise ToolError("Segment Anything n'est pas installé "
                         "(bouton « Installer » du Toolkit).")
@@ -234,13 +235,15 @@ def sam_segment(image, x: int, y: int,
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"sam_out_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
+    overlay = settings.TMP_DIR / f"sam_overlay_{stamp}.png"
     runner = settings.ROOT / "scripts" / "tools" / "run_sam.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(SAM_MODEL_DIR),
            "--input", str(src), "--output-dir", str(out_dir),
-           "--x", str(int(x)), "--y", str(int(y))]
+           "--x", str(int(x)), "--y", str(int(y)),
+           "--overlay-path", str(overlay)]
     _run_tool(cmd, log, "La segmentation a échoué (voir le journal).",
               gpu_index=_gen_gpu_index())
-    return _collect(out_dir, "sam", stamp)
+    return _collect(out_dir, "sam", stamp), (overlay if overlay.exists() else None)
 
 
 def enhance_prompt(prompt: str, style: str = "generic",

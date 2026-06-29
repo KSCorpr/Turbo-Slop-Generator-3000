@@ -23,10 +23,13 @@ def main():
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--x", type=int, required=True)
     ap.add_argument("--y", type=int, required=True)
+    ap.add_argument("--overlay-path", default="",
+                    help="si fourni : enregistre un aperçu (zone en surbrillance)")
     args = ap.parse_args()
 
+    import numpy as np
     import torch
-    from PIL import Image
+    from PIL import Image, ImageDraw
     try:
         from transformers import SamModel, SamProcessor
     except ImportError:
@@ -61,6 +64,20 @@ def main():
     cutout.save(dest)
     print(f"[sam] objet extrait (score {float(scores[best]):.2f}) : {dest}",
           flush=True)
+
+    # Aperçu : image d'origine avec la zone sélectionnée teintée + point cliqué.
+    if args.overlay_path:
+        arr = np.asarray(img.convert("RGB")).astype("float32")
+        sel = (mask > 0)[..., None]
+        tint = np.array([0.0, 200.0, 255.0], "float32")   # cyan
+        arr = np.where(sel, arr * 0.55 + tint * 0.45, arr)
+        ov = Image.fromarray(arr.clip(0, 255).astype("uint8"))
+        d = ImageDraw.Draw(ov)
+        r = max(6, min(ov.width, ov.height) // 80)
+        d.ellipse([args.x - r, args.y - r, args.x + r, args.y + r],
+                  outline=(255, 0, 0), width=3)
+        ov.save(args.overlay_path)
+        print(f"[sam] aperçu de la zone : {args.overlay_path}", flush=True)
 
 
 if __name__ == "__main__":

@@ -114,20 +114,23 @@ def build_toolkit_tab(tab_id="toolkit"):
             # ---------- Segment Anything (clic) ----------
             with gr.Tab("🪄 Détourer un objet (SAM)"):
                 gr.Markdown(
-                    "*Segment Anything* — **cliquez sur un objet** dans l'image "
-                    "puis « Extraire » : SAM le détoure en **PNG transparent**.")
+                    "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
+                    "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
+                    "recliquant, puis « Extraire » pour le **PNG transparent**.")
                 _installer_block(
                     "Segment Anything",
                     "PyTorch + transformers (~375 Mo, facebook/sam-vit-base). "
                     "Aucune commande à taper.",
                     tools.install_sam_stream, tools.sam_is_installed())
 
-                s_point = gr.State(None)
+                s_cut = gr.State(None)     # chemin du découpage déjà calculé
                 with gr.Row():
                     with gr.Column(scale=3):
                         s_image = gr.Image(label="Image — cliquez sur l'objet",
                                            type="pil")
                         s_info = gr.Markdown("Cliquez un point sur l'image.")
+                        s_overlay = gr.Image(label="Zone sélectionnée (aperçu)",
+                                             height=300, interactive=False)
                         s_run = gr.Button("🪄 Extraire l'objet", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
@@ -138,31 +141,32 @@ def build_toolkit_tab(tab_id="toolkit"):
                         s_log = gr.Textbox(label="Journal", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
-                def _on_click(evt: gr.SelectData):
-                    x, y = int(evt.index[0]), int(evt.index[1])
-                    return (x, y), t("Point : ({x}, {y}). Cliquez "
-                                     "« Extraire l'objet ».").format(x=x, y=y)
-
-                s_image.select(_on_click, outputs=[s_point, s_info])
-
-                def do_sam(img, point, progress=gr.Progress()):
+                def _on_click(img, evt: gr.SelectData, progress=gr.Progress()):
                     if img is None:
                         raise gr.Error(t("Fournissez une image."))
-                    if not point:
-                        raise gr.Error(t("Cliquez d'abord sur un objet dans l'image."))
-                    logs: list[str] = []
-                    progress(0.1, desc="Segmentation…")
+                    if not tools.sam_is_installed():
+                        raise gr.Error(t("Segment Anything n'est pas installé "
+                                         "(bouton « Installer » ci-dessus)."))
+                    x, y = int(evt.index[0]), int(evt.index[1])
+                    progress(0.2, desc="Segmentation…")
                     try:
-                        out = tools.sam_segment(img, point[0], point[1],
-                                                log=logs.append)
+                        cut, overlay = tools.sam_segment(img, x, y)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
-                        return None, "\n".join(logs)
+                        raise gr.Error(str(exc))
                     progress(1.0, desc="Terminé")
-                    return str(out), "\n".join(logs)
+                    return (overlay or gr.update(), str(cut),
+                            t("Zone sélectionnée en ({x}, {y}). Cliquez "
+                              "« Extraire » ou recliquez ailleurs.").format(x=x, y=y))
 
-                s_run.click(do_sam, inputs=[s_image, s_point],
-                            outputs=[s_result, s_log])
+                s_image.select(_on_click, inputs=[s_image],
+                               outputs=[s_overlay, s_cut, s_info])
+
+                def do_sam(cut):
+                    if not cut:
+                        raise gr.Error(t("Cliquez d'abord sur un objet dans l'image."))
+                    return str(cut), f"✅ {cut}"
+
+                s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
 
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
             with gr.Tab("🔼 Agrandir (ESRGAN)"):

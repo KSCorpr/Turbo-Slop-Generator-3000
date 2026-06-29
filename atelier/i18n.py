@@ -333,10 +333,19 @@ _EN: dict[str, str] = {
     "✂️ Détourer": "✂️ Cut out",
     "Sujet détouré (PNG transparent)": "Cutout subject (transparent PNG)",
     "🪄 Détourer un objet (SAM)": "🪄 Cut out an object (SAM)",
-    "*Segment Anything* — **cliquez sur un objet** dans l'image "
-    "puis « Extraire » : SAM le détoure en **PNG transparent**.":
-        "*Segment Anything* — **click an object** in the image then "
-        "“Extract”: SAM cuts it out to a **transparent PNG**.",
+    "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
+    "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
+    "recliquant, puis « Extraire » pour le **PNG transparent**.":
+        "*Segment Anything* — **click an object**: SAM instantly shows the "
+        "**selected area highlighted**. Re-click to adjust, then “Extract” for "
+        "the **transparent PNG**.",
+    "Zone sélectionnée (aperçu)": "Selected area (preview)",
+    "Segment Anything n'est pas installé "
+    "(bouton « Installer » ci-dessus).":
+        "Segment Anything is not installed (the “Install” button above).",
+    "Zone sélectionnée en ({x}, {y}). Cliquez "
+    "« Extraire » ou recliquez ailleurs.":
+        "Area selected at ({x}, {y}). Click “Extract” or re-click elsewhere.",
     "Segment Anything": "Segment Anything",
     "PyTorch + transformers (~375 Mo, facebook/sam-vit-base). "
     "Aucune commande à taper.":
