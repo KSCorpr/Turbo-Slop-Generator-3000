@@ -312,6 +312,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                             choices=[(t("Lanczos (par défaut)"), "")]
                                     + [(u, u) for u in _ups],
                             value="", label="Pré-agrandissement (base avant SDXL)")
+                        c_refresh = gr.Button("↻ Rafraîchir les modèles", size="sm")
                         c_preset = gr.Dropdown(
                             choices=[(t(n), n) for (n, _p, _d) in UPSCALE_PRESETS],
                             value=None,
@@ -370,6 +371,16 @@ def build_toolkit_tab(tab_id="toolkit"):
 
                 c_preset.change(_apply_preset, inputs=[c_preset],
                                 outputs=[c_prompt, c_denoise])
+
+                def _refresh_models():
+                    ck = tools.list_upscale_checkpoints()
+                    ups = registry.list_upscalers()
+                    return (gr.update(choices=ck,
+                                      value=(ck[0][1] if ck else None)),
+                            gr.update(choices=[(t("Lanczos (par défaut)"), "")]
+                                              + [(u, u) for u in ups]))
+
+                c_refresh.click(_refresh_models, outputs=[c_model, c_esrgan])
 
                 def do_creative(img, prompt, scale, denoise, steps, cfg, tile,
                                 controlnet, cn_scale, model, vae_integrated,

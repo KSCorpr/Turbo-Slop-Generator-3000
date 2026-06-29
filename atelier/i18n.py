@@ -182,6 +182,7 @@ _EN: dict[str, str] = {
     "LoRA 2": "LoRA 2",
     "Poids": "Weight",
     "↻ Rafraîchir la liste": "↻ Refresh list",
+    "↻ Rafraîchir les modèles": "↻ Refresh models",
     "✖ Vider les LoRA": "✖ Clear LoRAs",
     "Déposez vos fichiers LoRA dans `{dir}`":
         "Drop your LoRA files into `{dir}`",
