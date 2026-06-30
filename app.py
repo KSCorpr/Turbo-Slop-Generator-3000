@@ -97,11 +97,15 @@ def build_app() -> gr.Blocks:
             gr.Markdown("> ⚠️ **Aucun GPU NVIDIA détecté** (mode CPU très lent). "
                         "Vérifiez vos pilotes / `nvidia-smi`.")
 
-        with gr.Tabs():
-            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B")
-            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo")
+        # Image en attente d'envoi vers le Toolkit : (chemin, destination).
+        pending_toolkit = gr.State(None)
+        with gr.Tabs() as tabs:
+            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B",
+                                 pending_toolkit=pending_toolkit, tabs=tabs)
+            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo",
+                                 pending_toolkit=pending_toolkit, tabs=tabs)
             build_library_tab()
-            build_toolkit_tab()
+            build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
             build_settings_tab()
 
     i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)

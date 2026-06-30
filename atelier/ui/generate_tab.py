@@ -84,7 +84,8 @@ def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
     return _CUSTOM_LABEL
 
 
-def build_generative_tab(model_id: str, title: str):
+def build_generative_tab(model_id: str, title: str,
+                         pending_toolkit=None, tabs=None, toolkit_tab_id="toolkit"):
     d = _defaults(model_id)
 
     with gr.Tab(title):
@@ -275,16 +276,32 @@ def build_generative_tab(model_id: str, title: str):
                                     variant="primary", size="lg", scale=3)
                     stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
 
-            # ----- Sorties -----
+            # ----- Sorties (aperçu temps réel ET résultats fusionnés) -----
             with gr.Column(scale=4):
-                preview = gr.Image(label="Aperçu (temps réel)", height=320,
-                                   visible=True)
-                gallery = gr.Gallery(label="Résultats (légende = seed)", columns=2,
-                                     height=420, object_fit="contain",
-                                     show_label=True, format="png",
-                                     show_download_button=True)
+                gallery = gr.Gallery(
+                    label="Aperçu temps réel → résultats (légende = seed)",
+                    columns=2, height=560, object_fit="contain", show_label=True,
+                    format="png", show_download_button=True)
+                with gr.Row():
+                    seed_box = gr.Textbox(label="Seed de l'image sélectionnée",
+                                          interactive=False, show_copy_button=True,
+                                          scale=2)
+                    seed_reuse = gr.Button("♻️ Réutiliser ce seed", size="sm",
+                                           scale=1)
+                send_tool = gr.Dropdown(
+                    [(t("🌐 Profondeur"), "depth"),
+                     (t("✂️ Sans arrière-plan"), "bg"),
+                     (t("🪄 Détourer un objet (SAM)"), "sam"),
+                     (t("🔼 Agrandir (ESRGAN)"), "esrgan"),
+                     (t("✨ Upscale créatif (SDXL)"), "creative")],
+                    value=None, label="📤 Envoyer la sélection vers le Toolkit",
+                    visible=pending_toolkit is not None)
                 logbox = gr.Textbox(label="Journal", lines=10, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
+
+        last_paths = gr.State([])
+        last_seeds = gr.State([])
+        sel_index = gr.State(0)
 
         # ----- Comportements -----
         def refresh_loras():
@@ -427,7 +444,10 @@ def build_generative_tab(model_id: str, title: str):
             if (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")
 
-            base_seed = int(seed)
+            try:
+                base_seed = int(seed)
+            except (TypeError, ValueError):   # champ vidé -> aléatoire
+                base_seed = -1
             if base_seed < 0:
                 base_seed = random.randint(0, 2**31 - 1)
 
@@ -500,10 +520,10 @@ def build_generative_tab(model_id: str, title: str):
                         cur = min(int(mt.group(1)), total)
                         progress(0.05 + 0.9 * cur / total,
                                  desc=f"étape {cur}/{total}")
-                # Aperçu : nouvelle image SEULEMENT si le fichier a changé (mtime).
-                # On lit en mémoire (copie PIL) car sous Windows sd-cli écrit ce
-                # fichier en continu (verrou pendant l'écriture).
-                prev = gr.update()
+                # Aperçu fusionné dans la galerie : nouvelle frame SEULEMENT si le
+                # fichier a changé (mtime). On lit en mémoire (copie PIL) car sous
+                # Windows sd-cli écrit ce fichier en continu (verrou en écriture).
+                gal = gr.update()
                 new_prev = False
                 if preview_path.exists():
                     try:
@@ -511,7 +531,7 @@ def build_generative_tab(model_id: str, title: str):
                         if m != last_mtime:
                             from PIL import Image
                             with Image.open(preview_path) as _pim:
-                                prev = _pim.copy()
+                                gal = [(_pim.copy(), t("aperçu en cours…"))]
                             last_mtime = m
                             new_prev = True
                     except (OSError, ValueError):
@@ -522,17 +542,18 @@ def build_generative_tab(model_id: str, title: str):
                 now = time.time()
                 if new_prev or (now - last_emit) >= 0.5:
                     last_emit = now
-                    yield gr.update(), prev, "\n".join(logs[-400:])
+                    yield gal, "\n".join(logs[-400:]), gr.update(), gr.update()
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
                 # On garde la dernière frame d'aperçu (pas de flash vers le vide).
-                yield [], gr.update(), "\n".join(logs)
+                yield gr.update(), "\n".join(logs), gr.update(), gr.update()
                 return
             progress(1.0, desc="Terminé")
             paths = state.get("outs", [])
-            items = [(p, f"seed {base_seed + i}") for i, p in enumerate(paths)]
-            yield items, gr.update(), "\n".join(logs)
+            seeds = [base_seed + i for i in range(len(paths))]
+            items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
+            yield items, "\n".join(logs), paths, seeds
 
         gen_evt = run.click(
             do_generate,
@@ -541,6 +562,40 @@ def build_generative_tab(model_id: str, title: str):
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc],
-            outputs=[gallery, preview, logbox],
+            outputs=[gallery, logbox, last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
+
+        # --- Seed : vidé -> -1 ; sélection -> affichage copiable ; réutiliser ---
+        def _seed_default(v):
+            return -1 if v in (None, "") else gr.update()
+
+        seed.change(_seed_default, inputs=[seed], outputs=[seed])
+
+        def _on_select(seeds, evt: gr.SelectData):
+            i = evt.index if isinstance(evt.index, int) else 0
+            s = seeds[i] if (seeds and 0 <= i < len(seeds)) else ""
+            return i, str(s)
+
+        gallery.select(_on_select, inputs=[last_seeds],
+                       outputs=[sel_index, seed_box])
+
+        def _reuse_seed(seeds, idx):
+            if seeds and isinstance(idx, int) and 0 <= idx < len(seeds):
+                return gr.update(value=int(seeds[idx]))
+            return gr.update()
+
+        seed_reuse.click(_reuse_seed, inputs=[last_seeds, sel_index],
+                         outputs=[seed])
+
+        if pending_toolkit is not None and tabs is not None:
+            def _send_toolkit(paths, idx, dest):
+                if not paths or not dest:
+                    raise gr.Error(t("Générez puis sélectionnez une image."))
+                i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
+                return ((paths[i], dest), gr.Tabs(selected=toolkit_tab_id),
+                        gr.update(value=None))
+
+            send_tool.change(
+                _send_toolkit, inputs=[last_paths, sel_index, send_tool],
+                outputs=[pending_toolkit, tabs, send_tool])

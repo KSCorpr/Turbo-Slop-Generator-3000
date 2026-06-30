@@ -55,7 +55,7 @@ def _installer_block(title: str, note: str, stream_fn, installed: bool):
         btn.click(_install, outputs=[log])
 
 
-def build_toolkit_tab(tab_id="toolkit"):
+def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
     with gr.Tab("🧰 Toolkit", id=tab_id):
         gr.Markdown(
             "### Outils utilitaires\n"
@@ -63,9 +63,9 @@ def build_toolkit_tab(tab_id="toolkit"):
             "transparent), **détourage d'objet au clic** (Segment Anything) et "
             "**agrandissement ESRGAN** (simple, 100% GPU).")
 
-        with gr.Tabs():
+        with gr.Tabs() as sub_tabs:
             # ---------- Profondeur ----------
-            with gr.Tab("🌐 Profondeur"):
+            with gr.Tab("🌐 Profondeur", id="depth"):
                 gr.Markdown(
                     "*Depth Anything V2* — carte de profondeur (clair = proche, "
                     "sombre = loin). Téléchargez le résultat pour le réutiliser.")
@@ -102,7 +102,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                 d_run.click(do_depth, inputs=[d_image], outputs=[d_result, d_log])
 
             # ---------- Suppression d'arrière-plan ----------
-            with gr.Tab("✂️ Sans arrière-plan"):
+            with gr.Tab("✂️ Sans arrière-plan", id="bg"):
                 gr.Markdown(
                     "*RMBG-1.4* — détoure le sujet et renvoie un **PNG "
                     "transparent**.  \n"
@@ -142,7 +142,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                 b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log])
 
             # ---------- Segment Anything (clic) ----------
-            with gr.Tab("🪄 Détourer un objet (SAM)"):
+            with gr.Tab("🪄 Détourer un objet (SAM)", id="sam"):
                 gr.Markdown(
                     "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
                     "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
@@ -199,7 +199,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                 s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
 
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
-            with gr.Tab("🔼 Agrandir (ESRGAN)"):
+            with gr.Tab("🔼 Agrandir (ESRGAN)", id="esrgan"):
                 gr.Markdown(
                     "Agrandissement **simple** par réseau ESRGAN GGUF, natif "
                     "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
@@ -280,7 +280,7 @@ def build_toolkit_tab(tab_id="toolkit"):
                              cancels=[u_evt])
 
             # ---------- Upscale créatif tuilé (SDXL, façon Magnific) ----------
-            with gr.Tab("✨ Upscale créatif (SDXL)"):
+            with gr.Tab("✨ Upscale créatif (SDXL)", id="creative"):
                 gr.Markdown(
                     "Upscale **créatif** « Ultimate SD Upscale » : pré-agrandit "
                     "puis **raffine tuile par tuile** en SDXL img2img à faible "
@@ -468,17 +468,16 @@ def build_toolkit_tab(tab_id="toolkit"):
                         return
                     progress(1.0, desc="Terminé")
                     out = state.get("out")
-                    try:
-                        im = _PILImage.open(out)
-                        logs.append(f"\n✅ Image pleine résolution "
-                                    f"({im.width}x{im.height}) : {out}")
-                        disp = im
-                        if max(im.size) > 1600:
-                            r = 1600 / max(im.size)
-                            disp = im.resize((int(im.width * r), int(im.height * r)))
-                        yield disp, "\n".join(logs)
-                    except Exception:  # noqa: BLE001
-                        yield (str(out) if out else gr.update()), "\n".join(logs)
+                    if out:
+                        try:
+                            im = _PILImage.open(out)
+                            logs.append(f"\n✅ Image pleine résolution "
+                                        f"({im.width}x{im.height}) : {out}")
+                        except Exception:  # noqa: BLE001
+                            pass
+                    # On affiche le FICHIER pleine résolution (téléchargement =
+                    # image réelle, pas une preview réduite).
+                    yield (str(out) if out else gr.update()), "\n".join(logs)
 
                 c_evt = c_run.click(
                     do_creative,
@@ -487,3 +486,20 @@ def build_toolkit_tab(tab_id="toolkit"):
                             c_model, c_vae, c_esrgan],
                     outputs=[c_result, c_log])
                 c_stop.click(lambda: tools.cancel(), outputs=None, cancels=[c_evt])
+
+        # --- Réception d'une image envoyée depuis un onglet de génération ---
+        if pending_toolkit is not None and tabs is not None:
+            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
+
+            def _consume(pend):
+                if not pend:
+                    return tuple([gr.update()] * 6 + [None])
+                path, dest = pend
+                sub = gr.Tabs(selected=dest) if dest in _keys else gr.update()
+                img_upd = [gr.update(value=path) if k == dest else gr.update()
+                           for k in _keys]
+                return tuple([sub] + img_upd + [None])
+
+            tabs.select(_consume, inputs=[pending_toolkit],
+                        outputs=[sub_tabs, d_image, b_image, s_image, u_image,
+                                 c_image, pending_toolkit])

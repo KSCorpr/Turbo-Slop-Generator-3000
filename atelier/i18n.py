@@ -233,6 +233,15 @@ _EN: dict[str, str] = {
     # ---- generate_tab : sorties ----
     "Aperçu (temps réel)": "Live preview",
     "Résultats (légende = seed)": "Results (caption = seed)",
+    "Aperçu temps réel → résultats (légende = seed)":
+        "Live preview → results (caption = seed)",
+    "aperçu en cours…": "preview…",
+    "Seed de l'image sélectionnée": "Selected image's seed",
+    "♻️ Réutiliser ce seed": "♻️ Reuse this seed",
+    "📤 Envoyer la sélection vers le Toolkit":
+        "📤 Send the selection to the Toolkit",
+    "Générez puis sélectionnez une image.":
+        "Generate then select an image.",
     "Journal": "Log",
 
     # ---- generate_tab : erreurs ----
