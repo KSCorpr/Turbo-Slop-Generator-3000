@@ -5,7 +5,7 @@ A **local**, modern, lightweight image-generation studio for artists, built on
 CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, two upscalers, video, and a utility toolkit.
+editing, two upscalers, and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -26,7 +26,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
-| 🎬 **Video (LTX-2.3)** | text→video, image→video, first→last frame (⚠️ 22B, very heavy) |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto / manual / per-generation presets) |
 
 ---
@@ -39,7 +38,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Toolkit](#toolkit)
-- [Video (LTX-2.3)](#video-ltx-23)
 - [Sharing on your LAN](#sharing-on-your-lan)
 - [Distributing a portable package](#distributing-a-portable-package)
 - [Models & sources](#models--sources)
@@ -301,14 +299,6 @@ It outputs only the enhanced prompt, injected straight into the prompt field.
 
 ---
 
-## Video (LTX-2.3)
-
-Text→video, image→video, and first→last frame via sd.cpp (`-M vid_gen`).
-⚠️ **22B diffusion + Gemma-3-12B encoder = very heavy** (≥16 GB ideal). On 11–12 GB:
-use a low quant (`Q3_K`/`Q2_K`) + offload, and expect several minutes per clip.
-Start small (640×360, 25 frames).
-
----
 
 ## Sharing on your LAN
 
@@ -361,7 +351,6 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF`](https://huggingface.co/noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF) (Qwen3-VL-4B **abliterated / uncensored**, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
-**Video** — [`unsloth/LTX-2.3-GGUF`](https://huggingface.co/unsloth/LTX-2.3-GGUF) + [`unsloth/gemma-3-12b-it-GGUF`](https://huggingface.co/unsloth/gemma-3-12b-it-GGUF).
 **Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
@@ -381,12 +370,12 @@ atelier/
   downloader.py              # on-demand Hugging Face downloads
   styles.py                  # system-prompt / style presets
   engine/
-    sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, video, LoRA)
-    generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale + video
+    sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, LoRA)
+    generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
   ui/
     theme.py                 # light theme + CSS
-    generate_tab.py · library_tab.py · toolkit_tab.py · video_tab.py · settings_tab.py
+    generate_tab.py · library_tab.py · toolkit_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   _torch_setup.py            # shared PyTorch-CUDA install helpers
@@ -441,12 +430,6 @@ authors. Please read and respect each model's own license on its page.
   [noctrex](https://huggingface.co/noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF);
   **WAN 2.1** VAE by **Alibaba / Wan team**, repackaged by
   [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
-
-### Video
-- **LTX-2.3** by **Lightricks**, GGUF by
-  [unsloth](https://huggingface.co/unsloth/LTX-2.3-GGUF); text encoder **Gemma 3**
-  by **Google DeepMind**, GGUF by
-  [unsloth](https://huggingface.co/unsloth/gemma-3-12b-it-GGUF).
 
 ### Upscalers
 - **ESRGAN models (GGUF)** collected by

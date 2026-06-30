@@ -2,7 +2,7 @@
 """GEN.Ai Image Workshop — studio d'inférence d'images en local (Gradio).
 
 Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Catalogue de
-modèles · Toolkit (profondeur, détourage, SAM) · Vidéo (LTX-2.3) · Réglages.
+modèles · Toolkit (profondeur, détourage, SAM, upscale) · Réglages.
 """
 from __future__ import annotations
 
@@ -62,7 +62,6 @@ from atelier.ui.library_tab import build_library_tab
 from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.toolkit_tab import build_toolkit_tab
-from atelier.ui.video_tab import build_video_tab
 
 # Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS.
 _HEAD = (
@@ -103,7 +102,6 @@ def build_app() -> gr.Blocks:
             build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo")
             build_library_tab()
             build_toolkit_tab()
-            build_video_tab()
             build_settings_tab()
 
     i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)

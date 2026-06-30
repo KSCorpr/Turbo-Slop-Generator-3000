@@ -6,6 +6,6 @@ automatiques selon le GPU et la RAM, support LoRA, résolutions natives par
 modèle, améliorateur de prompt (IA), et outils (profondeur, détourage, SAM).
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 APP_NAME = "GEN.Ai Image Workshop"
-ACCENT = "#add645"
+ACCENT = "#00ccff"

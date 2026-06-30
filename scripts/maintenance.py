@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 OBSOLETE = [
     "atelier/ui/creative_tab.py",          # ancien onglet Upscale (retiré)
     "scripts/tools/run_creative_upscale.py",  # ancien runner SDXL+ControlNet
+    "atelier/ui/video_tab.py",             # ancien onglet Vidéo LTX (retiré)
 ]
 
 # Dossiers de données à NE JAMAIS toucher.

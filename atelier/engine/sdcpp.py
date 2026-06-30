@@ -190,36 +190,6 @@ def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
     return cmd
 
 
-def build_vid_cmd(sd_cli: Path, *, diffusion: Path, vae: Path, audio_vae: Path,
-                  llm: Path, connectors: Path, prompt: str, negative: str,
-                  cfg_scale: float, steps: int, width: int, height: int,
-                  frames: int, fps: int, mode: str, output: Path,
-                  init_image: Path | None = None, end_image: Path | None = None,
-                  flags: Mapping[str, bool] | None = None) -> list[str]:
-    """Commande LTX-2.3 (génération vidéo, -M vid_gen). mode : t2v|i2v|flf2v."""
-    _require(diffusion, vae, audio_vae, llm, connectors, init_image, end_image)
-    cmd: list[str] = [str(sd_cli), "-M", "vid_gen",
-                      "--diffusion-model", str(diffusion),
-                      "--vae", str(vae), "--audio-vae", str(audio_vae),
-                      "--llm", str(llm),
-                      "--embeddings-connectors", str(connectors),
-                      "-p", prompt]
-    if negative:
-        cmd += ["-n", negative]
-    cmd += ["--cfg-scale", f"{cfg_scale}", "--sampling-method", "euler",
-            "-W", f"{width}", "-H", f"{height}",
-            "--video-frames", f"{frames}", "--fps", f"{fps}"]
-    if steps and steps > 0:
-        cmd += ["--steps", f"{steps}"]
-    if mode == "i2v" and init_image:
-        cmd += ["-i", str(init_image)]
-    elif mode == "flf2v" and init_image and end_image:
-        cmd += ["--init-img", str(init_image), "--end-img", str(end_image)]
-    cmd += _flag_args(flags or {})
-    cmd += ["-o", str(output), "-v"]
-    return cmd
-
-
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
         gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED

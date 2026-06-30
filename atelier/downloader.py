@@ -201,22 +201,3 @@ def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str
         except Exception as exc:  # noqa: BLE001
             yield f"  ✗ {fn} : {exc}"
     yield f"Upscalers prêts ({ok}/{len(files)}). ✅"
-
-
-def download_ltx(log: Callable[[str], None] | None = None) -> Iterator[str]:
-    """Télécharge les composants de LTX-2.3 (diffusion 22B + Gemma-3-12B + VAE…)."""
-    from .registry import ltx_components
-    settings.ensure_dirs()
-    comps = ltx_components()
-    if not comps:
-        yield "LTX-2.3 non configuré."
-        return
-    yield "Téléchargement de LTX-2.3 (gros : 22B + Gemma-3-12B + VAE)…"
-    for comp in comps:
-        try:
-            download_component(comp, log=log)
-            yield f"  ✓ {comp.role}"
-        except Exception as exc:  # noqa: BLE001
-            yield f"  ✗ {comp.role} : {exc}"
-            return
-    yield "LTX-2.3 est prêt. ✅"
