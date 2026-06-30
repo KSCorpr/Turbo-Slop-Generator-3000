@@ -41,6 +41,10 @@ def build_settings_tab():
             lang_dd = gr.Dropdown(
                 LANGS, value=prefs.get("lang", "fr"),
                 label="🌐 Langue / Language (redémarrage requis)")
+            theme_dd = gr.Dropdown(
+                [(t("Clair"), "light"), (t("Sombre"), "dark")],
+                value=prefs.get("theme", "light"),
+                label="🎨 Thème (redémarrage requis)")
         lang_msg = gr.Markdown("")
 
         def _save_lang(lang):
@@ -53,6 +57,15 @@ def build_settings_tab():
                      ).format(lang=disp)
 
         lang_dd.change(_save_lang, inputs=[lang_dd], outputs=[lang_msg])
+
+        def _save_theme(th):
+            p = settings.load_prefs()
+            p["theme"] = "dark" if th == "dark" else "light"
+            settings.save_prefs(p)
+            return t("✅ Thème enregistré. **Redémarrez l'application** pour "
+                     "l'appliquer.")
+
+        theme_dd.change(_save_theme, inputs=[theme_dd], outputs=[lang_msg])
 
         with gr.Row():
             auto = gr.Checkbox(value=prefs.get("auto_optimize", True),

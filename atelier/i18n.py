@@ -549,6 +549,11 @@ _EN: dict[str, str] = {
     "Jeton Civitai (optionnel — LoRA protégés)":
         "Civitai token (optional — gated LoRAs)",
     "Langue de l'interface": "Interface language",
+    "🎨 Thème (redémarrage requis)": "🎨 Theme (restart required)",
+    "Clair": "Light",
+    "Sombre": "Dark",
+    "✅ Thème enregistré. **Redémarrez l'application** pour l'appliquer.":
+        "✅ Theme saved. **Restart the app** to apply it.",
     "#### 🧮 Multi-GPU — carte secondaire dédiée au TEXTE\n"
     "Faites tourner le **texte** (amélioration de prompt + encodage) "
     "sur une 2e carte (ex. 1080 Ti). La **génération d'images** et "

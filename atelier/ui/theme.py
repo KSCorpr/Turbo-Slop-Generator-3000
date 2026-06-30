@@ -25,12 +25,15 @@ def theme() -> gr.Theme:
         font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
     ).set(
         body_background_fill="#f6f7fb",
+        body_background_fill_dark="#0b1117",
         block_background_fill="#ffffff",
+        block_background_fill_dark="#141b22",
         block_border_width="1px",
         block_title_text_weight="600",
         button_primary_background_fill=ACCENT,
         button_primary_background_fill_hover=ACCENT_HOVER,
         button_primary_text_color="#03303f",   # navy sombre = lisible sur le cyan
+        button_primary_text_color_dark="#03303f",
         slider_color=ACCENT,
     )
 
@@ -76,4 +79,14 @@ CSS = f"""
 textarea {{ resize: vertical !important; max-width: 100% !important; }}
 .gr-image, .gr-gallery {{ min-height: 0; }}
 footer {{ display:none !important; }}
+
+/* ---- Mode sombre : overrides des couleurs codées en dur ci-dessus ---- */
+.dark #atelier-header h1 {{ color: {ACCENT}; }}
+.dark #atelier-header .sub {{ color: #94a3b8; }}
+.dark .model-card {{ background:#141b22; border-color:#243240;
+                     box-shadow:none; }}
+.dark .tab-nav {{ border-bottom-color:#243240 !important; }}
+.dark .tab-nav button {{ color:#9aa7b4 !important; }}
+.dark .tab-nav button:hover,
+.dark .tab-nav button.selected {{ color:{ACCENT} !important; }}
 """

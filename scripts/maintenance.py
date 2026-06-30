@@ -150,7 +150,7 @@ def check_engine() -> None:
 
 def main() -> int:
     print("=" * 60)
-    print("  Maintenance — GEN.Ai Image Workshop")
+    print("  Maintenance — Turbo Slop Generator 3000")
     print("=" * 60)
     remove_obsolete()
     clean_pycache()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GEN.Ai Image Workshop — studio d'inférence d'images en local (Gradio).
+"""Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
 Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Catalogue de
 modèles · Toolkit (profondeur, détourage, SAM, upscale) · Réglages.
@@ -63,14 +63,16 @@ from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.toolkit_tab import build_toolkit_tab
 
-# Force le thème clair quel que soit le réglage clair/sombre du navigateur/OS.
-_HEAD = (
-    "<script>"
-    "if(!new URLSearchParams(window.location.search).has('__theme')){"
-    "const u=new URL(window.location);u.searchParams.set('__theme','light');"
-    "window.location.replace(u);}"
-    "</script>"
-)
+# Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
+def _head_for(mode: str) -> str:
+    mode = "dark" if mode == "dark" else "light"
+    return (
+        "<script>"
+        "if(!new URLSearchParams(window.location.search).has('__theme')){"
+        "const u=new URL(window.location);"
+        f"u.searchParams.set('__theme','{mode}');"
+        "window.location.replace(u);}"
+        "</script>")
 
 
 def build_app() -> gr.Blocks:
@@ -81,9 +83,10 @@ def build_app() -> gr.Blocks:
     first_run = not settings.PREFS_FILE.exists()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
+    head = _head_for(settings.load_prefs().get("theme", "light"))
 
     with gr.Blocks(title=f"{APP_NAME} {__version__}", theme=theme(), css=CSS,
-                   head=_HEAD) as demo:
+                   head=head) as demo:
         _subtitle = i18n.t("Génération d'images locale")
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"

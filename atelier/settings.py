@@ -24,6 +24,7 @@ PREFS_FILE = USERDATA_DIR / "preferences.json"
 # Préférences par défaut (surchargées par l'onglet Réglages, persistées en JSON).
 DEFAULT_PREFS: dict[str, Any] = {
     "lang": "fr",               # langue de l'interface : "fr" | "en"
+    "theme": "light",           # thème de l'interface : "light" | "dark"
     "gpu_index": None,          # None = auto (meilleure carte détectée)
     # GPU secondaire dédié au TEXTE (améliorateur de prompt). None = même GPU
     # que la génération. Ex. : mettre la 1080 Ti ici. La génération d'images et

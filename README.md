@@ -1,4 +1,4 @@
-# 🟢 GEN.Ai Image Workshop
+# 🟢 Turbo Slop Generator 3000
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
@@ -229,11 +229,12 @@ the generation GPU — never on the secondary card.**
 So with the 1080 Ti picked for both, the secondary card handles **only** prompt
 enhancement and token encoding; the 3060 does all the actual image diffusion.
 
-### Interface language
+### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
-**English**. The choice is saved to `userdata/`; **restart the app** (`run.bat` /
-`run.sh`) to apply it — Gradio builds the interface once at launch. Engine logs
-and progress hints stay in French.
+**English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved
+to `userdata/` and applied on **restart** (`run.bat` / `run.sh`) — Gradio builds
+the interface once at launch. On first launch a bilingual language chooser is
+shown at the top. Engine logs and progress hints stay in French.
 
 ---
 
@@ -334,7 +335,7 @@ To share the GUI so friends install nothing:
 
 1. On a machine where **everything already works** (Python + engine in `bin\`),
    run **`make_portable.bat`**.
-2. It produces `GEN-Ai-Image-Workshop-portable.zip` with the code, the **portable
+2. It produces `Turbo-Slop-Generator-3000-portable.zip` with the code, the **portable
    Python** and the **engine** — but no models.
 3. Friends **unzip** and run **`run.bat`**. No GitHub download needed: they only
    fetch the **models** from the Model Catalog tab (via Hugging Face).
