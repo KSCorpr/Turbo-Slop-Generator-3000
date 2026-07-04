@@ -150,8 +150,8 @@ _EN: dict[str, str] = {
     # ---- generate_tab : référence / img2img ----
     "🖼️ Images de référence (édition d'image)":
         "🖼️ Reference images (image editing)",
-    "🖼️ Image de départ (image-to-image)":
-        "🖼️ Starting image (image-to-image)",
+    "🖼️ Image de référence / départ (image-to-image)":
+        "🖼️ Reference / starting image (image-to-image)",
     "**Éditer une image** : chargez-la et décrivez **la "
     "modification** dans le prompt (ex. *« change la "
     "couleur de la voiture en rouge »*, *« ajoute de la "
@@ -167,13 +167,15 @@ _EN: dict[str, str] = {
         "follows your image. You can add **2 extra reference images** to "
         "combine elements (e.g. *“put the character from image 1 into the "
         "scene of image 2”*).",
-    "Partez d'une image : décrivez le rendu voulu et réglez "
-    "la **force de transformation** (bas = proche de "
-    "l'original, haut = réinventé). Le format de sortie "
-    "s'adapte à votre image.":
-        "Start from an image: describe the desired result and set the "
-        "**transformation strength** (low = close to the original, high = "
-        "reinvented). The output aspect follows your image.",
+    "**Image de référence** (image-to-image) : chargez une "
+    "photo, décrivez le rendu voulu, et réglez la **force "
+    "de transformation** — **bas (0.2–0.4)** = garde la "
+    "structure de la référence ; **haut (0.7–1.0)** = "
+    "réinventé. Le format de sortie s'adapte à votre image.":
+        "**Reference image** (image-to-image): load a photo, describe the "
+        "desired result, and set the **transformation strength** — **low "
+        "(0.2–0.4)** = keeps the reference's structure; **high (0.7–1.0)** = "
+        "reinvented. The output aspect follows your image.",
     "Image à éditer": "Image to edit",
     "Image de départ": "Starting image",
     "Référence 2 (option)": "Reference 2 (optional)",
@@ -546,6 +548,19 @@ _EN: dict[str, str] = {
     "VAE sur CPU": "VAE on CPU",
     "Endpoint Hugging Face (miroir éventuel)":
         "Hugging Face endpoint (optional mirror)",
+    "#### 🗃️ Accélération par cache (expérimental)\n"
+    "Réutilise les calculs quasi identiques entre les pas de diffusion "
+    "(doc sd.cpp `caching.md`). Gain surtout au-delà de ~10 pas — sur les "
+    "modèles distillés (4–8 pas) le gain est faible et des artefacts sont "
+    "possibles. Nécessite un moteur récent (`update-engine.bat`).":
+        "#### 🗃️ Cache acceleration (experimental)\n"
+        "Reuses near-identical computations across diffusion steps (sd.cpp "
+        "`caching.md`). Pays off mostly above ~10 steps — on distilled models "
+        "(4–8 steps) the gain is small and artifacts are possible. Requires a "
+        "recent engine (`update-engine.bat`).",
+    "Désactivé (recommandé)": "Disabled (recommended)",
+    "Mode de cache (Flux/Krea = DiT)": "Cache mode (Flux/Krea = DiT)",
+    "Option de cache (vide = défauts)": "Cache option (empty = defaults)",
     "Jeton Civitai (optionnel — LoRA protégés)":
         "Civitai token (optional — gated LoRAs)",
     "Langue de l'interface": "Interface language",
