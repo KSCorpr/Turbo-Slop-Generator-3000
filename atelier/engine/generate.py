@@ -185,6 +185,8 @@ def generate(
         lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
+        cache_mode=prefs.get("cache_mode") or "",
+        cache_option=prefs.get("cache_option") or "",
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)

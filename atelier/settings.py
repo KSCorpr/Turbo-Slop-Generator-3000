@@ -46,6 +46,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     },
     "hf_endpoint": "https://huggingface.co",
     "civitai_token": "",        # jeton Civitai (optionnel, pour les LoRA protégés)
+    # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.
+    # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
+    "cache_mode": "",
+    "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
 }
 
 
