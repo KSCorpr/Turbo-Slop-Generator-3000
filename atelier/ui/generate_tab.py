@@ -154,7 +154,7 @@ def build_generative_tab(model_id: str, title: str,
                     enh_inst.click(_install_enh, outputs=[enh_log])
 
                 _acc_title = ("🖼️ Images de référence (édition d'image)" if is_edit
-                              else "🖼️ Image de départ (image-to-image)")
+                              else "🖼️ Image de référence / départ (image-to-image)")
                 with gr.Accordion(_acc_title, open=False):
                     if is_edit:
                         gr.Markdown(
@@ -169,10 +169,11 @@ def build_generative_tab(model_id: str, title: str,
                             "de l'image 2 »*).")
                     else:
                         gr.Markdown(
-                            "Partez d'une image : décrivez le rendu voulu et réglez "
-                            "la **force de transformation** (bas = proche de "
-                            "l'original, haut = réinventé). Le format de sortie "
-                            "s'adapte à votre image.")
+                            "**Image de référence** (image-to-image) : chargez une "
+                            "photo, décrivez le rendu voulu, et réglez la **force "
+                            "de transformation** — **bas (0.2–0.4)** = garde la "
+                            "structure de la référence ; **haut (0.7–1.0)** = "
+                            "réinventé. Le format de sortie s'adapte à votre image.")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")
