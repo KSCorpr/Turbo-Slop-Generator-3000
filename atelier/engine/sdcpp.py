@@ -73,6 +73,9 @@ class GenRequest:
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
     # via --backend te=cudaX. None = encodeur sur le GPU principal / RAM.
     encoder_gpu_index: int | None = None
+    # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
+    cache_mode: str = ""               # easycache | dbcache | taylorseer | …
+    cache_option: str = ""             # ex. "threshold=0.2"
 
 
 def _flag_args(flags: Mapping[str, bool]) -> list[str]:
@@ -159,6 +162,12 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.preview_path:
         cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
                 "--preview-interval", "1"]
+    # Accélération par cache (opt-in) : saute des calculs quasi identiques entre
+    # pas. Nécessite un sd-cli récent (update-engine.bat si flag inconnu).
+    if req.cache_mode:
+        cmd += ["--cache-mode", req.cache_mode]
+        if req.cache_option:
+            cmd += ["--cache-option", req.cache_option]
     cmd += _flag_args(req.flags)
     # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU. On épingle diffusion+VAE
     # sur le GPU principal et l'encodeur (te) sur l'autre. Suppose un ordre CUDA

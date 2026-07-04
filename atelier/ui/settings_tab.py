@@ -122,6 +122,25 @@ def build_settings_tab():
             clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False), label="CLIP sur CPU")
             vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False), label="VAE sur CPU")
 
+        gr.Markdown(
+            "#### 🗃️ Accélération par cache (expérimental)\n"
+            "Réutilise les calculs quasi identiques entre les pas de diffusion "
+            "(doc sd.cpp `caching.md`). Gain surtout au-delà de ~10 pas — sur les "
+            "modèles distillés (4–8 pas) le gain est faible et des artefacts sont "
+            "possibles. Nécessite un moteur récent (`update-engine.bat`).")
+        with gr.Row():
+            cache_mode = gr.Dropdown(
+                [(t("Désactivé (recommandé)"), ""),
+                 ("easycache", "easycache"), ("dbcache", "dbcache"),
+                 ("taylorseer", "taylorseer"), ("cache-dit", "cache-dit"),
+                 ("spectrum", "spectrum")],
+                value=prefs.get("cache_mode", ""),
+                label="Mode de cache (Flux/Krea = DiT)")
+            cache_opt = gr.Textbox(
+                value=prefs.get("cache_option", ""),
+                label="Option de cache (vide = défauts)",
+                placeholder="ex. threshold=0.2")
+
         hf_ep = gr.Textbox(value=prefs.get("hf_endpoint", "https://huggingface.co"),
                            label="Endpoint Hugging Face (miroir éventuel)")
         civitai_tok = gr.Textbox(value=prefs.get("civitai_token", ""),
@@ -132,8 +151,11 @@ def build_settings_tab():
         saved = gr.Markdown("")
 
         def do_save(auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa, offload,
-                    tiling, clip_cpu, vae_cpu, hf_ep, civitai_tok):
+                    tiling, clip_cpu, vae_cpu, cache_mode, cache_opt, hf_ep,
+                    civitai_tok):
             p = settings.load_prefs()
+            p["cache_mode"] = cache_mode or ""
+            p["cache_option"] = (cache_opt or "").strip()
             p["auto_optimize"] = bool(auto)
             p["gpu_index"] = gpu if gpu is not None else None
             p["text_gpu_index"] = tools_gpu
@@ -152,7 +174,8 @@ def build_settings_tab():
 
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa,
-                           offload, tiling, clip_cpu, vae_cpu, hf_ep, civitai_tok],
+                           offload, tiling, clip_cpu, vae_cpu, cache_mode,
+                           cache_opt, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---
