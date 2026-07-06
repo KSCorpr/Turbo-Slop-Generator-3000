@@ -253,7 +253,11 @@ restarts the server (first click on a model pays the load, the rest are warm).
 can't start, generation **falls back automatically** to `sd-cli`, so nothing
 breaks — hence **off by default**. Two caveats in this mode: **live preview is
 unavailable**, and LoRAs are passed as structured entries (the server ignores
-`<lora:…>` prompt tags — this can actually *improve* LoRA compatibility).
+`<lora:…>` prompt tags — this can actually *improve* LoRA compatibility). The
+server caches its LoRA list at load time, so after dropping a **new** LoRA file
+in `loras/`, click **↻ Refresh list** (LoRA panel) — it updates the dropdown and
+tells the resident server to re-scan (hot when the build supports it, otherwise a
+one-time reload on the next generation).
 
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and

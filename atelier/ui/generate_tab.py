@@ -324,9 +324,13 @@ def build_generative_tab(model_id: str, title: str,
         # ----- Comportements -----
         def refresh_loras():
             choices = gen_engine.list_loras()
-            return gr.update(choices=choices), gr.update(choices=choices)
+            # En mode serveur, on prévient aussi le serveur résident du nouveau
+            # fichier (sinon il ne le voit qu'au prochain redémarrage).
+            msg = gen_engine.refresh_server_loras()
+            return (gr.update(choices=choices), gr.update(choices=choices),
+                    msg or "")
 
-        refresh_lora.click(refresh_loras, outputs=[lora1, lora2])
+        refresh_lora.click(refresh_loras, outputs=[lora1, lora2, civitai_msg])
 
         def clear_loras():
             return (gr.update(value=None), gr.update(value=0.8),

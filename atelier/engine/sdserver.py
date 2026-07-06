@@ -360,6 +360,36 @@ def cancel_active() -> str:
         return ""
 
 
+def refresh_loras() -> str:
+    """Rafraîchit la liste des LoRA connus du serveur (après ajout d'un fichier).
+
+    Le cache LoRA du serveur est peuplé au démarrage depuis --lora-model-dir. Pour
+    prendre en compte un nouveau fichier sans redémarrer :
+      1. on tente l'endpoint A1111 /sdapi/v1/refresh-loras (rapide, modèle reste
+         chaud) — présent sur les builds récents ;
+      2. sinon, on force un redémarrage propre au prochain usage (repeuple le
+         cache ; coûte un rechargement du modèle).
+    """
+    global _CURRENT
+    with _LOCK:
+        handle = _CURRENT
+    if handle is None or handle.proc.poll() is not None:
+        return ""  # aucun serveur en cours : le prochain démarrage relira le dossier
+    if requests is not None:
+        try:
+            r = requests.post(f"{handle.base_url}/sdapi/v1/refresh-loras",
+                             timeout=15)
+            if r.status_code in (200, 204):
+                return "🔄 LoRA rafraîchis (serveur toujours chaud)."
+        except Exception:  # noqa: BLE001 — endpoint absent → repli redémarrage
+            pass
+    with _LOCK:
+        _stop_locked(_CURRENT)
+        _CURRENT = None
+    return ("🔄 LoRA rafraîchis — le serveur se relancera à la prochaine "
+            "génération (un rechargement du modèle).")
+
+
 def shutdown() -> None:
     """Arrête le serveur (appelé à la sortie de l'application)."""
     global _CURRENT

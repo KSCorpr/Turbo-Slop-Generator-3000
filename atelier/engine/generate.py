@@ -38,6 +38,13 @@ def custom_path(name: str | None) -> Path | None:
     return p if p.is_file() else None
 
 
+def refresh_server_loras() -> str:
+    """Rafraîchit le cache LoRA du serveur résident. No-op hors mode serveur."""
+    if not settings.server_enabled():
+        return ""
+    return sdserver.refresh_loras()
+
+
 def list_loras() -> list[str]:
     """Noms des LoRA disponibles dans loras/ (sans extension)."""
     settings.ensure_dirs()
