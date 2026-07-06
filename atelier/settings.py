@@ -50,6 +50,13 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
+    # EXPÉRIMENTAL : moteur en mode « serveur résident ». Au lieu de relancer
+    # sd-cli (qui recharge le modèle du disque) à chaque image, on garde un
+    # sd-server chargé en mémoire → itération quasi instantanée. Un seul modèle
+    # résident à la fois : changer de modèle relance le serveur. False = mode
+    # sd-cli classique (comportement historique, aucune régression).
+    "use_sd_server": False,
+    "sd_server_port": 7861,     # port local (127.0.0.1) du sd-server
 }
 
 
@@ -96,6 +103,33 @@ def find_sd_cli() -> Path | None:
         if found:
             return Path(found)
     return None
+
+
+def sd_server_names() -> list[str]:
+    """Noms possibles du binaire serveur stable-diffusion.cpp."""
+    if platform.system() == "Windows":
+        return ["sd-server.exe"]
+    return ["sd-server"]
+
+
+def find_sd_server() -> Path | None:
+    """Localise sd-server (livré dans la même archive que sd-cli)."""
+    for name in sd_server_names():
+        for candidate in BIN_DIR.rglob(name):
+            if candidate.is_file():
+                return candidate
+    for name in sd_server_names():
+        found = shutil.which(name)
+        if found:
+            return Path(found)
+    return None
+
+
+def server_enabled() -> bool:
+    """Vrai si l'utilisateur a activé le moteur serveur ET que le binaire existe."""
+    if not load_prefs().get("use_sd_server", False):
+        return False
+    return find_sd_server() is not None
 
 
 def model_repo_dir(repo: str) -> Path:

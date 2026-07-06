@@ -240,6 +240,21 @@ diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-st
 distilled models the gain is small and artifacts are possible, hence **off by
 default**. Requires a recent engine (`update-engine.bat`).
 
+### Resident-server engine (experimental)
+**Settings → 🚀 Resident-server engine** switches generation from one-shot
+`sd-cli` (which reloads the model from disk on every image) to a persistent
+**`sd-server`** that keeps the model **loaded in memory** between generations
+([server API](https://github.com/leejet/stable-diffusion.cpp/tree/master/examples/server)).
+After the first load, iterating — re-rolling a seed, tweaking a prompt — starts
+**warm** and is near-instant; the model reload was the main per-click cost, not
+the inference itself. One model is resident at a time, so switching model
+restarts the server (first click on a model pays the load, the rest are warm).
+`sd-server` ships in the same archive as `sd-cli` (no extra download). If it
+can't start, generation **falls back automatically** to `sd-cli`, so nothing
+breaks — hence **off by default**. Two caveats in this mode: **live preview is
+unavailable**, and LoRAs are passed as structured entries (the server ignores
+`<lora:…>` prompt tags — this can actually *improve* LoRA compatibility).
+
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
 **English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved

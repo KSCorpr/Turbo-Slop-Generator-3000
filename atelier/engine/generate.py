@@ -7,13 +7,17 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
-from . import sdcpp
+from . import sdcpp, sdserver
 from .sdcpp import GenRequest
 
 
 def cancel() -> str:
-    """Annule la génération en cours (termine le process sd-cli)."""
-    return sdcpp.cancel_active()
+    """Annule la génération en cours (serveur OU process sd-cli)."""
+    # En mode serveur, on annule le job (le modèle reste chaud). On tente aussi
+    # côté CLI au cas où un process one-shot (PiD, upscale) tournerait.
+    msg = sdserver.cancel_active()
+    cli = sdcpp.cancel_active()
+    return msg or cli
 
 
 def list_custom_models() -> list[str]:
@@ -64,9 +68,28 @@ def _resolved_flags(prefs: dict) -> tuple[dict[str, bool], int | None]:
 
 
 def _apply_loras(prompt: str, loras: list[tuple[str, float]]) -> str:
-    """Ajoute la syntaxe <lora:nom:poids> au prompt (consommée par sd.cpp)."""
+    """Ajoute la syntaxe <lora:nom:poids> au prompt (consommée par sd.cpp CLI)."""
     tags = "".join(f" <lora:{name}:{weight:g}>" for name, weight in loras if name)
     return (prompt or "") + tags
+
+
+def _lora_file(name: str) -> Path | None:
+    """Résout le fichier LoRA à partir de son nom (sans extension)."""
+    for ext in (".safetensors", ".gguf", ".ckpt", ".pt"):
+        p = settings.LORA_DIR / f"{name}{ext}"
+        if p.is_file():
+            return p
+    return None
+
+
+def _lora_specs(loras: list[tuple[str, float]]) -> list[tuple[Path, float]]:
+    """LoRA en (chemin, poids) pour le mode serveur (champ structuré, pas de tags)."""
+    out: list[tuple[Path, float]] = []
+    for name, weight in loras:
+        p = _lora_file(name)
+        if p is not None:
+            out.append((p, weight))
+    return out
 
 
 def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
@@ -164,12 +187,23 @@ def generate(
                 "fichiers locaux valides.")
 
     flags, gpu_index = _resolved_flags(prefs)
-    lora_dir = settings.LORA_DIR if loras else None
-    final_prompt = _apply_loras(prompt, loras or [])
+    loras = loras or []
 
     # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU (ex. 1080 Ti).
     enc_gpu = prefs.get("encoder_gpu_index")
     split_gpu = enc_gpu is not None and enc_gpu != gpu_index
+
+    # Mode serveur : LoRA en champ structuré, prompt SANS tags (le serveur les
+    # refuse). Mode CLI : LoRA via tags <lora:…> dans le prompt + --lora-model-dir.
+    use_server = settings.server_enabled()
+    if use_server:
+        final_prompt = prompt or ""
+        lora_dir = None
+        lora_specs = _lora_specs(loras)
+    else:
+        final_prompt = _apply_loras(prompt, loras)
+        lora_dir = settings.LORA_DIR if loras else None
+        lora_specs = []
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
@@ -182,16 +216,34 @@ def generate(
         flow_shift=float(flow_shift or 0.0),
         width=width, height=height, seed=seed, batch_count=batch_count,
         init_image=init_image, strength=strength, ref_image=ref_image,
-        lora_dir=lora_dir, preview_path=preview_path,
+        lora_dir=lora_dir, lora_specs=lora_specs, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
     )
     out = sdcpp.unique_output(model.family)
-    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
-    paths = sdcpp.collect_outputs(out, batch_count)
+
+    if use_server:
+        try:
+            paths = sdserver.generate(req, out, gpu_index=gpu_index,
+                                      all_gpus=split_gpu, log=log)
+        except sdserver.ServerUnavailable as exc:
+            # Le serveur n'a pas pu démarrer / répondre : repli transparent sur
+            # sd-cli (on ré-applique les LoRA via le prompt pour le CLI).
+            if log:
+                log(f"⚠️ Mode serveur indisponible ({exc}). Repli sur sd-cli.")
+            req.prompt = _apply_loras(prompt, loras)
+            req.lora_dir = settings.LORA_DIR if loras else None
+            req.lora_specs = []
+            cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+            sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
+            paths = sdcpp.collect_outputs(out, batch_count)
+    else:
+        cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
+        paths = sdcpp.collect_outputs(out, batch_count)
+
     if save_prompt and paths:
         _write_prompt_sidecars(paths, req, model, int(seed))
     return paths

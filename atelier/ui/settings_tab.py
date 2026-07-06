@@ -141,6 +141,18 @@ def build_settings_tab():
                 label="Option de cache (vide = défauts)",
                 placeholder="ex. threshold=0.2")
 
+        gr.Markdown(
+            "#### 🚀 Moteur serveur résident (expérimental)\n"
+            "Garde le modèle **chargé en mémoire** entre les images (sd-server) "
+            "au lieu de le recharger du disque à chaque génération. Après le 1er "
+            "chargement, l'itération (re-roll de seed, tweak de prompt) devient "
+            "**quasi instantanée**. Un seul modèle résident : changer de modèle "
+            "relance le serveur. En cas de souci, l'app **retombe automatiquement** "
+            "sur le mode classique. *(Aperçu temps réel indisponible dans ce mode.)*")
+        server_mode = gr.Checkbox(
+            value=prefs.get("use_sd_server", False),
+            label="Activer le moteur serveur (plus rapide en itération)")
+
         hf_ep = gr.Textbox(value=prefs.get("hf_endpoint", "https://huggingface.co"),
                            label="Endpoint Hugging Face (miroir éventuel)")
         civitai_tok = gr.Textbox(value=prefs.get("civitai_token", ""),
@@ -151,9 +163,10 @@ def build_settings_tab():
         saved = gr.Markdown("")
 
         def do_save(auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa, offload,
-                    tiling, clip_cpu, vae_cpu, cache_mode, cache_opt, hf_ep,
-                    civitai_tok):
+                    tiling, clip_cpu, vae_cpu, cache_mode, cache_opt, server_mode,
+                    hf_ep, civitai_tok):
             p = settings.load_prefs()
+            p["use_sd_server"] = bool(server_mode)
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
             p["auto_optimize"] = bool(auto)
@@ -175,7 +188,7 @@ def build_settings_tab():
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa,
                            offload, tiling, clip_cpu, vae_cpu, cache_mode,
-                           cache_opt, hf_ep, civitai_tok],
+                           cache_opt, server_mode, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---
