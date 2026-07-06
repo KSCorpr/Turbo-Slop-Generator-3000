@@ -119,8 +119,9 @@ The accordion adapts to the model family:
   strength slider — editing is prompt-driven. Output aspect follows your image.
   An **🧩 Outpaint** slider (experimental) extends the canvas and lets the model
   fill the new borders — describe the extension in the prompt.
-- **Other models (img2img)** — load a starting image and set the
-  **transformation strength** (low = close to the original, high = reinvented).
+- **Other models (img2img)** — load a **reference / starting image** and set the
+  **transformation strength** — low (0.2–0.4) keeps the reference's structure,
+  high (0.7–1.0) reinvents it.
 
 ### LoRA
 Drop `.safetensors` / `.gguf` files into **`loras/`**, then pick up to **2** with
@@ -229,6 +230,15 @@ the generation GPU — never on the secondary card.**
 
 So with the 1080 Ti picked for both, the secondary card handles **only** prompt
 enhancement and token encoding; the 3060 does all the actual image diffusion.
+
+### Cache acceleration (experimental)
+**Settings → 🗃️ Cache acceleration** exposes sd.cpp's step-caching
+([`caching.md`](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/caching.md)):
+`easycache`, `dbcache`, `taylorseer`, `cache-dit` or `spectrum`, plus a free-form
+option (e.g. `threshold=0.2`). It reuses near-identical computations across
+diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-step
+distilled models the gain is small and artifacts are possible, hence **off by
+default**. Requires a recent engine (`update-engine.bat`).
 
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
