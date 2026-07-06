@@ -99,7 +99,10 @@ def _build_server_cmd(sd_server: Path, req: GenRequest, port: int) -> list[str]:
     """
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
              req.t5xxl, req.clip_l, req.uncond_model)
-    cmd: list[str] = [str(sd_server), "--host", "127.0.0.1", "--port", str(port)]
+    # sd-server nomme l'écoute réseau --listen-ip/--listen-port (PAS --host/--port,
+    # qui sont ceux d'autres serveurs). Vérifié via `sd-server -h`.
+    cmd: list[str] = [str(sd_server),
+                      "--listen-ip", "127.0.0.1", "--listen-port", str(port)]
     if req.model_path:
         cmd += ["-m", str(req.model_path)]
         if req.vae:
