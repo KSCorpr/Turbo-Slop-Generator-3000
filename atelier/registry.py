@@ -259,4 +259,3 @@ def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
                 min=f"{m.vram_min_gb:.0f}", vram=f"{vram:.0f}"))
         out[m.id] = labels
     return out
-"""placeholder"""

@@ -171,6 +171,25 @@ def download_model(model: BaseModel,
     yield f"« {model.name} » est prêt. ✅"
 
 
+def download_pid(log: Callable[[str], None] | None = None) -> Iterator[str]:
+    """Télécharge les composants de PiD (décodeur + encodeur Gemma-2-2B + VAE)."""
+    from .registry import pid_components
+    settings.ensure_dirs()
+    comps = pid_components()
+    if not comps:
+        yield "PiD non configuré."
+        return
+    yield "Téléchargement de PiD (décodeur + encodeur Gemma-2-2B + VAE FLUX.1)…"
+    for comp in comps:
+        try:
+            download_component(comp, log=log)
+            yield f"  ✓ {comp.role}"
+        except Exception as exc:  # noqa: BLE001
+            yield f"  ✗ {comp.role} : {exc}"
+            return
+    yield "PiD est prêt. ✅"
+
+
 def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge tous les upscalers ESRGAN GGUF (wbruna/upscalers-sdcpp-gguf)."""
     from .registry import upscaler_config, upscalers_dir
