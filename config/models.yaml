@@ -122,6 +122,29 @@ base_models:
 
 
 # ============================================================================
+#  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
+#  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux.
+#  ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
+# ============================================================================
+pid:
+  name: "PiD — décodeur/upscaler pixel-diffusion (NVIDIA)"
+  target: 2048          # côté long visé (le modèle est entraîné 512 -> 2048)
+  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
+  steps: 4
+  vae_format: flux
+  sources:
+    diffusion:
+      repo: Comfy-Org/PixelDiT
+      match: "pid_flux1_512_to_2048_4step*.safetensors"
+    text_encoder:
+      repo: Comfy-Org/PixelDiT
+      match: "gemma_2_2b_it*.safetensors"
+    vae:
+      repo: camenduru/FLUX.1-dev-ungated
+      match: "ae.safetensors"
+
+
+# ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
 #  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.
 #  Source : huggingface.co/wbruna/upscalers-sdcpp-gguf

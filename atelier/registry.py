@@ -98,6 +98,28 @@ def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
 
 
 # --------------------------------------------------------------------------- #
+#  PiD (décodeur pixel-diffusion NVIDIA, natif sd.cpp)
+# --------------------------------------------------------------------------- #
+def pid_config() -> dict[str, Any]:
+    return _catalog().get("pid", {}) or {}
+
+
+def pid_components() -> list[Component]:
+    return [Component(role, spec["repo"], spec["match"], None)
+            for role, spec in (pid_config().get("sources") or {}).items()]
+
+
+def pid_paths() -> dict[str, Path | None]:
+    """{role: chemin local | None} pour les composants PiD."""
+    return {c.role: resolve_component_path(c) for c in pid_components()}
+
+
+def pid_ready() -> bool:
+    comps = pid_components()
+    return bool(comps) and all(resolve_component_path(c) is not None for c in comps)
+
+
+# --------------------------------------------------------------------------- #
 #  Upscalers ESRGAN (GGUF, natif sd.cpp --mode upscale)
 # --------------------------------------------------------------------------- #
 def upscaler_config() -> dict[str, Any]:
@@ -237,3 +259,4 @@ def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
                 min=f"{m.vram_min_gb:.0f}", vram=f"{vram:.0f}"))
         out[m.id] = labels
     return out
+"""placeholder"""
