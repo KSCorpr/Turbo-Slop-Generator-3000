@@ -121,6 +121,11 @@ def _build_server_cmd(sd_server: Path, req: GenRequest, port: int) -> list[str]:
             cmd += ["--clip_l", str(req.clip_l)]
     if req.vae_format:
         cmd += ["--vae-format", req.vae_format]
+    # Le serveur charge en cache, AU DÉMARRAGE, les LoRA présents dans ce dossier.
+    # Les requêtes les référencent ensuite par nom de fichier (voir _payload). Sans
+    # ce flag, le cache est vide et toute requête LoRA échoue en « invalid lora ».
+    # NB : un LoRA ajouté APRÈS le démarrage n'est pas vu tant qu'on ne relance pas.
+    cmd += ["--lora-model-dir", str(settings.LORA_DIR)]
     cmd += list(req.extra_flags)
     if req.cache_mode:
         cmd += ["--cache-mode", req.cache_mode]
@@ -259,7 +264,10 @@ def _payload(req: GenRequest) -> dict:
     if refs:
         body["ref_images"] = [_b64(r) for r in refs]
     if req.lora_specs:
-        body["lora"] = [{"path": str(p), "multiplier": float(w)}
+        # Le serveur résout le LoRA par sa clé de cache = chemin RELATIF au
+        # --lora-model-dir (nom de fichier avec extension), pas le chemin absolu.
+        # Les LoRA de l'app sont à plat dans LORA_DIR → la clé est le basename.
+        body["lora"] = [{"path": Path(p).name, "multiplier": float(w)}
                         for p, w in req.lora_specs if p]
     return body
 
