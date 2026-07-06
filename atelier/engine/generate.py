@@ -197,6 +197,66 @@ def generate(
     return paths
 
 
+def pid_decode(image, prompt: str = "", preview_path: Path | None = None,
+               log: Callable[[str], None] | None = None) -> Path:
+    """Décode/agrandit via PiD (décodeur pixel-diffusion NVIDIA, doc sd.cpp
+    docs/pid.md) : l'image de référence (-r) est encodée par le VAE FLUX.1 puis
+    décodée ×4 en RGB par diffusion pixel (4 pas, CFG 1.0, --rng cpu).
+
+    Le modèle est entraîné « base -> ×4 » (512 -> 2048) : on RESPECTE ce ratio
+    en réduisant la référence à ~512 de côté long, sortie = ×4. Un autre ratio
+    produit des artefacts « peinture »."""
+    from PIL import Image
+    prefs = settings.load_prefs()
+    sd_cli = settings.find_sd_cli()
+    if sd_cli is None:
+        raise sdcpp.EngineError(
+            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
+
+    cfg = registry.pid_config()
+    paths = registry.pid_paths()
+    missing = [r for r in ("diffusion", "text_encoder", "vae")
+               if not (paths.get(r) and Path(paths[r]).is_file())]
+    if missing:
+        raise sdcpp.EngineError(
+            f"PiD non installé (composants manquants : {', '.join(missing)}). "
+            "Installez-le depuis l'onglet Toolkit → PiD.")
+
+    settings.ensure_dirs()
+    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
+        else image.convert("RGB")
+    tgt = int(cfg.get("target", 2048))
+    factor = int(cfg.get("factor", 4))
+    base = max(256, tgt // factor)
+    longest = max(im.width, im.height) or 1
+    rsc = base / longest
+    rw = max(64, int(round(im.width * rsc / 16)) * 16)
+    rh = max(64, int(round(im.height * rsc / 16)) * 16)
+    ref = settings.TMP_DIR / "pid_ref.png"
+    im.resize((rw, rh), Image.LANCZOS).save(ref)
+    w, h = rw * factor, rh * factor   # sortie = base ×4
+    if log:
+        log(f"PiD : réf {rw}x{rh} -> sortie {w}x{h} (×{factor}, "
+            f"{cfg.get('steps', 4)} pas) sur le GPU…")
+
+    flags, gpu_index = _resolved_flags(prefs)
+    req = GenRequest(
+        diffusion_model=paths["diffusion"], text_encoder=paths["text_encoder"],
+        vae=paths["vae"], vae_format=cfg.get("vae_format", "flux"), rng="cpu",
+        ref_image=ref, prompt=prompt or "high quality, sharp, highly detailed",
+        steps=int(cfg.get("steps", 4)), cfg_scale=1.0, sampler="euler",
+        width=w, height=h, seed=-1, batch_count=1,
+        preview_path=preview_path, flags=flags, gpu_index=gpu_index,
+    )
+    out = sdcpp.unique_output("pid")
+    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+    res = sdcpp.collect_outputs(out, 1)
+    if not res:
+        raise sdcpp.EngineError("PiD n'a produit aucune image.")
+    return res[0]
+
+
 def upscale_image(image, model_name: str, repeats: int = 1,
                   log: Callable[[str], None] | None = None) -> Path:
     """Agrandissement SIMPLE via un upscaler ESRGAN GGUF (sd.cpp --mode upscale).
