@@ -279,77 +279,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                 u_stop.click(lambda: gen_engine.cancel(), outputs=None,
                              cancels=[u_evt])
 
-            # ---------- PiD (décodeur pixel-diffusion NVIDIA, ×4) ----------
-            with gr.Tab("🚀 PiD ×4 (NVIDIA)", id="pid"):
-                gr.Markdown(
-                    "**PiD** — décodeur pixel-diffusion **NVIDIA** (natif sd.cpp) : "
-                    "ré-encode l'image puis la **décode/agrandit ×4 par diffusion "
-                    "pixel** (512→2048, 4 pas). Entre l'ESRGAN (fidèle) et le SDXL "
-                    "créatif : rapide, ~2K, léger détail génératif.  \n"
-                    "⚠️ Poids officiels sous licence **NSCLv1 (non commerciale)**. "
-                    "Ratio **×4 fixe** : l'image est d'abord réduite à ~512 px de "
-                    "côté long.")
-                with gr.Accordion("⚙️ Installer PiD (en 1 clic)",
-                                  open=not registry.pid_ready()):
-                    gr.Markdown(
-                        "Via sd.cpp (pas de PyTorch). Décodeur PiD + encodeur "
-                        "Gemma-2-2B + VAE FLUX.1 (~5 Go).")
-                    p_inst_log = gr.Textbox(label="Journal d'installation",
-                                            lines=8, autoscroll=True,
-                                            elem_classes="log-box")
-                    p_inst = gr.Button("⬇️ Installer PiD")
-
-                    def _install_pid():
-                        lines: list[str] = []
-                        for msg in downloader.download_pid(log=lines.append):
-                            lines.append(msg)
-                            yield "\n".join(lines)
-
-                    p_inst.click(_install_pid, outputs=[p_inst_log])
-
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        p_image = gr.Image(label="Image à décoder/agrandir (×4)",
-                                           type="pil")
-                        p_prompt = gr.Textbox(
-                            label="Prompt (optionnel — guide le détail)", lines=2,
-                            placeholder="high quality, sharp, highly detailed")
-                        with gr.Row():
-                            p_run = gr.Button("🚀 Décoder ×4 (PiD)",
-                                              variant="primary", size="lg",
-                                              scale=2)
-                            p_stop = gr.Button("⏹️ Annuler", variant="stop",
-                                               size="sm")
-                    with gr.Column(scale=4):
-                        p_result = gr.Image(
-                            label="Résultat (pleine résolution dans outputs/)",
-                            height=520, format="png", show_download_button=True)
-                        p_log = gr.Textbox(label="Journal", lines=10,
-                                           autoscroll=True, elem_classes="log-box")
-
-                def do_pid(img, prompt, progress=gr.Progress()):
-                    if img is None:
-                        raise gr.Error(t("Fournissez une image."))
-                    if not registry.pid_ready():
-                        raise gr.Error(t("PiD n'est pas installé "
-                                         "(bouton « Installer » ci-dessus)."))
-                    logs: list[str] = []
-                    progress(0.1, desc="PiD…")
-                    try:
-                        out = gen_engine.pid_decode(img, prompt=prompt or "",
-                                                    log=logs.append)
-                    except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
-                        return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
-                    logs.append(f"\n✅ Image décodée : {out}")
-                    return str(out), "\n".join(logs)
-
-                p_evt = p_run.click(do_pid, inputs=[p_image, p_prompt],
-                                    outputs=[p_result, p_log])
-                p_stop.click(lambda: gen_engine.cancel(), outputs=None,
-                             cancels=[p_evt])
-
             # ---------- Upscale créatif tuilé (SDXL, façon Magnific) ----------
             with gr.Tab("✨ Upscale créatif (SDXL)", id="creative"):
                 gr.Markdown(
@@ -567,11 +496,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:
-            _keys = ["depth", "bg", "sam", "esrgan", "pid", "creative"]
+            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
 
             def _consume(pend):
                 if not pend:
-                    return tuple([gr.update()] * 7 + [None])
+                    return tuple([gr.update()] * 6 + [None])
                 path, dest = pend
                 sub = gr.Tabs(selected=dest) if dest in _keys else gr.update()
                 img_upd = [gr.update(value=path) if k == dest else gr.update()
@@ -580,4 +509,4 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
             tabs.select(_consume, inputs=[pending_toolkit],
                         outputs=[sub_tabs, d_image, b_image, s_image, u_image,
-                                 p_image, c_image, pending_toolkit])
+                                 c_image, pending_toolkit])

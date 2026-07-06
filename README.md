@@ -174,6 +174,19 @@ its aspect.
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
 
+### High-resolution output (PiD)
+**🚀 High-resolution output (PiD ×4)** in the generation panel decodes each
+result through NVIDIA's **Pixel Diffusion Decoder** ([PiD](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/pid.md)):
+a 4-step pixel-space diffusion decode that enlarges **×4** (→ 2048 px). Tick it
+and every generated image comes out directly in high resolution — no separate
+upscaler step. Note sd.cpp exposes PiD as a re-encode pipeline (RGB → VAE latent
+→ PiD decode), which is its intended mode here, so it adds one encode round-trip
+rather than tapping the generation latent directly. First use downloads the PiD
+weights (decoder + Gemma-2-2B encoder + FLUX.1 VAE, ~5 GB, one click). The output
+is 2048 px (the checkpoint is trained for a fixed ×4 from 512 px — other ratios
+produce artifacts). Official weights are under the **NSCLv1 non-commercial**
+license.
+
 ---
 
 ## Hardware & optimization

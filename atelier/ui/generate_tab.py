@@ -225,6 +225,39 @@ def build_generative_tab(model_id: str, title: str,
                         civitai_btn = gr.Button("⬇️ Importer", scale=1)
                     civitai_msg = gr.Markdown("")
 
+                with gr.Accordion("🚀 Sortie haute résolution (PiD ×4)",
+                                  open=False):
+                    gr.Markdown(
+                        "Décode la sortie via le **décodeur pixel-diffusion "
+                        "NVIDIA (PiD)** : agrandit **×4 par diffusion pixel** "
+                        "(→ 2048 px, 4 pas). Coché, l'image générée est produite "
+                        "directement en haute résolution — un aller-retour "
+                        "d'encodage, c'est le fonctionnement nominal de PiD dans "
+                        "sd.cpp.  \n"
+                        "⚠️ Poids officiels **NSCLv1 (non commercial)**. "
+                        "Ratio **×4 fixe** (l'image est ramenée à ~512 px avant "
+                        "décodage).")
+                    pid_hires = gr.Checkbox(
+                        value=False,
+                        label="Décoder la sortie en haute résolution (PiD ×4)")
+                    with gr.Accordion("⚙️ Installer PiD (1 clic)",
+                                      open=not registry.pid_ready()):
+                        gr.Markdown("Via sd.cpp (pas de PyTorch). Décodeur PiD + "
+                                    "encodeur Gemma-2-2B + VAE FLUX.1 (~5 Go).")
+                        pid_install_log = gr.Textbox(
+                            label="Journal d'installation", lines=6,
+                            autoscroll=True, elem_classes="log-box")
+                        pid_install_btn = gr.Button("⬇️ Installer PiD")
+
+                        def _install_pid():
+                            lines: list[str] = []
+                            for msg in downloader.download_pid(log=lines.append):
+                                lines.append(msg)
+                                yield "\n".join(lines)
+
+                        pid_install_btn.click(_install_pid,
+                                              outputs=[pid_install_log])
+
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
                     gr.Markdown(t(
                         "Pour utiliser un modèle **téléchargé ailleurs** : déposez "
@@ -310,7 +343,6 @@ def build_generative_tab(model_id: str, title: str,
                      (t("✂️ Sans arrière-plan"), "bg"),
                      (t("🪄 Détourer un objet (SAM)"), "sam"),
                      (t("🔼 Agrandir (ESRGAN)"), "esrgan"),
-                     (t("🚀 PiD ×4 (NVIDIA)"), "pid"),
                      (t("✨ Upscale créatif (SDXL)"), "creative")],
                     value=None, label="📤 Envoyer la sélection vers le Toolkit",
                     visible=pending_toolkit is not None)
@@ -453,7 +485,7 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image3, strength, outpaint,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc,
+                        custom_diff, custom_vae, custom_enc, pid_hires,
                         progress=gr.Progress()):
             import queue
             import threading
@@ -591,8 +623,34 @@ def build_generative_tab(model_id: str, title: str,
                 # On garde la dernière frame d'aperçu (pas de flash vers le vide).
                 yield gr.update(), "\n".join(logs), gr.update(), gr.update()
                 return
-            progress(1.0, desc="Terminé")
             paths = state.get("outs", [])
+
+            # Décodeur de sortie PiD (optionnel) : chaque image générée est
+            # décodée/agrandie ×4 par diffusion pixel → sortie haute résolution
+            # directe. Repli sur l'image de base en cas d'absence/erreur.
+            if pid_hires and paths:
+                if not registry.pid_ready():
+                    logs.append("\n⚠️ PiD non installé — sortie normale conservée "
+                                "(dépliez « Installer PiD » pour l'obtenir).")
+                else:
+                    hi: list[str] = []
+                    for i, p in enumerate(paths):
+                        logs.append(f"\n🚀 Décodage PiD ×4 — image "
+                                    f"{i + 1}/{len(paths)}…")
+                        progress(0.95, desc=f"PiD ×4 {i + 1}/{len(paths)}")
+                        yield (gr.update(), "\n".join(logs[-400:]),
+                               gr.update(), gr.update())
+                        try:
+                            out = gen_engine.pid_decode(p, prompt=full_prompt,
+                                                        log=logs.append)
+                            hi.append(str(out))
+                        except Exception as exc:  # noqa: BLE001
+                            logs.append(f"[ERREUR PiD] {exc} — image de base "
+                                        "conservée.")
+                            hi.append(p)
+                    paths = hi
+
+            progress(1.0, desc="Terminé")
             seeds = [base_seed + i for i in range(len(paths))]
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
             yield items, "\n".join(logs), paths, seeds
@@ -603,7 +661,7 @@ def build_generative_tab(model_id: str, title: str,
                     ref_image3, strength, outpaint, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc],
+                    custom_diff, custom_vae, custom_enc, pid_hires],
             outputs=[gallery, logbox, last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
