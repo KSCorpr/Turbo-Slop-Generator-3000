@@ -91,9 +91,19 @@ def build_settings_tab():
                     label="GPU pour l'encodeur de texte (⚠️ expérimental)",
                     choices=[(t("Désactivé (normal)"), None)] + _gpu_choices(),
                     value=prefs.get("encoder_gpu_index"))
+            gr.Markdown(
+                "**Répartir tout le modèle sur les GPU (auto-fit)** — sd.cpp place "
+                "automatiquement diffusion / encodeur / VAE sur **toutes** tes "
+                "cartes selon leur VRAM. Contrairement au split d'encodeur ci-dessus, "
+                "la **diffusion elle-même** peut utiliser la VRAM de la 2e carte "
+                "(ex. 1080 Ti). ⚠️ Expérimental ; **remplace** le split d'encodeur.")
+            auto_fit = gr.Checkbox(
+                value=prefs.get("auto_fit", False),
+                label="Auto-fit multi-GPU (répartir la diffusion sur tous les GPU)")
         else:
             tools_gpu = gr.State(prefs.get("text_gpu_index"))
             enc_gpu = gr.State(prefs.get("encoder_gpu_index"))
+            auto_fit = gr.State(prefs.get("auto_fit", False))
 
         gr.Markdown(
             "#### ⚡ Optimiser pour ma génération de carte (1 clic)\n"
@@ -162,11 +172,12 @@ def build_settings_tab():
         save = gr.Button("💾 Enregistrer", variant="primary")
         saved = gr.Markdown("")
 
-        def do_save(auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa, offload,
-                    tiling, clip_cpu, vae_cpu, cache_mode, cache_opt, server_mode,
-                    hf_ep, civitai_tok):
+        def do_save(auto, gpu, tools_gpu, enc_gpu, auto_fit, quant, enc_quant, fa,
+                    offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
+                    server_mode, hf_ep, civitai_tok):
             p = settings.load_prefs()
             p["use_sd_server"] = bool(server_mode)
+            p["auto_fit"] = bool(auto_fit)
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
             p["auto_optimize"] = bool(auto)
@@ -186,9 +197,9 @@ def build_settings_tab():
             return gr.update(value=_profile_md()), t("✅ Réglages enregistrés.")
 
         save.click(do_save,
-                   inputs=[auto, gpu, tools_gpu, enc_gpu, quant, enc_quant, fa,
-                           offload, tiling, clip_cpu, vae_cpu, cache_mode,
-                           cache_opt, server_mode, hf_ep, civitai_tok],
+                   inputs=[auto, gpu, tools_gpu, enc_gpu, auto_fit, quant,
+                           enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
+                           cache_mode, cache_opt, server_mode, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---

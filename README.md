@@ -243,6 +243,18 @@ the generation GPU — never on the secondary card.**
 
 So with the 1080 Ti picked for both, the secondary card handles **only** prompt
 enhancement and token encoding; the 3060 does all the actual image diffusion.
+- **Auto-fit across all GPUs (⚠️ experimental)** — unlike the text-encoder split,
+  this lets sd.cpp automatically place **diffusion / encoder / VAE across every
+  visible card** by VRAM (`--auto-fit`, with `--split-mode layer` by default), so
+  the **diffusion model itself** can borrow the second card's VRAM — not just the
+  encoder. It **replaces** the text-encoder split when enabled. Off by default;
+  try it and watch the log, fall back to *Disabled* if a generation fails.
+
+### Samplers & schedulers
+The sampler and scheduler dropdowns track sd.cpp's list, including the recent
+**DPM++ 2M SDE** / **DPM++ 2M SDE (Brownian)** samplers and the **Flux.2** / Flux /
+Beta schedulers. For **Flux.2 Klein**, the **Flux.2** scheduler is the natural
+match; `Simple` also works. New entries need a recent engine (`update-engine.bat`).
 
 ### Cache acceleration (experimental)
 **Settings → 🗃️ Cache acceleration** exposes sd.cpp's step-caching

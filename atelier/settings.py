@@ -33,6 +33,14 @@ DEFAULT_PREFS: dict[str, Any] = {
     # EXPÉRIMENTAL : GPU dédié à l'encodeur de texte dans sd.cpp (--backend te=).
     # None = comportement normal (encodeur sur le GPU principal / déchargé RAM).
     "encoder_gpu_index": None,
+    # EXPÉRIMENTAL : répartit AUTOMATIQUEMENT le modèle (diffusion/encodeur/VAE)
+    # sur TOUS les GPU visibles selon leur VRAM (sd.cpp --auto-fit). Permet
+    # d'utiliser la VRAM d'une 2e carte (ex. 1080 Ti) pour la DIFFUSION elle-même,
+    # pas seulement l'encodeur. Remplace le split d'encodeur ci-dessus.
+    "auto_fit": False,
+    # Mode de découpe entre GPU : "layer" (blocs entiers, défaut) ou "row"
+    # (lignes de matmul réparties, CUDA seulement).
+    "split_mode": "layer",
     "auto_optimize": True,      # déduire les flags du matériel
     "quant": None,              # None = recommandé selon VRAM
     "enc_quant": None,          # None = recommandé selon RAM

@@ -196,9 +196,13 @@ def generate(
     flags, gpu_index = _resolved_flags(prefs)
     loras = loras or []
 
-    # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU (ex. 1080 Ti).
+    # Multi-GPU. auto-fit répartit tout le modèle sur les GPU visibles (prioritaire) ;
+    # sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les deux nécessitent que
+    # tous les GPU soient visibles (all_gpus) avec l'ordre CUDA par bus PCI.
+    auto_fit = bool(prefs.get("auto_fit"))
     enc_gpu = prefs.get("encoder_gpu_index")
-    split_gpu = enc_gpu is not None and enc_gpu != gpu_index
+    split_gpu = (not auto_fit) and enc_gpu is not None and enc_gpu != gpu_index
+    all_gpus = auto_fit or split_gpu
 
     # Mode serveur : LoRA en champ structuré, prompt SANS tags (le serveur les
     # refuse). Mode CLI : LoRA via tags <lora:…> dans le prompt + --lora-model-dir.
@@ -226,6 +230,7 @@ def generate(
         lora_dir=lora_dir, lora_specs=lora_specs, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
+        auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
     )
@@ -234,7 +239,7 @@ def generate(
     if use_server:
         try:
             paths = sdserver.generate(req, out, gpu_index=gpu_index,
-                                      all_gpus=split_gpu, log=log)
+                                      all_gpus=all_gpus, log=log)
         except sdserver.ServerUnavailable as exc:
             # Le serveur n'a pas pu démarrer / répondre : repli transparent sur
             # sd-cli (on ré-applique les LoRA via le prompt pour le CLI).
@@ -244,11 +249,11 @@ def generate(
             req.lora_dir = settings.LORA_DIR if loras else None
             req.lora_specs = []
             cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-            sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
+            sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
             paths = sdcpp.collect_outputs(out, batch_count)
     else:
         cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=split_gpu)
+        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
         paths = sdcpp.collect_outputs(out, batch_count)
 
     if save_prompt and paths:

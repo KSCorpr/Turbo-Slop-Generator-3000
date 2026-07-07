@@ -77,6 +77,10 @@ class GenRequest:
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
     # via --backend te=cudaX. None = encodeur sur le GPU principal / RAM.
     encoder_gpu_index: int | None = None
+    # EXPÉRIMENTAL : répartition auto du modèle sur tous les GPU (--auto-fit).
+    # Prioritaire sur le split d'encodeur (auto-fit remplace --backend).
+    auto_fit: bool = False
+    split_mode: str = ""               # --split-mode : "layer" | "row" (vide=défaut)
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
@@ -173,10 +177,14 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
     cmd += _flag_args(req.flags)
-    # EXPÉRIMENTAL : encodeur de texte sur un 2e GPU. On épingle diffusion+VAE
-    # sur le GPU principal et l'encodeur (te) sur l'autre. Suppose un ordre CUDA
-    # par bus PCI (cudaN = index nvidia-smi N), forcé dans run() via env.
-    if (req.encoder_gpu_index is not None
+    # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
+    # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
+    # principal, encodeur (te) sur l'autre. Ordre CUDA par bus PCI forcé via env.
+    if req.auto_fit:
+        cmd += ["--auto-fit"]
+        if req.split_mode:
+            cmd += ["--split-mode", req.split_mode]
+    elif (req.encoder_gpu_index is not None
             and req.encoder_gpu_index != req.gpu_index):
         g = req.gpu_index if req.gpu_index is not None else 0
         e = req.encoder_gpu_index

@@ -86,6 +86,7 @@ def _signature(req: GenRequest) -> tuple:
         req.vae_format, req.cache_mode, req.cache_option,
         req.gpu_index if req.gpu_index is not None else -1,
         req.encoder_gpu_index if req.encoder_gpu_index is not None else -1,
+        bool(req.auto_fit), req.split_mode,
         flags,
     )
 
@@ -132,7 +133,12 @@ def _build_server_cmd(sd_server: Path, req: GenRequest, port: int) -> list[str]:
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
     cmd += _flag_args(req.flags)
-    if (req.encoder_gpu_index is not None
+    # Multi-GPU : auto-fit (tout le modèle réparti, prioritaire) ou split d'encodeur.
+    if req.auto_fit:
+        cmd += ["--auto-fit"]
+        if req.split_mode:
+            cmd += ["--split-mode", req.split_mode]
+    elif (req.encoder_gpu_index is not None
             and req.encoder_gpu_index != req.gpu_index):
         g = req.gpu_index if req.gpu_index is not None else 0
         e = req.encoder_gpu_index

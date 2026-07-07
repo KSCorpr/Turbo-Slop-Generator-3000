@@ -17,7 +17,10 @@ from ..i18n import t
 SAMPLERS = [
     ("Euler", "euler"), ("Euler Ancestral", "euler_a"), ("Heun", "heun"),
     ("DPM2", "dpm2"), ("DPM++ 2S Ancestral", "dpm++2s_a"), ("DPM++ 2M", "dpm++2m"),
-    ("DPM++ 2M v2", "dpm++2mv2"), ("iPNDM", "ipndm"), ("iPNDM v", "ipndm_v"),
+    ("DPM++ 2M v2", "dpm++2mv2"),
+    ("DPM++ 2M SDE", "dpm++2m_sde"),
+    ("DPM++ 2M SDE (Brownian)", "dpm++2m_sde_bt"),
+    ("iPNDM", "ipndm"), ("iPNDM v", "ipndm_v"),
     ("LCM", "lcm"), ("DDIM Trailing", "ddim_trailing"), ("TCD", "tcd"),
     ("Res Multistep", "res_multistep"), ("Res 2S", "res_2s"), ("ER SDE", "er_sde"),
     ("Euler CFG++", "euler_cfg_pp"), ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
@@ -29,6 +32,10 @@ SCHEDULES = [
     ("Smoothstep", "smoothstep"), ("SGM Uniform", "sgm_uniform"),
     ("Simple", "simple"), ("KL Optimal", "kl_optimal"), ("LCM", "lcm"),
     ("Bong Tangent", "bong_tangent"),
+    # Schedulers récents sd.cpp. « Flux.2 » cible les modèles Flux.2 (recommandé
+    # pour Flux.2 Klein) ; « Flux » pour Flux.1 ; « Beta » / « Logit Normal » génériques.
+    ("Flux.2", "flux2"), ("Flux", "flux"), ("Beta", "beta"),
+    ("Logit Normal", "logit_normal"),
 ]
 # Préréglages de résolution PAR FAMILLE de modèle, alignés sur les résolutions
 # natives d'entraînement (le modèle rend mieux sur ces formats).
