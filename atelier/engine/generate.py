@@ -203,6 +203,13 @@ def generate(
     enc_gpu = prefs.get("encoder_gpu_index")
     split_gpu = (not auto_fit) and enc_gpu is not None and enc_gpu != gpu_index
     all_gpus = auto_fit or split_gpu
+    if auto_fit:
+        # Harmonisation : auto-fit gère lui-même le placement et IGNORE
+        # --offload-to-cpu (le forcer en même temps ne fait qu'ajouter de la
+        # confusion : sd.cpp met tout en VRAM). On le retire, et on force le VAE
+        # tiling pour réduire le pic mémoire du décodage VAE — principale cause
+        # d'OOM quand DiT + VAE atterrissent sur la même carte.
+        flags = {**flags, "offload_to_cpu": False, "vae_tiling": True}
 
     # Mode serveur : LoRA en champ structuré, prompt SANS tags (le serveur les
     # refuse). Mode CLI : LoRA via tags <lora:…> dans le prompt + --lora-model-dir.

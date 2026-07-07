@@ -95,11 +95,18 @@ def build_settings_tab():
                 "**Répartir tout le modèle sur les GPU (auto-fit)** — sd.cpp place "
                 "automatiquement diffusion / encodeur / VAE sur **toutes** tes "
                 "cartes selon leur VRAM. Contrairement au split d'encodeur ci-dessus, "
-                "la **diffusion elle-même** peut utiliser la VRAM de la 2e carte "
-                "(ex. 1080 Ti). ⚠️ Expérimental ; **remplace** le split d'encodeur.")
+                "la **diffusion elle-même** peut utiliser la 2e carte.  \n"
+                "⚠️ **Compromis important** : auto-fit **force tout en VRAM** et "
+                "**désactive l'offload CPU** (on le retire automatiquement pour "
+                "éviter les conflits). Il convient aux modèles qui **tiennent dans "
+                "la VRAM cumulée** ; sur un modèle à **gros encodeur** (ex. Flux.2 "
+                "Klein + Qwen3-8B) il peut **saturer une carte au décodage VAE** "
+                "(out of memory). Dans ce cas, **laisse-le décoché** : l'offload CPU "
+                "par défaut fait déjà tenir le modèle sur une seule carte. "
+                "**Remplace** le split d'encodeur.")
             auto_fit = gr.Checkbox(
                 value=prefs.get("auto_fit", False),
-                label="Auto-fit multi-GPU (répartir la diffusion sur tous les GPU)")
+                label="Auto-fit multi-GPU (⚠️ désactive l'offload CPU)")
         else:
             tools_gpu = gr.State(prefs.get("text_gpu_index"))
             enc_gpu = gr.State(prefs.get("encoder_gpu_index"))
