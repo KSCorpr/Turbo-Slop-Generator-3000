@@ -127,21 +127,26 @@ base_models:
 #  ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
 # ============================================================================
 pid:
-  name: "PiD — décodeur/upscaler pixel-diffusion (NVIDIA)"
-  target: 2048          # côté long visé (le modèle est entraîné 512 -> 2048)
+  # Variante Flux.2 : cohérente avec la génération Flux.2 Klein (backbone + VAE
+  # Flux.2), ce qui réduit les artefacts par rapport au PiD flux1. Réutilise le
+  # VAE Flux.2 DÉJÀ téléchargé pour la génération (aucun re-téléchargement du VAE).
+  name: "PiD — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
+  target: 2048          # côté long visé (modèle 512 -> 2048)
   factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
   steps: 4
-  vae_format: flux
+  vae_format: flux2     # backbone Flux.2 -> VAE au format flux2
   sources:
     diffusion:
       repo: Comfy-Org/PixelDiT
-      match: "pid_flux1_512_to_2048_4step*.safetensors"
+      # bf16 (pas mxfp8, réservé Blackwell RTX 50xx).
+      match: "pid_flux2_512_to_2048_4step_bf16*.safetensors"
     text_encoder:
       repo: Comfy-Org/PixelDiT
       match: "gemma_2_2b_it*.safetensors"
     vae:
-      repo: camenduru/FLUX.1-dev-ungated
-      match: "ae.safetensors"
+      # Le VAE Flux.2 de la génération (déjà présent si tu génères en Flux.2 Klein).
+      repo: Comfy-Org/flux2-klein-9B
+      match: "split_files/vae/flux2-vae.safetensors"
 
 
 # ============================================================================

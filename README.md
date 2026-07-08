@@ -179,13 +179,23 @@ its aspect.
 result through NVIDIA's **Pixel Diffusion Decoder** ([PiD](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/pid.md)):
 a 4-step pixel-space diffusion decode that enlarges **×4** (→ 2048 px). Tick it
 and every generated image comes out directly in high resolution — no separate
-upscaler step. Note sd.cpp exposes PiD as a re-encode pipeline (RGB → VAE latent
-→ PiD decode), which is its intended mode here, so it adds one encode round-trip
-rather than tapping the generation latent directly. First use downloads the PiD
-weights (decoder + Gemma-2-2B encoder + FLUX.1 VAE, ~5 GB, one click). The output
+upscaler step. This uses the **Flux.2 PiD** checkpoint (`--vae-format flux2`),
+matching the Flux.2 backbone + VAE of the generation, which cuts artifacts versus
+the flux1 variant; it **reuses the Flux.2 VAE already downloaded** for generation.
+Note sd.cpp exposes PiD as a re-encode pipeline (RGB → VAE latent → PiD decode),
+which is its intended mode here, so it adds one encode round-trip rather than
+tapping the generation latent directly. First use downloads the PiD weights
+(decoder + Gemma-2-2B encoder, one click; the Flux.2 VAE is shared). The output
 is 2048 px (the checkpoint is trained for a fixed ×4 from 512 px — other ratios
 produce artifacts). Official weights are under the **NSCLv1 non-commercial**
 license.
+
+### Hires fix (integrated upscale)
+**🔍 Hires fix** in the generation panel upscales **during** generation: render at
+the base size, upscale the latent, then **refine in a second pass** (sd.cpp
+`--hires`). More coherent than a post-hoc ESRGAN pass (less "pasted" detail), but
+slower and heavier on VRAM. The **denoising strength** controls invented detail
+(~0.3 faithful, ~0.6 creative). Off by default.
 
 ---
 

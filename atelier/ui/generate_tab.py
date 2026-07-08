@@ -236,11 +236,11 @@ def build_generative_tab(model_id: str, title: str,
                                   open=False):
                     gr.Markdown(
                         "Décode la sortie via le **décodeur pixel-diffusion "
-                        "NVIDIA (PiD)** : agrandit **×4 par diffusion pixel** "
-                        "(→ 2048 px, 4 pas). Coché, l'image générée est produite "
-                        "directement en haute résolution — un aller-retour "
-                        "d'encodage, c'est le fonctionnement nominal de PiD dans "
-                        "sd.cpp.  \n"
+                        "NVIDIA (PiD, variante Flux.2)** : agrandit **×4 par "
+                        "diffusion pixel** (→ 2048 px, 4 pas). Aligné sur le "
+                        "backbone **Flux.2** + son VAE (cohérent avec ta "
+                        "génération Flux.2 Klein → moins d'artefacts). Coché, "
+                        "l'image sort directement en haute résolution.  \n"
                         "⚠️ Poids officiels **NSCLv1 (non commercial)**. "
                         "Ratio **×4 fixe** (l'image est ramenée à ~512 px avant "
                         "décodage).")
@@ -264,6 +264,24 @@ def build_generative_tab(model_id: str, title: str,
 
                         pid_install_btn.click(_install_pid,
                                               outputs=[pid_install_log])
+
+                with gr.Accordion("🔍 Hires fix (upscale intégré)", open=False):
+                    gr.Markdown(
+                        "Agrandit **pendant** la génération : rend à la base, "
+                        "agrandit le latent, puis **raffine en 2e passe**. Plus "
+                        "cohérent qu'un upscale post-hoc (moins de « collage »), "
+                        "mais plus lent et plus gourmand en VRAM.  \n"
+                        "⚠️ La **force de débruitage** contrôle l'invention de "
+                        "détail : ~0.3 = fidèle, ~0.6 = créatif.")
+                    hires_on = gr.Checkbox(
+                        value=False, label="Activer le hires fix")
+                    with gr.Row():
+                        hires_scale = gr.Slider(
+                            1.0, 4.0, value=2.0, step=0.5,
+                            label="Facteur d'agrandissement (×)")
+                        hires_denoise = gr.Slider(
+                            0.0, 1.0, value=0.5, step=0.05,
+                            label="Force de débruitage (raffinage)")
 
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
                     gr.Markdown(t(
@@ -493,6 +511,7 @@ def build_generative_tab(model_id: str, title: str,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc, pid_hires,
+                        hires_on, hires_scale, hires_denoise,
                         progress=gr.Progress()):
             import queue
             import threading
@@ -575,6 +594,8 @@ def build_generative_tab(model_id: str, title: str,
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
+                        hires=bool(hires_on), hires_scale=float(hires_scale),
+                        hires_denoise=float(hires_denoise),
                         preview_path=preview_path, log=q.put)
                     state["outs"] = [str(p) for p in outs]
                 except Exception as exc:  # noqa: BLE001
@@ -668,7 +689,8 @@ def build_generative_tab(model_id: str, title: str,
                     ref_image3, strength, outpaint, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc, pid_hires],
+                    custom_diff, custom_vae, custom_enc, pid_hires,
+                    hires_on, hires_scale, hires_denoise],
             outputs=[gallery, logbox, last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])

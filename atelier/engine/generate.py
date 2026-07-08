@@ -147,6 +147,9 @@ def generate(
     vae_override: Path | None = None,
     encoder_override: Path | None = None,
     preview_path: Path | None = None,
+    hires: bool = False,
+    hires_scale: float = 2.0,
+    hires_denoise: float = 0.5,
     save_prompt: bool = True,
     log: Callable[[str], None] | None = None,
 ) -> list[Path]:
@@ -240,6 +243,8 @@ def generate(
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
+        hires=bool(hires), hires_scale=float(hires_scale),
+        hires_denoise=float(hires_denoise),
     )
     out = sdcpp.unique_output(model.family)
 
