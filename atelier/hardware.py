@@ -179,6 +179,11 @@ def _shift_quant(q: str, delta: int) -> str:
 # Générations RTX grand public. `bias` décale la quant : < 0 privilégie la
 # VITESSE (cartes anciennes / VRAM serrée), > 0 la QUALITÉ (cartes récentes).
 GENERATIONS: dict[str, dict] = {
+    "gtx10": {"label": "GTX 10xx (Pascal)", "arch": "pascal", "bias": -1,
+              "typical_vram": 8.0,
+              "note": "Pascal (GTX 10xx / 1080 Ti) : pas de tensor cores, "
+                      "flash-attention désactivé (peu efficace). Quant légère "
+                      "pour compenser ; encodeur déchargé en RAM."},
     "rtx20": {"label": "RTX 20xx (Turing)", "arch": "turing", "bias": 0,
               "typical_vram": 8.0,
               "note": "Turing : flash-attention OK, pas d'accélération fp8 "
@@ -212,7 +217,8 @@ def generation_profile(gen_key: str, vram_gb: float | None = None,
     enc_quant = _enc_quant_for_ram(ram or 16.0)
     return Profile(
         gpu=None, ram_gb=ram or 0.0, quant=quant, enc_quant=enc_quant,
-        diffusion_fa=True,                 # toutes les RTX ont des tensor cores
+        # Flash-attention : à partir de Turing. Désactivé sur Pascal (GTX 10xx).
+        diffusion_fa=(spec.get("arch") != "pascal"),
         offload_to_cpu=(vram < 16),
         vae_tiling=(vram < 12),
         clip_on_cpu=(vram < 8),

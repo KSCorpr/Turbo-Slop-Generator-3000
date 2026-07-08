@@ -24,7 +24,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🎨 **Krea 2 Base** | full (non-distilled) Krea 2 — slower (~28 steps, real CFG) but takes LoRAs trained on the base |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto / manual / per-generation presets) |
@@ -219,12 +218,14 @@ VRAM), `--offload-to-cpu` (saves VRAM with no speed loss), `--vae-tiling`,
 `--clip-on-cpu`, `--vae-on-cpu`, plus GGUF quantization.
 
 ### One-click per-generation presets
-**Settings** has four buttons that apply a curated profile for your card’s
-generation: **RTX 20xx** (Turing), **RTX 30xx** (Ampere), **RTX 40xx** (Ada),
-**RTX 50xx** (Blackwell). The preset is keyed to the selected GPU’s **actual
-VRAM** (quantization + offload + VAE tiling), with a slight **speed** bias on
-older generations and a **quality** bias on newer ones. Handy for switching fast
-between machines (e.g. 2080 Ti → `Q4_K_M`, 4090 → `Q8_0`).
+**Settings** has buttons that apply a curated profile for your card’s
+generation, covering **GTX 10xx** (Pascal) through **RTX 50xx** (Blackwell) —
+**GTX 10xx** (Pascal, no tensor cores, flash-attention off), **RTX 20xx**
+(Turing), **RTX 30xx** (Ampere), **RTX 40xx** (Ada), **RTX 50xx** (Blackwell).
+The preset is keyed to the selected GPU’s **actual VRAM** (quantization + offload
++ VAE tiling), with a slight **speed** bias on older generations and a **quality**
+bias on newer ones. Handy for switching fast between machines (e.g. 1080 Ti →
+`Q4_K_S` no-FA, 2080 Ti → `Q4_K_M`, 4090 → `Q8_0`).
 
 > Note: for GGUF models, the fp8 hardware on 40xx/50xx isn’t used by sd.cpp (it
 > computes in fp16/bf16). The real differentiators across generations are VRAM,
