@@ -237,30 +237,26 @@ With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
-### Multi-GPU — a second card for text only
-If you have two NVIDIA cards (e.g. an RTX 3060 + a GTX 1080 Ti), **Settings →
-🧮 Multi-GPU** can dedicate the second card to **text** so the first stays fully
-free for image generation. **Image generation and the SDXL upscale always stay on
-the generation GPU — never on the secondary card.**
-- **Prompt enhancer GPU** — runs the enhancer LLM (text generation) on the chosen
-  card via `CUDA_VISIBLE_DEVICES`. The image-side PyTorch tools (depth, background
-  removal, SAM, **SDXL creative upscale**) keep using the generation GPU.
-- **Text encoder GPU (⚠️ experimental)** — runs the sd.cpp text encoder (`te`) on
-  the second card while diffusion + VAE stay on the main one, via
-  `--backend diffusion=cuda0,vae=cuda0,te=cuda1` (with `CUDA_DEVICE_ORDER=PCI_BUS_ID`
-  so `cudaN` matches the `nvidia-smi` index). Off by default. The benefit is modest
-  — the encoder is already offloaded to RAM by default — and it is untested across
-  all setups, so try it and check the log. If a generation fails, set it back to
-  *Disabled*.
+### Multi-GPU
+With two NVIDIA cards (e.g. an RTX 3060 + a GTX 1080 Ti), **Settings → 🧮
+Multi-GPU** offers **one strategy at a time** (a single radio — they're mutually
+exclusive, so nothing can conflict):
+- **One card (recommended)** — everything on the generation GPU, with the encoder
+  offloaded to RAM by default. The most reliable option.
+- **Text encoder on the 2nd card** — the sd.cpp text encoder (`te`) runs on the
+  other GPU while diffusion + VAE stay on the main one
+  (`--backend diffusion=cuda0,vae=cuda0,te=cuda1`). Modest benefit (the encoder is
+  already RAM-offloaded), experimental.
+- **Auto-fit** — sd.cpp spreads **diffusion / encoder / VAE across all cards** by
+  VRAM (`--auto-fit`). The diffusion model itself can use the 2nd card's VRAM, but
+  it **forces everything into VRAM (disables CPU offload)**, so it can OOM on
+  heavy-encoder models (Flux.2 Klein + Qwen3-8B). Reserve it for models that fit
+  in combined VRAM; otherwise stay on *One card*.
 
-So with the 1080 Ti picked for both, the secondary card handles **only** prompt
-enhancement and token encoding; the 3060 does all the actual image diffusion.
-- **Auto-fit across all GPUs (⚠️ experimental)** — unlike the text-encoder split,
-  this lets sd.cpp automatically place **diffusion / encoder / VAE across every
-  visible card** by VRAM (`--auto-fit`, with `--split-mode layer` by default), so
-  the **diffusion model itself** can borrow the second card's VRAM — not just the
-  encoder. It **replaces** the text-encoder split when enabled. Off by default;
-  try it and watch the log, fall back to *Disabled* if a generation fails.
+Separately, a **Prompt-enhancer GPU** dropdown runs the enhancer LLM (text
+generation) on the card of your choice. **Image generation always uses the
+generation GPU** — the strategy above never moves diffusion off it except in
+Auto-fit.
 
 ### Samplers & schedulers
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
