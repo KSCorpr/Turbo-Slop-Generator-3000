@@ -67,11 +67,28 @@ RATIOS_KREA2: dict[str, tuple[int, int]] = {
     "Vertical 9:16 — 768×1344": (768, 1344),
     "Personnalisé (sliders)": (0, 0),
 }
+# Chroma1-Radiance est pixel-space (pas de compression latente) → très gourmand
+# en VRAM à haute résolution. Ratios centrés sur 768 px (sûrs sur 12 Go), le
+# 1024 est marqué « VRAM++ » (carte large requise).
+RATIOS_CHROMA: dict[str, tuple[int, int]] = {
+    "Carré 1:1 — 768×768 (sûr)": (768, 768),
+    "Carré 1:1 — 1024×1024 (VRAM++)": (1024, 1024),
+    "Paysage 3:2 — 912×608": (912, 608),
+    "Portrait 2:3 — 608×912": (608, 912),
+    "Paysage 4:3 — 880×656": (880, 656),
+    "Portrait 3:4 — 656×880": (656, 880),
+    "Large 16:9 — 1024×576": (1024, 576),
+    "Personnalisé (sliders)": (0, 0),
+}
 _CUSTOM_LABEL = "Personnalisé (sliders)"
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
-    return RATIOS_KREA2 if family == "krea2" else RATIOS_FLUX2
+    if family == "krea2":
+        return RATIOS_KREA2
+    if family == "chroma":
+        return RATIOS_CHROMA
+    return RATIOS_FLUX2
 
 
 def _defaults(model_id: str) -> dict:

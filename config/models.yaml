@@ -95,14 +95,17 @@ base_models:
     description: >
       Chroma1-Radiance en GGUF — modèle **pixel-space** (AUCUN VAE : il décode
       directement en pixels) dérivé de Flux, **non distillé** (CFG réel ≈ 4.0,
-      ~26 pas) et **non censuré**. Encodeur de texte **T5-XXL fp16** (via --t5xxl,
-      déchargé en RAM, ~9,5 Go). Supporte les **prompts négatifs**. Tourne dès
-      ~10–12 Go en Q4.
+      ~26 pas) et **non censuré**. Encodeur **T5-XXL fp16** (via --t5xxl, déchargé
+      en RAM, ~9,5 Go). Supporte les **prompts négatifs**.
+      ⚠️ **Gourmand en VRAM** : pixel-space = pas de compression latente, le buffer
+      de diffusion grossit vite avec la résolution. Sur **12 Go, restez ≤ 768 px** ;
+      1024 px demande une carte plus large. Prévoir ~16–24 Go de RAM (T5 + modèle).
     sources:
       diffusion:
         repo: silveroxides/Chroma1-Radiance-GGUF
-        # Version v0.4 (récente) ; repli quant-tolérant si le quant exact manque.
-        match: "*Chroma1-Radiance-v0.4*{quant}.gguf"
+        # v0.3 : ladder de quant complet (Q4_K_S → Q8_0). v0.4 n'existe qu'en Q8_0
+        # (trop lourd pour 12 Go), on l'évite donc.
+        match: "*Chroma1-Radiance-v0.3*{quant}.gguf"
         quantizable: true
       t5xxl:
         repo: comfyanonymous/flux_text_encoders
@@ -112,8 +115,8 @@ base_models:
       cfg_scale: 4.0
       sampler: euler
       scheduler: simple
-      width: 1024
-      height: 1024
+      width: 768        # pixel-space gourmand : défaut sûr sur 12 Go
+      height: 768
       supports_negative: true
     presets:
       - {name: "⚡ Rapide (20 pas)",       sampler: euler,       scheduler: simple, steps: 20, cfg_scale: 4.0}
