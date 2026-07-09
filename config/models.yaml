@@ -38,16 +38,16 @@ base_models:
       steps: 4
       cfg_scale: 1.0
       sampler: euler
-      scheduler: simple
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
       width: 1024
       height: 1024
       supports_negative: false
     presets:
-      # Défaut rapide éprouvé (euler/simple). Les presets Équilibré/Qualité
-      # utilisent le scheduler « flux2 » (propre à Flux.2) et le sampler SDE récent.
-      - {name: "⚡ Rapide (recommandé)",     sampler: euler,       scheduler: simple, steps: 4,  cfg_scale: 1.0}
-      - {name: "Équilibré (Flux.2)",         sampler: euler,       scheduler: flux2,  steps: 6,  cfg_scale: 1.0}
-      - {name: "Qualité (SDE + Flux.2)",     sampler: dpm++2m_sde, scheduler: flux2,  steps: 10, cfg_scale: 1.0}
+      # Aligné sur docs/flux2.md : euler, cfg 1.0, 4 pas, scheduler = défaut moteur
+      # (la doc ne force jamais de scheduler). Variantes = plus de pas seulement.
+      - {name: "⚡ Recommandé (doc, 4 pas)", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Équilibré (6 pas)",          sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - {name: "Qualité (8 pas)",            sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -75,16 +75,16 @@ base_models:
       steps: 8
       cfg_scale: 1.0
       sampler: euler
-      scheduler: simple
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
       width: 1024
       height: 1024
       supports_negative: false
     presets:
-      # Krea 2 (VAE WAN) : on garde le scheduler « simple » éprouvé ; la qualité
-      # passe au sampler SDE récent (dpm++2m_sde).
-      - {name: "⚡ Officiel (8 pas)",     sampler: euler,       scheduler: simple, steps: 8,  cfg_scale: 1.0}
-      - {name: "Très rapide (4 pas)",    sampler: euler,       scheduler: simple, steps: 4,  cfg_scale: 1.0}
-      - {name: "Qualité (SDE, 12 pas)",  sampler: dpm++2m_sde, scheduler: simple, steps: 12, cfg_scale: 1.0}
+      # Aligné sur docs/krea2.md : euler + scheduler = défaut moteur, cfg 1.0.
+      # La doc ne fixe pas de pas ; on garde le 8 pas « officiel » du Turbo distillé.
+      - {name: "⚡ Officiel (8 pas)",   sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
+      - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -114,14 +114,16 @@ base_models:
       steps: 26
       cfg_scale: 4.0
       sampler: euler
-      scheduler: simple
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
       width: 768        # pixel-space gourmand : défaut sûr sur 12 Go
       height: 768
       supports_negative: true
     presets:
-      - {name: "⚡ Rapide (20 pas)",       sampler: euler,       scheduler: simple, steps: 20, cfg_scale: 4.0}
-      - {name: "Standard (26 pas)",        sampler: euler,       scheduler: simple, steps: 26, cfg_scale: 4.0}
-      - {name: "Qualité (SDE, 32 pas)",    sampler: dpm++2m_sde, scheduler: simple, steps: 32, cfg_scale: 4.5}
+      # Aligné sur docs/chroma_radiance.md : euler, cfg 4.0, scheduler = défaut
+      # moteur. Non distillé → plus de pas = plus de qualité.
+      - {name: "⚡ Recommandé (doc, 20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 4.0}
+      - {name: "Standard (30 pas)",           sampler: euler, scheduler: auto, steps: 30, cfg_scale: 4.0}
+      - {name: "Qualité (40 pas)",            sampler: euler, scheduler: auto, steps: 40, cfg_scale: 4.0}
     vram_min_gb: 10
 
 # ============================================================================

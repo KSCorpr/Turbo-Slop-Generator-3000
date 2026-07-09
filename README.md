@@ -263,10 +263,15 @@ enhancement and token encoding; the 3060 does all the actual image diffusion.
   try it and watch the log, fall back to *Disabled* if a generation fails.
 
 ### Samplers & schedulers
-The sampler and scheduler dropdowns track sd.cpp's list, including the recent
-**DPM++ 2M SDE** / **DPM++ 2M SDE (Brownian)** samplers and the **Flux.2** / Flux /
-Beta schedulers. For **Flux.2 Klein**, the **Flux.2** scheduler is the natural
-match; `Simple` also works. New entries need a recent engine (`update-engine.bat`).
+The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
+`docs/krea2.md`, `docs/chroma_radiance.md`): **Euler** sampler with the
+**scheduler left to the engine default** (the docs never force one), at each
+model's documented steps/CFG (Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8
+steps · CFG 1.0; Chroma1-Radiance 20 steps · CFG 4.0). The dropdowns still expose
+the full sd.cpp list for manual experimentation — newer samplers like **DPM++ 2M
+SDE** and schedulers like **Flux.2 / Flux / Beta** are there to try, but the
+presets stay on the documented defaults. New entries need a recent engine
+(`update-engine.bat`).
 
 ### Cache acceleration (experimental)
 **Settings → 🗃️ Cache acceleration** exposes sd.cpp's step-caching
