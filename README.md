@@ -24,6 +24,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
+| 🌈 **Chroma1-Radiance** | uncensored, non-distilled Flux-derived model · **pixel-space (no VAE)** · T5-XXL encoder · real CFG + negative prompts |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto / manual / per-generation presets) |

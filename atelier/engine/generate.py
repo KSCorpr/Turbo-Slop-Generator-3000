@@ -183,13 +183,21 @@ def generate(
         uncond = _component(model, "uncond")
         t5xxl = _component(model, "t5xxl")
         clip_l = _component(model, "clip_l")
-        # Composants de texte requis : au moins un encodeur (llm OU t5xxl).
-        need = {"diffusion": diffusion, "vae": vae}
-        if not t5xxl:
+        # On exige UNIQUEMENT les composants que le modèle déclare. Certains
+        # modèles n'ont pas de VAE (ex. Chroma Radiance, pixel-space → décode
+        # directement en pixels) ou utilisent t5xxl au lieu de l'encodeur llm.
+        declared = {c.role for c in model.components}
+        need: dict[str, "Path | None"] = {"diffusion": diffusion}
+        if "vae" in declared:
+            need["vae"] = vae
+        if "text_encoder" in declared:
             need["text_encoder"] = enc
-        absent = [role for role, p in need.items() if p is None or not Path(p).is_file()]
-        if t5xxl is not None and not Path(t5xxl).is_file():
-            absent.append("t5xxl")
+        if "t5xxl" in declared:
+            need["t5xxl"] = t5xxl
+        if "clip_l" in declared:
+            need["clip_l"] = clip_l
+        absent = [role for role, p in need.items()
+                  if p is None or not Path(p).is_file()]
         if absent:
             raise sdcpp.EngineError(
                 f"« {model.name} » : fichiers manquants ({', '.join(absent)}). "

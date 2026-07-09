@@ -87,6 +87,40 @@ base_models:
       - {name: "Qualité (SDE, 12 pas)",  sampler: dpm++2m_sde, scheduler: simple, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
+  # --------------------------------------------------------------------------
+  - id: chroma-radiance
+    name: "Chroma1-Radiance"
+    family: chroma
+    tags: [qualité, non-distillé, non-censuré, t5]
+    description: >
+      Chroma1-Radiance en GGUF — modèle **pixel-space** (AUCUN VAE : il décode
+      directement en pixels) dérivé de Flux, **non distillé** (CFG réel ≈ 4.0,
+      ~26 pas) et **non censuré**. Encodeur de texte **T5-XXL fp16** (via --t5xxl,
+      déchargé en RAM, ~9,5 Go). Supporte les **prompts négatifs**. Tourne dès
+      ~10–12 Go en Q4.
+    sources:
+      diffusion:
+        repo: silveroxides/Chroma1-Radiance-GGUF
+        # Version v0.4 (récente) ; repli quant-tolérant si le quant exact manque.
+        match: "*Chroma1-Radiance-v0.4*{quant}.gguf"
+        quantizable: true
+      t5xxl:
+        repo: comfyanonymous/flux_text_encoders
+        match: "t5xxl_fp16.safetensors"
+    defaults:
+      steps: 26
+      cfg_scale: 4.0
+      sampler: euler
+      scheduler: simple
+      width: 1024
+      height: 1024
+      supports_negative: true
+    presets:
+      - {name: "⚡ Rapide (20 pas)",       sampler: euler,       scheduler: simple, steps: 20, cfg_scale: 4.0}
+      - {name: "Standard (26 pas)",        sampler: euler,       scheduler: simple, steps: 26, cfg_scale: 4.0}
+      - {name: "Qualité (SDE, 32 pas)",    sampler: dpm++2m_sde, scheduler: simple, steps: 32, cfg_scale: 4.5}
+    vram_min_gb: 10
+
 # ============================================================================
 #  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
 #  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux.
