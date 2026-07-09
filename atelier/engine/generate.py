@@ -148,7 +148,7 @@ def generate(
     encoder_override: Path | None = None,
     preview_path: Path | None = None,
     hires: bool = False,
-    hires_scale: float = 2.0,
+    hires_scale: float = 1.5,
     hires_denoise: float = 0.5,
     save_prompt: bool = True,
     log: Callable[[str], None] | None = None,

@@ -286,16 +286,19 @@ def build_generative_tab(model_id: str, title: str,
                     gr.Markdown(
                         "Agrandit **pendant** la génération : rend à la base, "
                         "agrandit le latent, puis **raffine en 2e passe**. Plus "
-                        "cohérent qu'un upscale post-hoc (moins de « collage »), "
-                        "mais plus lent et plus gourmand en VRAM.  \n"
-                        "⚠️ La **force de débruitage** contrôle l'invention de "
-                        "détail : ~0.3 = fidèle, ~0.6 = créatif.")
+                        "cohérent qu'un upscale post-hoc, mais plus lent.  \n"
+                        "⚠️ **VRAM** : la 2e passe tourne à **`base × facteur`** et "
+                        "coûte cher (∝ résolution²). Sur **12 Go, vise une cible "
+                        "≤ ~1536 px** — ex. 768×2 ou 1024×1.5. Au-delà → OOM "
+                        "(« failed to allocate the compute buffer »). Baisse alors "
+                        "la résolution de base ou le facteur.  \n"
+                        "**Débruitage** : ~0.3 = fidèle, ~0.6 = créatif.")
                     hires_on = gr.Checkbox(
                         value=False, label="Activer le hires fix")
                     with gr.Row():
                         hires_scale = gr.Slider(
-                            1.0, 4.0, value=2.0, step=0.5,
-                            label="Facteur d'agrandissement (×)")
+                            1.0, 4.0, value=1.5, step=0.5,
+                            label="Facteur d'agrandissement (×) — 1.5 sûr sur 12 Go")
                         hires_denoise = gr.Slider(
                             0.0, 1.0, value=0.5, step=0.05,
                             label="Force de débruitage (raffinage)")
