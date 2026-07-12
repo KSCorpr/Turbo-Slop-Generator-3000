@@ -4,13 +4,18 @@
 Copier-coller le dépôt par-dessus l'ancien AJOUTE et REMPLACE les fichiers, mais
 n'efface JAMAIS ceux supprimés en amont : ils restent en orphelins et peuvent
 casser/embrouiller l'app. Ce script :
-  • supprime les fichiers devenus OBSOLÈTES (liste ci-dessous) ;
+  • supprime les fichiers de code devenus OBSOLÈTES (liste ci-dessous) ;
   • purge tous les __pycache__ (.pyc périmés d'anciens modules) ;
   • vide le dossier tmp/ (fichiers de travail) ;
+  • REPÈRE les dossiers de MODÈLES orphelins (plus référencés par le catalogue —
+    ex. un encodeur remplacé, un modèle retiré) et l'espace récupérable ;
   • vérifie que tout compile, que le catalogue YAML est valide, que les
     dépendances et le binaire sd-cli sont présents.
 
-Ne touche JAMAIS à : python/, bin/, models/, loras/, outputs/, userdata/.
+Par défaut il NE SUPPRIME PAS de modèles (il les liste seulement). Pour libérer
+l'espace :  python scripts/maintenance.py --prune-models  (ou maintenance.bat
+--prune-models). Ne touche jamais à models/custom/, loras/, outputs/, userdata/,
+python/, bin/.
 Lancer :  maintenance.bat  (Windows)  ·  ./maintenance.sh  (Linux/Mac)
 """
 from __future__ import annotations
@@ -38,7 +43,7 @@ OBSOLETE = [
 # Dossiers de données à NE JAMAIS toucher.
 PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git"}
 
-OK, WARN, ERR = "  [OK] ", "  [!] ", "  [X] "
+OK, WARN, ERR, INFO = "  [OK] ", "  [!] ", "  [X] ", "  [i] "
 _problems = 0
 
 
@@ -46,6 +51,25 @@ def _warn(msg: str) -> None:
     global _problems
     _problems += 1
     print(WARN + msg)
+
+
+def _dir_size(p: Path) -> int:
+    total = 0
+    for f in p.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _human(n: float) -> str:
+    for unit in ("o", "Ko", "Mo", "Go"):
+        if n < 1024:
+            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} To"
 
 
 def remove_obsolete() -> None:
@@ -89,6 +113,61 @@ def clean_tmp() -> None:
             except OSError:
                 pass
     print(OK + f"{n} élément(s) temporaire(s) effacé(s).")
+
+
+def _expected_model_dirs() -> set[str]:
+    """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
+    tous les composants des modèles + PiD + upscalers."""
+    from atelier import registry, settings
+    prefs = settings.load_prefs()
+    repos: set[str] = set()
+    for m in registry.load_base_models(prefs):
+        repos.update(c.repo for c in m.components)
+    repos.update(c.repo for c in registry.pid_components())
+    up = registry.upscaler_config().get("repo")
+    if up:
+        repos.add(up)
+    return {settings.model_repo_dir(r).name for r in repos if r}
+
+
+def report_orphan_models(prune: bool) -> None:
+    print("• Modèles orphelins (dossiers plus référencés par le catalogue)…")
+    try:
+        from atelier import settings
+        models_dir = settings.MODELS_DIR
+        expected = _expected_model_dirs()
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"analyse impossible : {exc}")
+        return
+    if not models_dir.is_dir():
+        print(OK + "aucun dossier models/.")
+        return
+    orphans = [d for d in sorted(models_dir.iterdir())
+               if d.is_dir() and d.name != "custom" and d.name not in expected]
+    if not orphans:
+        print(OK + "aucun modèle orphelin (propre).")
+        return
+    total = 0
+    for d in orphans:
+        size = _dir_size(d)
+        total += size
+        print(f"    - {d.name}  ({_human(size)})")
+    print(INFO + f"{len(orphans)} dossier(s) orphelin(s) = "
+          f"{_human(total)} récupérables.")
+    if prune:
+        freed = 0
+        for d in orphans:
+            sz = _dir_size(d)
+            shutil.rmtree(d, ignore_errors=True)
+            if not d.exists():
+                freed += sz
+                print(OK + f"supprimé : {d.name}")
+            else:
+                _warn(f"suppression partielle : {d.name}")
+        print(OK + f"{_human(freed)} libérés.")
+    else:
+        print("    → pour libérer l'espace : "
+              "python scripts/maintenance.py --prune-models")
 
 
 def compile_check() -> None:
@@ -149,14 +228,18 @@ def check_engine() -> None:
 
 
 def main() -> int:
+    prune = "--prune-models" in sys.argv
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
+    if prune:
+        print("  (--prune-models : suppression des modèles orphelins activée)")
     print("=" * 60)
     remove_obsolete()
     clean_pycache()
     clean_tmp()
-    compile_check()
     check_catalog()
+    report_orphan_models(prune)
+    compile_check()
     check_deps()
     check_engine()
     print("-" * 60)

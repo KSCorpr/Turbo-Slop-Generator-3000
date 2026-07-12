@@ -5,4 +5,4 @@ if [ -d venv ]; then
     # shellcheck disable=SC1091
     source venv/bin/activate
 fi
-python scripts/maintenance.py
+python scripts/maintenance.py "$@"
