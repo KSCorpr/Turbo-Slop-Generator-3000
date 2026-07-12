@@ -418,7 +418,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 
 **Krea 2 Turbo** (family `krea2`)
 - diffusion — [`realrebelai/KREA-2_GGUFs`](https://huggingface.co/realrebelai/KREA-2_GGUFs) (`TURBO/…`, 8 steps, CFG 1.0)
-- text encoder — [`noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF`](https://huggingface.co/noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF) (Qwen3-VL-4B **abliterated / uncensored**, via `--llm`, offloaded to RAM)
+- text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
 **Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
@@ -495,9 +495,8 @@ authors. Please read and respect each model's own license on its page.
   [bartowski](https://huggingface.co/bartowski/mlabonne_Qwen3-8B-abliterated-GGUF).
 - **Krea 2** — base model by **Krea AI**; GGUF by
   [realrebelai](https://huggingface.co/realrebelai/KREA-2_GGUFs); text encoder
-  **Qwen3-VL-4B** by **Alibaba / Qwen team**, abliterated by
-  [Huihui-ai](https://huggingface.co/huihui-ai), GGUF by
-  [noctrex](https://huggingface.co/noctrex/Huihui-Qwen3-VL-4B-Instruct-abliterated-GGUF);
+  **Qwen3-VL-4B-Instruct** by **Alibaba / Qwen team**
+  ([official GGUF](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF));
   **WAN 2.1** VAE by **Alibaba / Wan team**, repackaged by
   [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
 
