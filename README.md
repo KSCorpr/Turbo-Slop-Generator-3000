@@ -414,7 +414,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 **Flux.2 Klein 9B** (family `flux2`, edit model)
 - diffusion — [`leejet/FLUX.2-klein-9B-GGUF`](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF) (distilled, 4 steps, CFG 1.0)
 - VAE — [`Comfy-Org/flux2-klein-9B`](https://huggingface.co/Comfy-Org/flux2-klein-9B) (`flux2-vae.safetensors`)
-- text encoder — [`bartowski/mlabonne_Qwen3-8B-abliterated-GGUF`](https://huggingface.co/bartowski/mlabonne_Qwen3-8B-abliterated-GGUF) (Qwen3-8B **abliterated / uncensored**, via `--llm`, offloaded to RAM; for a standard encoder, drop a `Qwen3-8B` GGUF in `models/custom/` and pick it as *Encoder (local)*)
+- text encoder — [`unsloth/Qwen3-8B-GGUF`](https://huggingface.co/unsloth/Qwen3-8B-GGUF) (official Qwen3-8B, via `--llm`, offloaded to RAM)
 
 **Krea 2 Turbo** (family `krea2`)
 - diffusion — [`realrebelai/KREA-2_GGUFs`](https://huggingface.co/realrebelai/KREA-2_GGUFs) (`TURBO/…`, 8 steps, CFG 1.0)
@@ -490,9 +490,8 @@ authors. Please read and respect each model's own license on its page.
 - **Flux.2 Klein** — base model by **Black Forest Labs**; GGUF by
   [leejet](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF); VAE by
   [Comfy-Org](https://huggingface.co/Comfy-Org/flux2-klein-9B); text encoder
-  **Qwen3-8B** by **Alibaba / Qwen team**, abliterated by
-  [mlabonne](https://huggingface.co/mlabonne), GGUF by
-  [bartowski](https://huggingface.co/bartowski/mlabonne_Qwen3-8B-abliterated-GGUF).
+  **Qwen3-8B** by **Alibaba / Qwen team**
+  ([official GGUF by Unsloth](https://huggingface.co/unsloth/Qwen3-8B-GGUF)).
 - **Krea 2** — base model by **Krea AI**; GGUF by
   [realrebelai](https://huggingface.co/realrebelai/KREA-2_GGUFs); text encoder
   **Qwen3-VL-4B-Instruct** by **Alibaba / Qwen team**

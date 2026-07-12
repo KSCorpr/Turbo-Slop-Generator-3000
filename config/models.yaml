@@ -19,9 +19,10 @@ base_models:
     tags: [qualité, rapide, distillé, édition]
     description: >
       FLUX.2 Klein 9B en GGUF (distillé, rapide : 4 pas, CFG 1.0). Diffusion Q4
-      ≈ 5 Go en VRAM ; encodeur Qwen3-8B **abliteré (non censuré)** déchargé en
-      RAM ; VAE flux2. Tourne dès 10–12 Go. Modèle d'ÉDITION : fournissez une
-      image de référence et décrivez la modification dans le prompt.
+      ≈ 5 Go en VRAM ; encodeur **Qwen3-8B officiel** (dépôt Unsloth) déchargé en
+      RAM ; VAE flux2. Tourne dès 10–12 Go. **Text-to-image ET édition** :
+      fournissez une image de référence (jusqu'à 3) et décrivez la modification
+      dans le prompt.
     sources:
       diffusion:
         repo: leejet/FLUX.2-klein-9B-GGUF
@@ -31,8 +32,9 @@ base_models:
         repo: Comfy-Org/flux2-klein-9B
         match: "split_files/vae/flux2-vae.safetensors"
       text_encoder:
-        repo: bartowski/mlabonne_Qwen3-8B-abliterated-GGUF
-        match: "mlabonne_Qwen3-8B-abliterated-{enc_quant}.gguf"
+        # Encodeur Qwen3-8B officiel en GGUF (doc flux2.md). Ladder complet.
+        repo: unsloth/Qwen3-8B-GGUF
+        match: "Qwen3-8B-{enc_quant}.gguf"
         quantizable: true
     defaults:
       steps: 4

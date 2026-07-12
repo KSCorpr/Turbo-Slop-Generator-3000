@@ -162,7 +162,9 @@ def build_generative_tab(model_id: str, title: str,
 
                 _acc_title = ("🖼️ Images de référence (édition d'image)" if is_edit
                               else "🖼️ Image de référence / départ (image-to-image)")
-                with gr.Accordion(_acc_title, open=False):
+                # Ouvert par défaut sur un modèle d'édition (Flux.2) : l'édition
+                # est une capacité phare, on la met en avant.
+                with gr.Accordion(_acc_title, open=is_edit):
                     if is_edit:
                         gr.Markdown(
                             "**Éditer une image** : chargez-la et décrivez **la "
