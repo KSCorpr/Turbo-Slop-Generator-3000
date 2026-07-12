@@ -335,10 +335,17 @@ def build_generative_tab(model_id: str, title: str,
                                     variant="primary", size="lg", scale=3)
                     stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
 
-            # ----- Sorties (aperçu temps réel ET résultats fusionnés) -----
+            # ----- Sorties : aperçu temps réel (Image dédiée) + résultats (Gallery)
+            # L'aperçu est une gr.Image SÉPARÉE (un seul <img> mis à jour sur
+            # place) et non fusionné dans la galerie : mettre à jour une Gallery
+            # à chaque frame reconstruit toute la grille et fait « clignoter ».
             with gr.Column(scale=4):
+                preview_img = gr.Image(
+                    label="Aperçu temps réel", visible=False, height=560,
+                    format="png", show_download_button=False,
+                    show_label=True, interactive=False)
                 gallery = gr.Gallery(
-                    label="Aperçu temps réel → résultats (légende = seed)",
+                    label="Résultats (légende = seed)",
                     columns=2, height=560, object_fit="contain", show_label=True,
                     format="png", show_download_button=True)
                 with gr.Row():
@@ -603,10 +610,10 @@ def build_generative_tab(model_id: str, title: str,
                         cur = min(int(mt.group(1)), total)
                         progress(0.05 + 0.9 * cur / total,
                                  desc=f"étape {cur}/{total}")
-                # Aperçu fusionné dans la galerie : nouvelle frame SEULEMENT si le
+                # Aperçu dans l'Image DÉDIÉE : nouvelle frame SEULEMENT si le
                 # fichier a changé (mtime). On lit en mémoire (copie PIL) car sous
                 # Windows sd-cli écrit ce fichier en continu (verrou en écriture).
-                gal = gr.update()
+                prev = gr.update()
                 new_prev = False
                 if preview_path.exists():
                     try:
@@ -614,7 +621,7 @@ def build_generative_tab(model_id: str, title: str,
                         if m != last_mtime:
                             from PIL import Image
                             with Image.open(preview_path) as _pim:
-                                gal = [(_pim.copy(), t("aperçu en cours…"))]
+                                prev = gr.update(value=_pim.copy(), visible=True)
                             last_mtime = m
                             new_prev = True
                     except (OSError, ValueError):
@@ -625,12 +632,14 @@ def build_generative_tab(model_id: str, title: str,
                 now = time.time()
                 if new_prev or (now - last_emit) >= 0.5:
                     last_emit = now
-                    yield gal, "\n".join(logs[-400:]), gr.update(), gr.update()
+                    yield (prev, gr.update(), "\n".join(logs[-400:]),
+                           gr.update(), gr.update())
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
-                # On garde la dernière frame d'aperçu (pas de flash vers le vide).
-                yield gr.update(), "\n".join(logs), gr.update(), gr.update()
+                # On masque l'aperçu (fin) et on garde le journal.
+                yield (gr.update(visible=False), gr.update(),
+                       "\n".join(logs), gr.update(), gr.update())
                 return
             paths = state.get("outs", [])
 
@@ -647,8 +656,8 @@ def build_generative_tab(model_id: str, title: str,
                         logs.append(f"\n🚀 Décodage PiD ×4 — image "
                                     f"{i + 1}/{len(paths)}…")
                         progress(0.95, desc=f"PiD ×4 {i + 1}/{len(paths)}")
-                        yield (gr.update(), "\n".join(logs[-400:]),
-                               gr.update(), gr.update())
+                        yield (gr.update(visible=False), gr.update(),
+                               "\n".join(logs[-400:]), gr.update(), gr.update())
                         try:
                             out = gen_engine.pid_decode(p, prompt=full_prompt,
                                                         log=logs.append)
@@ -662,7 +671,9 @@ def build_generative_tab(model_id: str, title: str,
             progress(1.0, desc="Terminé")
             seeds = [base_seed + i for i in range(len(paths))]
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
-            yield items, "\n".join(logs), paths, seeds
+            # Fin : on masque l'aperçu et on affiche les résultats dans la galerie.
+            yield (gr.update(visible=False, value=None), items,
+                   "\n".join(logs), paths, seeds)
 
         gen_evt = run.click(
             do_generate,
@@ -671,7 +682,7 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc, pid_hires],
-            outputs=[gallery, logbox, last_paths, last_seeds],
+            outputs=[preview_img, gallery, logbox, last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
 
