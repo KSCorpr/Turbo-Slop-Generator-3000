@@ -24,7 +24,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🌈 **Chroma1-Radiance** | uncensored, non-distilled Flux-derived model · **pixel-space (no VAE)** · T5-XXL encoder · real CFG + negative prompts |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto / manual / per-generation presets) |
@@ -190,13 +189,6 @@ is 2048 px (the checkpoint is trained for a fixed ×4 from 512 px — other rati
 produce artifacts). Official weights are under the **NSCLv1 non-commercial**
 license.
 
-### Hires fix (integrated upscale)
-**🔍 Hires fix** in the generation panel upscales **during** generation: render at
-the base size, upscale the latent, then **refine in a second pass** (sd.cpp
-`--hires`). More coherent than a post-hoc ESRGAN pass (less "pasted" detail), but
-slower and heavier on VRAM. The **denoising strength** controls invented detail
-(~0.3 faithful, ~0.6 creative). Off by default.
-
 ---
 
 ## Hardware & optimization
@@ -260,10 +252,10 @@ Auto-fit.
 
 ### Samplers & schedulers
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
-`docs/krea2.md`, `docs/chroma_radiance.md`): **Euler** sampler with the
-**scheduler left to the engine default** (the docs never force one), at each
-model's documented steps/CFG (Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8
-steps · CFG 1.0; Chroma1-Radiance 20 steps · CFG 4.0). The dropdowns still expose
+`docs/krea2.md`): **Euler** sampler with the **scheduler left to the engine
+default** (the docs never force one), at each model's documented steps/CFG
+(Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0). The dropdowns
+still expose
 the full sd.cpp list for manual experimentation — newer samplers like **DPM++ 2M
 SDE** and schedulers like **Flux.2 / Flux / Beta** are there to try, but the
 presets stay on the documented defaults. New entries need a recent engine

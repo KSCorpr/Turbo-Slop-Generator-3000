@@ -275,14 +275,6 @@ def _payload(req: GenRequest) -> dict:
         # Les LoRA de l'app sont à plat dans LORA_DIR → la clé est le basename.
         body["lora"] = [{"path": Path(p).name, "multiplier": float(w)}
                         for p, w in req.lora_specs if p]
-    if req.hires:
-        hires = {"enabled": True, "scale": float(req.hires_scale),
-                 "denoising_strength": float(req.hires_denoise)}
-        if req.hires_steps and req.hires_steps > 0:
-            hires["steps"] = int(req.hires_steps)
-        if req.hires_upscaler:
-            hires["upscaler"] = req.hires_upscaler
-        body["hires"] = hires
     return body
 
 

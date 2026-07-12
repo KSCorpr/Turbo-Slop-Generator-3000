@@ -67,28 +67,11 @@ RATIOS_KREA2: dict[str, tuple[int, int]] = {
     "Vertical 9:16 — 768×1344": (768, 1344),
     "Personnalisé (sliders)": (0, 0),
 }
-# Chroma1-Radiance est pixel-space (pas de compression latente) → très gourmand
-# en VRAM à haute résolution. Ratios centrés sur 768 px (sûrs sur 12 Go), le
-# 1024 est marqué « VRAM++ » (carte large requise).
-RATIOS_CHROMA: dict[str, tuple[int, int]] = {
-    "Carré 1:1 — 768×768 (sûr)": (768, 768),
-    "Carré 1:1 — 1024×1024 (VRAM++)": (1024, 1024),
-    "Paysage 3:2 — 912×608": (912, 608),
-    "Portrait 2:3 — 608×912": (608, 912),
-    "Paysage 4:3 — 880×656": (880, 656),
-    "Portrait 3:4 — 656×880": (656, 880),
-    "Large 16:9 — 1024×576": (1024, 576),
-    "Personnalisé (sliders)": (0, 0),
-}
 _CUSTOM_LABEL = "Personnalisé (sliders)"
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
-    if family == "krea2":
-        return RATIOS_KREA2
-    if family == "chroma":
-        return RATIOS_CHROMA
-    return RATIOS_FLUX2
+    return RATIOS_KREA2 if family == "krea2" else RATIOS_FLUX2
 
 
 def _defaults(model_id: str) -> dict:
@@ -281,27 +264,6 @@ def build_generative_tab(model_id: str, title: str,
 
                         pid_install_btn.click(_install_pid,
                                               outputs=[pid_install_log])
-
-                with gr.Accordion("🔍 Hires fix (upscale intégré)", open=False):
-                    gr.Markdown(
-                        "Agrandit **pendant** la génération : rend à la base, "
-                        "agrandit le latent, puis **raffine en 2e passe**. Plus "
-                        "cohérent qu'un upscale post-hoc, mais plus lent.  \n"
-                        "⚠️ **VRAM** : la 2e passe tourne à **`base × facteur`** et "
-                        "coûte cher (∝ résolution²). Sur **12 Go, vise une cible "
-                        "≤ ~1536 px** — ex. 768×2 ou 1024×1.5. Au-delà → OOM "
-                        "(« failed to allocate the compute buffer »). Baisse alors "
-                        "la résolution de base ou le facteur.  \n"
-                        "**Débruitage** : ~0.3 = fidèle, ~0.6 = créatif.")
-                    hires_on = gr.Checkbox(
-                        value=False, label="Activer le hires fix")
-                    with gr.Row():
-                        hires_scale = gr.Slider(
-                            1.0, 4.0, value=1.5, step=0.5,
-                            label="Facteur d'agrandissement (×) — 1.5 sûr sur 12 Go")
-                        hires_denoise = gr.Slider(
-                            0.0, 1.0, value=0.5, step=0.05,
-                            label="Force de débruitage (raffinage)")
 
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
                     gr.Markdown(t(
@@ -531,7 +493,6 @@ def build_generative_tab(model_id: str, title: str,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc, pid_hires,
-                        hires_on, hires_scale, hires_denoise,
                         progress=gr.Progress()):
             import queue
             import threading
@@ -614,8 +575,6 @@ def build_generative_tab(model_id: str, title: str,
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
-                        hires=bool(hires_on), hires_scale=float(hires_scale),
-                        hires_denoise=float(hires_denoise),
                         preview_path=preview_path, log=q.put)
                     state["outs"] = [str(p) for p in outs]
                 except Exception as exc:  # noqa: BLE001
@@ -709,8 +668,7 @@ def build_generative_tab(model_id: str, title: str,
                     ref_image3, strength, outpaint, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc, pid_hires,
-                    hires_on, hires_scale, hires_denoise],
+                    custom_diff, custom_vae, custom_enc, pid_hires],
             outputs=[gallery, logbox, last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])

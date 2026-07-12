@@ -87,45 +87,6 @@ base_models:
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
-  # --------------------------------------------------------------------------
-  - id: chroma-radiance
-    name: "Chroma1-Radiance"
-    family: chroma
-    tags: [qualité, non-distillé, non-censuré, t5]
-    description: >
-      Chroma1-Radiance en GGUF — modèle **pixel-space** (AUCUN VAE : il décode
-      directement en pixels) dérivé de Flux, **non distillé** (CFG réel ≈ 4.0,
-      ~26 pas) et **non censuré**. Encodeur **T5-XXL fp16** (via --t5xxl, déchargé
-      en RAM, ~9,5 Go). Supporte les **prompts négatifs**.
-      ⚠️ **Gourmand en VRAM** : pixel-space = pas de compression latente, le buffer
-      de diffusion grossit vite avec la résolution. Sur **12 Go, restez ≤ 768 px** ;
-      1024 px demande une carte plus large. Prévoir ~16–24 Go de RAM (T5 + modèle).
-    sources:
-      diffusion:
-        repo: silveroxides/Chroma1-Radiance-GGUF
-        # v0.3 : ladder de quant complet (Q4_K_S → Q8_0). v0.4 n'existe qu'en Q8_0
-        # (trop lourd pour 12 Go), on l'évite donc.
-        match: "*Chroma1-Radiance-v0.3*{quant}.gguf"
-        quantizable: true
-      t5xxl:
-        repo: comfyanonymous/flux_text_encoders
-        match: "t5xxl_fp16.safetensors"
-    defaults:
-      steps: 26
-      cfg_scale: 4.0
-      sampler: euler
-      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
-      width: 768        # pixel-space gourmand : défaut sûr sur 12 Go
-      height: 768
-      supports_negative: true
-    presets:
-      # Aligné sur docs/chroma_radiance.md : euler, cfg 4.0, scheduler = défaut
-      # moteur. Non distillé → plus de pas = plus de qualité.
-      - {name: "⚡ Recommandé (doc, 20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 4.0}
-      - {name: "Standard (30 pas)",           sampler: euler, scheduler: auto, steps: 30, cfg_scale: 4.0}
-      - {name: "Qualité (40 pas)",            sampler: euler, scheduler: auto, steps: 40, cfg_scale: 4.0}
-    vram_min_gb: 10
-
 # ============================================================================
 #  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
 #  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux.

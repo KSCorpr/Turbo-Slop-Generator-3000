@@ -147,9 +147,6 @@ def generate(
     vae_override: Path | None = None,
     encoder_override: Path | None = None,
     preview_path: Path | None = None,
-    hires: bool = False,
-    hires_scale: float = 1.5,
-    hires_denoise: float = 0.5,
     save_prompt: bool = True,
     log: Callable[[str], None] | None = None,
 ) -> list[Path]:
@@ -183,9 +180,9 @@ def generate(
         uncond = _component(model, "uncond")
         t5xxl = _component(model, "t5xxl")
         clip_l = _component(model, "clip_l")
-        # On exige UNIQUEMENT les composants que le modèle déclare. Certains
-        # modèles n'ont pas de VAE (ex. Chroma Radiance, pixel-space → décode
-        # directement en pixels) ou utilisent t5xxl au lieu de l'encodeur llm.
+        # On exige UNIQUEMENT les composants que le modèle déclare : certains
+        # modèles peuvent ne pas avoir de VAE, ou utiliser t5xxl/clip_l au lieu
+        # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
         declared = {c.role for c in model.components}
         need: dict[str, "Path | None"] = {"diffusion": diffusion}
         if "vae" in declared:
@@ -251,8 +248,6 @@ def generate(
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
-        hires=bool(hires), hires_scale=float(hires_scale),
-        hires_denoise=float(hires_denoise),
     )
     out = sdcpp.unique_output(model.family)
 

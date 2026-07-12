@@ -84,13 +84,6 @@ class GenRequest:
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
-    # Hires fix (upscale intégré) : génère à la base, agrandit le latent puis
-    # raffine en 2e passe. Cohérence supérieure à un upscale post-hoc.
-    hires: bool = False
-    hires_scale: float = 2.0
-    hires_denoise: float = 0.5         # --hires-denoising-strength
-    hires_steps: int = 0               # 0 = réutilise steps
-    hires_upscaler: str = ""           # "" = Latent (défaut sd.cpp)
 
 
 def _flag_args(flags: Mapping[str, bool]) -> list[str]:
@@ -183,13 +176,6 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
-    if req.hires:
-        cmd += ["--hires", "--hires-scale", f"{req.hires_scale:g}",
-                "--hires-denoising-strength", f"{req.hires_denoise:g}"]
-        if req.hires_steps and req.hires_steps > 0:
-            cmd += ["--hires-steps", str(int(req.hires_steps))]
-        if req.hires_upscaler:
-            cmd += ["--hires-upscaler", req.hires_upscaler]
     cmd += _flag_args(req.flags)
     # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
     # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
