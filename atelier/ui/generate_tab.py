@@ -69,6 +69,12 @@ RATIOS_KREA2: dict[str, tuple[int, int]] = {
 }
 _CUSTOM_LABEL = "Personnalisé (sliders)"
 
+# Barres de progression sd.cpp (« |####| 97/298 - 87MB/s[K », « |==>| 1/4 - … »).
+# Capturées ligne par ligne, elles arrivent par CENTAINES et inondent le journal
+# → re-rendu permanent = clignotement. On les DÉTECTE pour piloter la barre de
+# progression, mais on ne les écrit PAS dans le texte du journal.
+_PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
+
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     return RATIOS_KREA2 if family == "krea2" else RATIOS_FLUX2
@@ -604,12 +610,22 @@ def build_generative_tab(model_id: str, title: str,
                 if line is None:
                     break
                 if line:
-                    logs.append(line)
                     mt = step_re.search(line)
                     if mt:
                         cur = min(int(mt.group(1)), total)
                         progress(0.05 + 0.9 * cur / total,
                                  desc=f"étape {cur}/{total}")
+                    # Barre de progression sd.cpp : on l'exploite pour le spinner
+                    # mais on ne l'ajoute PAS au journal (sinon flood → clignote).
+                    is_bar = bool(_PROGRESS_BAR.search(line)) or "\x1b" in line
+                    if is_bar and not mt:  # barre de CHARGEMENT (tenseurs)
+                        lm = re.search(r"(\d+)\s*/\s*(\d+)", line)
+                        if lm and int(lm.group(2)) > 0:
+                            progress(0.02 + 0.03 * int(lm.group(1))
+                                     / int(lm.group(2)),
+                                     desc="Chargement du modèle…")
+                    if not is_bar:
+                        logs.append(line)
                 # Aperçu dans l'Image DÉDIÉE : nouvelle frame SEULEMENT si le
                 # fichier a changé (mtime). On lit en mémoire (copie PIL) car sous
                 # Windows sd-cli écrit ce fichier en continu (verrou en écriture).
