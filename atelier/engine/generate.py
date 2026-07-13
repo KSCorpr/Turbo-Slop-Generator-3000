@@ -164,6 +164,13 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
 
+    # Modèles marqués « comfyui » (ex. Krea 2 INT8/ConvRot) : fichiers ComfyUI que
+    # sd.cpp ne peut PAS charger. Message clair plutôt qu'un crash sd-cli obscur.
+    if "comfyui" in (model.tags or []) and not use_comfy:
+        raise sdcpp.EngineError(
+            f"« {model.name} » nécessite le moteur ComfyUI. Activez-le dans "
+            "Réglages → 🚀 Moteur → ComfyUI (installez-le d'abord si besoin).")
+
     # Famille « checkpoint complet » : un seul fichier via -m.
     has_full = any(c.role == "model" for c in model.components)
     if has_full:
