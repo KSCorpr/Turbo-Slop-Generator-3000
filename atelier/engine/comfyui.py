@@ -123,7 +123,15 @@ def _ensure(gpu_index: int | None,
         port = int(settings.load_prefs().get("comfyui_port", 8188))
         base_url = f"http://127.0.0.1:{port}"
         env = {**os.environ}
-        cmd = [sys.executable, "main.py",
+        # Lancement ROBUSTE : le Python EMBARQUÉ (python\python.exe) a un fichier
+        # ._pth qui restreint sys.path → « import comfy » échoue même quand le
+        # dossier comfyui/ est présent. On insère explicitement le dossier ComfyUI
+        # dans sys.path AVANT d'exécuter main.py (via runpy, qui règle __file__ et
+        # __name__=='__main__' correctement). Marche aussi avec un Python normal.
+        boot = ("import sys, runpy; sys.path.insert(0, r'{d}'); "
+                "runpy.run_path('main.py', run_name='__main__')"
+                ).format(d=str(comfy))
+        cmd = [sys.executable, "-c", boot,
                "--listen", "127.0.0.1", "--port", str(port)]
         if gpu_index is not None:
             cmd += ["--cuda-device", str(gpu_index)]

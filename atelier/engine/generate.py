@@ -281,6 +281,15 @@ def generate(
             paths = comfyui.generate(req, out, family=model.family,
                                      gpu_index=gpu_index, log=log)
         except comfyui.ComfyUnavailable as exc:
+            # Modèle ComfyUI-only (INT8) : le repli sd.cpp est INUTILE (sd.cpp ne
+            # lit pas l'INT8, dtype I8). Message clair plutôt qu'une erreur obscure.
+            if "comfyui" in (model.tags or []):
+                raise sdcpp.EngineError(
+                    f"ComfyUI n'a pas pu démarrer : {exc}\n"
+                    "Ce modèle ne fonctionne QU'AVEC ComfyUI (sd.cpp ne sait pas "
+                    "lire l'INT8). Vérifiez l'installation : supprimez le dossier "
+                    "comfyui/ puis relancez « Installer / mettre à jour ComfyUI » "
+                    "dans les Réglages.")
             paths = _fallback_cli(f"ComfyUI indisponible ({exc}).")
     elif use_server:
         try:

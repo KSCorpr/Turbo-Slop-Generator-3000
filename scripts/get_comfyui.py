@@ -114,6 +114,24 @@ def _install_int8_node() -> None:
               "mais l'INT8 simple oui. C'est le point fragile sous Windows.")
 
 
+def _verify() -> None:
+    """Go/no-go clair : ComfyUI s'importe-t-il vraiment (comfy + torch) ? Utilise
+    la MÊME injection de sys.path que le lancement (indispensable en Python
+    embarqué), donc reflète le comportement réel au démarrage du moteur."""
+    print("\n• Vérification (import comfy + torch)…")
+    boot = ("import sys; sys.path.insert(0, r'{d}'); "
+            "import comfy.options; import torch; "
+            "print('  [OK] comfy OK, torch', torch.__version__, "
+            "('CUDA' if torch.cuda.is_available() else 'CPU (pas de GPU !)'))"
+            ).format(d=str(COMFY_DIR))
+    try:
+        subprocess.check_call([sys.executable, "-c", boot], cwd=str(COMFY_DIR))
+    except subprocess.CalledProcessError:
+        print("  [!] ComfyUI ne s'importe PAS encore (voir l'erreur au-dessus). "
+              "Causes fréquentes : dépendances non installées (relancez), ou "
+              "clone incomplet (supprimez le dossier comfyui/ puis relancez).")
+
+
 def main() -> None:
     print("=== Installation du backend ComfyUI (expérimental) ===", flush=True)
     _clone(COMFY_REPO, COMFY_DIR)
@@ -144,7 +162,8 @@ def main() -> None:
     _install_int8_node()
 
     write_extra_model_paths()
-    print("\n[OK] ComfyUI installé dans ./comfyui")
+    _verify()
+    print("\n[OK] Installation terminée (voir la vérification ci-dessus).")
     print("   Activez le moteur « ComfyUI » dans l'onglet Réglages, puis générez.")
 
 
