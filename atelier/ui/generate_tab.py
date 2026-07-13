@@ -601,8 +601,13 @@ def build_generative_tab(model_id: str, title: str,
             logs: list[str] = []
             last_mtime = None
             last_emit = 0.0
-            shown = False   # l'aperçu n'est rendu VISIBLE qu'une fois (anti re-montage)
+            last_log_len = 0
             progress(0.02, desc="Chargement du modèle…")
+            # UNE seule bascule d'affichage : aperçu VISIBLE, galerie MASQUÉE.
+            # Ensuite, par frame, on ne change QUE la valeur de l'aperçu → aucun
+            # changement de mise en page → pas de reflow/flicker de toute la page.
+            yield (gr.update(visible=True, value=None), gr.update(visible=False),
+                   "", gr.update(), gr.update())
             while True:
                 try:
                     line = q.get(timeout=0.3)
@@ -639,29 +644,29 @@ def build_generative_tab(model_id: str, title: str,
                             from PIL import Image
                             with Image.open(preview_path) as _pim:
                                 _img = _pim.copy()
-                            # visible=True une SEULE fois ; ensuite on ne change
-                            # QUE la valeur → l'<img> est remplacé sur place, pas
-                            # re-monté (c'est le re-montage qui fait clignoter).
-                            prev = (gr.update(value=_img, visible=True) if not shown
-                                    else gr.update(value=_img))
-                            shown = True
+                            # Valeur SEULE (visibilité déjà True) → l'<img> est
+                            # remplacé sur place, sans re-montage ni reflow.
+                            prev = gr.update(value=_img)
                             last_mtime = m
                             new_prev = True
                     except (OSError, ValueError):
                         pass
-                # On émet tout de suite pour une nouvelle frame d'aperçu, sinon on
-                # throttle le journal à ~2x/s : au démarrage sd-cli crache beaucoup
-                # de lignes -> évite un re-rendu permanent qui fait « clignoter ».
+                # On n'émet QUE s'il y a du NOUVEAU : une frame d'aperçu (tout de
+                # suite), ou une vraie ligne de journal (au plus ~1x/s). Sinon, on
+                # n'émet rien → aucun re-render inutile (donc pas de clignotement,
+                # notamment pendant le chargement où rien ne change à l'écran).
                 now = time.time()
-                if new_prev or (now - last_emit) >= 0.5:
+                log_changed = len(logs) != last_log_len
+                if new_prev or (log_changed and now - last_emit >= 1.0):
                     last_emit = now
+                    last_log_len = len(logs)
                     yield (prev, gr.update(), "\n".join(logs[-400:]),
                            gr.update(), gr.update())
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
-                # On masque l'aperçu (fin) et on garde le journal.
-                yield (gr.update(visible=False), gr.update(),
+                # Fin (erreur) : on remet l'affichage normal (galerie visible).
+                yield (gr.update(visible=False), gr.update(visible=True),
                        "\n".join(logs), gr.update(), gr.update())
                 return
             paths = state.get("outs", [])
@@ -679,7 +684,7 @@ def build_generative_tab(model_id: str, title: str,
                         logs.append(f"\n🚀 Décodage PiD ×4 — image "
                                     f"{i + 1}/{len(paths)}…")
                         progress(0.95, desc=f"PiD ×4 {i + 1}/{len(paths)}")
-                        yield (gr.update(visible=False), gr.update(),
+                        yield (gr.update(), gr.update(),
                                "\n".join(logs[-400:]), gr.update(), gr.update())
                         try:
                             out = gen_engine.pid_decode(p, prompt=full_prompt,
@@ -694,8 +699,10 @@ def build_generative_tab(model_id: str, title: str,
             progress(1.0, desc="Terminé")
             seeds = [base_seed + i for i in range(len(paths))]
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
-            # Fin : on masque l'aperçu et on affiche les résultats dans la galerie.
-            yield (gr.update(visible=False, value=None), items,
+            # Fin : on masque l'aperçu et on RÉAFFICHE la galerie avec les résultats
+            # (elle avait été masquée au début → il FAUT visible=True ici).
+            yield (gr.update(visible=False, value=None),
+                   gr.update(value=items, visible=True),
                    "\n".join(logs), paths, seeds)
 
         gen_evt = run.click(
