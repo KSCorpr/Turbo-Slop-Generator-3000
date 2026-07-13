@@ -93,6 +93,81 @@ base_models:
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
+  # --------------------------------------------------------------------------
+  # ⚠️ MOTEUR ComfyUI UNIQUEMENT (Réglages → Moteur → ComfyUI). Ces variantes
+  # INT8 sont des fichiers ComfyUI : sd.cpp ne peut PAS les charger.
+  - id: krea2-turbo-int8
+    name: "Krea 2 Turbo — INT8 (ComfyUI)"
+    family: krea2int8
+    tags: [rapide, int8, comfyui, krea]
+    description: >
+      Krea 2 Turbo en **INT8** (accélération réelle sur RTX 30xx : ~1,5–2×).
+      **Moteur ComfyUI requis** — charge via le loader de diffusion standard
+      (support INT8 natif de ComfyUI récent, **sans Triton**). Encodeur Qwen3-VL
+      4B INT8 + VAE Qwen Image (≠ le VAE WAN du Krea 2 GGUF). Idéal **RTX 3060**
+      (offload si 12 Go, le fichier fait ~13 Go) ; la 2080 Ti (Turing) n'est pas
+      garantie ; la 1080 ne peut pas.
+    sources:
+      diffusion:
+        repo: Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8
+        match: "Krea2_Turbo_int8mixed.safetensors"
+      text_encoder:
+        repo: Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8
+        match: "Text Encoder/qwen3vl_4b_int8.safetensors"
+      vae:
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        match: "split_files/vae/qwen_image_vae.safetensors"
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: simple
+      width: 1024
+      height: 1024
+      supports_negative: false
+    presets:
+      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: simple, steps: 8,  cfg_scale: 1.0}
+      - {name: "Très rapide (4 pas)", sampler: euler, scheduler: simple, steps: 4,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",    sampler: euler, scheduler: simple, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 12
+
+  # --------------------------------------------------------------------------
+  # ⚠️ ComfyUI + nœud ComfyUI-INT8-Fast + Triton. Meilleure qualité INT8 (ConvRot)
+  # mais Triton sous Windows est fragile (voir get_comfyui.py). Réservé RTX 30xx.
+  - id: krea2-turbo-convrot
+    name: "Krea 2 Turbo — INT8 ConvRot (ComfyUI+Triton)"
+    family: krea2convrot
+    tags: [int8, convrot, comfyui, krea, qualité]
+    description: >
+      Krea 2 Turbo **INT8 ConvRot** : meilleure qualité INT8 (rotation des poids
+      façon QuaRot avant quantification). **Moteur ComfyUI + nœud
+      ComfyUI-INT8-Fast + Triton requis** (nœud `OTUNetLoaderW8A8`). Triton sous
+      Windows est le maillon fragile — installez-le via le bouton ComfyUI puis
+      testez. Réservé **RTX 30xx** (3060). Encodeur Qwen3-VL 4B ConvRot + VAE
+      Qwen Image.
+    sources:
+      diffusion:
+        repo: Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8
+        match: "Krea2_Turbo_convrot_int8mixed.safetensors"
+      text_encoder:
+        repo: Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8
+        match: "Text Encoder/qwen3vl_4b_uncensored_int8_convrot.safetensors"
+      vae:
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        match: "split_files/vae/qwen_image_vae.safetensors"
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: simple
+      width: 1024
+      height: 1024
+      supports_negative: false
+    presets:
+      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: simple, steps: 8,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",    sampler: euler, scheduler: simple, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 12
+
 # ============================================================================
 #  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
 #  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux.

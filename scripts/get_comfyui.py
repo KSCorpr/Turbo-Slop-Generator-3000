@@ -27,6 +27,10 @@ COMFY_DIR = ROOT / "comfyui"
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI"
 GGUF_REPO = "https://github.com/city96/ComfyUI-GGUF"
 GGUF_DIR = COMFY_DIR / "custom_nodes" / "ComfyUI-GGUF"
+# Nœud INT8 (Krea 2 ConvRot : OTUNetLoaderW8A8). Nécessite Triton — fragile sous
+# Windows, installé en best-effort (le niveau INT8 « simple » n'en a pas besoin).
+INT8_REPO = "https://github.com/BobJohnson24/ComfyUI-INT8-Fast"
+INT8_DIR = COMFY_DIR / "custom_nodes" / "ComfyUI-INT8-Fast"
 
 
 def sh(cmd: list[str], cwd: Path | None = None) -> None:
@@ -74,6 +78,33 @@ turbo_slop:
     print("extra_model_paths.yaml écrit (models/ + loras/).")
 
 
+def _install_int8_node() -> None:
+    """Nœud ComfyUI-INT8-Fast (Krea 2 ConvRot) + Triton. Best-effort : un échec
+    ne bloque PAS l'installation — le niveau INT8 « simple » (loader standard)
+    fonctionne sans. Triton sous Windows = paquet `triton-windows` (fragile)."""
+    import platform
+    print("\n• Nœud INT8 ConvRot (ComfyUI-INT8-Fast) + Triton [optionnel]…")
+    try:
+        _clone(INT8_REPO, INT8_DIR)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [!] clone du nœud INT8 impossible ({exc}). "
+              "Le niveau INT8 simple reste disponible.")
+        return
+    int8_req = INT8_DIR / "requirements.txt"
+    if int8_req.is_file():
+        try:
+            sh([sys.executable, "-m", "pip", "install", "-r", str(int8_req)])
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [!] requirements du nœud INT8 : {exc}")
+    triton = "triton-windows" if platform.system() == "Windows" else "triton"
+    try:
+        sh([sys.executable, "-m", "pip", "install", "-U", triton])
+        print(f"  [OK] {triton} installé (ConvRot activable).")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [!] {triton} non installé ({exc}). Le ConvRot ne marchera pas, "
+              "mais l'INT8 simple oui. C'est le point fragile sous Windows.")
+
+
 def main() -> None:
     print("=== Installation du backend ComfyUI (expérimental) ===", flush=True)
     _clone(COMFY_REPO, COMFY_DIR)
@@ -98,6 +129,8 @@ def main() -> None:
         sh([sys.executable, "-m", "pip", "install", "-r", str(gguf_req)])
     else:
         sh([sys.executable, "-m", "pip", "install", "gguf"])
+
+    _install_int8_node()
 
     write_extra_model_paths()
     print("\n✅ ComfyUI installé dans ./comfyui")
