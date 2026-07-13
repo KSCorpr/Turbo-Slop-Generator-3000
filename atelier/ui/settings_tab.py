@@ -30,6 +30,13 @@ def _profile_md() -> str:
     return "\n".join(lines)
 
 
+def _comfy_status() -> str:
+    if settings.find_comfyui() is not None:
+        return t("✅ ComfyUI installé (dossier `comfyui/`).")
+    return t("ℹ️ ComfyUI non installé. Cliquez sur « Installer », ou lancez "
+             "`python scripts/get_comfyui.py`.")
+
+
 def _gpu_strategy(prefs) -> str:
     """Déduit la stratégie multi-GPU courante depuis les préférences."""
     if prefs.get("auto_fit"):
@@ -151,13 +158,24 @@ def build_settings_tab():
         # ------------------------------------------------------------------ #
         with gr.Accordion("🚀 Moteur & accélération (avancé)", open=False):
             gr.Markdown(
-                "**Moteur serveur résident** — garde le modèle en mémoire entre "
-                "les images (itération quasi instantanée). Un modèle à la fois ; "
-                "repli auto sur le mode classique en cas de souci. *(Pas d'aperçu "
-                "temps réel.)*")
-            server_mode = gr.Checkbox(
-                value=prefs.get("use_sd_server", False),
-                label="Activer le moteur serveur")
+                "**Moteur d'inférence** :\n"
+                "- **sd.cpp one-shot** — défaut, léger, avec aperçu temps réel.\n"
+                "- **sd.cpp serveur résident** — modèle gardé en mémoire entre les "
+                "images (itération à chaud). *(Pas d'aperçu temps réel.)*\n"
+                "- **ComfyUI (PyTorch)** — backend complet piloté en arrière-plan : "
+                "support LoRA natif et modèles exotiques (**Krea 2**). Plus lourd ; "
+                "à installer une fois. Repli auto sur sd.cpp si indisponible.")
+            engine_choice = gr.Radio(
+                [(t("sd.cpp — one-shot (défaut)"), "cli"),
+                 (t("sd.cpp — serveur résident"), "server"),
+                 (t("ComfyUI (backend PyTorch — Krea 2, LoRA natif)"), "comfyui")],
+                value=settings.engine_mode(), label="Moteur")
+            gr.Markdown(_comfy_status())
+            with gr.Row():
+                comfy_install = gr.Button("⬇️ Installer / mettre à jour ComfyUI",
+                                          size="sm")
+            comfy_log = gr.Textbox(label="Installation ComfyUI", lines=8,
+                                   visible=False)
             gr.Markdown(
                 "**Accélération par cache** — réutilise des calculs entre les pas "
                 "(`caching.md`). Utile surtout > ~10 pas ; sur les modèles distillés "
@@ -191,9 +209,12 @@ def build_settings_tab():
 
         def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
                     offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
-                    server_mode, hf_ep, civitai_tok):
+                    engine_choice, hf_ep, civitai_tok):
             p = settings.load_prefs()
-            p["use_sd_server"] = bool(server_mode)
+            eng = engine_choice if engine_choice in ("cli", "server", "comfyui") \
+                else "cli"
+            p["engine"] = eng
+            p["use_sd_server"] = (eng == "server")   # rétro-compat
             p["auto_optimize"] = bool(auto)
             p["gpu_index"] = gpu if gpu is not None else None
             p["text_gpu_index"] = tools_gpu
@@ -221,8 +242,36 @@ def build_settings_tab():
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
                            enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
-                           cache_mode, cache_opt, server_mode, hf_ep, civitai_tok],
+                           cache_mode, cache_opt, engine_choice, hf_ep,
+                           civitai_tok],
                    outputs=[profile_md, saved])
+
+        def _do_install_comfy():
+            import subprocess
+            import sys as _sys
+            script = settings.ROOT / "scripts" / "get_comfyui.py"
+            yield gr.update(
+                visible=True,
+                value="⏳ Installation de ComfyUI (clone + PyTorch CUDA, "
+                      "plusieurs minutes)…\n")
+            proc = subprocess.Popen(
+                [_sys.executable, str(script)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                bufsize=1, cwd=str(settings.ROOT),
+                encoding="utf-8", errors="replace")
+            buf: list[str] = []
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                buf.append(line.rstrip("\n"))
+                yield gr.update(visible=True, value="\n".join(buf[-40:]))
+            proc.wait()
+            buf.append("\n✅ ComfyUI installé — sélectionnez « ComfyUI » "
+                       "ci-dessus puis Enregistrer." if proc.returncode == 0
+                       else f"\n❌ Échec de l'installation (code {proc.returncode}). "
+                            "Voir les lignes ci-dessus.")
+            yield gr.update(visible=True, value="\n".join(buf[-40:]))
+
+        comfy_install.click(_do_install_comfy, outputs=[comfy_log])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---
         def _apply_generation(gen_key):

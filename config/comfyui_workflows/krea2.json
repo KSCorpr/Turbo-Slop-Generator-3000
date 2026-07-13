@@ -1,0 +1,70 @@
+{
+  "__doc__": "Template ComfyUI (format API) pour Krea 2 Turbo GGUF. Les %JETONS% sont remplaces a la volee par le moteur (voir atelier/engine/comfyui.py). Krea 2 = diffusion GGUF (UnetLoaderGGUF) + encodeur Qwen3-VL charge en 'type: krea2' (CLIPLoaderGGUF) + VAE. IMPORTANT: si ComfyUI refuse ce graphe (erreur 400) ou si le rendu est mauvais, construisez un workflow Krea 2 Turbo qui marche dans l'UI ComfyUI (les noeuds officiels Krea 2 sont recents), faites 'Save (API Format)', remettez les %JETONS% aux endroits indiques, et remplacez ce fichier. Selon votre version de ComfyUI, l'encodeur peut demander un noeud 'CLIPLoader' natif avec type=krea2 plutot que 'CLIPLoaderGGUF', et le VAE peut etre qwen_image_vae. Jetons: %UNET% %CLIP% %VAE% %POSITIVE% %NEGATIVE% %WIDTH% %HEIGHT% %BATCH% %SEED% %STEPS% %CFG% %SAMPLER% %SCHEDULER% %DENOISE% %LORA_NAME% %LORA_STRENGTH%.",
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {"unet_name": "%UNET%"},
+    "_meta": {"title": "Diffusion Krea 2 Turbo (GGUF)"}
+  },
+  "2": {
+    "class_type": "CLIPLoaderGGUF",
+    "inputs": {"clip_name": "%CLIP%", "type": "krea2"},
+    "_meta": {"title": "Encodeur Qwen3-VL (type krea2)"}
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {"vae_name": "%VAE%"},
+    "_meta": {"title": "VAE"}
+  },
+  "10": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": ["1", 0],
+      "clip": ["2", 0],
+      "lora_name": "%LORA_NAME%",
+      "strength_model": "%LORA_STRENGTH%",
+      "strength_clip": "%LORA_STRENGTH%"
+    },
+    "_meta": {"title": "LoRA (ignore si LORA_NAME vide)"}
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "%POSITIVE%", "clip": ["10", 1]},
+    "_meta": {"title": "Positive"}
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "%NEGATIVE%", "clip": ["10", 1]},
+    "_meta": {"title": "Negative"}
+  },
+  "6": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {"width": "%WIDTH%", "height": "%HEIGHT%", "batch_size": "%BATCH%"},
+    "_meta": {"title": "Latent vide"}
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "latent_image": ["6", 0],
+      "seed": "%SEED%",
+      "steps": "%STEPS%",
+      "cfg": "%CFG%",
+      "sampler_name": "%SAMPLER%",
+      "scheduler": "%SCHEDULER%",
+      "denoise": "%DENOISE%"
+    },
+    "_meta": {"title": "KSampler"}
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
+    "_meta": {"title": "VAE Decode"}
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["8", 0], "filename_prefix": "TSG_krea2"},
+    "_meta": {"title": "Save"}
+  }
+}
