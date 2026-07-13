@@ -601,6 +601,7 @@ def build_generative_tab(model_id: str, title: str,
             logs: list[str] = []
             last_mtime = None
             last_emit = 0.0
+            shown = False   # l'aperçu n'est rendu VISIBLE qu'une fois (anti re-montage)
             progress(0.02, desc="Chargement du modèle…")
             while True:
                 try:
@@ -637,7 +638,13 @@ def build_generative_tab(model_id: str, title: str,
                         if m != last_mtime:
                             from PIL import Image
                             with Image.open(preview_path) as _pim:
-                                prev = gr.update(value=_pim.copy(), visible=True)
+                                _img = _pim.copy()
+                            # visible=True une SEULE fois ; ensuite on ne change
+                            # QUE la valeur → l'<img> est remplacé sur place, pas
+                            # re-monté (c'est le re-montage qui fait clignoter).
+                            prev = (gr.update(value=_img, visible=True) if not shown
+                                    else gr.update(value=_img))
+                            shown = True
                             last_mtime = m
                             new_prev = True
                     except (OSError, ValueError):
