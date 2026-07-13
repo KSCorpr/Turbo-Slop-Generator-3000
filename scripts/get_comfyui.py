@@ -20,8 +20,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Console Windows = cp1252 : forcer UTF-8 évite un UnicodeEncodeError sur les
+# accents/emojis (sinon le vrai message d'erreur est masqué par ce crash).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 COMFY_DIR = ROOT / "comfyui"
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI"
@@ -113,12 +122,14 @@ def main() -> None:
     # PyTorch CUDA : on réutilise exactement le même helper que le Toolkit, pour
     # une build GPU cohérente et sans verrou de DLL sous Windows.
     try:
-        from scripts._torch_setup import ensure_torch_cuda, pin_numpy
+        from _torch_setup import ensure_torch_cuda, pin_numpy
         ensure_torch_cuda()
         pin_numpy()
     except Exception as exc:  # noqa: BLE001
-        print(f"⚠️  Mise en place de PyTorch CUDA impossible ({exc}). "
+        import traceback
+        print(f"  [!] Mise en place de PyTorch CUDA impossible ({exc}). "
               "ComfyUI risque de tourner sur CPU.")
+        traceback.print_exc()
 
     # Dépendances ComfyUI + node GGUF (torch est déjà satisfait -> non réinstallé).
     req = COMFY_DIR / "requirements.txt"
@@ -133,7 +144,7 @@ def main() -> None:
     _install_int8_node()
 
     write_extra_model_paths()
-    print("\n✅ ComfyUI installé dans ./comfyui")
+    print("\n[OK] ComfyUI installé dans ./comfyui")
     print("   Activez le moteur « ComfyUI » dans l'onglet Réglages, puis générez.")
 
 
