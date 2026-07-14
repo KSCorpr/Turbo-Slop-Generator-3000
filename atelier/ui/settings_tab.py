@@ -154,32 +154,27 @@ def build_settings_tab():
             tools_gpu = gr.State(prefs.get("text_gpu_index"))
 
         # ------------------------------------------------------------------ #
-        #  Moteur & accélération (avancé)
+        #  Moteur d'inférence (LE choix principal) + cache sd.cpp
         # ------------------------------------------------------------------ #
-        with gr.Accordion("🚀 Moteur & accélération (avancé)", open=False):
+        with gr.Accordion("🚀 Moteur d'inférence", open=False):
             gr.Markdown(
-                "**Moteur d'inférence** :\n"
-                "- **sd.cpp one-shot** — défaut, léger, avec aperçu temps réel.\n"
-                "- **sd.cpp serveur résident** — modèle gardé en mémoire entre les "
-                "images (itération à chaud). *(Pas d'aperçu temps réel.)*\n"
-                "- **ComfyUI (PyTorch)** — backend complet piloté en arrière-plan : "
-                "support LoRA natif et modèles exotiques (**Krea 2**). Plus lourd ; "
-                "à installer une fois. Repli auto sur sd.cpp si indisponible.")
+                "Comment les images sont calculées :\n"
+                "- **sd.cpp — one-shot** : défaut, léger, **aperçu temps réel**. "
+                "Recharge le modèle à chaque image.\n"
+                "- **sd.cpp — serveur résident** : garde le modèle **en mémoire** "
+                "→ itération à chaud (quelques secondes), *sans aperçu*.\n"
+                "- **ComfyUI** : backend PyTorch séparé, requis pour **Krea 2 "
+                "INT8**. Voir l'accordéon *ComfyUI* ci-dessous pour l'installer.")
             engine_choice = gr.Radio(
-                [(t("sd.cpp — one-shot (défaut)"), "cli"),
-                 (t("sd.cpp — serveur résident"), "server"),
-                 (t("ComfyUI (backend PyTorch — Krea 2, LoRA natif)"), "comfyui")],
+                [(t("sd.cpp — one-shot (défaut, aperçu temps réel)"), "cli"),
+                 (t("sd.cpp — serveur résident (rapide, sans aperçu)"), "server"),
+                 (t("ComfyUI (Krea 2 INT8, LoRA natif)"), "comfyui")],
                 value=settings.engine_mode(), label="Moteur")
-            gr.Markdown(_comfy_status())
-            with gr.Row():
-                comfy_install = gr.Button("⬇️ Installer / mettre à jour ComfyUI",
-                                          size="sm")
-            comfy_log = gr.Textbox(label="Installation ComfyUI", lines=8,
-                                   visible=False)
+            gr.Markdown("---")
             gr.Markdown(
-                "**Accélération par cache** — réutilise des calculs entre les pas "
-                "(`caching.md`). Utile surtout > ~10 pas ; sur les modèles distillés "
-                "(4–8 pas) gain faible + artefacts possibles. Laisser désactivé "
+                "**Accélération par cache** *(sd.cpp uniquement)* — réutilise des "
+                "calculs entre pas (`caching.md`). Utile surtout > ~10 pas ; sur "
+                "les modèles distillés (4–8 pas) gain faible. Laisser désactivé "
                 "en général.")
             with gr.Row():
                 cache_mode = gr.Dropdown(
@@ -192,6 +187,23 @@ def build_settings_tab():
                 cache_opt = gr.Textbox(
                     value=prefs.get("cache_option", ""),
                     label="Option (vide = défauts)", placeholder="ex. threshold=0.2")
+
+        # ------------------------------------------------------------------ #
+        #  ComfyUI : TOUT le spécifique backend PyTorch, séparé de sd.cpp
+        # ------------------------------------------------------------------ #
+        with gr.Accordion("🧩 ComfyUI (backend PyTorch — avancé)", open=False):
+            gr.Markdown(
+                "Backend PyTorch séparé, **installé une fois** dans `comfyui/` "
+                "(~4–6 Go). Nécessaire pour **Krea 2 INT8 / ConvRot**. Pour "
+                "l'utiliser : installez-le ci-dessous, puis choisissez **ComfyUI** "
+                "dans *Moteur d'inférence*. Repli auto sur sd.cpp s'il n'est pas "
+                "prêt.")
+            comfy_status_md = gr.Markdown(_comfy_status())
+            with gr.Row():
+                comfy_install = gr.Button("⬇️ Installer / mettre à jour ComfyUI",
+                                          size="sm")
+            comfy_log = gr.Textbox(label="Sortie d'installation", lines=8,
+                                   visible=False)
 
         # ------------------------------------------------------------------ #
         #  Réseau & comptes

@@ -290,27 +290,39 @@ tells the resident server to re-scan (hot when the build supports it, otherwise 
 one-time reload on the next generation).
 
 ### ComfyUI backend (experimental)
-**Settings → 🚀 Engine → ComfyUI** drives a resident **ComfyUI** process in the
-background over its HTTP API, instead of stable-diffusion.cpp. Why bother: some
-models only run in ComfyUI — notably **Krea 2 Turbo** and its exotic quant/edit
-variants — and ComfyUI has fuller native LoRA support. It runs the project's
-**exact GGUF files** through the [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF)
-node, so no re-download.
+The Settings tab keeps sd.cpp and ComfyUI **clearly separated**:
+- **Settings → 🚀 Engine** — pick the engine: *sd.cpp one-shot* (default),
+  *sd.cpp resident server*, or *ComfyUI*. sd.cpp's cache acceleration lives here.
+- **Settings → 🧩 ComfyUI** — everything ComfyUI-specific: the **Install / update**
+  button and its status. Nothing sd.cpp here.
 
-Install it once with the **Install / update ComfyUI** button in Settings (or
-`python scripts/get_comfyui.py`): it clones ComfyUI + ComfyUI-GGUF into
-`comfyui/`, installs PyTorch CUDA, and writes an `extra_model_paths.yaml` so
-ComfyUI sees the project's `models/` and `loras/`. It's heavier than sd.cpp
-(~4–6 GB) — hence off by default. If ComfyUI can't start, generation **falls
-back automatically** to sd.cpp.
+Choosing **ComfyUI** drives a resident **ComfyUI** process in the background over
+its HTTP API instead of stable-diffusion.cpp. Why bother: some models only run in
+ComfyUI — notably **Krea 2 in INT8** (real INT8 tensor-core speedup on RTX 30xx,
+which sd.cpp can't load) — and ComfyUI has fuller native LoRA support. It runs the
+project's **exact GGUF files** through the
+[ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) node, so no re-download.
+
+**Install once** with the button in *🧩 ComfyUI* (or `python scripts/get_comfyui.py`):
+it clones ComfyUI + ComfyUI-GGUF (+ ComfyUI-INT8-Fast for ConvRot) into `comfyui/`,
+installs PyTorch CUDA, and writes an `extra_model_paths.yaml` so ComfyUI sees the
+project's `models/` and `loras/`. It's heavier than sd.cpp (~4–6 GB) — hence off by
+default. If ComfyUI can't start, generation **falls back automatically** to sd.cpp
+(except for INT8 models, which sd.cpp cannot read — there you get a clear message).
+
+**Krea 2 INT8** ships as two dedicated tabs (visible once you're on the ComfyUI
+engine): **🧊 Krea 2 INT8** (standard loader, no Triton — start here) and
+**🧊 Krea 2 INT8 ConvRot** (better quality, needs the INT8-Fast node + Triton —
+fragile on Windows). Best on an RTX 3060; the 2080 Ti is unverified, the 1080 can't.
 
 Each model family maps to a workflow template in
 `config/comfyui_workflows/<family>.json` (API format) whose `%TOKENS%`
 (`%UNET%`, `%CLIP%`, `%VAE%`, `%SEED%`, …) the engine patches per generation.
-`flux2.json` and `krea2.json` ship as best-effort scaffolds. **The reliable way**
-to get a family working: build a workflow that generates in the ComfyUI UI, use
-**Save (API Format)**, put the `%TOKENS%` back where the model/prompt/seed go,
-and drop it in as `<family>.json`. Live preview is not available in this mode.
+The bundled `flux2.json`, `krea2.json`, `krea2int8.json` and `krea2convrot.json`
+are best-effort scaffolds. **The reliable way** to get a family working: build a
+workflow that generates in the ComfyUI UI, use **Save (API Format)**, put the
+`%TOKENS%` back where the model/prompt/seed go, and drop it in as `<family>.json`.
+Live preview is not available in this mode.
 
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
@@ -439,10 +451,15 @@ resolved from your hardware; the downloader picks the closest matching file.
 - VAE — [`Comfy-Org/flux2-klein-9B`](https://huggingface.co/Comfy-Org/flux2-klein-9B) (`flux2-vae.safetensors`)
 - text encoder — [`unsloth/Qwen3-8B-GGUF`](https://huggingface.co/unsloth/Qwen3-8B-GGUF) (official Qwen3-8B, via `--llm`, offloaded to RAM)
 
-**Krea 2 Turbo** (family `krea2`)
+**Krea 2 Turbo** (family `krea2`, sd.cpp)
 - diffusion — [`realrebelai/KREA-2_GGUFs`](https://huggingface.co/realrebelai/KREA-2_GGUFs) (`TURBO/…`, 8 steps, CFG 1.0)
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
+
+**Krea 2 INT8 / ConvRot** (families `krea2int8` / `krea2convrot`, **ComfyUI only**)
+- diffusion — [`Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8`](https://huggingface.co/Winnougan/Krea-2-Base-Turbo-NVFP4-FP8-INT8) (`Krea2_Turbo_int8mixed` / `…convrot_int8mixed`)
+- text encoder — same repo, `Text Encoder/qwen3vl_4b_int8…` (INT8 / ConvRot variant)
+- VAE — [`Comfy-Org/Qwen-Image_ComfyUI`](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI) (`qwen_image_vae.safetensors`) — **note: different VAE/encoder than the GGUF Krea 2**
 
 **Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
 
