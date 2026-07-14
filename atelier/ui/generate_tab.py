@@ -619,17 +619,22 @@ def build_generative_tab(model_id: str, title: str,
                     mt = step_re.search(line)
                     if mt:
                         cur = min(int(mt.group(1)), total)
-                        progress(0.05 + 0.9 * cur / total,
+                        # Échantillonnage : 35 % → 95 % (le chargement occupe 0–35 %).
+                        progress(0.35 + 0.6 * cur / total,
                                  desc=f"étape {cur}/{total}")
-                    # Barre de progression sd.cpp : on l'exploite pour le spinner
-                    # mais on ne l'ajoute PAS au journal (sinon flood → clignote).
+                    # Barre de progression sd.cpp : on l'exploite pour la barre
+                    # (mise à jour EN DIRECT par Gradio, sans re-render → pas de
+                    # flicker) mais on ne l'ajoute PAS au journal (sinon flood).
                     is_bar = bool(_PROGRESS_BAR.search(line)) or "\x1b" in line
                     if is_bar and not mt:  # barre de CHARGEMENT (tenseurs)
                         lm = re.search(r"(\d+)\s*/\s*(\d+)", line)
                         if lm and int(lm.group(2)) > 0:
-                            progress(0.02 + 0.03 * int(lm.group(1))
-                                     / int(lm.group(2)),
-                                     desc="Chargement du modèle…")
+                            _cl, _tl = int(lm.group(1)), int(lm.group(2))
+                            # Course LARGE (2 %→33 %) + compteur qui défile : on
+                            # VOIT le modèle se charger vite (au lieu d'un sliver
+                            # figé à ~3 % avec un texte immobile).
+                            progress(0.02 + 0.31 * _cl / _tl,
+                                     desc=f"Chargement du modèle… {_cl}/{_tl}")
                     if not is_bar:
                         logs.append(line)
                 # Aperçu dans l'Image DÉDIÉE : nouvelle frame SEULEMENT si le
