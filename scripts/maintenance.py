@@ -41,7 +41,8 @@ OBSOLETE = [
 ]
 
 # Dossiers de données à NE JAMAIS toucher.
-PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git"}
+PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git",
+             "comfyui"}
 
 OK, WARN, ERR, INFO = "  [OK] ", "  [!] ", "  [X] ", "  [i] "
 _problems = 0

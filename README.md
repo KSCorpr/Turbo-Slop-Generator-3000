@@ -289,6 +289,29 @@ in `loras/`, click **↻ Refresh list** (LoRA panel) — it updates the dropdown
 tells the resident server to re-scan (hot when the build supports it, otherwise a
 one-time reload on the next generation).
 
+### ComfyUI backend (experimental)
+**Settings → 🚀 Engine → ComfyUI** drives a resident **ComfyUI** process in the
+background over its HTTP API, instead of stable-diffusion.cpp. Why bother: some
+models only run in ComfyUI — notably **Krea 2 Turbo** and its exotic quant/edit
+variants — and ComfyUI has fuller native LoRA support. It runs the project's
+**exact GGUF files** through the [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF)
+node, so no re-download.
+
+Install it once with the **Install / update ComfyUI** button in Settings (or
+`python scripts/get_comfyui.py`): it clones ComfyUI + ComfyUI-GGUF into
+`comfyui/`, installs PyTorch CUDA, and writes an `extra_model_paths.yaml` so
+ComfyUI sees the project's `models/` and `loras/`. It's heavier than sd.cpp
+(~4–6 GB) — hence off by default. If ComfyUI can't start, generation **falls
+back automatically** to sd.cpp.
+
+Each model family maps to a workflow template in
+`config/comfyui_workflows/<family>.json` (API format) whose `%TOKENS%`
+(`%UNET%`, `%CLIP%`, `%VAE%`, `%SEED%`, …) the engine patches per generation.
+`flux2.json` and `krea2.json` ship as best-effort scaffolds. **The reliable way**
+to get a family working: build a workflow that generates in the ComfyUI UI, use
+**Save (API Format)**, put the `%TOKENS%` back where the model/prompt/seed go,
+and drop it in as `<family>.json`. Live preview is not available in this mode.
+
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
 **English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved
