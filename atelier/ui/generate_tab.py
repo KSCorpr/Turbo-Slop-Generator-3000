@@ -202,7 +202,10 @@ def build_generative_tab(model_id: str, title: str,
                                 "sujet…) au lieu d'un point de départ. Nécessite "
                                 "un **LoRA d'édition Krea 2** — bouton d'installation "
                                 "1 clic ci-dessous — et un moteur sd.cpp à jour "
-                                "(`update-engine.bat`).")
+                                "(`update-engine.bat`). 💡 L'édition consomme plus "
+                                "de VRAM (tokens de référence) : sur **12 Go**, "
+                                "utilisez une quant **Q4_K_M** (Réglages → manuels) "
+                                "si vous rencontrez un OOM.")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")
@@ -614,8 +617,21 @@ def build_generative_tab(model_id: str, title: str,
                 # Mode édition Ostris Edit (Krea 2) : l'image passe en référence
                 # de contexte (-r + mmproj vision), pas en img2img. Un LoRA
                 # d'édition doit être chargé pour que ça fasse quelque chose.
+                # La référence est RÉDUITE (≤ 832 px de côté long) : ses tokens
+                # s'ajoutent à la séquence du DiT, et une réf 1024² fait déborder
+                # la VRAM d'une carte 12 Go (OOM constaté sur RTX 3060 : buffer
+                # de calcul 2,5 Go + modèle Q5 8,4 Go). Le modèle est entraîné
+                # avec des réfs réduites : aucune perte réelle de qualité.
+                im = init_image
+                longest = max(im.size)
+                if longest > 832:
+                    from PIL import Image as _PI
+                    sc = 832 / longest
+                    nw = max(64, int(round(im.width * sc / 16)) * 16)
+                    nh = max(64, int(round(im.height * sc / 16)) * 16)
+                    im = im.convert("RGB").resize((nw, nh), _PI.LANCZOS)
                 rp = settings.TMP_DIR / "edit_ref1.png"
-                init_image.save(rp)
+                im.save(rp)
                 ref_paths.append(rp)
             elif init_image is not None:
                 init_path = settings.TMP_DIR / "i2i_init.png"
