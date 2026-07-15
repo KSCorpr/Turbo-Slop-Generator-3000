@@ -7,18 +7,13 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
-from . import comfyui, sdcpp, sdserver
+from . import sdcpp
 from .sdcpp import GenRequest
 
 
 def cancel() -> str:
-    """Annule la génération en cours (ComfyUI, serveur OU process sd-cli)."""
-    # En mode serveur/ComfyUI, on annule le job (le modèle reste chaud). On tente
-    # aussi côté CLI au cas où un process one-shot (PiD, upscale) tournerait.
-    comfy = comfyui.cancel_active()
-    msg = sdserver.cancel_active()
-    cli = sdcpp.cancel_active()
-    return comfy or msg or cli
+    """Annule la génération en cours (process sd-cli)."""
+    return sdcpp.cancel_active()
 
 
 def list_custom_models() -> list[str]:
@@ -37,13 +32,6 @@ def custom_path(name: str | None) -> Path | None:
         return None
     p = settings.CUSTOM_DIR / name
     return p if p.is_file() else None
-
-
-def refresh_server_loras() -> str:
-    """Rafraîchit le cache LoRA du serveur résident. No-op hors mode serveur."""
-    if not settings.server_enabled():
-        return ""
-    return sdserver.refresh_loras()
 
 
 def list_loras() -> list[str]:
@@ -88,16 +76,6 @@ def _lora_file(name: str) -> Path | None:
         if p.is_file():
             return p
     return None
-
-
-def _lora_specs(loras: list[tuple[str, float]]) -> list[tuple[Path, float]]:
-    """LoRA en (chemin, poids) pour le mode serveur (champ structuré, pas de tags)."""
-    out: list[tuple[Path, float]] = []
-    for name, weight in loras:
-        p = _lora_file(name)
-        if p is not None:
-            out.append((p, weight))
-    return out
 
 
 def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
@@ -152,10 +130,8 @@ def generate(
     log: Callable[[str], None] | None = None,
 ) -> list[Path]:
     prefs = settings.load_prefs()
-    use_comfy = settings.comfyui_enabled()
     sd_cli = settings.find_sd_cli()
-    # sd-cli reste requis pour le repli, sauf en mode ComfyUI pur (backend séparé).
-    if sd_cli is None and not use_comfy:
+    if sd_cli is None:
         raise sdcpp.EngineError(
             "Binaire sd-cli introuvable. Lancez l'installation "
             "(install.bat) ou « python scripts/get_sdcpp.py ».")
@@ -163,13 +139,6 @@ def generate(
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
-
-    # Modèles marqués « comfyui » (ex. Krea 2 INT8/ConvRot) : fichiers ComfyUI que
-    # sd.cpp ne peut PAS charger. Message clair plutôt qu'un crash sd-cli obscur.
-    if "comfyui" in (model.tags or []) and not use_comfy:
-        raise sdcpp.EngineError(
-            f"« {model.name} » nécessite le moteur ComfyUI. Activez-le dans "
-            "Réglages → 🚀 Moteur → ComfyUI (installez-le d'abord si besoin).")
 
     # Famille « checkpoint complet » : un seul fichier via -m.
     has_full = any(c.role == "model" for c in model.components)
@@ -233,17 +202,9 @@ def generate(
         # d'OOM quand DiT + VAE atterrissent sur la même carte.
         flags = {**flags, "offload_to_cpu": False, "vae_tiling": True}
 
-    # Serveur/ComfyUI : LoRA en champ structuré, prompt SANS tags. Mode CLI : LoRA
-    # via tags <lora:…> dans le prompt + --lora-model-dir.
-    use_server = settings.server_enabled()
-    if use_server or use_comfy:
-        final_prompt = prompt or ""
-        lora_dir = None
-        lora_specs = _lora_specs(loras)
-    else:
-        final_prompt = _apply_loras(prompt, loras)
-        lora_dir = settings.LORA_DIR if loras else None
-        lora_specs = []
+    # LoRA : via tags <lora:…> dans le prompt + --lora-model-dir (mode sd-cli).
+    final_prompt = _apply_loras(prompt, loras)
+    lora_dir = settings.LORA_DIR if loras else None
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
@@ -257,7 +218,7 @@ def generate(
         flow_shift=float(flow_shift or 0.0),
         width=width, height=height, seed=seed, batch_count=batch_count,
         init_image=init_image, strength=strength, ref_image=ref_image,
-        lora_dir=lora_dir, lora_specs=lora_specs, preview_path=preview_path,
+        lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
@@ -265,56 +226,9 @@ def generate(
         cache_option=prefs.get("cache_option") or "",
     )
     out = sdcpp.unique_output(model.family)
-
-    def _fallback_cli(reason: str) -> list[Path]:
-        """Repli transparent sur sd-cli (LoRA ré-appliqués via le prompt)."""
-        if sd_cli is None:
-            raise sdcpp.EngineError(
-                f"{reason} — et aucun sd-cli disponible pour le repli. "
-                "Installez le moteur sd.cpp (install.bat) ou vérifiez ComfyUI.")
-        if log:
-            log(f"⚠️ {reason} Repli sur sd-cli.")
-        req.prompt = _apply_loras(prompt, loras)
-        req.lora_dir = settings.LORA_DIR if loras else None
-        req.lora_specs = []
-        cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
-        return sdcpp.collect_outputs(out, batch_count)
-
-    if use_comfy:
-        try:
-            paths = comfyui.generate(req, out, family=model.family,
-                                     gpu_index=gpu_index, log=log)
-        except comfyui.ComfyUnavailable as exc:
-            # Modèle ComfyUI-only (INT8) : le repli sd.cpp est INUTILE (sd.cpp ne
-            # lit pas l'INT8, dtype I8). Message clair plutôt qu'une erreur obscure.
-            if "comfyui" in (model.tags or []):
-                raise sdcpp.EngineError(
-                    f"ComfyUI n'a pas pu démarrer : {exc}\n"
-                    "Ce modèle ne fonctionne QU'AVEC ComfyUI (sd.cpp ne sait pas "
-                    "lire l'INT8). Vérifiez l'installation : supprimez le dossier "
-                    "comfyui/ puis relancez « Installer / mettre à jour ComfyUI » "
-                    "dans les Réglages.")
-            paths = _fallback_cli(f"ComfyUI indisponible ({exc}).")
-    elif use_server:
-        try:
-            paths = sdserver.generate(req, out, gpu_index=gpu_index,
-                                      all_gpus=all_gpus, log=log)
-        except sdserver.ServerUnavailable as exc:
-            # Le serveur n'a pas pu démarrer / répondre : repli transparent sur
-            # sd-cli (on ré-applique les LoRA via le prompt pour le CLI).
-            if log:
-                log(f"⚠️ Mode serveur indisponible ({exc}). Repli sur sd-cli.")
-            req.prompt = _apply_loras(prompt, loras)
-            req.lora_dir = settings.LORA_DIR if loras else None
-            req.lora_specs = []
-            cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-            sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
-            paths = sdcpp.collect_outputs(out, batch_count)
-    else:
-        cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
-        paths = sdcpp.collect_outputs(out, batch_count)
+    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+    sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
+    paths = sdcpp.collect_outputs(out, batch_count)
 
     if save_prompt and paths:
         _write_prompt_sidecars(paths, req, model, int(seed))

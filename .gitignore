@@ -26,6 +26,3 @@ __pycache__/
 # Divers
 *.log
 .DS_Store
-
-# Backend ComfyUI cloné localement par scripts/get_comfyui.py (non versionné)
-comfyui/

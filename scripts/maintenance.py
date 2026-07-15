@@ -38,7 +38,21 @@ OBSOLETE = [
     "atelier/ui/creative_tab.py",          # ancien onglet Upscale (retiré)
     "scripts/tools/run_creative_upscale.py",  # ancien runner SDXL+ControlNet
     "atelier/ui/video_tab.py",             # ancien onglet Vidéo LTX (retiré)
+    # Backend ComfyUI + mode serveur (retirés : un seul moteur, sd-cli + aperçu).
+    "atelier/engine/comfyui.py",
+    "atelier/engine/sdserver.py",
+    "scripts/get_comfyui.py",
+    "config/comfyui_workflows/flux2.json",
+    "config/comfyui_workflows/krea2.json",
+    "config/comfyui_workflows/krea2int8.json",
+    "config/comfyui_workflows/krea2convrot.json",
 ]
+
+# Dossiers devenus obsolètes : supprimés s'ils sont VIDES après le nettoyage
+# ci-dessus ; signalés (avec leur taille) s'ils contiennent encore des données
+# volumineuses à la charge de l'utilisateur (ex. l'installation ComfyUI).
+OBSOLETE_DIRS = ["config/comfyui_workflows"]
+LEFTOVER_HEAVY = ["comfyui"]   # installation ComfyUI (retirée) : ~4–6 Go
 
 # Dossiers de données à NE JAMAIS toucher.
 PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git",
@@ -85,6 +99,21 @@ def remove_obsolete() -> None:
                 found = True
             except OSError as exc:
                 _warn(f"impossible de supprimer {rel} : {exc}")
+    for rel in OBSOLETE_DIRS:
+        p = ROOT / rel
+        if p.is_dir():
+            try:
+                p.rmdir()   # seulement s'il est vide
+                print(OK + f"dossier vide supprimé : {rel}")
+                found = True
+            except OSError:
+                pass
+    for rel in LEFTOVER_HEAVY:
+        p = ROOT / rel
+        if p.is_dir():
+            print(INFO + f"le dossier {rel}/ ({_human(_dir_size(p))}) date d'une "
+                  "ancienne version (backend ComfyUI, retiré) — vous pouvez le "
+                  "supprimer pour libérer l'espace.")
     if not found:
         print(OK + "aucun fichier obsolète (propre).")
 

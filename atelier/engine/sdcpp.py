@@ -70,10 +70,6 @@ class GenRequest:
     vae_format: str = ""               # --vae-format (ex. "flux" pour PiD)
     rng: str = ""                      # --rng (ex. "cpu" pour PiD)
     lora_dir: Path | None = None       # --lora-model-dir
-    # LoRA structurés (chemin, poids) — utilisés UNIQUEMENT par le mode serveur,
-    # qui refuse les tags <lora:…> dans le prompt. En mode CLI, les LoRA passent
-    # par le prompt (_apply_loras) + lora_dir ; ce champ reste vide.
-    lora_specs: list[tuple[Path, float]] = field(default_factory=list)
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None

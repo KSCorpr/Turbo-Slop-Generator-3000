@@ -58,18 +58,6 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
-    # EXPÉRIMENTAL : moteur en mode « serveur résident ». Au lieu de relancer
-    # sd-cli (qui recharge le modèle du disque) à chaque image, on garde un
-    # sd-server chargé en mémoire → itération quasi instantanée. Un seul modèle
-    # résident à la fois : changer de modèle relance le serveur. False = mode
-    # sd-cli classique (comportement historique, aucune régression).
-    "use_sd_server": False,
-    "sd_server_port": 7861,     # port local (127.0.0.1) du sd-server
-    # Moteur d'inférence : "cli" (sd-cli one-shot) | "server" (sd-server résident)
-    # | "comfyui" (backend PyTorch ComfyUI piloté par API). EXPÉRIMENTAL pour
-    # ComfyUI. Vide/absent = déduit de use_sd_server (rétro-compat).
-    "engine": "",
-    "comfyui_port": 8188,       # port local (127.0.0.1) du serveur ComfyUI
 }
 
 
@@ -116,56 +104,6 @@ def find_sd_cli() -> Path | None:
         if found:
             return Path(found)
     return None
-
-
-def sd_server_names() -> list[str]:
-    """Noms possibles du binaire serveur stable-diffusion.cpp."""
-    if platform.system() == "Windows":
-        return ["sd-server.exe"]
-    return ["sd-server"]
-
-
-def find_sd_server() -> Path | None:
-    """Localise sd-server (livré dans la même archive que sd-cli)."""
-    for name in sd_server_names():
-        for candidate in BIN_DIR.rglob(name):
-            if candidate.is_file():
-                return candidate
-    for name in sd_server_names():
-        found = shutil.which(name)
-        if found:
-            return Path(found)
-    return None
-
-
-def engine_mode() -> str:
-    """Moteur choisi : "cli" | "server" | "comfyui". Rétro-compatible avec
-    l'ancien booléen use_sd_server (avant l'introduction du champ `engine`)."""
-    p = load_prefs()
-    eng = p.get("engine")
-    if eng in ("cli", "server", "comfyui"):
-        return eng
-    return "server" if p.get("use_sd_server") else "cli"
-
-
-def server_enabled() -> bool:
-    """Vrai si le moteur serveur sd.cpp est choisi ET que le binaire existe."""
-    return engine_mode() == "server" and find_sd_server() is not None
-
-
-# --- localisation de ComfyUI (backend PyTorch, cloné par get_comfyui.py) -----
-COMFYUI_DIR = ROOT / "comfyui"
-
-
-def find_comfyui() -> Path | None:
-    """Répertoire d'installation de ComfyUI (contient main.py), ou None."""
-    main = COMFYUI_DIR / "main.py"
-    return COMFYUI_DIR if main.is_file() else None
-
-
-def comfyui_enabled() -> bool:
-    """Vrai si le moteur ComfyUI est choisi ET que l'installation existe."""
-    return engine_mode() == "comfyui" and find_comfyui() is not None
 
 
 def model_repo_dir(repo: str) -> Path:

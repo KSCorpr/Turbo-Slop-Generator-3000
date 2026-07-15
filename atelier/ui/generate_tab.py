@@ -371,6 +371,11 @@ def build_generative_tab(model_id: str, title: str,
             # place) et non fusionné dans la galerie : mettre à jour une Gallery
             # à chaque frame reconstruit toute la grille et fait « clignoter ».
             with gr.Column(scale=4):
+                # Ligne de statut TEXTE (chargement N/M, étape k/n) : mise à jour
+                # « valeur seule », donc AUCUN overlay sur l'aperçu — c'est
+                # l'overlay de gr.Progress (la barre « étape 1/8 » par-dessus
+                # l'image) qui faisait clignoter l'aperçu entre deux pas.
+                status_md = gr.Markdown("")
                 preview_img = gr.Image(
                     label="Aperçu temps réel", visible=False, height=560,
                     format="png", show_download_button=False,
@@ -403,11 +408,7 @@ def build_generative_tab(model_id: str, title: str,
         # ----- Comportements -----
         def refresh_loras():
             choices = gen_engine.list_loras()
-            # En mode serveur, on prévient aussi le serveur résident du nouveau
-            # fichier (sinon il ne le voit qu'au prochain redémarrage).
-            msg = gen_engine.refresh_server_loras()
-            return (gr.update(choices=choices), gr.update(choices=choices),
-                    msg or "")
+            return (gr.update(choices=choices), gr.update(choices=choices), "")
 
         refresh_lora.click(refresh_loras, outputs=[lora1, lora2, civitai_msg])
 
@@ -441,7 +442,6 @@ def build_generative_tab(model_id: str, title: str,
                     name = downloader.download_lora(d["edit_lora"])
                 except Exception as exc:  # noqa: BLE001
                     raise gr.Error(str(exc))
-                gen_engine.refresh_server_loras()
                 choices = gen_engine.list_loras()
                 return (gr.update(choices=choices, value=name),
                         gr.update(choices=choices),
@@ -555,8 +555,11 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc, pid_hires,
-                        progress=gr.Progress()):
+                        custom_diff, custom_vae, custom_enc, pid_hires):
+            # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
+            # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
+            # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
+            # progression passe par la ligne de statut texte (status_md).
             import queue
             import threading
             import time
@@ -657,12 +660,13 @@ def build_generative_tab(model_id: str, title: str,
             last_mtime = None
             last_emit = 0.0
             last_log_len = 0
-            progress(0.02, desc="Chargement du modèle…")
+            status = t("⏳ Chargement du modèle…")
+            last_status = ""
             # UNE seule bascule d'affichage : aperçu VISIBLE, galerie MASQUÉE.
-            # Ensuite, par frame, on ne change QUE la valeur de l'aperçu → aucun
-            # changement de mise en page → pas de reflow/flicker de toute la page.
-            yield (gr.update(visible=True, value=None), gr.update(visible=False),
-                   "", gr.update(), gr.update())
+            # Ensuite, par frame, on ne change QUE des VALEURS (statut texte,
+            # image de l'aperçu) → aucun overlay, aucun re-montage, aucun reflow.
+            yield (status, gr.update(visible=True, value=None),
+                   gr.update(visible=False), "", gr.update(), gr.update())
             while True:
                 try:
                     line = q.get(timeout=0.3)
@@ -674,22 +678,16 @@ def build_generative_tab(model_id: str, title: str,
                     mt = step_re.search(line)
                     if mt:
                         cur = min(int(mt.group(1)), total)
-                        # Échantillonnage : 35 % → 95 % (le chargement occupe 0–35 %).
-                        progress(0.35 + 0.6 * cur / total,
-                                 desc=f"étape {cur}/{total}")
-                    # Barre de progression sd.cpp : on l'exploite pour la barre
-                    # (mise à jour EN DIRECT par Gradio, sans re-render → pas de
-                    # flicker) mais on ne l'ajoute PAS au journal (sinon flood).
+                        status = t("🎨 Étape {cur}/{total}").format(
+                            cur=cur, total=total)
+                    # Barres de progression sd.cpp : converties en statut texte,
+                    # jamais ajoutées au journal (flood) ni affichées en overlay.
                     is_bar = bool(_PROGRESS_BAR.search(line)) or "\x1b" in line
                     if is_bar and not mt:  # barre de CHARGEMENT (tenseurs)
                         lm = re.search(r"(\d+)\s*/\s*(\d+)", line)
                         if lm and int(lm.group(2)) > 0:
-                            _cl, _tl = int(lm.group(1)), int(lm.group(2))
-                            # Course LARGE (2 %→33 %) + compteur qui défile : on
-                            # VOIT le modèle se charger vite (au lieu d'un sliver
-                            # figé à ~3 % avec un texte immobile).
-                            progress(0.02 + 0.31 * _cl / _tl,
-                                     desc=f"Chargement du modèle… {_cl}/{_tl}")
+                            status = t("⏳ Chargement du modèle… {c}/{t}").format(
+                                c=lm.group(1), t=lm.group(2))
                     if not is_bar:
                         logs.append(line)
                 # Aperçu dans l'Image DÉDIÉE : nouvelle frame SEULEMENT si le
@@ -711,22 +709,25 @@ def build_generative_tab(model_id: str, title: str,
                             new_prev = True
                     except (OSError, ValueError):
                         pass
-                # On n'émet QUE s'il y a du NOUVEAU : une frame d'aperçu (tout de
-                # suite), ou une vraie ligne de journal (au plus ~1x/s). Sinon, on
-                # n'émet rien → aucun re-render inutile (donc pas de clignotement,
-                # notamment pendant le chargement où rien ne change à l'écran).
+                # On n'émet QUE s'il y a du NOUVEAU : frame d'aperçu (tout de
+                # suite), statut qui change (≤4x/s, ex. compteur de chargement),
+                # ou vraie ligne de journal (≤1x/s). Sinon rien → zéro re-render.
                 now = time.time()
                 log_changed = len(logs) != last_log_len
-                if new_prev or (log_changed and now - last_emit >= 1.0):
+                status_changed = status != last_status
+                if new_prev or (status_changed and now - last_emit >= 0.25) \
+                        or (log_changed and now - last_emit >= 1.0):
                     last_emit = now
                     last_log_len = len(logs)
-                    yield (prev, gr.update(), "\n".join(logs[-400:]),
-                           gr.update(), gr.update())
+                    last_status = status
+                    yield (status, prev, gr.update(),
+                           "\n".join(logs[-400:]), gr.update(), gr.update())
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
                 # Fin (erreur) : on remet l'affichage normal (galerie visible).
-                yield (gr.update(visible=False), gr.update(visible=True),
+                yield (t("❌ Erreur — voir le journal ci-dessous."),
+                       gr.update(visible=False), gr.update(visible=True),
                        "\n".join(logs), gr.update(), gr.update())
                 return
             paths = state.get("outs", [])
@@ -743,8 +744,9 @@ def build_generative_tab(model_id: str, title: str,
                     for i, p in enumerate(paths):
                         logs.append(f"\n🚀 Décodage PiD ×4 — image "
                                     f"{i + 1}/{len(paths)}…")
-                        progress(0.95, desc=f"PiD ×4 {i + 1}/{len(paths)}")
-                        yield (gr.update(), gr.update(),
+                        yield (t("🚀 Décodage PiD ×4 — image {i}/{n}…").format(
+                                   i=i + 1, n=len(paths)),
+                               gr.update(), gr.update(),
                                "\n".join(logs[-400:]), gr.update(), gr.update())
                         try:
                             out = gen_engine.pid_decode(p, prompt=full_prompt,
@@ -756,12 +758,12 @@ def build_generative_tab(model_id: str, title: str,
                             hi.append(p)
                     paths = hi
 
-            progress(1.0, desc="Terminé")
             seeds = [base_seed + i for i in range(len(paths))]
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
             # Fin : on masque l'aperçu et on RÉAFFICHE la galerie avec les résultats
             # (elle avait été masquée au début → il FAUT visible=True ici).
-            yield (gr.update(visible=False, value=None),
+            yield (t("✅ Terminé — {n} image(s).").format(n=len(paths)),
+                   gr.update(visible=False, value=None),
                    gr.update(value=items, visible=True),
                    "\n".join(logs), paths, seeds)
 
@@ -772,7 +774,8 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc, pid_hires],
-            outputs=[preview_img, gallery, logbox, last_paths, last_seeds],
+            outputs=[status_md, preview_img, gallery, logbox,
+                     last_paths, last_seeds],
         )
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
 
