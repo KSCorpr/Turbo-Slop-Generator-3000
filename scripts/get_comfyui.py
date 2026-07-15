@@ -87,6 +87,38 @@ turbo_slop:
     print("extra_model_paths.yaml écrit (models/ + loras/).")
 
 
+def _fix_torch_stack() -> None:
+    """Réaligne torch/torchvision/torchaudio APRÈS les requirements ComfyUI.
+
+    Le requirements.txt de ComfyUI liste `torchaudio` : pip l'installe depuis
+    PyPI en DERNIÈRE version (build CPU), qui ne correspond pas au torch CUDA
+    épinglé par ensure_torch_cuda. Au lancement, la DLL de torchaudio ne trouve
+    pas les symboles de torch → « WinError 127 : procédure introuvable » et
+    ComfyUI meurt à l'import. On répare : torch CUDA d'abord (au cas où les
+    requirements l'auraient remplacé), puis torchaudio à la MÊME version depuis
+    le MÊME index CUDA."""
+    from _torch_setup import _torch_install_args, ensure_torch_cuda, pin_numpy
+    print("\n• Réalignement torch / torchaudio (compat ComfyUI)…")
+    ensure_torch_cuda()   # no-op si torch CUDA est déjà bon
+    args = _torch_install_args()
+    pinned = next((a.split("==", 1)[1] for a in args if a.startswith("torch==")),
+                  None)
+    audio = f"torchaudio=={pinned}" if pinned else "torchaudio"
+    index = args[args.index("--index-url") + 1] if "--index-url" in args else None
+    subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
+                     "torchaudio"])
+    cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", audio]
+    if index:
+        cmd += ["--index-url", index]
+    try:
+        sh(cmd)
+        print(f"  [OK] {audio} aligné sur torch.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [!] torchaudio non réaligné ({exc}) — ComfyUI risque de "
+              "replanter à l'import.")
+    pin_numpy()   # les requirements peuvent réintroduire NumPy 2 → on re-fige
+
+
 def _install_int8_node() -> None:
     """Nœud ComfyUI-INT8-Fast (Krea 2 ConvRot) + Triton. Best-effort : un échec
     ne bloque PAS l'installation — le niveau INT8 « simple » (loader standard)
@@ -118,10 +150,11 @@ def _verify() -> None:
     """Go/no-go clair : ComfyUI s'importe-t-il vraiment (comfy + torch) ? Utilise
     la MÊME injection de sys.path que le lancement (indispensable en Python
     embarqué), donc reflète le comportement réel au démarrage du moteur."""
-    print("\n• Vérification (import comfy + torch)…")
+    print("\n• Vérification (import comfy + torch + torchaudio)…")
     boot = ("import sys; sys.path.insert(0, r'{d}'); "
-            "import comfy.options; import torch; "
+            "import comfy.options; import torch; import torchaudio; "
             "print('  [OK] comfy OK, torch', torch.__version__, "
+            "'/ torchaudio', torchaudio.__version__, "
             "('CUDA' if torch.cuda.is_available() else 'CPU (pas de GPU !)'))"
             ).format(d=str(COMFY_DIR))
     try:
@@ -160,6 +193,10 @@ def main() -> None:
         sh([sys.executable, "-m", "pip", "install", "gguf"])
 
     _install_int8_node()
+
+    # Toujours en DERNIER : les requirements (ComfyUI, GGUF, INT8) peuvent avoir
+    # désaccordé torch/torchaudio — cette étape a le dernier mot sur la pile torch.
+    _fix_torch_stack()
 
     write_extra_model_paths()
     _verify()
