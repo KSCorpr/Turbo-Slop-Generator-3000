@@ -98,6 +98,9 @@ base_models:
       height: 1024
       supports_negative: false
       edit: optional      # édition possible AVEC un LoRA d'édition (Ostris Edit)
+      # LoRA d'édition officiel, téléchargeable en 1 clic depuis l'onglet
+      # (bouton du Mode édition). Premier .safetensors du dépôt.
+      edit_lora: ostris/krea2_turbo_style_reference
     presets:
       # Aligné sur docs/krea2.md : euler + scheduler = défaut moteur, cfg 1.0.
       # La doc ne fixe pas de pas ; on garde le 8 pas « officiel » du Turbo distillé.

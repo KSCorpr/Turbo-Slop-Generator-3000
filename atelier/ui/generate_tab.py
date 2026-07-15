@@ -200,10 +200,9 @@ def build_generative_tab(model_id: str, title: str,
                                 "✏️ **Ou : Mode édition (Ostris Edit)** — l'image "
                                 "devient une **référence de contexte** (style, "
                                 "sujet…) au lieu d'un point de départ. Nécessite "
-                                "un **LoRA d'édition Krea 2** (ex. dépôt HF "
-                                "`ostris/krea2_turbo_style_reference`, à ajouter "
-                                "dans le panneau LoRA) et un moteur sd.cpp à "
-                                "jour (`update-engine.bat`).")
+                                "un **LoRA d'édition Krea 2** — bouton d'installation "
+                                "1 clic ci-dessous — et un moteur sd.cpp à jour "
+                                "(`update-engine.bat`).")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")
@@ -223,6 +222,11 @@ def build_generative_tab(model_id: str, title: str,
                         edit_mode = gr.Checkbox(
                             value=False,
                             label="✏️ Mode édition (LoRA d'édition requis)")
+                        if d.get("edit_lora"):
+                            edit_lora_btn = gr.Button(
+                                "⬇️ Installer le LoRA d'édition officiel (1 clic)",
+                                size="sm")
+                            edit_lora_msg = gr.Markdown("")
                     else:
                         edit_mode = gr.State(False)
                     if is_edit:
@@ -427,6 +431,29 @@ def build_generative_tab(model_id: str, title: str,
 
         civitai_btn.click(_civitai_import, inputs=[civitai_ref],
                           outputs=[lora1, lora2, civitai_msg])
+
+        # LoRA d'édition officiel (Mode édition) : téléchargé depuis le dépôt HF
+        # déclaré par le catalogue (defaults.edit_lora), sélectionné en LoRA 1
+        # (poids 1.0) et Mode édition coché — prêt à générer.
+        if edit_optional and d.get("edit_lora"):
+            def _get_edit_lora():
+                try:
+                    name = downloader.download_lora(d["edit_lora"])
+                except Exception as exc:  # noqa: BLE001
+                    raise gr.Error(str(exc))
+                gen_engine.refresh_server_loras()
+                choices = gen_engine.list_loras()
+                return (gr.update(choices=choices, value=name),
+                        gr.update(choices=choices),
+                        gr.update(value=1.0),
+                        gr.update(value=True),
+                        t("✅ LoRA d'édition **{name}** installé, sélectionné "
+                          "(LoRA 1) et Mode édition activé. Chargez une image "
+                          "et décrivez le résultat voulu.").format(name=name))
+
+            edit_lora_btn.click(_get_edit_lora,
+                                outputs=[lora1, lora2, lora1_w, edit_mode,
+                                         edit_lora_msg])
 
         def _refresh_custom():
             c = gen_engine.list_custom_models()
