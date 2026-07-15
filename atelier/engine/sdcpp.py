@@ -45,6 +45,9 @@ class GenRequest:
     vae: Path | None = None
     model_path: Path | None = None        # checkpoint complet -> -m
     text_encoder: Path | None = None       # --llm (modèles à encodeur LLM)
+    # --llm_vision : projecteur vision (mmproj) de l'encodeur — permet à
+    # Qwen3-VL de « voir » l'image de référence (édition Krea 2 / Ostris Edit).
+    llm_vision: Path | None = None
     t5xxl: Path | None = None              # --t5xxl (FLUX.1, etc.)
     clip_l: Path | None = None             # --clip_l
     uncond_model: Path | None = None
@@ -117,7 +120,8 @@ def _ref_list(ref) -> list[Path]:
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
-             req.t5xxl, req.clip_l, req.uncond_model, req.init_image, *refs)
+             req.llm_vision, req.t5xxl, req.clip_l, req.uncond_model,
+             req.init_image, *refs)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
     if req.model_path:
@@ -133,6 +137,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
             cmd += ["--vae", str(req.vae)]
         if req.text_encoder:
             cmd += ["--llm", str(req.text_encoder)]
+        if req.llm_vision:
+            cmd += ["--llm_vision", str(req.llm_vision)]
         if req.t5xxl:
             cmd += ["--t5xxl", str(req.t5xxl)]
         if req.clip_l:

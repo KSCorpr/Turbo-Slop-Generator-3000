@@ -118,6 +118,14 @@ The accordion adapts to the model family:
   strength slider — editing is prompt-driven. Output aspect follows your image.
   An **🧩 Outpaint** slider (experimental) extends the canvas and lets the model
   fill the new borders — describe the extension in the prompt.
+- **Krea 2 Turbo — ✏️ Edit mode (Ostris Edit)** — check **Mode édition** to pass
+  the image as a **context reference** (style transfer, subject reference, edits)
+  instead of an img2img starting point. This requires a **Krea 2 edit LoRA**
+  (e.g. HF repo [`ostris/krea2_turbo_style_reference`](https://huggingface.co/ostris/krea2_turbo_style_reference) —
+  add it via the LoRA panel) and a **recent sd.cpp engine** (`update-engine.bat`;
+  needs the `Krea2OstrisEdit` + `--llm_vision` support from July 2026). The
+  Qwen3-VL **vision projector (mmproj)** downloads automatically with the model
+  and is only loaded in edit mode.
 - **Other models (img2img)** — load a **reference / starting image** and set the
   **transformation strength** — low (0.2–0.4) keeps the reference's structure,
   high (0.7–1.0) reinvents it.

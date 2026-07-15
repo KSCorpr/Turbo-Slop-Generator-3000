@@ -44,6 +44,7 @@ base_models:
       width: 1024
       height: 1024
       supports_negative: false
+      edit: full          # modèle d'édition natif : UI « images de référence »
     presets:
       # Aligné sur docs/flux2.md : euler, cfg 1.0, 4 pas, scheduler = défaut moteur
       # (la doc ne force jamais de scheduler). Variantes = plus de pas seulement.
@@ -60,8 +61,12 @@ base_models:
     description: >
       Krea 2 « Turbo » (distillé) en GGUF — variante rapide (8 pas, CFG 1.0) du
       modèle Krea 2. Encodeur **Qwen3-VL-4B-Instruct officiel** (dépôt Qwen, via
-      --llm, déchargé en RAM) + VAE WAN 2.1. Photoréalisme, idéal sur 11–12 Go en
-      Q4_K_M.
+      --llm, déchargé en RAM) + VAE WAN 2.1. Photoréalisme. **Quant conseillée :
+      RTX 3060 12 Go → Q5_K_M ; 11 Go → Q4_K_M** (bouton 1-clic des Réglages).
+      **Édition d'image (Ostris Edit)** : chargez une image, cochez « Mode
+      édition » et sélectionnez un **LoRA d'édition Krea 2** (ex. dépôt HF
+      `ostris/krea2_turbo_style_reference`) — nécessite un moteur sd.cpp récent
+      (update-engine.bat).
     sources:
       diffusion:
         repo: realrebelai/KREA-2_GGUFs
@@ -70,10 +75,17 @@ base_models:
       text_encoder:
         # Encodeur officiel Qwen (doc krea2.md). Nom de fichier « Qwen3VL » sans
         # tiret ; pas de « * » en tête pour ne PAS matcher les fichiers mmproj-*
-        # (projecteur vision inutile ici). Quants dispo : Q4_K_M, Q8_0, F16.
+        # (le projecteur vision est un composant SÉPARÉ, ci-dessous).
         repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
         match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
         quantizable: true
+      text_encoder_vision:
+        # Projecteur vision (mmproj) : permet à Qwen3-VL de « voir » l'image de
+        # référence en mode ÉDITION (Krea 2 Ostris Edit, sd.cpp --llm_vision).
+        # Optionnel : le text-to-image marche sans ; chargé seulement en édition.
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
+        optional: true
       vae:
         repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
         match: "*wan_2.1_vae.safetensors"
@@ -85,6 +97,7 @@ base_models:
       width: 1024
       height: 1024
       supports_negative: false
+      edit: optional      # édition possible AVEC un LoRA d'édition (Ostris Edit)
     presets:
       # Aligné sur docs/krea2.md : euler + scheduler = défaut moteur, cfg 1.0.
       # La doc ne fixe pas de pas ; on garde le 8 pas « officiel » du Turbo distillé.

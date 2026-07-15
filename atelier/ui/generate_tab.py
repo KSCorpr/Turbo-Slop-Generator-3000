@@ -106,9 +106,15 @@ def build_generative_tab(model_id: str, title: str,
         ready = m is not None and registry.model_is_ready(m)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
-        # Famille « édition » (Flux.2/Kontext) : modification d'image via -r ;
-        # sinon img2img classique (-i + force de transformation).
-        is_edit = bool(m) and m.family == "flux2"
+        # Capacité d'édition, déclarée par le catalogue (defaults.edit) :
+        #   "full"     -> modèle d'édition natif (Flux.2) : UI images de référence ;
+        #   "optional" -> édition possible AVEC un LoRA d'édition (Krea 2 Ostris
+        #                 Edit) : UI img2img + case « Mode édition » ;
+        #   absent     -> img2img classique seulement.
+        _edit_kind = (m.defaults.get("edit") if m else None) or \
+            ("full" if (m and m.family == "flux2") else "")
+        is_edit = _edit_kind in (True, "full")
+        edit_optional = _edit_kind == "optional"
         status = (f"<span class='status-ok'>{t('● modèle prêt')}</span>" if ready
                   else "<span class='status-missing'>"
                        f"{t('○ à télécharger (onglet Catalogue de modèles)')}</span>")
@@ -189,6 +195,15 @@ def build_generative_tab(model_id: str, title: str,
                             "de transformation** — **bas (0.2–0.4)** = garde la "
                             "structure de la référence ; **haut (0.7–1.0)** = "
                             "réinventé. Le format de sortie s'adapte à votre image.")
+                        if edit_optional:
+                            gr.Markdown(
+                                "✏️ **Ou : Mode édition (Ostris Edit)** — l'image "
+                                "devient une **référence de contexte** (style, "
+                                "sujet…) au lieu d'un point de départ. Nécessite "
+                                "un **LoRA d'édition Krea 2** (ex. dépôt HF "
+                                "`ostris/krea2_turbo_style_reference`, à ajouter "
+                                "dans le panneau LoRA) et un moteur sd.cpp à "
+                                "jour (`update-engine.bat`).")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")
@@ -204,6 +219,12 @@ def build_generative_tab(model_id: str, title: str,
                     strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
                                          label="Force de transformation",
                                          visible=not is_edit)
+                    if edit_optional:
+                        edit_mode = gr.Checkbox(
+                            value=False,
+                            label="✏️ Mode édition (LoRA d'édition requis)")
+                    else:
+                        edit_mode = gr.State(False)
                     if is_edit:
                         outpaint = gr.Slider(
                             1.0, 2.0, value=1.0, step=0.1,
@@ -504,7 +525,7 @@ def build_generative_tab(model_id: str, title: str,
                           outputs=[sampler, schedule, steps, cfg])
 
         def do_generate(system_prompt, prompt, negative, init_image, ref_image2,
-                        ref_image3, strength, outpaint,
+                        ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc, pid_hires,
@@ -559,6 +580,13 @@ def build_generative_tab(model_id: str, title: str,
                         rp = settings.TMP_DIR / f"edit_ref{i + 1}.png"
                         im.save(rp)
                         ref_paths.append(rp)
+            elif edit_mode and init_image is not None:
+                # Mode édition Ostris Edit (Krea 2) : l'image passe en référence
+                # de contexte (-r + mmproj vision), pas en img2img. Un LoRA
+                # d'édition doit être chargé pour que ça fasse quelque chose.
+                rp = settings.TMP_DIR / "edit_ref1.png"
+                init_image.save(rp)
+                ref_paths.append(rp)
             elif init_image is not None:
                 init_path = settings.TMP_DIR / "i2i_init.png"
                 init_image.save(init_path)
@@ -713,7 +741,7 @@ def build_generative_tab(model_id: str, title: str,
         gen_evt = run.click(
             do_generate,
             inputs=[system_prompt, prompt, negative, init_image, ref_image2,
-                    ref_image3, strength, outpaint, width,
+                    ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc, pid_hires],

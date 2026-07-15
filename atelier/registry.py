@@ -15,10 +15,13 @@ from . import hardware, quant, settings
 
 @dataclass
 class Component:
-    role: str            # diffusion | uncond | vae | text_encoder
+    role: str            # diffusion | uncond | vae | text_encoder | text_encoder_vision
     repo: str
     template: str        # ex "*-{quant}.gguf" ou "vae/*.safetensors"
     quant: str | None    # quant résolu si le motif contient un token, sinon None
+    # Composant facultatif (ex. mmproj vision pour l'édition Krea 2) : téléchargé
+    # avec le modèle, mais son absence ne rend PAS le modèle « non prêt ».
+    optional: bool = False
 
     @property
     def token(self) -> str | None:
@@ -81,7 +84,8 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
                 q = q_diff
             else:
                 q = None
-            comps.append(Component(role, spec["repo"], template, q))
+            comps.append(Component(role, spec["repo"], template, q,
+                                   optional=bool(spec.get("optional"))))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),
@@ -192,11 +196,13 @@ def resolve_component_path(comp: Component) -> Path | None:
 
 
 def model_is_ready(model: BaseModel) -> bool:
-    return all(resolve_component_path(c) is not None for c in model.components)
+    return all(resolve_component_path(c) is not None
+               for c in model.components if not c.optional)
 
 
 def missing_components(model: BaseModel) -> list[Component]:
-    return [c for c in model.components if resolve_component_path(c) is None]
+    return [c for c in model.components
+            if not c.optional and resolve_component_path(c) is None]
 
 
 def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:

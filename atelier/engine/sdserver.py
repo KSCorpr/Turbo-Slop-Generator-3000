@@ -82,7 +82,8 @@ def _signature(req: GenRequest) -> tuple:
     flags = tuple(sorted((k, bool(v)) for k, v in (req.flags or {}).items()))
     return (
         s(req.model_path), s(req.diffusion_model), s(req.vae),
-        s(req.text_encoder), s(req.t5xxl), s(req.clip_l), s(req.uncond_model),
+        s(req.text_encoder), s(req.llm_vision),
+        s(req.t5xxl), s(req.clip_l), s(req.uncond_model),
         req.vae_format, req.cache_mode, req.cache_option,
         req.gpu_index if req.gpu_index is not None else -1,
         req.encoder_gpu_index if req.encoder_gpu_index is not None else -1,
@@ -99,7 +100,7 @@ def _build_server_cmd(sd_server: Path, req: GenRequest, port: int) -> list[str]:
     ici — ils partent dans chaque requête HTTP.
     """
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
-             req.t5xxl, req.clip_l, req.uncond_model)
+             req.llm_vision, req.t5xxl, req.clip_l, req.uncond_model)
     # sd-server nomme l'écoute réseau --listen-ip/--listen-port (PAS --host/--port,
     # qui sont ceux d'autres serveurs). Vérifié via `sd-server -h`.
     cmd: list[str] = [str(sd_server),
@@ -116,6 +117,8 @@ def _build_server_cmd(sd_server: Path, req: GenRequest, port: int) -> list[str]:
             cmd += ["--vae", str(req.vae)]
         if req.text_encoder:
             cmd += ["--llm", str(req.text_encoder)]
+        if req.llm_vision:
+            cmd += ["--llm_vision", str(req.llm_vision)]
         if req.t5xxl:
             cmd += ["--t5xxl", str(req.t5xxl)]
         if req.clip_l:

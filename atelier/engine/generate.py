@@ -177,7 +177,7 @@ def generate(
         model_path = Path(diffusion_override) if diffusion_override \
             else _component(model, "model")
         vae = Path(vae_override) if vae_override else _component(model, "vae")
-        diffusion = enc = uncond = t5xxl = clip_l = None
+        diffusion = enc = uncond = t5xxl = clip_l = llm_vision = None
         if model_path is None or not Path(model_path).is_file():
             raise sdcpp.EngineError(
                 f"« {model.name} » : checkpoint manquant. Téléchargez-le "
@@ -190,6 +190,10 @@ def generate(
         uncond = _component(model, "uncond")
         t5xxl = _component(model, "t5xxl")
         clip_l = _component(model, "clip_l")
+        # Projecteur vision (mmproj) : chargé UNIQUEMENT quand une image de
+        # référence est fournie (édition Krea 2 / Ostris Edit) — inutile en
+        # text-to-image pur, et ça évite son coût mémoire.
+        llm_vision = _component(model, "text_encoder_vision") if ref_image else None
         # On exige UNIQUEMENT les composants que le modèle déclare : certains
         # modèles peuvent ne pas avoir de VAE, ou utiliser t5xxl/clip_l au lieu
         # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
@@ -243,7 +247,8 @@ def generate(
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
-        text_encoder=enc, t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
+        text_encoder=enc, llm_vision=llm_vision,
+        t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
         extra_flags=list(model.defaults.get("extra_flags", [])),
         prompt=final_prompt, negative=negative,
         steps=steps, cfg_scale=cfg_scale,
