@@ -137,30 +137,61 @@ def install_upscale():
     sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30,<0.32",
         "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
-    print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, ~6,6 Go)…")
-    _hf_fetch(lambda: hf_hub_download(repo_id=SDXL_REPO, filename=SDXL_FILE,
-                                      local_dir=str(base)),
-              f"checkpoint SDXL ({SDXL_FILE})",
-              f"https://huggingface.co/{SDXL_REPO}/resolve/main/{SDXL_FILE}",
-              base)
-    print(f"\nTéléchargement de la VAE fp16-fix ({VAE_FIX_REPO})…")
-    _hf_fetch(lambda: snapshot_download(repo_id=VAE_FIX_REPO,
-                                        local_dir=str(base / "vae"),
-                                        allow_patterns=["*.json", "*.safetensors"]),
-              "VAE fp16-fix",
-              f"https://huggingface.co/{VAE_FIX_REPO}/tree/main",
-              base / "vae")
-    print(f"\nTéléchargement du ControlNet Tile ({CN_TILE_REPO}, ~2,5 Go)…")
-    _hf_fetch(lambda: snapshot_download(repo_id=CN_TILE_REPO,
-                                        local_dir=str(base / "controlnet"),
-                                        allow_patterns=["*.json", "*.safetensors"]),
-              "ControlNet Tile",
-              f"https://huggingface.co/{CN_TILE_REPO}/tree/main",
-              base / "controlnet")
     # Dossier où déposer des checkpoints SDXL perso (sélectionnables dans l'UI).
     (base / "checkpoints").mkdir(parents=True, exist_ok=True)
+
+    # MODE HORS-LIGNE : chaque composant DÉJÀ présent est conservé (aucun
+    # téléchargement). Sur un réseau qui bloque huggingface.co (entreprise),
+    # téléchargez les fichiers depuis un poste qui atteint HF et déposez-les
+    # aux emplacements indiqués — puis relancez : l'install les détecte et saute.
+    base_ck = base / "sd_xl_base_1.0.safetensors"
+    vae_ok = (base / "vae").is_dir() and any((base / "vae").glob("*.safetensors"))
+    cn_ok = (base / "controlnet").is_dir() and \
+        any((base / "controlnet").glob("*.safetensors"))
+
+    if base_ck.is_file():
+        print(f"  [OK] checkpoint SDXL déjà présent ({SDXL_FILE}) — pas de "
+              "téléchargement.")
+    else:
+        print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, "
+              "~6,6 Go)…")
+        _hf_fetch(lambda: hf_hub_download(repo_id=SDXL_REPO, filename=SDXL_FILE,
+                                          local_dir=str(base)),
+                  f"checkpoint SDXL ({SDXL_FILE})",
+                  f"https://huggingface.co/{SDXL_REPO}/resolve/main/{SDXL_FILE}",
+                  base)
+
+    if vae_ok:
+        print("  [OK] VAE fp16-fix déjà présente — pas de téléchargement.")
+    else:
+        print(f"\nTéléchargement de la VAE fp16-fix ({VAE_FIX_REPO})…")
+        _hf_fetch(lambda: snapshot_download(repo_id=VAE_FIX_REPO,
+                                            local_dir=str(base / "vae"),
+                                            allow_patterns=["*.json", "*.safetensors"]),
+                  "VAE fp16-fix",
+                  f"https://huggingface.co/{VAE_FIX_REPO}/tree/main",
+                  base / "vae")
+
+    # ControlNet Tile : OPTIONNEL (l'upscale marche sans). Un échec ici n'arrête
+    # pas l'install.
+    if cn_ok:
+        print("  [OK] ControlNet Tile déjà présent — pas de téléchargement.")
+    else:
+        print(f"\nTéléchargement du ControlNet Tile ({CN_TILE_REPO}, ~2,5 Go, "
+              "optionnel)…")
+        try:
+            _hf_fetch(lambda: snapshot_download(repo_id=CN_TILE_REPO,
+                                                local_dir=str(base / "controlnet"),
+                                                allow_patterns=["*.json", "*.safetensors"]),
+                      "ControlNet Tile",
+                      f"https://huggingface.co/{CN_TILE_REPO}/tree/main",
+                      base / "controlnet")
+        except Exception:  # noqa: BLE001
+            print("  [!] ControlNet Tile non installé (optionnel) — l'upscale "
+                  "créatif fonctionne sans, décochez « ControlNet » dans l'UI.")
+
     pin_numpy()
-    print("\n[OK] Upscale créatif SDXL + ControlNet Tile installé "
+    print("\n[OK] Upscale créatif SDXL installé "
           "(onglet Toolkit → Upscale créatif).")
 
 
