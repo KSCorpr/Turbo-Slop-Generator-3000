@@ -238,12 +238,13 @@ def generate(
 def pid_decode(image, prompt: str = "", preview_path: Path | None = None,
                log: Callable[[str], None] | None = None) -> Path:
     """Décode/agrandit via PiD (décodeur pixel-diffusion NVIDIA, doc sd.cpp
-    docs/pid.md) : l'image de référence (-r) est encodée par le VAE FLUX.1 puis
+    docs/pid.md) : l'image de référence (-r) est encodée par le VAE puis
     décodée ×4 en RGB par diffusion pixel (4 pas, CFG 1.0, --rng cpu).
 
-    Le modèle est entraîné « base -> ×4 » (512 -> 2048) : on RESPECTE ce ratio
-    en réduisant la référence à ~512 de côté long, sortie = ×4. Un autre ratio
-    produit des artefacts « peinture »."""
+    Le modèle est entraîné « base -> ×factor » (v1.5 : 1024 -> 4096) : on
+    RESPECTE ce ratio en ramenant la référence à base = target/factor de côté
+    long (catalogue), sortie = ×factor. Un autre ratio produit des artefacts
+    « peinture »."""
     from PIL import Image
     prefs = settings.load_prefs()
     sd_cli = settings.find_sd_cli()

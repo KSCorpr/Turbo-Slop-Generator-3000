@@ -110,24 +110,29 @@ base_models:
     vram_min_gb: 10
 
 # ============================================================================
-#  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
-#  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux.
+#  PiD 1.5 — décodeur pixel-diffusion NVIDIA (juil. 2026), natif sd.cpp
+#  (doc : docs/pid.md). Décode/agrandit ×4 via -r ; v1.5 : meilleure fidélité
+#  des couleurs + visages/détails, et entraîné 1024 -> 4096 (la référence reste
+#  à la résolution NATIVE de génération, plus besoin de la réduire à 512).
 #  ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
+#  ⚠️ Sortie 4096² = 4× plus de pixels que le PiD v1 (2048²) : plus lent, et
+#  VRAM plus sollicitée — si OOM sur 11-12 Go, revenir au v1 :
+#  match "pid_flux2_512_to_2048_4step_bf16*" + target 2048.
 # ============================================================================
 pid:
   # Variante Flux.2 : cohérente avec la génération Flux.2 Klein (backbone + VAE
   # Flux.2), ce qui réduit les artefacts par rapport au PiD flux1. Réutilise le
   # VAE Flux.2 DÉJÀ téléchargé pour la génération (aucun re-téléchargement du VAE).
-  name: "PiD — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
-  target: 2048          # côté long visé (modèle 512 -> 2048)
-  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
+  name: "PiD 1.5 — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
+  target: 4096          # côté long visé (modèle v1.5 : 1024 -> 4096)
+  factor: 4             # ratio fixe du modèle (×4)
   steps: 4
   vae_format: flux2     # backbone Flux.2 -> VAE au format flux2
   sources:
     diffusion:
       repo: Comfy-Org/PixelDiT
-      # bf16 (pas mxfp8, réservé Blackwell RTX 50xx).
-      match: "pid_flux2_512_to_2048_4step_bf16*.safetensors"
+      # v1.5 bf16 4 pas (les variantes int8_convrot sont réservées à ComfyUI).
+      match: "*pid_1.5_flux2_1024_to_4096_4step_bf16*.safetensors"
     text_encoder:
       repo: Comfy-Org/PixelDiT
       match: "gemma_2_2b_it*.safetensors"
