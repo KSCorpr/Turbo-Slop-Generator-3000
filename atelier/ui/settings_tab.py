@@ -1,6 +1,5 @@
-"""Onglet Réglages — branche « 2080 » : setup fixe RTX 2080 Ti (11 Go) + 64 Go
-de RAM, mono-GPU. Le profil automatique suffit (Q4_K_M diffusion, Q8_0 encodeur,
-flash-attention, offload RAM, VAE tiling) ; le manuel reste pour dépanner.
+"""Onglet Réglages — mono-GPU : le profil automatique s'adapte à la meilleure
+carte détectée (quant selon VRAM, encodeur selon RAM) ; le manuel dépanne.
 """
 from __future__ import annotations
 
@@ -30,7 +29,7 @@ def _profile_md() -> str:
 
 def build_settings_tab():
     with gr.Tab("⚙️ Réglages"):
-        gr.Markdown("### Matériel détecté — profil 2080 Ti")
+        gr.Markdown("### Matériel détecté")
         profile_md = gr.Markdown(_profile_md())
 
         prefs = settings.load_prefs()
@@ -70,13 +69,13 @@ def build_settings_tab():
         theme_dd.change(_save_theme, inputs=[theme_dd], outputs=[lang_msg])
 
         # ------------------------------------------------------------------ #
-        #  Optimisation : l'automatique vise la 2080 Ti ; manuel = dépannage
+        #  Optimisation : l'automatique s'adapte à la carte ; manuel = dépannage
         # ------------------------------------------------------------------ #
         gr.Markdown("### 🎛️ Optimisation")
         auto = gr.Checkbox(
             value=prefs.get("auto_optimize", True),
-            label="Automatique (recommandé — 2080 Ti 11 Go + 64 Go RAM : "
-                  "diffusion Q4_K_M, encodeur Q8_0 en RAM)")
+            label="Automatique (recommandé — quant selon la VRAM de la "
+                  "carte, encodeur déchargé en RAM)")
 
         with gr.Accordion("Réglages manuels avancés (quant + flags)", open=False):
             gr.Markdown("Utilisés uniquement si **l'automatique est décoché**.")
@@ -139,7 +138,7 @@ def build_settings_tab():
                           "encoder_gpu_index"):
                 p.pop(stale, None)
             p["auto_optimize"] = bool(auto)
-            p["gpu_index"] = None          # mono-GPU : auto = la 2080 Ti
+            p["gpu_index"] = None          # mono-GPU : auto = meilleure carte détectée
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
             p["quant"] = None if quant == "auto" else quant

@@ -204,8 +204,8 @@ def build_generative_tab(model_id: str, title: str,
                                 "1 clic ci-dessous — et un moteur sd.cpp à jour "
                                 "(`update-engine.bat`). 💡 L'édition consomme plus "
                                 "de VRAM (tokens de référence) — la référence est "
-                                "réduite automatiquement, et la quant auto de la "
-                                "2080 Ti (Q4_K_M) laisse la marge nécessaire.")
+                                "réduite automatiquement, et la quant auto (Q4_K_M "
+                                "sur 11-12 Go) laisse la marge nécessaire.")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")

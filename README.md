@@ -1,11 +1,10 @@
-# 🟢 Turbo Slop Generator 3000 — branche `2080`
+# 🟢 Turbo Slop Generator 3000
 
-> **Cette branche est dédiée à un setup fixe : RTX 2080 Ti (11 Go) + 64 Go de
-> RAM, mono-GPU.** Les options multi-GPU (split d'encodeur, auto-fit, choix de
-> carte) et les presets par génération de carte ont été retirés — le profil
-> automatique cible directement la 2080 Ti (diffusion Q4_K_M, encodeur Q8_0 en
-> RAM, flash-attention, offload, VAE tiling). Pour un setup multi-cartes,
-> utilisez la branche `main`.
+> **Mono-GPU par choix.** L'app utilise la **meilleure carte NVIDIA détectée**
+> et s'y adapte automatiquement (quant de diffusion selon la VRAM, encodeur
+> déchargé dans la RAM, flash-attention, offload, VAE tiling). Les stratégies
+> multi-GPU (split d'encodeur, auto-fit) et les presets par génération de
+> carte ont été retirés pour garder l'outil simple et prévisible.
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
@@ -33,7 +32,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
-| ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile tuned for the 2080 Ti / manual override) |
+| ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile per detected GPU / manual override) |
 
 ---
 
@@ -230,12 +229,13 @@ With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
-### Single GPU (this branch)
-This branch targets a **single RTX 2080 Ti**: multi-GPU strategies (encoder
-split, auto-fit, GPU picker) are removed. The auto profile pins everything to
-the 2080 Ti: **Q4_K_M** diffusion (fits 11 GB with the edit mode's reference
-tokens), **Q8_0** text encoder offloaded to the 64 GB of system RAM,
-flash-attention, CPU offload and VAE tiling.
+### Single GPU
+The app targets a **single GPU** (the best detected card): multi-GPU strategies
+(encoder split, auto-fit, GPU picker) are removed for simplicity. The auto
+profile adapts to the detected card — diffusion quant by VRAM (11 GB → Q4_K_M,
+12 GB → Q5_K_M, more → higher), text encoder quant by system RAM (Q8_0 from
+32 GB, offloaded to RAM), flash-attention from Turing on, CPU offload and VAE
+tiling on ≤ 12 GB cards.
 
 ### Samplers & schedulers
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,

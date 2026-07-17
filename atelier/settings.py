@@ -25,7 +25,7 @@ PREFS_FILE = USERDATA_DIR / "preferences.json"
 DEFAULT_PREFS: dict[str, Any] = {
     "lang": "fr",               # langue de l'interface : "fr" | "en"
     "theme": "light",           # thème de l'interface : "light" | "dark"
-    "gpu_index": None,          # None = auto (la 2080 Ti — setup mono-GPU)
+    "gpu_index": None,          # None = auto (meilleure carte détectée, mono-GPU)
     # GPU pour l'améliorateur de prompt. None = même GPU que la génération.
     # (Conservé pour compat avec le Toolkit ; mono-GPU sur ce setup.)
     "text_gpu_index": None,

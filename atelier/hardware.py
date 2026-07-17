@@ -1,8 +1,8 @@
 """Détection matérielle (GPU NVIDIA + RAM) et profil d'optimisation.
 
-Branche « 2080 » : setup cible RTX 2080 Ti (Turing, 11 Go) + 64 Go de RAM,
-mono-GPU. Le profil automatique donne : diffusion Q4_K_M, encodeur Q8_0
-(déchargé en RAM), flash-attention, offload CPU, VAE tiling.
+Mono-GPU par choix : le profil automatique cible la meilleure carte NVIDIA
+détectée (quant de diffusion selon la VRAM, encodeur selon la RAM,
+flash-attention dès Turing, offload CPU, VAE tiling).
 """
 from __future__ import annotations
 
