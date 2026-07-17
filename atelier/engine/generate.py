@@ -187,21 +187,6 @@ def generate(
     flags, gpu_index = _resolved_flags(prefs)
     loras = loras or []
 
-    # Multi-GPU. auto-fit répartit tout le modèle sur les GPU visibles (prioritaire) ;
-    # sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les deux nécessitent que
-    # tous les GPU soient visibles (all_gpus) avec l'ordre CUDA par bus PCI.
-    auto_fit = bool(prefs.get("auto_fit"))
-    enc_gpu = prefs.get("encoder_gpu_index")
-    split_gpu = (not auto_fit) and enc_gpu is not None and enc_gpu != gpu_index
-    all_gpus = auto_fit or split_gpu
-    if auto_fit:
-        # Harmonisation : auto-fit gère lui-même le placement et IGNORE
-        # --offload-to-cpu (le forcer en même temps ne fait qu'ajouter de la
-        # confusion : sd.cpp met tout en VRAM). On le retire, et on force le VAE
-        # tiling pour réduire le pic mémoire du décodage VAE — principale cause
-        # d'OOM quand DiT + VAE atterrissent sur la même carte.
-        flags = {**flags, "offload_to_cpu": False, "vae_tiling": True}
-
     # LoRA : via tags <lora:…> dans le prompt + --lora-model-dir (mode sd-cli).
     final_prompt = _apply_loras(prompt, loras)
     lora_dir = settings.LORA_DIR if loras else None
@@ -220,14 +205,12 @@ def generate(
         init_image=init_image, strength=strength, ref_image=ref_image,
         lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
-        encoder_gpu_index=enc_gpu if split_gpu else None,
-        auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
+    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
     paths = sdcpp.collect_outputs(out, batch_count)
 
     if save_prompt and paths:

@@ -203,9 +203,9 @@ def build_generative_tab(model_id: str, title: str,
                                 "un **LoRA d'édition Krea 2** — bouton d'installation "
                                 "1 clic ci-dessous — et un moteur sd.cpp à jour "
                                 "(`update-engine.bat`). 💡 L'édition consomme plus "
-                                "de VRAM (tokens de référence) : sur **12 Go**, "
-                                "utilisez une quant **Q4_K_M** (Réglages → manuels) "
-                                "si vous rencontrez un OOM.")
+                                "de VRAM (tokens de référence) — la référence est "
+                                "réduite automatiquement, et la quant auto de la "
+                                "2080 Ti (Q4_K_M) laisse la marge nécessaire.")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
                         type="pil")

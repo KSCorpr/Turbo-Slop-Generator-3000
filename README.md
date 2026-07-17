@@ -1,4 +1,11 @@
-# 🟢 Turbo Slop Generator 3000
+# 🟢 Turbo Slop Generator 3000 — branche `2080`
+
+> **Cette branche est dédiée à un setup fixe : RTX 2080 Ti (11 Go) + 64 Go de
+> RAM, mono-GPU.** Les options multi-GPU (split d'encodeur, auto-fit, choix de
+> carte) et les presets par génération de carte ont été retirés — le profil
+> automatique cible directement la 2080 Ti (diffusion Q4_K_M, encodeur Q8_0 en
+> RAM, flash-attention, offload, VAE tiling). Pour un setup multi-cartes,
+> utilisez la branche `main`.
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
@@ -26,7 +33,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
-| ⚙️ **Settings** | detected hardware, quantization, optimizations (auto / manual / per-generation presets) |
+| ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile tuned for the 2080 Ti / manual override) |
 
 ---
 
@@ -218,45 +225,17 @@ These map to stable-diffusion.cpp flags: `--diffusion-fa` (CUDA: faster + less
 VRAM), `--offload-to-cpu` (saves VRAM with no speed loss), `--vae-tiling`,
 `--clip-on-cpu`, `--vae-on-cpu`, plus GGUF quantization.
 
-### One-click per-generation presets
-**Settings** has buttons that apply a curated profile for your card’s
-generation, covering **GTX 10xx** (Pascal) through **RTX 50xx** (Blackwell) —
-**GTX 10xx** (Pascal, no tensor cores, flash-attention off), **RTX 20xx**
-(Turing), **RTX 30xx** (Ampere), **RTX 40xx** (Ada), **RTX 50xx** (Blackwell).
-The preset is keyed to the selected GPU’s **actual VRAM** (quantization + offload
-+ VAE tiling), with a slight **speed** bias on older generations and a **quality**
-bias on newer ones. Handy for switching fast between machines (e.g. 1080 Ti →
-`Q4_K_S` no-FA, 2080 Ti → `Q4_K_M`, 4090 → `Q8_0`).
-
-> Note: for GGUF models, the fp8 hardware on 40xx/50xx isn’t used by sd.cpp (it
-> computes in fp16/bf16). The real differentiators across generations are VRAM,
-> flash-attention and the quant bias above — not a magic fp8 speedup.
-
 ### Manual settings
 With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
-### Multi-GPU
-With two NVIDIA cards (e.g. an RTX 3060 + a GTX 1080 Ti), **Settings → 🧮
-Multi-GPU** offers **one strategy at a time** (a single radio — they're mutually
-exclusive, so nothing can conflict):
-- **One card (recommended)** — everything on the generation GPU, with the encoder
-  offloaded to RAM by default. The most reliable option.
-- **Text encoder on the 2nd card** — the sd.cpp text encoder (`te`) runs on the
-  other GPU while diffusion + VAE stay on the main one
-  (`--backend diffusion=cuda0,vae=cuda0,te=cuda1`). Modest benefit (the encoder is
-  already RAM-offloaded), experimental.
-- **Auto-fit** — sd.cpp spreads **diffusion / encoder / VAE across all cards** by
-  VRAM (`--auto-fit`). The diffusion model itself can use the 2nd card's VRAM, but
-  it **forces everything into VRAM (disables CPU offload)**, so it can OOM on
-  heavy-encoder models (Flux.2 Klein + Qwen3-8B). Reserve it for models that fit
-  in combined VRAM; otherwise stay on *One card*.
-
-Separately, a **Prompt-enhancer GPU** dropdown runs the enhancer LLM (text
-generation) on the card of your choice. **Image generation always uses the
-generation GPU** — the strategy above never moves diffusion off it except in
-Auto-fit.
+### Single GPU (this branch)
+This branch targets a **single RTX 2080 Ti**: multi-GPU strategies (encoder
+split, auto-fit, GPU picker) are removed. The auto profile pins everything to
+the 2080 Ti: **Q4_K_M** diffusion (fits 11 GB with the edit mode's reference
+tokens), **Q8_0** text encoder offloaded to the 64 GB of system RAM,
+flash-attention, CPU offload and VAE tiling.
 
 ### Samplers & schedulers
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
