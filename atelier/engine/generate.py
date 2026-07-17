@@ -241,9 +241,9 @@ def pid_decode(image, prompt: str = "", preview_path: Path | None = None,
     docs/pid.md) : l'image de référence (-r) est encodée par le VAE puis
     décodée ×4 en RGB par diffusion pixel (4 pas, CFG 1.0, --rng cpu).
 
-    Le modèle est entraîné « base -> ×factor » (v1 : 512 -> 2048) : on RESPECTE
-    ce ratio en ramenant la référence à base = target/factor de côté long
-    (catalogue), sortie = ×factor. Un autre ratio produit des artefacts
+    Le modèle est entraîné « base -> ×factor » (v1.5 : 1024 -> 4096) : on
+    RESPECTE ce ratio en ramenant la référence à base = target/factor de côté
+    long (catalogue), sortie = ×factor. Un autre ratio produit des artefacts
     « peinture »."""
     from PIL import Image
     prefs = settings.load_prefs()

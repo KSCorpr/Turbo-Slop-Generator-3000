@@ -110,29 +110,32 @@ base_models:
     vram_min_gb: 10
 
 # ============================================================================
-#  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
-#  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux2.
-#  ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
-#  ⚠️ PiD 1.5 (1024 -> 4096, sorti le 15 juil.) N'EST PAS encore supporté par
-#  sd.cpp : son module lq_proj a des dimensions différentes → le loader refuse
-#  le modèle (« model metadata validation failed »). On reste donc sur le PiD v1
-#  jusqu'à ce que sd.cpp ajoute le support 1.5 (à re-vérifier aux prochains
-#  update-engine.bat).
+#  PiD 1.5 — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md,
+#  « Both the original PiD checkpoints and PiD 1.5 are supported »).
+#  Décode/agrandit ×4 via -r ; v1.5 : meilleures couleurs + visages/détails,
+#  entraîné 1024 -> 4096 (la référence reste à la résolution NATIVE de
+#  génération). ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
+#  ⚠️ NÉCESSITE un moteur sd.cpp ≥ 17 juil. 2026 (release master-782,
+#  update-engine.bat) — les binaires plus anciens refusent la 1.5
+#  (« model metadata validation failed »).
+#  ⚠️ Sortie 4096² = 4× plus de pixels que le v1 : plus lent, VRAM plus
+#  sollicitée — si OOM sur 11-12 Go, revenir au v1 :
+#  match "pid_flux2_512_to_2048_4step_bf16*" + target 2048.
 # ============================================================================
 pid:
   # Variante Flux.2 : cohérente avec la génération Flux.2 Klein (backbone + VAE
   # Flux.2), ce qui réduit les artefacts par rapport au PiD flux1. Réutilise le
   # VAE Flux.2 DÉJÀ téléchargé pour la génération (aucun re-téléchargement du VAE).
-  name: "PiD — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
-  target: 2048          # côté long visé (modèle v1 : 512 -> 2048)
-  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
+  name: "PiD 1.5 — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
+  target: 4096          # côté long visé (modèle v1.5 : 1024 -> 4096)
+  factor: 4             # ratio fixe du modèle (×4)
   steps: 4
   vae_format: flux2     # backbone Flux.2 -> VAE au format flux2
   sources:
     diffusion:
       repo: Comfy-Org/PixelDiT
-      # v1 bf16 (le sous-dossier 1.5/ n'est pas chargeable par sd.cpp actuel).
-      match: "pid_flux2_512_to_2048_4step_bf16*.safetensors"
+      # v1.5 bf16 4 pas (les variantes int8_convrot sont réservées à ComfyUI).
+      match: "*pid_1.5_flux2_1024_to_4096_4step_bf16*.safetensors"
     text_encoder:
       repo: Comfy-Org/PixelDiT
       match: "gemma_2_2b_it*.safetensors"
