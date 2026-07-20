@@ -1,6 +1,4 @@
-"""Onglet Réglages — mono-GPU : le profil automatique s'adapte à la meilleure
-carte détectée (quant selon VRAM, encodeur selon RAM) ; le manuel dépanne.
-"""
+"""Onglet Réglages : matériel détecté, optimisations auto/manuelles, quant."""
 from __future__ import annotations
 
 import gradio as gr
@@ -11,6 +9,11 @@ from ..i18n import t
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
 LANGS = [("Français", "fr"), ("English", "en")]
+
+
+def _gpu_choices() -> list[tuple[str, int]]:
+    return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
+            for g in hardware.detect_gpus()]
 
 
 def _profile_md() -> str:
@@ -27,12 +30,23 @@ def _profile_md() -> str:
     return "\n".join(lines)
 
 
+def _gpu_strategy(prefs) -> str:
+    """Déduit la stratégie multi-GPU courante depuis les préférences."""
+    if prefs.get("auto_fit"):
+        return "autofit"
+    eg = prefs.get("encoder_gpu_index")
+    if eg is not None and eg != prefs.get("gpu_index"):
+        return "encoder"
+    return "single"
+
+
 def build_settings_tab():
     with gr.Tab("⚙️ Réglages"):
         gr.Markdown("### Matériel détecté")
         profile_md = gr.Markdown(_profile_md())
 
         prefs = settings.load_prefs()
+        multi_gpu = len(_gpu_choices()) > 1
 
         # ------------------------------------------------------------------ #
         #  Interface
@@ -69,13 +83,21 @@ def build_settings_tab():
         theme_dd.change(_save_theme, inputs=[theme_dd], outputs=[lang_msg])
 
         # ------------------------------------------------------------------ #
-        #  Optimisation : l'automatique s'adapte à la carte ; manuel = dépannage
+        #  Optimisation (l'essentiel, visible)
         # ------------------------------------------------------------------ #
         gr.Markdown("### 🎛️ Optimisation")
-        auto = gr.Checkbox(
-            value=prefs.get("auto_optimize", True),
-            label="Automatique (recommandé — quant selon la VRAM de la "
-                  "carte, encodeur déchargé en RAM)")
+        with gr.Row():
+            auto = gr.Checkbox(value=prefs.get("auto_optimize", True),
+                               label="Automatique (recommandé — selon GPU + RAM)")
+            gpu = gr.Dropdown(label="GPU de génération",
+                              choices=_gpu_choices(),
+                              value=prefs.get("gpu_index"))
+        gr.Markdown(
+            "**Ou : optimiser pour ma carte en 1 clic** — applique quant + offload "
+            "+ tiling selon la VRAM réelle (désactive l'automatique).")
+        with gr.Row():
+            gen_btns = {key: gr.Button(spec["label"], size="sm")
+                        for key, spec in hardware.GENERATIONS.items()}
 
         with gr.Accordion("Réglages manuels avancés (quant + flags)", open=False):
             gr.Markdown("Utilisés uniquement si **l'automatique est décoché**.")
@@ -94,6 +116,35 @@ def build_settings_tab():
             with gr.Row():
                 clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False), label="CLIP sur CPU")
                 vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False), label="VAE sur CPU")
+
+        # ------------------------------------------------------------------ #
+        #  Multi-GPU : UN seul choix (mutuellement exclusif) + carte texte
+        # ------------------------------------------------------------------ #
+        if multi_gpu:
+            with gr.Accordion("🧮 Multi-GPU (2 cartes détectées)", open=False):
+                gr.Markdown(
+                    "**Une seule stratégie à la fois** (elles s'excluent) :\n"
+                    "- **Une seule carte** : tout sur le GPU de génération (offload "
+                    "RAM par défaut). Le plus fiable.\n"
+                    "- **Encodeur sur la 2e carte** : l'encodeur de texte va sur "
+                    "l'autre GPU, la diffusion reste sur le principal.\n"
+                    "- **Auto-fit** : sd.cpp répartit diffusion/encodeur/VAE sur "
+                    "toutes les cartes. ⚠️ force tout en VRAM (désactive l'offload) "
+                    "→ risque d'OOM sur les modèles à gros encodeur (Flux.2 Klein). "
+                    "À réserver aux modèles qui tiennent dans la VRAM cumulée.")
+                gpu_strategy = gr.Radio(
+                    [(t("Une seule carte (recommandé)"), "single"),
+                     (t("Encodeur de texte sur la 2e carte"), "encoder"),
+                     (t("Auto-fit : répartir sur toutes les cartes"), "autofit")],
+                    value=_gpu_strategy(prefs), label="Stratégie multi-GPU")
+                tools_gpu = gr.Dropdown(
+                    label="GPU pour l'améliorateur de prompt (texte, séparé)",
+                    choices=[(t("Auto (même que génération)"), None)]
+                            + _gpu_choices(),
+                    value=prefs.get("text_gpu_index"))
+        else:
+            gpu_strategy = gr.State(_gpu_strategy(prefs))
+            tools_gpu = gr.State(prefs.get("text_gpu_index"))
 
         # ------------------------------------------------------------------ #
         #  Accélération par cache (avancé)
@@ -129,16 +180,24 @@ def build_settings_tab():
         save = gr.Button("💾 Enregistrer", variant="primary")
         saved = gr.Markdown("")
 
-        def do_save(auto, quant, enc_quant, fa, offload, tiling, clip_cpu,
-                    vae_cpu, cache_mode, cache_opt, hf_ep, civitai_tok):
+        def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
+                    offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
+                    hf_ep, civitai_tok):
             p = settings.load_prefs()
-            # Purge des réglages des anciennes versions (multi-GPU, moteurs).
+            # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
             for stale in ("engine", "use_sd_server", "sd_server_port",
-                          "comfyui_port", "auto_fit", "split_mode",
-                          "encoder_gpu_index"):
+                          "comfyui_port"):
                 p.pop(stale, None)
             p["auto_optimize"] = bool(auto)
-            p["gpu_index"] = None          # mono-GPU : auto = meilleure carte détectée
+            p["gpu_index"] = gpu if gpu is not None else None
+            p["text_gpu_index"] = tools_gpu
+            # Stratégie multi-GPU → auto_fit + encoder_gpu_index (mutuellement excl.)
+            gpus = hardware.detect_gpus()
+            sel = gpu if gpu is not None else (
+                max(gpus, key=lambda x: x.vram_gb).index if gpus else None)
+            other = next((g.index for g in gpus if g.index != sel), None)
+            p["auto_fit"] = (gpu_strategy == "autofit")
+            p["encoder_gpu_index"] = other if gpu_strategy == "encoder" else None
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
             p["quant"] = None if quant == "auto" else quant
@@ -154,7 +213,47 @@ def build_settings_tab():
             return gr.update(value=_profile_md()), t("✅ Réglages enregistrés.")
 
         save.click(do_save,
-                   inputs=[auto, quant, enc_quant, fa, offload, tiling,
-                           clip_cpu, vae_cpu, cache_mode, cache_opt, hf_ep,
-                           civitai_tok],
+                   inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
+                           enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
+                           cache_mode, cache_opt, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
+
+        # --- Optimisation curatée par génération de carte (1 clic) ---
+        def _apply_generation(gen_key):
+            def handler(gpu_idx):
+                p = settings.load_prefs()
+                gpus = hardware.detect_gpus()
+                g = next((x for x in gpus if x.index == gpu_idx), None) \
+                    if gpu_idx is not None else None
+                if g is None and gpus:
+                    g = max(gpus, key=lambda x: x.vram_gb)
+                vram = g.vram_gb if g else None
+                prof = hardware.generation_profile(
+                    gen_key, vram, hardware.detect_ram_gb())
+                fl = prof.flags()
+                p["auto_optimize"] = False
+                p["quant"] = prof.quant
+                p["enc_quant"] = prof.enc_quant
+                p["flags"] = fl
+                if g is not None:
+                    p["gpu_index"] = g.index
+                settings.save_prefs(p)
+                label = hardware.GENERATIONS[gen_key]["label"]
+                return (
+                    gr.update(value=False), gr.update(value=prof.quant),
+                    gr.update(value=prof.enc_quant),
+                    gr.update(value=fl["diffusion_fa"]),
+                    gr.update(value=fl["offload_to_cpu"]),
+                    gr.update(value=fl["vae_tiling"]),
+                    gr.update(value=fl["clip_on_cpu"]),
+                    gr.update(value=fl["vae_on_cpu"]),
+                    gr.update(value=_profile_md()),
+                    t("✅ Optimisé pour **{label}** : diffusion `{quant}`, "
+                      "encodeur `{enc}` (optimisation auto désactivée).").format(
+                        label=label, quant=prof.quant, enc=prof.enc_quant))
+            return handler
+
+        gen_outputs = [auto, quant, enc_quant, fa, offload, tiling, clip_cpu,
+                       vae_cpu, profile_md, saved]
+        for key, btn in gen_btns.items():
+            btn.click(_apply_generation(key), inputs=[gpu], outputs=gen_outputs)

@@ -163,6 +163,73 @@ def _enc_quant_for_ram(ram: float) -> str:
     return "Q8_0"
 
 
+# Échelle des quantifications, de la plus légère (rapide) à la plus lourde (qualité).
+QUANT_LADDER = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
+                "Q6_K", "Q8_0"]
+
+
+def _shift_quant(q: str, delta: int) -> str:
+    """Décale une quant de `delta` crans dans l'échelle (borné)."""
+    try:
+        i = QUANT_LADDER.index(q)
+    except ValueError:
+        return q
+    return QUANT_LADDER[max(0, min(len(QUANT_LADDER) - 1, i + delta))]
+
+
+# Générations RTX grand public. `bias` décale la quant : < 0 privilégie la
+# VITESSE (cartes anciennes / VRAM serrée), > 0 la QUALITÉ (cartes récentes).
+GENERATIONS: dict[str, dict] = {
+    "gtx10": {"label": "GTX 10xx (Pascal)", "arch": "pascal", "bias": -1,
+              "typical_vram": 8.0,
+              "note": "Pascal (GTX 10xx / 1080 Ti) : pas de tensor cores, "
+                      "flash-attention désactivé (peu efficace). Quant légère "
+                      "pour compenser ; encodeur déchargé en RAM."},
+    "rtx20": {"label": "RTX 20xx (Turing)", "arch": "turing", "bias": 0,
+              "typical_vram": 8.0,
+              "note": "Turing : flash-attention OK, pas d'accélération fp8 "
+                      "(sd.cpp calcule en fp16). VRAM souvent serrée → quant "
+                      "légère pour rester rapide."},
+    "rtx30": {"label": "RTX 30xx (Ampere)", "arch": "ampere", "bias": 0,
+              "typical_vram": 12.0,
+              "note": "Ampere : bf16 natif, bon équilibre. Quant selon la VRAM."},
+    "rtx40": {"label": "RTX 40xx (Ada)", "arch": "ada", "bias": 1,
+              "typical_vram": 16.0,
+              "note": "Ada : très rapide, grande marge VRAM → on monte d'un cran "
+                      "de qualité."},
+    "rtx50": {"label": "RTX 50xx (Blackwell)", "arch": "blackwell", "bias": 1,
+              "typical_vram": 16.0,
+              "note": "Blackwell : architecture récente + grosse VRAM → qualité "
+                      "élevée."},
+}
+
+
+def generation_profile(gen_key: str, vram_gb: float | None = None,
+                       ram_gb: float | None = None) -> Profile:
+    """Profil d'optimisation CURATÉ pour une génération de carte RTX.
+
+    S'appuie sur la VRAM réelle (si fournie) pour la quant et les flags mémoire,
+    et applique un léger biais qualité/vitesse propre à la génération.
+    """
+    spec = GENERATIONS.get(gen_key) or GENERATIONS["rtx30"]
+    vram = vram_gb if (vram_gb and vram_gb > 0) else spec["typical_vram"]
+    ram = ram_gb if (ram_gb and ram_gb > 0) else detect_ram_gb()
+    quant = _shift_quant(_quant_for_vram(vram), spec["bias"])
+    enc_quant = _enc_quant_for_ram(ram or 16.0)
+    return Profile(
+        gpu=None, ram_gb=ram or 0.0, quant=quant, enc_quant=enc_quant,
+        # Flash-attention : à partir de Turing. Désactivé sur Pascal (GTX 10xx).
+        diffusion_fa=(spec.get("arch") != "pascal"),
+        offload_to_cpu=(vram < 16),
+        vae_tiling=(vram <= 12),
+        clip_on_cpu=(vram < 8),
+        vae_on_cpu=(vram < 6),
+        notes=[t(spec["note"]),
+               t("VRAM {vram} Go → diffusion {quant}, encodeur {enc}.").format(
+                   vram=f"{vram:.0f}", quant=quant, enc=enc_quant)],
+    )
+
+
 def auto_profile(gpu_index: int | None = None) -> Profile:
     """Construit un profil d'optimisation à partir du matériel détecté."""
     gpus = detect_gpus()

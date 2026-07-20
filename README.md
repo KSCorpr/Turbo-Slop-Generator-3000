@@ -1,10 +1,12 @@
 # 🟢 Turbo Slop Generator 3000
 
-> **Mono-GPU par choix.** L'app utilise la **meilleure carte NVIDIA détectée**
-> et s'y adapte automatiquement (quant de diffusion selon la VRAM, encodeur
-> déchargé dans la RAM, flash-attention, offload, VAE tiling). Les stratégies
-> multi-GPU (split d'encodeur, auto-fit) et les presets par génération de
-> carte ont été retirés pour garder l'outil simple et prévisible.
+> **Adaptatif au matériel.** Par défaut l'app utilise la **meilleure carte
+> NVIDIA détectée** et s'y adapte (quant de diffusion selon la VRAM, encodeur
+> déchargé dans la RAM, flash-attention, offload, VAE tiling). Deux options
+> avancées dans **Réglages** : les **presets par génération de carte** (GTX 10xx
+> → RTX 50xx, en 1 clic) et le **multi-GPU** (choix du GPU de génération, split
+> de l'encodeur sur une 2e carte, ou auto-fit qui répartit le modèle sur toutes
+> les cartes).
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
@@ -234,8 +236,9 @@ The app detects your GPU (via `nvidia-smi`) and RAM, then chooses on its own:
   tiling, CLIP/VAE on CPU — enabled progressively as VRAM gets tighter;
 - Pascal cards (GTX 10xx) → flash-attention disabled automatically (it’s slow there).
 
-Multi-GPU: the largest card is used by default, changeable in **Settings**.
-Everything is overridable manually (uncheck auto-optimization).
+Multi-GPU: the largest card is used by default, changeable in **Settings**
+(see [Multi-GPU](#multi-gpu)). Everything is overridable manually
+(uncheck auto-optimization).
 
 These map to stable-diffusion.cpp flags: `--diffusion-fa` (CUDA: faster + less
 VRAM), `--offload-to-cpu` (saves VRAM with no speed loss), `--vae-tiling`,
@@ -246,13 +249,31 @@ With auto unchecked you control quant (diffusion / encoder), the GPU, and each
 flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
 Hugging Face endpoint (mirror) can also be set.
 
-### Single GPU
-The app targets a **single GPU** (the best detected card): multi-GPU strategies
-(encoder split, auto-fit, GPU picker) are removed for simplicity. The auto
-profile adapts to the detected card — diffusion quant by VRAM (11 GB → Q4_K_M,
-12 GB → Q5_K_M, more → higher), text encoder quant by system RAM (Q8_0 from
-32 GB, offloaded to RAM), flash-attention from Turing on, CPU offload and VAE
-tiling on ≤ 12 GB cards.
+### Per-generation presets (1 click)
+Below the auto toggle, one button per RTX generation (**GTX 10xx → RTX 50xx**)
+applies a **curated profile** for that card in one click: it reads the real VRAM
+of the selected GPU, picks the diffusion quant (with a small speed/quality bias
+per generation — lighter on Pascal/Turing, higher on Ada/Blackwell), sets the
+encoder quant from RAM, and toggles the memory flags (flash-attention off on
+Pascal, VAE tiling / CPU offload on tighter cards). This unchecks auto and fills
+the manual fields, so you can still tweak afterwards.
+
+### Multi-GPU
+When **two or more GPUs** are detected, a **Multi-GPU** accordion appears with a
+single mutually-exclusive strategy:
+- **Single card (recommended)** — everything on the generation GPU, text encoder
+  offloaded to RAM. The most reliable.
+- **Text encoder on the 2nd card** — diffusion + VAE stay on the main GPU, the
+  text encoder runs on the other card (`--backend …,te=cudaN`). Frees VRAM on the
+  main card for the diffusion model.
+- **Auto-fit** — sd.cpp spreads diffusion / encoder / VAE across all cards
+  (`--auto-fit`). ⚠️ forces everything into VRAM (disables CPU offload) → can OOM
+  on big-encoder models (Flux.2 Klein); reserve it for models that fit in the
+  combined VRAM.
+
+A separate **prompt-enhancer GPU** can also be chosen (the text LLM runs there;
+image generation and SDXL upscale always stay on the generation GPU). The GPU
+picker and these strategies live in **Settings**.
 
 ### Samplers & schedulers
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,

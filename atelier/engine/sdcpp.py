@@ -73,6 +73,13 @@ class GenRequest:
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None
+    # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
+    # via --backend te=cudaX. None = encodeur sur le GPU principal / RAM.
+    encoder_gpu_index: int | None = None
+    # EXPÉRIMENTAL : répartition auto du modèle sur tous les GPU (--auto-fit).
+    # Prioritaire sur le split d'encodeur (auto-fit remplace --backend).
+    auto_fit: bool = False
+    split_mode: str = ""               # --split-mode : "layer" | "row" (vide=défaut)
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
@@ -172,6 +179,19 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
     cmd += _flag_args(req.flags)
+    # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
+    # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
+    # principal, encodeur (te) sur l'autre. Ordre CUDA par bus PCI forcé via env.
+    if req.auto_fit:
+        cmd += ["--auto-fit"]
+        if req.split_mode:
+            cmd += ["--split-mode", req.split_mode]
+    elif (req.encoder_gpu_index is not None
+            and req.encoder_gpu_index != req.gpu_index):
+        g = req.gpu_index if req.gpu_index is not None else 0
+        e = req.encoder_gpu_index
+        cmd += ["--backend",
+                f"diffusion=cuda{g},vae=cuda{g},te=cuda{e}"]
     cmd += ["-o", str(output), "-v"]
     return cmd
 
@@ -195,10 +215,15 @@ def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
 
 
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
-        gpu_index: int | None = None) -> None:
+        gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED
     env = None
-    if gpu_index is not None:
+    if all_gpus:
+        # Split multi-GPU (encodeur sur un 2e GPU) : tous les GPU visibles, et
+        # ordre CUDA par bus PCI pour que cudaN corresponde à l'index nvidia-smi.
+        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+    elif gpu_index is not None:
         env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_index)}
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))
