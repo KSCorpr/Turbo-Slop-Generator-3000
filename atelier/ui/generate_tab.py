@@ -69,6 +69,14 @@ RATIOS_KREA2: dict[str, tuple[int, int]] = {
 }
 _CUSTOM_LABEL = "Personnalisé (sliders)"
 
+# Entrée « neutre » en tête du menu des styles perso : la sélectionner RETIRE
+# le style appliqué (vide le champ système), sans rien supprimer d'enregistré.
+_NONE_STYLE = "— Aucun —"
+
+
+def _style_choices() -> list[str]:
+    return [_NONE_STYLE] + styles.list_styles()
+
 # Barres de progression sd.cpp (« |####| 97/298 - 87MB/s[K », « |==>| 1/4 - … »).
 # Capturées ligne par ligne, elles arrivent par CENTAINES et inondent le journal
 # → re-rendu permanent = clignotement. On les DÉTECTE pour piloter la barre de
@@ -133,8 +141,9 @@ def build_generative_tab(model_id: str, title: str,
                                     "éclairage doux")
                     with gr.Row():
                         style_pick = gr.Dropdown(
-                            styles.list_styles(), value=None, scale=3,
-                            label="Styles enregistrés", allow_custom_value=False)
+                            _style_choices(), value=_NONE_STYLE, scale=3,
+                            label="Styles enregistrés (« Aucun » = retirer le "
+                                  "style appliqué)", allow_custom_value=False)
                         style_name = gr.Textbox(
                             label="Nom du style à enregistrer", scale=2,
                             placeholder="ex. : Aquarelle pastel")
@@ -495,7 +504,11 @@ def build_generative_tab(model_id: str, title: str,
                            outputs=[custom_diff, custom_vae, custom_enc])
 
         # --- Styles enregistrés (prompt système) ---
+        # « — Aucun — » n'est pas un style enregistré : le choisir VIDE le champ
+        # système (retire le style appliqué) sans rien supprimer.
         def _load_style(name):
+            if not name or name == _NONE_STYLE:
+                return gr.update(value="")
             return gr.update(value=styles.get_style(name))
 
         style_pick.change(_load_style, inputs=[style_pick],
@@ -506,20 +519,25 @@ def build_generative_tab(model_id: str, title: str,
                 saved = styles.save_style(name, text)
             except ValueError as exc:
                 raise gr.Error(str(exc))
-            return (gr.update(choices=styles.list_styles(), value=saved),
+            return (gr.update(choices=_style_choices(), value=saved),
                     gr.update(value=""))
 
         style_save.click(_save_style, inputs=[style_name, system_prompt],
                          outputs=[style_pick, style_name])
 
+        # Supprimer : retire le style enregistré ET réinitialise (« Aucun » +
+        # champ système vidé) — le texte appliqué ne « survit » plus à la
+        # suppression de son preset.
         def _delete_style(name):
             styles.delete_style(name)
-            return gr.update(choices=styles.list_styles(), value=None)
+            return (gr.update(choices=_style_choices(), value=_NONE_STYLE),
+                    gr.update(value=""))
 
-        style_del.click(_delete_style, inputs=[style_pick], outputs=[style_pick])
+        style_del.click(_delete_style, inputs=[style_pick],
+                        outputs=[style_pick, system_prompt])
 
         def _refresh_styles():
-            return gr.update(choices=styles.list_styles())
+            return gr.update(choices=_style_choices())
 
         style_refresh.click(_refresh_styles, outputs=[style_pick])
 
