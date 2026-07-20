@@ -8,15 +8,21 @@ from __future__ import annotations
 
 import csv
 import json
+import random
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 from . import settings
 
 STYLES_FILE = settings.USERDATA_DIR / "style_presets.json"
 
-# Banque de styles photographiques Krea 2 (cumulables), fournie avec l'app.
-# Source : github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2 (MIT, ghleg).
+# Banques de styles Krea (cumulables), fournies avec l'app :
+#  • PHOTO : styles photographiques (qualité, lumière, objectif, pellicule…),
+#    AVEC négatifs. Source github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2 (MIT, ghleg).
+#  • ART   : styles artistiques (anime, cartoon, BD, dessin, design, peinture…),
+#    SANS négatifs. Collection Krea fournie par l'utilisateur (provenance à confirmer).
 PHOTO_STYLES_FILE = settings.CONFIG_DIR / "krea2_styles.csv"
+ART_STYLES_FILE = settings.CONFIG_DIR / "krea2_art_styles.csv"
 
 
 def _load() -> Dict[str, str]:
@@ -71,30 +77,32 @@ def delete_style(name: str | None) -> None:
 
 
 # --------------------------------------------------------------------------
-#  Banque de styles photographiques Krea 2 (cumulables, © ghleg — MIT).
+#  Banques de styles Krea (cumulables), fournies avec l'app.
 #  CSV : name,prompt,negative_prompt. Les lignes « [ Catégorie ],, » sont des
-#  en-têtes ; les lignes « # … » sont des commentaires (crédit). « {prompt} »
-#  est remplacé par le sujet de l'utilisateur. On empile plusieurs styles en
-#  chaînant leurs phrases après le sujet ; les négatifs sont combinés.
-#  L'étiquette d'un style est « Catégorie › Nom » (unique, groupée visuellement).
+#  en-têtes ; les lignes « # … » sont des commentaires (crédit / notes).
+#  « {prompt} » (styles photo) est remplacé par le sujet ; les styles SANS
+#  « {prompt} » (styles artistiques) sont ajoutés APRÈS le sujet comme addon.
+#  On empile plusieurs styles en chaînant leurs phrases ; les négatifs éventuels
+#  sont combinés. L'étiquette d'un style est « Catégorie › Nom » (unique).
 # --------------------------------------------------------------------------
 _SEP = " › "
-_photo_cache: List[Dict[str, str]] | None = None
+_bank_cache: Dict[Path, List[Dict[str, str]]] = {}
 
 
-def _load_photo_styles() -> List[Dict[str, str]]:
-    """Parse le CSV une fois. Retourne une liste ordonnée d'entrées
-    {category, name, label, prompt, negative}."""
-    global _photo_cache
-    if _photo_cache is not None:
-        return _photo_cache
+def _load_bank(path: Path) -> List[Dict[str, str]]:
+    """Parse une banque de styles CSV une fois (avec cache par fichier).
+    Retourne une liste ordonnée d'entrées {category, name, label, prompt,
+    negative}."""
+    cached = _bank_cache.get(path)
+    if cached is not None:
+        return cached
     entries: List[Dict[str, str]] = []
-    if not PHOTO_STYLES_FILE.is_file():
-        _photo_cache = entries
+    if not path.is_file():
+        _bank_cache[path] = entries
         return entries
     category = ""
     try:
-        with PHOTO_STYLES_FILE.open(encoding="utf-8", newline="") as fh:
+        with path.open(encoding="utf-8", newline="") as fh:
             for row in csv.reader(fh):
                 if not row:
                     continue
@@ -119,33 +127,41 @@ def _load_photo_styles() -> List[Dict[str, str]]:
                                 "negative": negative})
     except OSError:
         pass
-    _photo_cache = entries
+    _bank_cache[path] = entries
     return entries
 
 
-def photo_style_labels() -> List[str]:
-    """Étiquettes « Catégorie › Nom » dans l'ordre du fichier (regroupées par
-    catégorie) — à utiliser comme choix d'un menu multi-sélection."""
-    return [e["label"] for e in _load_photo_styles()]
+def bank_labels(path: Path) -> List[str]:
+    """Étiquettes « Catégorie › Nom » d'une banque, dans l'ordre du fichier
+    (regroupées par catégorie) — choix d'un menu multi-sélection."""
+    return [e["label"] for e in _load_bank(path)]
 
 
-def _photo_index() -> Dict[str, Dict[str, str]]:
-    return {e["label"]: e for e in _load_photo_styles()}
+def _bank_index(path: Path) -> Dict[str, Dict[str, str]]:
+    return {e["label"]: e for e in _load_bank(path)}
 
 
-def apply_photo_styles(subject: str,
-                       labels: List[str] | None) -> Tuple[str, List[str]]:
-    """Insère le sujet dans les styles photo sélectionnés (cumulables).
+def random_bank_label(path: Path, exclude: List[str] | None = None) -> str | None:
+    """Tire un style au hasard dans une banque (comportement « wildcard » Krea).
+    Ignore les étiquettes déjà présentes dans `exclude`. Retourne None si vide."""
+    exclude = set(exclude or [])
+    pool = [lab for lab in bank_labels(path) if lab not in exclude]
+    return random.choice(pool) if pool else None
 
-    Chaque style est une phrase « {prompt}. <description> ». On remplace
-    « {prompt} » par le sujet dans le premier, puis on enchaîne les
-    descriptions suivantes après le sujet. Retourne (prompt_final, négatifs).
+
+def apply_style_bank(subject: str, labels: List[str] | None,
+                     path: Path) -> Tuple[str, List[str]]:
+    """Applique les styles cumulables sélectionnés d'une banque au sujet.
+
+    Style AVEC « {prompt} » (photo) : le sujet y est inséré. Style SANS
+    « {prompt} » (artistique) : sa description est ajoutée après le sujet.
+    Plusieurs styles chaînent leurs phrases. Retourne (prompt_final, négatifs).
     Sans sélection, le sujet est renvoyé inchangé.
     """
     subject = (subject or "").strip()
     if not labels:
         return subject, []
-    index = _photo_index()
+    index = _bank_index(path)
     combined = subject
     negatives: List[str] = []
     for lab in labels:
@@ -165,3 +181,13 @@ def apply_photo_styles(subject: str,
         if neg:
             negatives.append(neg)
     return combined.strip().strip(".").strip(), negatives
+
+
+# Rétro-compat : anciens noms « photo » = banque photographique.
+def photo_style_labels() -> List[str]:
+    return bank_labels(PHOTO_STYLES_FILE)
+
+
+def apply_photo_styles(subject: str,
+                       labels: List[str] | None) -> Tuple[str, List[str]]:
+    return apply_style_bank(subject, labels, PHOTO_STYLES_FILE)

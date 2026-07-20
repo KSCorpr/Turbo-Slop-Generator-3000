@@ -123,6 +123,14 @@ Every generation tab exposes the same controls.
   on distilled CFG 1.0 models they are dropped. Bank © *ghleg* — MIT
   ([aoleg/Photographic-styles-and-wildcards-for-Krea-2](https://github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2)),
   shipped as `config/krea2_styles.csv`.
+- **🎨 Krea artistic styles** (accordion) — a bundled bank of **289 stackable
+  artistic styles** (anime, cartoon, comics, drawing, photography, design,
+  digital painting, painting), grouped by category in a **multi-select**
+  dropdown. These have no `{prompt}` and no negatives: the style description is
+  appended after your subject. They stack with each other **and** with the photo
+  styles above. A **🎲 wildcard** button rolls one at random. Shipped as
+  `config/krea2_art_styles.csv` — a Krea style collection supplied by the user;
+  **provenance/license to be confirmed** (no license was attached to the source).
 
 ### Reference image / image-to-image
 The accordion adapts to the model family:

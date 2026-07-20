@@ -174,6 +174,28 @@ def build_generative_tab(model_id: str, title: str,
                         label="Styles à combiner (regroupés par catégorie)",
                         allow_custom_value=False)
 
+                # 🎨 Styles ARTISTIQUES Krea (cumulables) — anime, cartoon, BD,
+                # dessin, photographie, design, peinture… Sans négatifs : la
+                # description du style est simplement ajoutée après le sujet.
+                # Empilables entre eux ET avec les styles photo ci-dessus. Le
+                # bouton 🎲 en pioche un au hasard (comportement « wildcard »).
+                _art_labels = styles.bank_labels(styles.ART_STYLES_FILE)
+                with gr.Accordion("🎨 Styles artistiques Krea — cumulables "
+                                  f"({len(_art_labels)} styles)", open=False):
+                    gr.Markdown(
+                        "Styles **artistiques** nommés (anime, cartoon, BD, "
+                        "dessin, photographie, design, peinture numérique, "
+                        "peinture), **combinables** et empilables avec les styles "
+                        "photo ci-dessus. La description du style est ajoutée "
+                        "après votre sujet. **🎲 Aléatoire** en tire un au hasard "
+                        "(wildcard).  \n*Collection Krea fournie par "
+                        "l'utilisateur — provenance/licence à confirmer.*")
+                    art_pick = gr.Dropdown(
+                        _art_labels, value=[], multiselect=True,
+                        label="Styles à combiner (regroupés par catégorie)",
+                        allow_custom_value=False)
+                    art_dice = gr.Button("🎲 Aléatoire (wildcard)", size="sm")
+
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
                 with gr.Row():
@@ -541,6 +563,17 @@ def build_generative_tab(model_id: str, title: str,
 
         style_refresh.click(_refresh_styles, outputs=[style_pick])
 
+        # 🎲 Wildcard : ajoute un style artistique tiré au hasard (hors ceux déjà
+        # sélectionnés) à la sélection courante.
+        def _roll_art(current):
+            lab = styles.random_bank_label(styles.ART_STYLES_FILE,
+                                           exclude=current or [])
+            if not lab:
+                return gr.update()
+            return gr.update(value=list(current or []) + [lab])
+
+        art_dice.click(_roll_art, inputs=[art_pick], outputs=[art_pick])
+
         def on_ratio(label):
             w, h = ratios.get(i18n.to_source(label), (0, 0))
             if not w:
@@ -595,7 +628,8 @@ def build_generative_tab(model_id: str, title: str,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        def do_generate(system_prompt, prompt, negative, photo_styles, init_image,
+        def do_generate(system_prompt, prompt, negative, photo_styles, art_styles,
+                        init_image,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
@@ -629,6 +663,11 @@ def build_generative_tab(model_id: str, title: str,
                     extra = ", ".join(dict.fromkeys(photo_negs))
                     neg_text = (f"{neg_text}, {extra}".strip(", ")
                                 if neg_text.strip() else extra)
+            # 🎨 Styles artistiques (sans négatifs) : ajoutés après le sujet,
+            # après d'éventuels styles photo (les deux banques s'empilent).
+            if art_styles:
+                full_prompt, _ = styles.apply_style_bank(
+                    full_prompt, art_styles, styles.ART_STYLES_FILE)
 
             try:
                 base_seed = int(seed)
@@ -840,7 +879,8 @@ def build_generative_tab(model_id: str, title: str,
 
         gen_evt = run.click(
             do_generate,
-            inputs=[system_prompt, prompt, negative, photo_pick, init_image,
+            inputs=[system_prompt, prompt, negative, photo_pick, art_pick,
+                    init_image,
                     ref_image2, ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
