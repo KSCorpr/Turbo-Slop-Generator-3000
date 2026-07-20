@@ -114,6 +114,15 @@ Every generation tab exposes the same controls.
   models run at CFG 1.0 and ignore it.
 - **System / style prefix** (accordion) — a prefix prepended to every prompt. Save
   reusable styles to a dropdown (persisted in `userdata/`).
+- **📷 Krea 2 photo styles** (accordion) — a bundled bank of **139 stackable
+  photographic styles** (quality, lighting, lens, film stock, mood…), grouped by
+  category in a **multi-select** dropdown. Your prompt subject is inserted into
+  each selected style (`{prompt}` template), and multiple styles chain their
+  descriptions after the subject so you can combine axes. Style negatives are
+  merged into the negative field **only when the model uses them** (CFG > 1);
+  on distilled CFG 1.0 models they are dropped. Bank © *ghleg* — MIT
+  ([aoleg/Photographic-styles-and-wildcards-for-Krea-2](https://github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2)),
+  shipped as `config/krea2_styles.csv`.
 
 ### Reference image / image-to-image
 The accordion adapts to the model family:

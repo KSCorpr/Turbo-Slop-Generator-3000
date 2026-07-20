@@ -142,6 +142,29 @@ def build_generative_tab(model_id: str, title: str,
                         style_save = gr.Button("💾 Enregistrer", size="sm")
                         style_del = gr.Button("🗑️ Supprimer", size="sm")
                         style_refresh = gr.Button("↻ Rafraîchir", size="sm")
+
+                # 📷 Styles photo Krea 2 (cumulables) — banque de 139 styles
+                # photographiques (© ghleg, MIT). Multi-sélection : on empile
+                # plusieurs axes (qualité, lumière, objectif, pellicule…) ; le
+                # sujet du prompt est inséré dans chaque style, et les négatifs
+                # ne sont combinés que si le modèle en tient compte (CFG > 1).
+                _photo_labels = styles.photo_style_labels()
+                _photo_neg_note = ("" if d.get("supports_negative", False) else
+                                   " · négatifs ignorés (CFG 1.0 — sans effet ici)")
+                with gr.Accordion("📷 Styles photo Krea 2 — cumulables "
+                                  f"({len(_photo_labels)} styles)", open=False):
+                    gr.Markdown(
+                        "Styles photographiques prêts à l'emploi, **combinables** "
+                        "(qualité, lumière, objectif, pellicule, ambiance…). Le "
+                        "**sujet de votre prompt** est inséré dans chaque style "
+                        "choisi ; enchaînez-en plusieurs pour cumuler leurs effets."
+                        + _photo_neg_note + "  \n*Banque © ghleg — MIT "
+                        "(aoleg/Photographic-styles-and-wildcards-for-Krea-2).*")
+                    photo_pick = gr.Dropdown(
+                        _photo_labels, value=[], multiselect=True,
+                        label="Styles à combiner (regroupés par catégorie)",
+                        allow_custom_value=False)
+
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
                 with gr.Row():
@@ -554,8 +577,8 @@ def build_generative_tab(model_id: str, title: str,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        def do_generate(system_prompt, prompt, negative, init_image, ref_image2,
-                        ref_image3, strength, outpaint, edit_mode,
+        def do_generate(system_prompt, prompt, negative, photo_styles, init_image,
+                        ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc, pid_hires):
@@ -574,6 +597,20 @@ def build_generative_tab(model_id: str, title: str,
             full_prompt = prompt or ""
             if (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")
+
+            # 📷 Styles photo Krea 2 (cumulables) : le sujet est inséré dans
+            # chaque style choisi ; les négatifs des styles ne sont combinés que
+            # si le modèle en tient compte (supports_negative / CFG > 1). Sur un
+            # modèle distillé CFG 1.0 (Krea 2 Turbo, champ négatif masqué) ils
+            # seraient du poids mort : on les laisse tomber.
+            neg_text = negative or ""
+            if photo_styles:
+                full_prompt, photo_negs = styles.apply_photo_styles(
+                    full_prompt, photo_styles)
+                if d.get("supports_negative", False) and photo_negs:
+                    extra = ", ".join(dict.fromkeys(photo_negs))
+                    neg_text = (f"{neg_text}, {extra}".strip(", ")
+                                if neg_text.strip() else extra)
 
             try:
                 base_seed = int(seed)
@@ -655,7 +692,7 @@ def build_generative_tab(model_id: str, title: str,
                 try:
                     outs = gen_engine.generate(
                         model_id=model_id, prompt=full_prompt,
-                        negative=negative or "", steps=int(steps),
+                        negative=neg_text or "", steps=int(steps),
                         cfg_scale=float(cfg), width=int(width), height=int(height),
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
                         schedule=schedule, flow_shift=float(flow_shift or 0.0),
@@ -785,8 +822,8 @@ def build_generative_tab(model_id: str, title: str,
 
         gen_evt = run.click(
             do_generate,
-            inputs=[system_prompt, prompt, negative, init_image, ref_image2,
-                    ref_image3, strength, outpaint, edit_mode, width,
+            inputs=[system_prompt, prompt, negative, photo_pick, init_image,
+                    ref_image2, ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc, pid_hires],
