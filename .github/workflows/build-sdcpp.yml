@@ -28,7 +28,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # IMPORTANT : runner ÉPINGLÉ à windows-2022 (Visual Studio 2022). Le runner
+    # « windows-latest » est passé à Visual Studio 18/2026, pour lequel le CUDA
+    # Toolkit 12.x n'a PAS d'intégration MSBuild → « No CUDA toolset found ».
+    # VS2022 est la dernière version supportée par nvcc 12.x.
+    runs-on: windows-2022
     steps:
       # CUDA Toolkit complet (fiabilité > vitesse : ~20-25 min de build au total).
       - name: Installer le CUDA Toolkit
