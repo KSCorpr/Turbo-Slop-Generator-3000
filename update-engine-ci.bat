@@ -1,7 +1,7 @@
 @echo off
 REM ===========================================================================
 REM  Met a jour le moteur avec le BUILD MAISON (CI GitHub Actions du projet),
-REM  compile pour les cartes du projet (2080 Ti = arch 75, 3060 = arch 86).
+REM  compile pour les cartes du projet (1080 Ti=61, 2080 Ti=75, 3060=86).
 REM
 REM  Prerequis : le workflow "Build sd.cpp (Windows CUDA)" doit avoir ete lance
 REM  au moins une fois (onglet Actions du depot GitHub > Run workflow), pour que
@@ -14,7 +14,7 @@ set "PY=%~dp0python\python.exe"
 if not exist "%PY%" set "PY=python"
 
 echo ============================================================
-echo   Mise a jour du moteur (build MAISON CI, archis 75+86)
+echo   Mise a jour du moteur (build MAISON CI, archis 61+75+86)
 echo ============================================================
 "%PY%" scripts\get_sdcpp.py --source ours --force
 echo.

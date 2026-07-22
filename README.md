@@ -312,9 +312,10 @@ Optionally, the project can build **its own** engine binary via **GitHub
 Actions**, with no dev tools on your machine:
 - The workflow **`.github/workflows/build-sdcpp.yml`** (Actions tab → *Build
   sd.cpp (Windows CUDA)* → *Run workflow*) clones sd.cpp, builds a Windows CUDA
-  binary compiled **only for this project's cards** (arch `75;86` = RTX 2080 Ti +
-  RTX 3060 — leaner, sometimes faster than the generic release), bundles the CUDA
-  runtime DLLs, and publishes it to a moving `engine-latest` release.
+  binary compiled **only for this project's cards** (arch `61;75;86` =
+  GTX 1080 Ti + RTX 2080 Ti + RTX 3060 — leaner, sometimes faster than the
+  generic release), bundles the CUDA runtime DLLs, and publishes it to a moving
+  `engine-latest` release.
 - **`update-engine-ci.bat`** then installs *that* binary
   (`scripts/get_sdcpp.py --source ours`) instead of the official one.
 
