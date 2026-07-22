@@ -303,6 +303,26 @@ subsequent loads take seconds. (Earlier experimental engines — a resident
 `sd-server` and a ComfyUI backend — were removed: the server couldn't do live
 preview and ComfyUI proved too fragile. One engine, no mode switch, no surprise.)
 
+### Engine binary: official or self-built (CI)
+By default `update-engine.bat` downloads the **official** prebuilt binary from
+[`leejet/stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp)
+releases — the simplest, always-works path.
+
+Optionally, the project can build **its own** engine binary via **GitHub
+Actions**, with no dev tools on your machine:
+- The workflow **`.github/workflows/build-sdcpp.yml`** (Actions tab → *Build
+  sd.cpp (Windows CUDA)* → *Run workflow*) clones sd.cpp, builds a Windows CUDA
+  binary compiled **only for this project's cards** (arch `75;86` = RTX 2080 Ti +
+  RTX 3060 — leaner, sometimes faster than the generic release), bundles the CUDA
+  runtime DLLs, and publishes it to a moving `engine-latest` release.
+- **`update-engine-ci.bat`** then installs *that* binary
+  (`scripts/get_sdcpp.py --source ours`) instead of the official one.
+
+Why self-build: **day-0** access to new sd.cpp features, arch-tuned binaries,
+the ability to **pin a known-good commit** (workflow input `sd_ref`), or to
+apply engine **patches** when needed. Everything heavy happens in CI — your
+machine only ever downloads a ready binary.
+
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
 **English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved

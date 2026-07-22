@@ -1,0 +1,113 @@
+name: Build sd.cpp (Windows CUDA)
+
+# Build MAISON de stable-diffusion.cpp, taillé pour les cartes du projet
+# (2080 Ti = arch 75, 3060 = arch 86). Déclenché À LA MAIN (onglet Actions →
+# « Run workflow ») : on build quand on veut une nouveauté ou un patch, pas à
+# chaque commit. Le binaire + les DLL CUDA sont publiés dans une release au tag
+# mouvant « engine-latest », que l'app télécharge via
+# `update-engine-ci.bat` (→ get_sdcpp.py --source ours).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sd_ref:
+        description: "Version de stable-diffusion.cpp (branche / tag / commit)"
+        default: "master"
+      cuda_arch:
+        description: "Architectures CUDA (2080 Ti=75, 3060=86 ; ex. 75;86)"
+        default: "75;86"
+      cuda_version:
+        description: "Version du CUDA Toolkit"
+        default: "12.4.1"
+      release_tag:
+        description: "Tag de release à (re)publier"
+        default: "engine-latest"
+
+permissions:
+  contents: write   # publier la release + son archive
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      # CUDA Toolkit complet (fiabilité > vitesse : ~20-25 min de build au total).
+      - name: Installer le CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.19
+        id: cuda
+        with:
+          cuda: ${{ inputs.cuda_version }}
+          method: network
+
+      - name: Cloner stable-diffusion.cpp (${{ inputs.sd_ref }})
+        shell: pwsh
+        run: |
+          git clone --recursive https://github.com/leejet/stable-diffusion.cpp sdcpp
+          cd sdcpp
+          git checkout "${{ inputs.sd_ref }}"
+          git submodule update --init --recursive
+          Write-Host "Commit builé :"
+          git rev-parse HEAD
+
+      - name: Configurer (CMake · CUDA · arch ${{ inputs.cuda_arch }})
+        shell: pwsh
+        run: |
+          cmake -S sdcpp -B sdcpp/build `
+            -DSD_CUDA=ON `
+            -DCMAKE_CUDA_ARCHITECTURES="${{ inputs.cuda_arch }}" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DSD_WEBP=OFF -DSD_WEBM=OFF
+
+      - name: Compiler (Release)
+        shell: pwsh
+        run: cmake --build sdcpp/build --config Release --parallel
+
+      - name: Empaqueter (binaire + DLL CUDA)
+        shell: pwsh
+        run: |
+          $out = "package"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          # Localiser le binaire CLI (sd.exe / sd-cli.exe), où qu'il soit.
+          $exe = Get-ChildItem -Path sdcpp/build -Recurse -File -Include sd.exe,sd-cli.exe |
+                 Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path sdcpp/build -Recurse -File -Include *.exe |
+                   Where-Object { $_.Name -notmatch 'test|example|quantize' } |
+                   Select-Object -First 1
+          }
+          if (-not $exe) { throw "Aucun binaire sd trouvé dans le build." }
+          Write-Host "Binaire : $($exe.FullName)"
+          Copy-Item $exe.FullName "$out/sd.exe" -Force
+
+          # DLL éventuelles à côté du binaire (ggml/stable-diffusion si shared).
+          Get-ChildItem "$($exe.Directory.FullName)/*.dll" -ErrorAction SilentlyContinue |
+            Copy-Item -Destination $out -Force
+
+          # Runtime CUDA (indispensable sans CUDA Toolkit installé côté client).
+          $cudabin = Join-Path $env:CUDA_PATH "bin"
+          foreach ($d in @("cudart64_12.dll","cublas64_12.dll","cublasLt64_12.dll")) {
+            $p = Join-Path $cudabin $d
+            if (Test-Path $p) { Copy-Item $p $out -Force }
+            else { Write-Host "⚠️ DLL manquante : $d" }
+          }
+
+          Get-ChildItem $out | Format-Table Name,Length -AutoSize
+          Compress-Archive -Path "$out/*" -DestinationPath "sd-cuda-windows-x64.zip" -Force
+          Write-Host "Archive prête : sd-cuda-windows-x64.zip"
+
+      - name: Publier la release « ${{ inputs.release_tag }} »
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: "Moteur sd.cpp — Windows CUDA (arch ${{ inputs.cuda_arch }})"
+          body: |
+            Build **maison** de stable-diffusion.cpp pour Turbo Slop Generator 3000,
+            optimisé pour les cartes du projet.
+
+            - Source : `${{ inputs.sd_ref }}`
+            - CUDA : `${{ inputs.cuda_version }}` · architectures : `${{ inputs.cuda_arch }}`
+            - Archive : `sd-cuda-windows-x64.zip` (binaire `sd.exe` + DLL runtime CUDA)
+
+            Installé côté app par **`update-engine-ci.bat`**
+            (`scripts/get_sdcpp.py --source ours`).
+          files: sd-cuda-windows-x64.zip

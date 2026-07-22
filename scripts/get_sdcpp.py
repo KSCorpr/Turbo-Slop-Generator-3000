@@ -36,6 +36,10 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
+# Build MAISON (CI GitHub Actions du projet) : release au tag mouvant, binaire
+# compilé pour les archis des cartes du projet (2080 Ti=75, 3060=86).
+OUR_REPO = "KSCorpr/Turbo-Slop-Generator-3000"
+OUR_TAG = "engine-latest"
 _UA = {"User-Agent": "atelier"}
 
 
@@ -335,9 +339,70 @@ def _extract(blob: bytes, name: str) -> None:
             t.extractall(BIN_DIR)
 
 
+def _purge_old_binaries() -> None:
+    for n in ("sd-cli.exe", "sd.exe", "sd-cli", "sd"):
+        for p in BIN_DIR.rglob(n):
+            try:
+                p.unlink()
+                print(f"     - ancien binaire retiré : {p.name}", flush=True)
+            except OSError:
+                pass
+
+
+def _install_from_ours(args) -> None:
+    """Installe le binaire depuis NOTRE release CI (build maison, archis ciblées).
+
+    L'archive publiée par le workflow « Build sd.cpp (Windows CUDA) » contient
+    déjà sd.exe + les DLL runtime CUDA : on la décompresse telle quelle dans bin/.
+    """
+    tag = args.tag or OUR_TAG
+    url = f"https://api.github.com/repos/{OUR_REPO}/releases/tags/{tag}"
+    print(f"Moteur build maison : release « {tag} » de {OUR_REPO}…")
+    try:
+        rel = _fetch_json(url)
+    except Exception as exc:  # noqa: BLE001
+        sys.exit(f"Release CI introuvable ({exc}). Lancez d'abord le workflow "
+                 "« Build sd.cpp (Windows CUDA) » dans l'onglet Actions du dépôt "
+                 "GitHub (bouton « Run workflow »).")
+    if not isinstance(rel, dict) or not rel.get("assets"):
+        msg = rel.get("message") if isinstance(rel, dict) else rel
+        sys.exit(f"Release CI « {tag} » absente ou vide ({msg}). Lancez le "
+                 "workflow « Build sd.cpp (Windows CUDA) » (onglet Actions) "
+                 "puis relancez cette mise à jour.")
+    print(f"Release : {rel.get('tag_name')}")
+    asset = next((a for a in rel["assets"]
+                  if a["name"].lower().endswith(".zip")
+                  and "win" in a["name"].lower()), None)
+    if asset is None:
+        print("Aucune archive Windows dans la release CI. Disponibles :")
+        for a in rel["assets"]:
+            print(" ", a["name"])
+        sys.exit("Rien à installer.")
+
+    if args.force:
+        _purge_old_binaries()
+    if _has_sd_cli() and not args.force:
+        print("Binaire sd-cli déjà présent, on saute (utilisez --force pour MAJ).")
+        return
+    print(f"Téléchargement (build maison) : {asset['name']}")
+    _extract(_download(asset["browser_download_url"]), asset["name"])
+
+    # L'archive CI embarque déjà les DLL CUDA ; repli PyPI si jamais absentes.
+    if platform.system().lower() == "windows" and not _cuda_runtime_present():
+        print("Runtime CUDA absent de l'archive — repli via PyPI…")
+        ensure_cuda_runtime()
+    print(f"Décompressé dans {BIN_DIR}. Moteur CI (archis ciblées) prêt.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", choices=["cuda", "cpu"], default="cuda")
+    ap.add_argument("--source", choices=["official", "ours"], default="official",
+                    help="official = releases leejet/stable-diffusion.cpp ; "
+                         "ours = build maison CI du projet (archis 75;86)")
+    ap.add_argument("--tag", default=OUR_TAG,
+                    help="tag de la release CI (--source ours). Défaut : "
+                         "engine-latest")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--force", action="store_true",
                     help="re-télécharger même si un binaire est déjà présent "
@@ -348,6 +413,10 @@ def main():
 
     if not args.allow_ipv6:
         _force_ipv4()
+
+    if args.source == "ours":
+        _install_from_ours(args)
+        return
 
     print("Recherche de la dernière release stable-diffusion.cpp…")
     rel = _latest_release_with_assets()
@@ -367,14 +436,7 @@ def main():
 
     # Binaire principal (skip si déjà présent, utile en cas de relance).
     if args.force:
-        # Mise à jour : on supprime les anciens binaires pour forcer le re-DL.
-        for n in ("sd-cli.exe", "sd.exe", "sd-cli", "sd"):
-            for p in BIN_DIR.rglob(n):
-                try:
-                    p.unlink()
-                    print(f"     - ancien binaire retiré : {p.name}", flush=True)
-                except OSError:
-                    pass
+        _purge_old_binaries()   # MAJ : retirer les anciens binaires pour re-DL
     if _has_sd_cli() and not args.force:
         print("Binaire sd-cli déjà présent, on saute le téléchargement.")
     else:
