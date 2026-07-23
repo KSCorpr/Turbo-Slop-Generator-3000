@@ -135,8 +135,10 @@ base_models:
         match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
         quantizable: true
       vae:
+        # La Mage-VAE est nommée vae/diffusion_pytorch_model.safetensors dans le
+        # dépôt de base microsoft/Mage-Flow (un seul fichier dans vae/).
         repo: microsoft/Mage-Flow
-        match: "vae/*mage_vae*.safetensors"
+        match: "vae/*.safetensors"
     defaults:
       steps: 4
       cfg_scale: 1.0
@@ -179,8 +181,10 @@ base_models:
         match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
         optional: true
       vae:
+        # La Mage-VAE est nommée vae/diffusion_pytorch_model.safetensors dans le
+        # dépôt de base microsoft/Mage-Flow (un seul fichier dans vae/).
         repo: microsoft/Mage-Flow
-        match: "vae/*mage_vae*.safetensors"
+        match: "vae/*.safetensors"
     defaults:
       steps: 4
       cfg_scale: 1.0
