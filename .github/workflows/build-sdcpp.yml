@@ -13,6 +13,9 @@ on:
       sd_ref:
         description: "Version de stable-diffusion.cpp (branche / tag / commit)"
         default: "master"
+      sd_pr:
+        description: "PR sd.cpp à tirer avant build (numéros séparés par espace, ex. '1621 1811'). Vide = aucune."
+        default: ""
       cuda_arch:
         description: "Architectures CUDA (1080 Ti=61, 2080 Ti=75, 3060=86)"
         default: "61;75;86"
@@ -51,6 +54,26 @@ jobs:
           git submodule update --init --recursive
           Write-Host "Commit builé :"
           git rev-parse HEAD
+
+      # Tire une ou plusieurs PR non mergées AVANT de compiler (le build maison
+      # sert exactement à ça). Chaque PR est fetch puis mergée sur la ref ; si
+      # un merge échoue (conflit) ou casse la compilation, le run échoue —
+      # aucun dégât, on retire la PR et on relance.
+      - name: Tirer les PR sd.cpp (optionnel)
+        if: ${{ inputs.sd_pr != '' }}
+        shell: pwsh
+        working-directory: sdcpp
+        run: |
+          git config user.email "ci@local"
+          git config user.name "ci-build"
+          foreach ($pr in "${{ inputs.sd_pr }}".Split(" ")) {
+            $pr = $pr.Trim()
+            if ($pr -eq "") { continue }
+            Write-Host "== Tirage de la PR #$pr =="
+            git fetch origin "pull/$pr/head:pr-$pr"
+            git merge --no-edit "pr-$pr"
+          }
+          git submodule update --init --recursive
 
       - name: Configurer (CMake · CUDA · arch ${{ inputs.cuda_arch }})
         shell: pwsh
@@ -109,6 +132,7 @@ jobs:
             optimisé pour les cartes du projet.
 
             - Source : `${{ inputs.sd_ref }}`
+            - PR appliquées : `${{ inputs.sd_pr }}`
             - CUDA : `${{ inputs.cuda_version }}` · architectures : `${{ inputs.cuda_arch }}`
             - Archive : `sd-cuda-windows-x64.zip` (binaire `sd.exe` + DLL runtime CUDA)
 
