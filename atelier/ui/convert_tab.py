@@ -19,21 +19,19 @@ from ..i18n import t
 # (valeur sd.cpp, libellé). Du plus lourd/fidèle au plus léger/agressif.
 # Les k-quants (q*_k) demandent un moteur récent ; en cas de refus, le journal
 # le dira et on retombe sur q5_1 / q8_0. Défaut : q4_k (bon compromis VRAM).
-# (libellé affiché, valeur sd.cpp). Du plus lourd/fidèle au plus léger/agressif.
+# (libellé affiché, valeur sd.cpp). sd.cpp « --mode convert » n'accepte QUE ces
+# formats (doc quantization_and_gguf.md) : PAS de k-quants (q4_k, q5_k, q6_k…),
+# qui sont refusés par le moteur (« invalid weight format »). Du plus fidèle au
+# plus léger.
 QTYPES = [
-    ("q4_k — 4 bits (k-quant) · recommandé (≈ modèles de l'app)", "q4_k"),
-    ("q5_k — 5 bits (k-quant) · plus fidèle", "q5_k"),
-    ("q6_k — 6 bits (k-quant) · très fidèle", "q6_k"),
-    ("q8_0 — 8 bits · quasi sans perte (gros)", "q8_0"),
-    ("q5_1 — 5 bits", "q5_1"),
+    ("q5_1 — 5 bits · recommandé (bon compromis taille/qualité)", "q5_1"),
+    ("q8_0 — 8 bits · quasi sans perte (plus gros)", "q8_0"),
     ("q5_0 — 5 bits", "q5_0"),
-    ("q4_1 — 4 bits", "q4_1"),
-    ("q4_0 — 4 bits · le plus léger utile", "q4_0"),
-    ("q3_k — 3 bits (agressif, perte visible)", "q3_k"),
-    ("q2_k — 2 bits (très agressif)", "q2_k"),
-    ("f16 — 16 bits (aucune perte, aucun gain de place)", "f16"),
+    ("q4_1 — 4 bits · léger", "q4_1"),
+    ("q4_0 — 4 bits · le plus léger", "q4_0"),
+    ("f16 — 16 bits (aucune perte, aucun allègement)", "f16"),
 ]
-_DEFAULT_QTYPE = "q4_k"
+_DEFAULT_QTYPE = "q5_1"
 
 
 def _suggest_name(model_name: str | None, qtype: str) -> str:
@@ -53,8 +51,9 @@ def build_convert_tab():
             "et le disque. Une seule fois — ensuite tu réutilises le GGUF.\n\n"
             f"1. Dépose ton modèle dans **`{settings.CUSTOM_DIR}`** puis "
             "**↻ Rafraîchir**.  \n"
-            "2. Choisis la quant (voir l'échelle : `q8_0` ≈ sans perte → `q4_k` "
-            "bon compromis → `q3_k` agressif).  \n"
+            "2. Choisis la quant : `q8_0` ≈ sans perte → `q5_1` bon compromis → "
+            "`q4_0` le plus léger. *(sd.cpp ne gère que "
+            "q8_0/q5_1/q5_0/q4_1/q4_0/f16 en conversion — pas de k-quants.)*  \n"
             "3. **Convertir** : le GGUF est écrit dans le même dossier "
             "`models/custom/` et devient utilisable comme **modèle local** dans "
             "les onglets de génération (bouton « Rafraîchir les fichiers "
