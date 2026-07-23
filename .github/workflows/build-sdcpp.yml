@@ -1,10 +1,13 @@
 name: Build sd.cpp (Windows CUDA)
 
-# Build MAISON de stable-diffusion.cpp, taillé pour les cartes du projet
-# (1080 Ti = arch 61, 2080 Ti = arch 75, 3060 = arch 86). Déclenché À LA MAIN (onglet Actions →
-# « Run workflow ») : on build quand on veut une nouveauté ou un patch, pas à
-# chaque commit. Le binaire + les DLL CUDA sont publiés dans une release au tag
-# mouvant « engine-latest », que l'app télécharge via
+# Build MAISON de stable-diffusion.cpp, ALIGNÉ sur la config de compilation
+# OFFICIELLE de sd.cpp pour la FIABILITÉ : générateur Ninja, GGML_NATIVE=OFF +
+# GGML_CPU_ALL_VARIANTS=ON (variantes CPU + dispatch au RUNTIME → portable sur
+# n'importe quel CPU ; sans ça, GGML_NATIVE=ON compilait pour le CPU du runner
+# et crashait sur d'autres machines), backends en DLL, /bigobj. Les archis CUDA
+# restent taillées pour les cartes du projet (1080 Ti=61, 2080 Ti=75, 3060=86).
+# Déclenché À LA MAIN (Actions → « Run workflow »). Le binaire + les DLL sont
+# publiés dans une release au tag mouvant « engine-latest », téléchargée par
 # `update-engine-ci.bat` (→ get_sdcpp.py --source ours).
 
 on:
@@ -37,6 +40,16 @@ jobs:
     # VS2022 est la dernière version supportée par nvcc 12.x.
     runs-on: windows-2022
     steps:
+      # Environnement MSVC (cl.exe) exporté aux étapes suivantes : requis pour
+      # le générateur Ninja (nvcc utilise cl.exe comme host compiler), comme la
+      # CI officielle sd.cpp.
+      - name: Configurer l'environnement MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Installer Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
       # CUDA Toolkit complet (fiabilité > vitesse : ~20-25 min de build au total).
       - name: Installer le CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
@@ -101,18 +114,29 @@ jobs:
           "date=$date"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "build $date · commit $sha ($desc)"
 
-      - name: Configurer (CMake · CUDA · arch ${{ inputs.cuda_arch }})
+      # Config ALIGNÉE sur la CI officielle sd.cpp (fiabilité) : Ninja + cl.exe,
+      # GGML_NATIVE=OFF + GGML_CPU_ALL_VARIANTS=ON (portabilité CPU), backends en
+      # DLL, /bigobj. Seule différence assumée : archis CUDA ciblées (nos cartes)
+      # au lieu de la liste générique — c'est l'optimisation « pour ta machine ».
+      - name: Configurer (CMake · Ninja · CUDA · arch ${{ inputs.cuda_arch }})
         shell: pwsh
         run: |
-          cmake -S sdcpp -B sdcpp/build `
-            -DSD_CUDA=ON `
-            -DCMAKE_CUDA_ARCHITECTURES="${{ inputs.cuda_arch }}" `
+          cmake -S sdcpp -B sdcpp/build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_CXX_FLAGS=/bigobj `
+            -DSD_CUDA=ON `
+            -DSD_BUILD_SHARED_LIBS=ON `
+            -DSD_BUILD_SHARED_GGML_LIB=ON `
+            -DGGML_BACKEND_DL=ON `
+            -DGGML_CPU_ALL_VARIANTS=ON `
+            -DGGML_NATIVE=OFF `
+            -DCMAKE_CUDA_ARCHITECTURES="${{ inputs.cuda_arch }}" `
             -DSD_WEBP=OFF -DSD_WEBM=OFF
 
-      - name: Compiler (Release)
+      - name: Compiler
         shell: pwsh
-        run: cmake --build sdcpp/build --config Release --parallel
+        run: cmake --build sdcpp/build --parallel
 
       - name: Empaqueter (binaire + DLL CUDA)
         shell: pwsh
@@ -132,9 +156,14 @@ jobs:
           Write-Host "Binaire : $($exe.FullName)"
           Copy-Item $exe.FullName "$out/sd.exe" -Force
 
-          # DLL éventuelles à côté du binaire (ggml/stable-diffusion si shared).
+          # DLL à côté du binaire (ggml-base, ggml-cpu-*, ggml-cuda,
+          # stable-diffusion… — backends chargés au runtime via GGML_BACKEND_DL).
           Get-ChildItem "$($exe.Directory.FullName)/*.dll" -ErrorAction SilentlyContinue |
             Copy-Item -Destination $out -Force
+          # Filet : toutes les DLL ggml/sd du build, où qu'elles soient (les
+          # variantes CPU GGML_CPU_ALL_VARIANTS sont indispensables au dispatch).
+          Get-ChildItem -Path sdcpp/build -Recurse -File -Include ggml*.dll,stable-diffusion*.dll -ErrorAction SilentlyContinue |
+            ForEach-Object { if (-not (Test-Path "$out/$($_.Name)")) { Copy-Item $_.FullName $out -Force } }
 
           # Runtime CUDA (indispensable sans CUDA Toolkit installé côté client).
           $cudabin = Join-Path $env:CUDA_PATH "bin"
