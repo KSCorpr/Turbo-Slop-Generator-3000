@@ -140,6 +140,13 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
 
+    # Mage-Flow : sa Mage-VAE (128 canaux) n'a pas de projecteur d'aperçu
+    # « proj ». Passer --preview proj fait CRASHER le moteur (access violation)
+    # au chargement. On désactive donc l'aperçu temps réel pour cette famille :
+    # la génération fonctionne, simplement sans miniature intermédiaire.
+    if model.family == "mage_flow":
+        preview_path = None
+
     # Famille « checkpoint complet » : un seul fichier via -m.
     has_full = any(c.role == "model" for c in model.components)
     if has_full:
