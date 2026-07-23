@@ -71,7 +71,16 @@ jobs:
             if ($pr -eq "") { continue }
             Write-Host "== Tirage de la PR #$pr =="
             git fetch origin "pull/$pr/head:pr-$pr"
+            if ($LASTEXITCODE -ne 0) { throw "Fetch de la PR #$pr echoue." }
             git merge --no-edit "pr-$pr"
+            # PowerShell ne s'arrete PAS sur le code retour non-zero de git : on
+            # verifie $LASTEXITCODE explicitement, sinon un merge en CONFLIT
+            # laisserait des marqueurs <<<<<<< dans le code et casserait la
+            # compilation 40 min plus tard (erreur trompeuse). On echoue net.
+            if ($LASTEXITCODE -ne 0) {
+              git merge --abort
+              throw "PR #$pr : conflit de merge avec la base. Elle doit etre rebasee sur master pour s'appliquer. Retire-la du champ sd_pr (ou choisis un sd_ref proche de sa base)."
+            }
           }
           git submodule update --init --recursive
 
