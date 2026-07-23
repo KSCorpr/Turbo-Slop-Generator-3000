@@ -32,6 +32,8 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
+| 🧙 **Mage-Flow Turbo** | Microsoft 4B multimodal DiT (4 steps, CFG 1.0) · **reuses the Qwen3-VL encoder** · Mage-VAE · weights in safetensors (convert to GGUF as needed) |
+| 🧙 **Mage-Flow Edit** | native instruction-based **image editing** (no LoRA) · multi-reference · Qwen3-VL + mmproj vision + Mage-VAE |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |

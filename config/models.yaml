@@ -110,6 +110,91 @@ base_models:
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
+  # --------------------------------------------------------------------------
+  - id: mage-flow-turbo
+    name: "Mage-Flow Turbo"
+    family: mage_flow
+    tags: [rapide, distillé, microsoft]
+    description: >
+      Mage-Flow « Turbo » (Microsoft) — transformer de diffusion multimodal 4B
+      à résolution native (512–2048 px), distillé : **4 pas, CFG 1.0**. Encodeur
+      **Qwen3-VL-4B-Instruct** (le **même** que Krea 2 : aucun re-téléchargement)
+      + **Mage-VAE** (128 canaux). Poids officiels en **safetensors** (pas encore
+      de GGUF) : allège-les au besoin via l'onglet **« Convertir en GGUF »**.
+      Tourne dès ~10–12 Go (encodeur déchargé en RAM). **Moteur sd.cpp récent
+      requis** (commit Mage-Flow #1808 — update-engine.bat / build maison).
+    sources:
+      diffusion:
+        # Poids safetensors (dossier transformer/). Pas de variantes GGUF -> pas
+        # de joker {quant}. À convertir en GGUF ensuite si besoin (onglet dédié).
+        repo: microsoft/Mage-Flow-Turbo
+        match: "transformer/*.safetensors"
+      text_encoder:
+        # Réutilise l'encodeur Qwen3-VL de Krea 2 (déjà présent si tu l'utilises).
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      vae:
+        repo: microsoft/Mage-Flow
+        match: "vae/*mage_vae*.safetensors"
+    defaults:
+      steps: 4
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: false
+    presets:
+      - {name: "⚡ Turbo (4 pas)",   sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Équilibré (6 pas)", sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - {name: "Qualité (8 pas)",   sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
+  - id: mage-flow-edit-turbo
+    name: "Mage-Flow Edit Turbo"
+    family: mage_flow
+    tags: [rapide, distillé, édition, microsoft]
+    description: >
+      Mage-Flow **Edit** Turbo (Microsoft) — **édition d'image par instruction,
+      NATIVE (aucun LoRA)** : charge une ou plusieurs images de référence et
+      décris la modification dans le prompt. 4B, **4 pas, CFG 1.0**. Encodeur
+      **Qwen3-VL-4B-Instruct** + projecteur **vision (mmproj)** + **Mage-VAE**.
+      Le preset `mage_flow` envoie chaque référence à Qwen3-VL (copie VLM réduite
+      à 384 px) ET au transformer (VAE à la résolution de sortie). **Moteur
+      sd.cpp récent requis** (commit Mage-Flow #1808).
+    sources:
+      diffusion:
+        repo: microsoft/Mage-Flow-Edit-Turbo
+        match: "transformer/*.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        # Projecteur vision (mmproj) : permet à Qwen3-VL de « voir » la référence
+        # (édition). Optionnel : le t2i marche sans, chargé seulement en édition.
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
+        optional: true
+      vae:
+        repo: microsoft/Mage-Flow
+        match: "vae/*mage_vae*.safetensors"
+    defaults:
+      steps: 4
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: false
+      edit: full          # modèle d'édition natif : UI « images de référence »
+    presets:
+      - {name: "⚡ Édition Turbo (4 pas)", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Édition (6 pas)",          sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+    vram_min_gb: 10
+
 # ============================================================================
 #  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
 #  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux2.
