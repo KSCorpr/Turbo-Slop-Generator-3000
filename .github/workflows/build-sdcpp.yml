@@ -84,6 +84,23 @@ jobs:
           }
           git submodule update --init --recursive
 
+      # Capture la vraie date de build + le commit sd.cpp exact (après merge des
+      # PR) : la release utilise un tag MOUVANT, donc sa date affichée reste
+      # figée à la 1re création — on met la vraie info dans le nom/corps.
+      - name: Métadonnées du build
+        id: meta
+        shell: pwsh
+        working-directory: sdcpp
+        run: |
+          $sha = (git rev-parse --short HEAD).Trim()
+          $desc = (git describe --tags --always 2>$null)
+          if (-not $desc) { $desc = $sha } else { $desc = $desc.Trim() }
+          $date = [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'")
+          "sha=$sha"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "describe=$desc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "date=$date"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "build $date · commit $sha ($desc)"
+
       - name: Configurer (CMake · CUDA · arch ${{ inputs.cuda_arch }})
         shell: pwsh
         run: |
@@ -135,11 +152,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          name: "Moteur sd.cpp — Windows CUDA (arch ${{ inputs.cuda_arch }})"
+          name: "Moteur sd.cpp — build ${{ steps.meta.outputs.date }} · commit ${{ steps.meta.outputs.sha }} (arch ${{ inputs.cuda_arch }})"
           body: |
             Build **maison** de stable-diffusion.cpp pour Turbo Slop Generator 3000,
             optimisé pour les cartes du projet.
 
+            > ⚠️ Le tag `engine-latest` est **mouvant** : la date affichée par
+            > GitHub reste celle de la 1re release. La **vraie** date/version du
+            > binaire est ci-dessous (et le `.zip` est ré-uploadé à chaque build).
+
+            - **Build : `${{ steps.meta.outputs.date }}`**
+            - **Commit sd.cpp : `${{ steps.meta.outputs.describe }}` (`${{ steps.meta.outputs.sha }}`)**
             - Source : `${{ inputs.sd_ref }}`
             - PR appliquées : `${{ inputs.sd_pr }}`
             - CUDA : `${{ inputs.cuda_version }}` · architectures : `${{ inputs.cuda_arch }}`
