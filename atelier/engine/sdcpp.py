@@ -196,6 +196,17 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     return cmd
 
 
+def build_convert_cmd(sd_cli: Path, input_model: Path, output_model: Path,
+                      qtype: str) -> list[str]:
+    """Conversion/quantification d'un modèle en GGUF (sd.cpp --mode convert).
+
+    Lit un checkpoint/safetensors/diffusion et le ré-écrit dans la quant `qtype`
+    (ex. « q4_k », « q8_0 »). 100% CPU, aucune diffusion : c'est une simple
+    transformation des poids. Voir docs/quantization_and_gguf.md."""
+    return [str(sd_cli), "-M", "convert", "-m", str(input_model),
+            "-o", str(output_model), "--type", qtype, "-v"]
+
+
 def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
                       output: Path, repeats: int = 1,
                       offload: bool = True) -> list[str]:
