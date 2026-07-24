@@ -36,6 +36,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | 🧙 **Mage-Flow Edit** | native instruction-based **image editing** (no LoRA) · multi-reference · Qwen3-VL + mmproj vision + Mage-VAE |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
+| 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · 512 “light” mode for ≤12 GB cards · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile per detected GPU / manual override) |
 
