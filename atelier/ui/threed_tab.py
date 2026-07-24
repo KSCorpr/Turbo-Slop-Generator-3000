@@ -32,8 +32,9 @@ def build_threed_tab():
             "Transforme une image en **maillage 3D texturé** (GLB) via "
             "**trellis.cpp** (TRELLIS.2, binaire natif CUDA — aucun PyTorch). "
             "Chargez une image nette d'un **objet unique** sur fond simple ; le "
-            "détourage est automatique. Génération **one-shot** : le moteur "
-            "libère toute la VRAM en fin de course.\n\n"
+            "détourage est automatique. Le serveur trellis **démarre puis "
+            "s'arrête** à chaque génération → toute la VRAM est libérée ensuite "
+            "(stratégie low-VRAM).\n\n"
             "💡 Sur tes cartes (≤ 12 Go), reste en **512** (les modes 1024/1536 "
             "demandent ~16 Go+).")
 

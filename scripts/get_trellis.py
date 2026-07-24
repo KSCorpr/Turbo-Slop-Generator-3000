@@ -40,35 +40,32 @@ ASSET_MATCH = ("cuda", "win")          # archive Windows CUDA
 HF_MODEL_REPO = "ilintar/trellis2-gguf"
 
 
-def _is_cli(p: Path) -> bool:
-    """Détection souple du binaire CLI trellis (nom variable selon la release)."""
+def _is_binary(p: Path) -> bool:
+    """Détecte un exécutable trellis utilisable (serveur OU cli, nom variable)."""
     if not p.is_file():
         return False
     n = p.name.lower()
     if platform.system() == "Windows" and not n.endswith(".exe"):
         return False
     stem = n[:-4] if n.endswith(".exe") else n
-    if stem.startswith("trellis") and "cli" in stem:
-        return True
-    # Repli : un exécutable « trellis* » qui n'est ni server/test/studio/bench.
+    # La release Windows fournit trellis-server ; on accepte aussi trellis-cli.
     return ("trellis" in stem and not any(
-        x in stem for x in ("server", "test", "studio", "bench", "convert")))
+        x in stem for x in ("test", "studio", "bench", "convert")))
 
 
-def _find_cli() -> Path | None:
+def _find_binary() -> Path | None:
     if not BIN_DIR.exists():
         return None
-    # 1re passe : correspondance stricte (…cli…) ; 2e passe : repli.
-    strict = [p for p in BIN_DIR.rglob("*")
-              if p.is_file() and _is_cli(p) and "cli" in p.name.lower()]
-    if strict:
-        return strict[0]
-    loose = [p for p in BIN_DIR.rglob("*") if _is_cli(p)]
-    return loose[0] if loose else None
+    hits = [p for p in BIN_DIR.rglob("*") if _is_binary(p)]
+    if not hits:
+        return None
+    # Priorité au serveur (ce que fournit la release), sinon le premier trellis.
+    srv = [p for p in hits if "server" in p.name.lower()]
+    return srv[0] if srv else hits[0]
 
 
 def has_cli() -> bool:
-    return _find_cli() is not None
+    return _find_binary() is not None
 
 
 def _list_exes(base: Path) -> list[str]:
@@ -121,9 +118,9 @@ def install_binary(force: bool = False, log=print) -> bool:
     import zipfile
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
         z.extractall(TRELLIS_BIN_DIR)
-    cli = _find_cli()
-    if cli is not None:
-        log(f"[OK] Binaire installé : {cli}")
+    found = _find_binary()
+    if found is not None:
+        log(f"[OK] Binaire installé : {found}")
         return True
     exes = _list_exes(TRELLIS_BIN_DIR)
     log("[!] trellis-cli introuvable après extraction. Exécutables trouvés :")
