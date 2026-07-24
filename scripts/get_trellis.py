@@ -40,15 +40,42 @@ ASSET_MATCH = ("cuda", "win")          # archive Windows CUDA
 HF_MODEL_REPO = "ilintar/trellis2-gguf"
 
 
-def _cli_names() -> list[str]:
-    return ["trellis-cli.exe"] if platform.system() == "Windows" \
-        else ["trellis-cli"]
+def _is_cli(p: Path) -> bool:
+    """Détection souple du binaire CLI trellis (nom variable selon la release)."""
+    if not p.is_file():
+        return False
+    n = p.name.lower()
+    if platform.system() == "Windows" and not n.endswith(".exe"):
+        return False
+    stem = n[:-4] if n.endswith(".exe") else n
+    if stem.startswith("trellis") and "cli" in stem:
+        return True
+    # Repli : un exécutable « trellis* » qui n'est ni server/test/studio/bench.
+    return ("trellis" in stem and not any(
+        x in stem for x in ("server", "test", "studio", "bench", "convert")))
+
+
+def _find_cli() -> Path | None:
+    if not BIN_DIR.exists():
+        return None
+    # 1re passe : correspondance stricte (…cli…) ; 2e passe : repli.
+    strict = [p for p in BIN_DIR.rglob("*")
+              if p.is_file() and _is_cli(p) and "cli" in p.name.lower()]
+    if strict:
+        return strict[0]
+    loose = [p for p in BIN_DIR.rglob("*") if _is_cli(p)]
+    return loose[0] if loose else None
 
 
 def has_cli() -> bool:
-    if not BIN_DIR.exists():
-        return False
-    return any(any(BIN_DIR.rglob(n)) for n in _cli_names())
+    return _find_cli() is not None
+
+
+def _list_exes(base: Path) -> list[str]:
+    if not base.exists():
+        return []
+    return sorted(p.name for p in base.rglob("*")
+                  if p.is_file() and p.name.lower().endswith(".exe"))
 
 
 def has_models() -> bool:
@@ -94,10 +121,16 @@ def install_binary(force: bool = False, log=print) -> bool:
     import zipfile
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
         z.extractall(TRELLIS_BIN_DIR)
-    if has_cli():
-        log(f"✓ Binaire installé dans {TRELLIS_BIN_DIR}.")
+    cli = _find_cli()
+    if cli is not None:
+        log(f"[OK] Binaire installé : {cli}")
         return True
-    log("⚠️ trellis-cli introuvable après extraction — vérifiez l'archive.")
+    exes = _list_exes(TRELLIS_BIN_DIR)
+    log("[!] trellis-cli introuvable après extraction. Exécutables trouvés :")
+    for name in exes:
+        log("    - " + name)
+    if not exes:
+        log("    (aucun .exe — l'archive n'a peut-être pas le binaire attendu)")
     return False
 
 
@@ -122,9 +155,9 @@ def install_models(log=print) -> bool:
         log(f"Échec du téléchargement des modèles : {exc}")
         return False
     if has_models():
-        log("✓ Modèles trellis en place.")
+        log("[OK] Modèles trellis en place.")
         return True
-    log("⚠️ Aucun .gguf après téléchargement — vérifiez le dépôt HF.")
+    log("[!] Aucun .gguf après téléchargement — vérifiez le dépôt HF.")
     return False
 
 
@@ -135,6 +168,14 @@ def install_all(force: bool = False, log=print) -> bool:
 
 
 def main():
+    # Console Windows en cp1252 : force l'UTF-8 pour ne pas planter sur un
+    # caractère non-encodable (accents, symboles) dans les logs.
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", action="store_true", help="binaire seul")
     ap.add_argument("--models", action="store_true", help="modèles seuls")

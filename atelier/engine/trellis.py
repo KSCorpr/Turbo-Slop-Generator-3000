@@ -27,17 +27,31 @@ RESOLUTIONS = [
 ]
 
 
-def _cli_names() -> list[str]:
-    return ["trellis-cli.exe"] if platform.system() == "Windows" \
-        else ["trellis-cli"]
+def _is_cli(p: Path) -> bool:
+    """Détection souple du binaire CLI trellis (nom variable selon la release)."""
+    if not p.is_file():
+        return False
+    n = p.name.lower()
+    if platform.system() == "Windows" and not n.endswith(".exe"):
+        return False
+    stem = n[:-4] if n.endswith(".exe") else n
+    if stem.startswith("trellis") and "cli" in stem:
+        return True
+    return ("trellis" in stem and not any(
+        x in stem for x in ("server", "test", "studio", "bench", "convert")))
 
 
 def find_cli() -> Path | None:
-    for name in _cli_names():
-        for c in settings.BIN_DIR.rglob(name):
-            if c.is_file():
-                return c
-    for name in _cli_names():
+    if settings.BIN_DIR.exists():
+        # Priorité stricte (…cli…), puis repli sur tout exécutable « trellis ».
+        strict = [p for p in settings.BIN_DIR.rglob("*")
+                  if _is_cli(p) and "cli" in p.name.lower()]
+        if strict:
+            return strict[0]
+        loose = [p for p in settings.BIN_DIR.rglob("*") if _is_cli(p)]
+        if loose:
+            return loose[0]
+    for name in ("trellis-cli", "trellis"):
         found = shutil.which(name)
         if found:
             return Path(found)
