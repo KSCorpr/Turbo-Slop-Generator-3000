@@ -132,12 +132,6 @@ def build_app() -> gr.Blocks:
             build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo",
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d)
-            build_generative_tab("mage-flow-turbo", "🧙 Mage-Flow Turbo",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d)
-            build_generative_tab("mage-flow-edit-turbo", "🧙 Mage-Flow Edit",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d)
             build_library_tab()
             build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
             build_threed_tab(pending_3d=pending_3d, tabs=tabs)

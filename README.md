@@ -32,8 +32,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🧙 **Mage-Flow Turbo** | Microsoft 4B multimodal DiT (4 steps, CFG 1.0) · **reuses the Qwen3-VL encoder** · Mage-VAE · weights in safetensors (convert to GGUF as needed) |
-| 🧙 **Mage-Flow Edit** | native instruction-based **image editing** (no LoRA) · multi-reference · Qwen3-VL + mmproj vision + Mage-VAE |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · 512 “light” mode for ≤12 GB cards · in-browser 3D preview |
@@ -129,7 +127,7 @@ Every generation tab exposes the same controls.
   on distilled CFG 1.0 models they are dropped. Bank © *ghleg* — MIT
   ([aoleg/Photographic-styles-and-wildcards-for-Krea-2](https://github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2)),
   shipped as `config/krea2_styles.csv`.
-- **🎨 Krea artistic styles** (accordion) — a bundled bank of **289 stackable
+- **🎨 Krea artistic styles** (accordion) — a bundled bank of **397 stackable
   artistic styles** (anime, cartoon, comics, drawing, photography, design,
   digital painting, painting), grouped by category in a **multi-select**
   dropdown. These have no `{prompt}` and no negatives: the style description is

@@ -24,6 +24,12 @@ def _res_choices():
     return [(lbl, val) for lbl, val in trellis.RESOLUTIONS]
 
 
+def _gpu_choices() -> list[tuple[str, int]]:
+    from .. import hardware
+    return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
+            for g in hardware.detect_gpus()]
+
+
 def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
     with gr.Tab("🧊 Image → 3D", id=tab_id):
         ready = trellis.is_ready()
@@ -35,8 +41,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             "détourage est automatique. Le serveur trellis **démarre puis "
             "s'arrête** à chaque génération → toute la VRAM est libérée ensuite "
             "(stratégie low-VRAM).\n\n"
-            "💡 Sur tes cartes (≤ 12 Go), reste en **512** (les modes 1024/1536 "
-            "demandent ~16 Go+).")
+            "💡 Sur une carte ≤ 12 Go, reste en **512** : les modes **1024/1536** "
+            "demandent **~16 Go+**. En dessous, la géométrie peut sortir "
+            "**corrompue (maillage en « blobs »)** plutôt que d'échouer "
+            "franchement — et c'est pire si le calcul déborde sur une carte "
+            "**Pascal (GTX 10xx)**. Voir « 🩺 Moteur » pour épingler une carte.")
 
         # ---- Installation (binaire + modèles) ----
         with gr.Accordion("⚙️ Installer trellis.cpp (binaire + modèles, 1 clic)",
@@ -98,6 +107,41 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                         res_status = gr.Markdown(trellis.resident_status())
                         res_stop_btn = gr.Button("⏹️ Arrêter le serveur résident",
                                                  size="sm")
+                with gr.Accordion("🎛️ Qualité / maillage", open=False):
+                    with gr.Row():
+                        decim = gr.Number(
+                            value=0, precision=0,
+                            label="Décimation — faces cibles (0 = défaut)",
+                            info="Plus bas = maillage plus léger.")
+                        atlas = gr.Dropdown(
+                            [("Défaut", 0), ("1024 px", 1024),
+                             ("2048 px", 2048), ("4096 px", 4096)],
+                            value=0, label="Taille de l'atlas UV (texture)")
+                    with gr.Row():
+                        no_texture = gr.Checkbox(
+                            value=False,
+                            label="Géométrie seule (sans texture, + rapide)")
+                        box_uv = gr.Checkbox(value=False,
+                                             label="Dépliage UV « box »")
+                with gr.Accordion("🩺 Moteur (dépannage)", open=False):
+                    gr.Markdown(
+                        "⚠️ **Multi-GPU** : ggml peut répartir le calcul sur "
+                        "toutes les cartes. Une carte **Pascal (GTX 10xx)** gère "
+                        "très mal le BF16 → géométrie corrompue (**maillage en "
+                        "« blobs »**), surtout en 1024. **Épingle la carte la "
+                        "plus récente** ci-dessous.")
+                    gpu_pick = gr.Dropdown(
+                        [(t("Auto (toutes les cartes)"), -1)] + _gpu_choices(),
+                        value=(_gpu_choices()[0][1] if _gpu_choices() else -1),
+                        label="Carte utilisée pour la 3D")
+                    with gr.Row():
+                        require_gpu = gr.Checkbox(
+                            value=True,
+                            label="Exiger le GPU (évite un repli CPU très lent)")
+                        f32 = gr.Checkbox(value=False,
+                                          label="Précision f32 (au lieu de f16)")
+                        no_fa = gr.Checkbox(value=False,
+                                            label="Désactiver FlashAttention")
                 with gr.Accordion("Options avancées", open=False):
                     extra = gr.Textbox(
                         label="Arguments trellis-server supplémentaires (optionnel)",
@@ -114,6 +158,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                                  elem_classes="log-box")
 
         def do_generate3d(image_path, res_val, seed_val, bg_val, resident_val,
+                          decim_val, atlas_val, no_tex_val, box_uv_val,
+                          gpu_val, req_gpu_val, f32_val, no_fa_val,
                           extra_args):
             if not image_path:
                 raise gr.Error(t("Chargez une image d'entrée."))
@@ -141,10 +187,19 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
 
             def worker():
                 try:
+                    _gpu = None if (gpu_val is None or int(gpu_val) < 0) \
+                        else int(gpu_val)
                     trellis.generate(in_png, out_glb, res=int(res_val),
                                      seed=(None if _seed < 0 else _seed),
                                      bg_removal=bg_val or "birefnet",
                                      resident=bool(resident_val),
+                                     gpu_index=_gpu,
+                                     decim=int(decim_val or 0),
+                                     atlas=int(atlas_val or 0),
+                                     no_texture=bool(no_tex_val),
+                                     box_uv=bool(box_uv_val),
+                                     require_gpu=bool(req_gpu_val),
+                                     f32=bool(f32_val), no_fa=bool(no_fa_val),
                                      extra=extra_args or "", log=q.put)
                     state["ok"] = True
                 except Exception as exc:  # noqa: BLE001
@@ -176,7 +231,9 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                    "\n".join(logs), gr.update(value=trellis.resident_status()))
 
         gen_evt = run.click(
-            do_generate3d, inputs=[image, res, seed, bg, resident, extra],
+            do_generate3d,
+            inputs=[image, res, seed, bg, resident, decim, atlas, no_texture,
+                    box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
             outputs=[status, model3d, glb_file, log, res_status])
         stop.click(lambda: sdcpp.cancel_active(), outputs=None,
                    cancels=[gen_evt])
