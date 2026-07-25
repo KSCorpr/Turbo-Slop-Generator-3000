@@ -60,6 +60,7 @@ from atelier import APP_NAME, __version__, hardware, i18n, net, settings
 from atelier.ui.convert_tab import build_convert_tab
 from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
+from atelier.ui.manage_tab import build_manage_tab
 from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
 from atelier.ui.theme import CSS, theme
@@ -136,6 +137,7 @@ def build_app() -> gr.Blocks:
             build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
             build_threed_tab(pending_3d=pending_3d, tabs=tabs)
             build_convert_tab()
+            build_manage_tab()
             build_settings_tab()
 
     i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)

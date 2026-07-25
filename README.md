@@ -36,6 +36,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · 512 “light” mode for ≤12 GB cards · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
+| 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
 | ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile per detected GPU / manual override) |
 
 ---
@@ -48,6 +49,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Toolkit](#toolkit)
+- [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
 - [Distributing a portable package](#distributing-a-portable-package)
 - [Models & sources](#models--sources)
@@ -489,6 +491,37 @@ scripts/
   setup_tools.py             # installs PyTorch tools (depth, bg, sam, enhance, upscale)
   tools/run_*.py             # inference runners (subprocess: depth, rembg, sam, enhance, usdu)
 ```
+
+---
+
+## Managing disk space & uninstalling
+
+The **🧹 Manage & help** tab is the single place to see what the app has
+downloaded and to reclaim space. It lists every item with its **size**, grouped
+into four categories:
+
+| Category | What's in it |
+|---|---|
+| **Engines** | `sd-cli` (stable-diffusion.cpp) and the trellis.cpp 3D binary |
+| **Models** | catalog models (Flux.2, Krea 2), PiD, ESRGAN upscalers, trellis 3D GGUFs (~10 GB) |
+| **Toolkit add-ons** | depth, background removal, SAM, prompt enhancer, creative SDXL upscale |
+| **Your data** ⚠️ | LoRAs, custom models, generated images/3D, temp files |
+
+Tick what you want to remove, tick **“I confirm”**, then delete. Sizes refresh
+after each operation.
+
+- Everything outside **Your data** is **re-downloadable** from inside the app
+  (Model Catalog, one-click installers).
+- Items marked **⚠️** are *yours* — LoRAs, hand-placed/converted models and your
+  generated images. Deleting them is not recoverable from the app.
+- **Temp files** (`tmp/`) are always safe to clear.
+- Deletion is restricted to paths **inside the project folder** — the tool
+  never touches anything elsewhere on your disk, and base folders are recreated
+  right after.
+
+The same tab carries **📖 in-app documentation for every option** of the app
+(generation, settings/hardware, Image → 3D, convert, toolkit, network &
+maintenance) — the fastest way to know what a slider actually does.
 
 ---
 
