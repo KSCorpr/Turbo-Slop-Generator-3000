@@ -532,6 +532,27 @@ after each operation.
   never touches anything elsewhere on your disk, and base folders are recreated
   right after.
 
+### Moving models to another drive
+
+Models don't have to live inside the project folder. In **🧹 Manage & help →
+📁 Models location** you can point them at any absolute path — typically a fast
+**NVMe** (much quicker loads) or a bigger drive:
+
+- **📦 Move models here** — transfers the existing files, then saves the new
+  location. Same drive = instant; across drives = a real copy (can take a
+  while). Free space is checked first, and if any file fails to move the
+  location is **not** switched.
+- **🔗 Point here without moving** — reuse a folder that already contains your
+  models (e.g. shared with another install).
+- **↩️ Back to the project folder** — restore the default `models/`.
+
+The setting is stored as `models_dir` in `userdata/preferences.json` and applies
+on **restart** (several modules resolve the path at import time).
+
+> Repeatedly loading models does **not** wear out an SSD — flash endurance is
+> consumed by *writes* (TBW), not reads. Putting models on your NVMe is exactly
+> what it's for.
+
 The same tab carries **📖 in-app documentation for every option** of the app
 (generation, settings/hardware, Image → 3D, convert, toolkit, network &
 maintenance) — the fastest way to know what a slider actually does.

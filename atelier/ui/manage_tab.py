@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import inventory, settings
+from .. import inventory, settings, storage
 from ..i18n import t
 
 CATEGORIES = ["Moteurs", "Modèles", "Add-ons Toolkit", "Vos données"]
@@ -96,6 +96,74 @@ def build_manage_tab():
             f"`{settings.BIN_DIR.name}/`, add-ons `tools_repo/`, LoRA "
             f"`{settings.LORA_DIR.name}/`, sorties "
             f"`{settings.OUTPUT_DIR.name}/`.*")
+
+        # ------------------------------------------------------------------ #
+        #  Emplacement des modèles (dossier externe)
+        # ------------------------------------------------------------------ #
+        gr.Markdown("---\n### 📁 Emplacement des modèles")
+        with gr.Accordion("Déplacer les modèles vers un autre disque "
+                          "(ex. NVMe rapide)", open=False):
+            gr.Markdown(
+                "Les modèles peuvent vivre **hors du dossier du projet** : "
+                "utile pour les mettre sur un **NVMe** (chargements bien plus "
+                "rapides) ou sur un disque plus grand. Les lectures répétées "
+                "**n'usent pas** un SSD — seules les écritures comptent.\n\n"
+                "⚠️ Le changement est pris en compte **au redémarrage** de "
+                "l'application.")
+            loc_now = gr.Markdown(
+                f"**Dossier actuel :** `{storage.current()}`"
+                + ("  *(défaut du projet)*" if storage.is_default() else ""))
+            dest_box = gr.Textbox(
+                value=storage.configured(),
+                label="Nouveau dossier (chemin absolu)",
+                placeholder=r"ex. D:\IA\models  ou  /mnt/nvme/models")
+            with gr.Row():
+                move_btn = gr.Button("📦 Déplacer les modèles ici",
+                                     variant="primary")
+                point_btn = gr.Button("🔗 Pointer ici sans déplacer")
+                reset_btn = gr.Button("↩️ Revenir au dossier du projet")
+            loc_log = gr.Textbox(label="Journal", lines=10, autoscroll=True,
+                                 elem_classes="log-box")
+
+            def _do_move(raw):
+                dest, err = storage.validate(raw)
+                if err:
+                    yield gr.update(), f"❌ {err}"
+                    return
+                lines: list[str] = []
+                yield gr.update(), t("⏳ Déplacement en cours… (long si les "
+                                     "disques diffèrent — ne fermez pas)")
+                for msg in storage.move(dest):
+                    lines.append(msg)
+                    yield gr.update(), "\n".join(lines)
+                yield (gr.update(value=f"**Dossier actuel :** `{storage.current()}` "
+                                       "— *redémarrez pour appliquer*"),
+                       "\n".join(lines))
+
+            move_btn.click(_do_move, inputs=[dest_box],
+                           outputs=[loc_now, loc_log])
+
+            def _do_point(raw):
+                dest, err = storage.validate(raw)
+                if err:
+                    return gr.update(), f"❌ {err}"
+                msg = storage.save(dest)
+                return (gr.update(value=f"**Dossier actuel :** `{storage.current()}` "
+                                        "— *redémarrez pour appliquer*"),
+                        msg + "\n\n*(Aucun fichier déplacé : le dossier indiqué "
+                        "doit déjà contenir vos modèles, sinon ils seront "
+                        "re-téléchargés.)*")
+
+            point_btn.click(_do_point, inputs=[dest_box],
+                            outputs=[loc_now, loc_log])
+
+            def _do_reset():
+                return (gr.update(value=f"**Dossier actuel :** "
+                                        f"`{settings.DEFAULT_MODELS_DIR}` "
+                                        "— *redémarrez pour appliquer*"),
+                        storage.save(None), gr.update(value=""))
+
+            reset_btn.click(_do_reset, outputs=[loc_now, loc_log, dest_box])
 
         # ------------------------------------------------------------------ #
         #  Documentation des options
@@ -226,4 +294,9 @@ def build_manage_tab():
                 "build maison (compilé pour nos cartes).  \n"
                 "**update-trellis.bat** — met à jour le moteur **3D** "
                 "(trellis.cpp). Les modèles 3D (~16 Go) ne sont pas "
-                "re-téléchargés.")
+                "re-téléchargés.  \n"
+                "**📁 Emplacement des modèles** (ci-dessus) — déplace les "
+                "modèles vers un autre disque (NVMe, disque plus grand). "
+                "*Déplacer* transfère les fichiers ; *Pointer sans déplacer* "
+                "réutilise un dossier qui les contient déjà. Effet au "
+                "**redémarrage**.")

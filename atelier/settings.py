@@ -10,8 +10,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 
 # Dossiers (créés au besoin). Tout est local au projet -> portable.
-MODELS_DIR = ROOT / "models"
-CUSTOM_DIR = MODELS_DIR / "custom"   # modèles téléchargés manuellement ailleurs
 LORA_DIR = ROOT / "loras"
 BIN_DIR = ROOT / "bin"
 OUTPUT_DIR = ROOT / "outputs"
@@ -21,10 +19,41 @@ USERDATA_DIR = ROOT / "userdata"
 CONFIG_DIR = ROOT / "config"
 PREFS_FILE = USERDATA_DIR / "preferences.json"
 
+DEFAULT_MODELS_DIR = ROOT / "models"
+
+
+def _read_models_dir() -> Path:
+    """Dossier des modèles : `models/` du projet, ou un dossier EXTERNE choisi
+    dans les Réglages (ex. un NVMe rapide).
+
+    Lu au CHARGEMENT du module (donc changement = redémarrage requis) : des
+    modules capturent ce chemin à l'import. Lecture volontairement minimale —
+    pas d'appel à load_prefs()/ensure_dirs() ici, qui dépendent de ce chemin.
+    """
+    try:
+        if PREFS_FILE.is_file():
+            data = json.loads(PREFS_FILE.read_text(encoding="utf-8"))
+            raw = (data.get("models_dir") or "").strip()
+            if raw:
+                p = Path(raw).expanduser()
+                if p.is_absolute():
+                    return p
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        pass
+    return DEFAULT_MODELS_DIR
+
+
+MODELS_DIR = _read_models_dir()
+CUSTOM_DIR = MODELS_DIR / "custom"   # modèles téléchargés manuellement ailleurs
+
 # Préférences par défaut (surchargées par l'onglet Réglages, persistées en JSON).
 DEFAULT_PREFS: dict[str, Any] = {
     "lang": "fr",               # langue de l'interface : "fr" | "en"
     "theme": "light",           # thème de l'interface : "light" | "dark"
+    # Dossier des modèles. Vide/None = `models/` dans le projet. Un chemin
+    # ABSOLU le déplace ailleurs (ex. "D:\\IA\\models" sur un NVMe).
+    # Pris en compte au REDÉMARRAGE de l'application.
+    "models_dir": None,
     "gpu_index": None,          # None = auto (meilleure carte détectée)
     # GPU secondaire dédié au TEXTE (améliorateur de prompt). None = même GPU
     # que la génération. Ex. : mettre la 1080 Ti ici. La génération d'images et
