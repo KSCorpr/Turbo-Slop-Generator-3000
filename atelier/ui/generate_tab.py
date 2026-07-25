@@ -106,7 +106,8 @@ def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
 
 
 def build_generative_tab(model_id: str, title: str,
-                         pending_toolkit=None, tabs=None, toolkit_tab_id="toolkit"):
+                         pending_toolkit=None, tabs=None, toolkit_tab_id="toolkit",
+                         pending_3d=None, threed_tab_id="threed"):
     d = _defaults(model_id)
 
     with gr.Tab(title):
@@ -455,6 +456,9 @@ def build_generative_tab(model_id: str, title: str,
                      (t("✨ Upscale créatif (SDXL)"), "creative")],
                     value=None, label="📤 Envoyer la sélection vers le Toolkit",
                     visible=pending_toolkit is not None)
+                send_3d = gr.Button("🧊 Envoyer la sélection vers Image → 3D",
+                                    size="sm",
+                                    visible=pending_3d is not None)
                 logbox = gr.Textbox(label="Journal", lines=10, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
 
@@ -923,3 +927,14 @@ def build_generative_tab(model_id: str, title: str,
             send_tool.change(
                 _send_toolkit, inputs=[last_paths, sel_index, send_tool],
                 outputs=[pending_toolkit, tabs, send_tool])
+
+        # Envoi de l'image sélectionnée vers l'onglet « Image → 3D ».
+        if pending_3d is not None and tabs is not None:
+            def _send_3d(paths, idx):
+                if not paths:
+                    raise gr.Error(t("Générez puis sélectionnez une image."))
+                i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
+                return paths[i], gr.Tabs(selected=threed_tab_id)
+
+            send_3d.click(_send_3d, inputs=[last_paths, sel_index],
+                          outputs=[pending_3d, tabs])

@@ -98,12 +98,56 @@ def _wait_health(port: int, proc: subprocess.Popen, deadline: float) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------
+#  Serveur RÉSIDENT (optionnel) : garde le serveur en vie entre les générations
+#  → plus de rechargement des modèles (~30 s gagnées par objet), mais la VRAM
+#  reste occupée. À réserver aux séries de 3D ; à arrêter avant de générer des
+#  images. Par défaut le mode transitoire (start/stop) reste actif.
+# --------------------------------------------------------------------------
+_RESIDENT: dict = {"proc": None, "port": None, "res": None}
+_RES_LOCK = threading.Lock()
+
+
+def resident_is_running() -> bool:
+    p = _RESIDENT.get("proc")
+    return p is not None and p.poll() is None
+
+
+def resident_status() -> str:
+    if resident_is_running():
+        return f"🟢 Serveur résident actif (port {_RESIDENT['port']}, "\
+               f"res {_RESIDENT['res']}) — VRAM occupée."
+    return "⚪ Serveur résident arrêté (mode transitoire : démarrage/arrêt à "\
+           "chaque génération, VRAM libérée)."
+
+
+def resident_stop() -> str:
+    with _RES_LOCK:
+        p = _RESIDENT.get("proc")
+        if p is not None:
+            try:
+                p.terminate()
+                try:
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        _RESIDENT.update({"proc": None, "port": None, "res": None})
+    return "⏹️ Serveur résident arrêté — VRAM libérée."
+
+
 def generate(image_path: Path, out_path: Path, res: int = 512,
              seed: int | None = None, bg_removal: str = "birefnet",
              port: int = DEFAULT_PORT, extra: str = "",
              log: Callable[[str], None] | None = None,
-             gpu_index: int | None = None) -> Path:
-    """Génère un GLB 3D à partir d'une image via un serveur trellis transitoire."""
+             gpu_index: int | None = None,
+             resident: bool = False) -> Path:
+    """Génère un GLB 3D à partir d'une image via le serveur trellis.
+
+    `resident=False` (défaut) : serveur démarré puis ARRÊTÉ (VRAM libérée).
+    `resident=True` : serveur gardé en vie pour les générations suivantes.
+    """
     if requests is None:
         raise sdcpp.EngineError("Module « requests » manquant (pip install requests).")
     server = find_server()
@@ -119,6 +163,21 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     def _log(m: str) -> None:
         if log:
             log(m)
+
+    # Réutilise le serveur résident s'il tourne DÉJÀ avec la même résolution.
+    reuse = (resident and resident_is_running()
+             and _RESIDENT.get("res") == int(res))
+    if reuse:
+        proc = _RESIDENT["proc"]
+        use_port = _RESIDENT["port"]
+        _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
+             "pas de rechargement des modèles.")
+        return _post_generate(image_path, out_path, res, seed, bg_removal,
+                              use_port, _log)
+
+    # Un résident d'une AUTRE résolution doit céder la place.
+    if resident_is_running():
+        _log(resident_stop())
 
     cmd = [str(server), "--models", str(MODELS_DIR), "--res", str(int(res))]
     if extra and extra.strip():
@@ -171,28 +230,44 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                 "modèles incomplets ?).")
 
         _log(f"✅ Serveur prêt (port {use_port}) — envoi de l'image…")
-        data = {"resolution": str(int(res)), "bg_removal": bg_removal or "birefnet"}
-        if seed is not None:
-            data["seed"] = str(int(seed))
-        with open(image_path, "rb") as fh:
-            r = requests.post(f"http://127.0.0.1:{use_port}/generate",
-                              files={"image": fh}, data=data, timeout=3600)
-        if not r.ok:
-            raise sdcpp.EngineError(
-                f"trellis /generate a échoué (HTTP {r.status_code}) : "
-                f"{r.text[:300]}")
-        out_path.write_bytes(r.content)
+        _post_generate(image_path, out_path, res, seed, bg_removal, use_port,
+                       _log)
     finally:
-        # Arrêt du serveur → libération VRAM (stratégie low-VRAM).
-        try:
-            proc.terminate()
+        if resident:
+            # Mode résident : on GARDE le serveur en vie pour la suite.
+            with _RES_LOCK:
+                _RESIDENT.update({"proc": proc, "port": use_port,
+                                  "res": int(res)})
+            _log("♻️ Serveur gardé résident (VRAM occupée — « Arrêter le "
+                 "serveur résident » pour la libérer).")
+        else:
+            # Mode transitoire : arrêt → libération VRAM (stratégie low-VRAM).
             try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        except Exception:  # noqa: BLE001
-            pass
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+    return out_path
 
+
+def _post_generate(image_path: Path, out_path: Path, res: int,
+                   seed: int | None, bg_removal: str, port: int,
+                   _log: Callable[[str], None]) -> Path:
+    """POST /generate (multipart) → écrit les octets GLB reçus."""
+    data = {"resolution": str(int(res)), "bg_removal": bg_removal or "birefnet"}
+    if seed is not None:
+        data["seed"] = str(int(seed))
+    with open(image_path, "rb") as fh:
+        r = requests.post(f"http://127.0.0.1:{port}/generate",
+                          files={"image": fh}, data=data, timeout=3600)
+    if not r.ok:
+        raise sdcpp.EngineError(
+            f"trellis /generate a échoué (HTTP {r.status_code}) : "
+            f"{r.text[:300]}")
+    out_path.write_bytes(r.content)
     if not out_path.is_file() or out_path.stat().st_size == 0:
         raise sdcpp.EngineError(
             "Aucun GLB produit — voir le journal (VRAM insuffisante en 512 ?).")

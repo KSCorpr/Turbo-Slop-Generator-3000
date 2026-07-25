@@ -24,8 +24,8 @@ def _res_choices():
     return [(lbl, val) for lbl, val in trellis.RESOLUTIONS]
 
 
-def build_threed_tab():
-    with gr.Tab("🧊 Image → 3D"):
+def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
+    with gr.Tab("🧊 Image → 3D", id=tab_id):
         ready = trellis.is_ready()
         gr.Markdown(
             "### Image → modèle 3D (GLB)\n"
@@ -77,10 +77,31 @@ def build_threed_tab():
                                  type="filepath")
                 res = gr.Radio(_res_choices(), value=512,
                                label="Résolution géométrie")
+                with gr.Row():
+                    seed = gr.Number(value=-1, precision=0,
+                                     label="Seed (-1 = aléatoire)")
+                    bg = gr.Dropdown(
+                        [("BiRefNet (qualité, recommandé)", "birefnet"),
+                         ("Seuil (rapide)", "threshold")],
+                        value="birefnet", label="Détourage du fond")
+                with gr.Accordion("⚡ Serveur résident (séries de 3D)", open=False):
+                    gr.Markdown(
+                        "Par défaut le serveur **démarre puis s'arrête** à "
+                        "chaque génération (VRAM libérée). Coché, il **reste en "
+                        "vie** : les 3D suivantes évitent le rechargement des "
+                        "modèles (~30 s gagnées), mais **la VRAM reste "
+                        "occupée** — arrête-le avant de générer des images.")
+                    resident = gr.Checkbox(
+                        value=False,
+                        label="Garder le serveur résident entre les générations")
+                    with gr.Row():
+                        res_status = gr.Markdown(trellis.resident_status())
+                        res_stop_btn = gr.Button("⏹️ Arrêter le serveur résident",
+                                                 size="sm")
                 with gr.Accordion("Options avancées", open=False):
                     extra = gr.Textbox(
-                        label="Arguments trellis-cli supplémentaires (optionnel)",
-                        placeholder="ex. flags additionnels du CLI")
+                        label="Arguments trellis-server supplémentaires (optionnel)",
+                        placeholder="ex. flags additionnels du serveur")
                 with gr.Row():
                     run = gr.Button("🧊 Générer le 3D", variant="primary", scale=3)
                     stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
@@ -92,7 +113,8 @@ def build_threed_tab():
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
-        def do_generate3d(image_path, res_val, extra_args):
+        def do_generate3d(image_path, res_val, seed_val, bg_val, resident_val,
+                          extra_args):
             if not image_path:
                 raise gr.Error(t("Chargez une image d'entrée."))
             if not trellis.is_ready():
@@ -112,9 +134,17 @@ def build_threed_tab():
             q: "queue.Queue[str | None]" = queue.Queue()
             state: dict = {}
 
+            try:
+                _seed = int(seed_val)
+            except (TypeError, ValueError):
+                _seed = -1
+
             def worker():
                 try:
                     trellis.generate(in_png, out_glb, res=int(res_val),
+                                     seed=(None if _seed < 0 else _seed),
+                                     bg_removal=bg_val or "birefnet",
+                                     resident=bool(resident_val),
                                      extra=extra_args or "", log=q.put)
                     state["ok"] = True
                 except Exception as exc:  # noqa: BLE001
@@ -124,28 +154,45 @@ def build_threed_tab():
 
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
-            # (status, model3d, glb_file, log)
-            yield (t("⏳ Génération 3D en cours (mode {r})… le binaire libère la "
-                     "VRAM à la fin.").format(r=res_val),
-                   gr.update(), gr.update(), gr.update())
+            # (status, model3d, glb_file, log, res_status)
+            yield (t("⏳ Génération 3D en cours (mode {r})…").format(r=res_val),
+                   gr.update(), gr.update(), gr.update(), gr.update())
             while True:
                 line = q.get()
                 if line is None:
                     break
                 logs.append(line)
-                yield gr.update(), gr.update(), gr.update(), "\n".join(logs[-500:])
+                yield (gr.update(), gr.update(), gr.update(),
+                       "\n".join(logs[-500:]), gr.update())
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
                 yield (t("❌ Échec — voir le journal."), gr.update(),
-                       gr.update(), "\n".join(logs))
+                       gr.update(), "\n".join(logs),
+                       gr.update(value=trellis.resident_status()))
                 return
             yield (t("✅ 3D généré : {name}").format(name=out_glb.name),
                    gr.update(value=str(out_glb)), gr.update(value=str(out_glb)),
-                   "\n".join(logs))
+                   "\n".join(logs), gr.update(value=trellis.resident_status()))
 
         gen_evt = run.click(
-            do_generate3d, inputs=[image, res, extra],
-            outputs=[status, model3d, glb_file, log])
+            do_generate3d, inputs=[image, res, seed, bg, resident, extra],
+            outputs=[status, model3d, glb_file, log, res_status])
         stop.click(lambda: sdcpp.cancel_active(), outputs=None,
                    cancels=[gen_evt])
+
+        def _stop_resident():
+            msg = trellis.resident_stop()
+            return gr.update(value=trellis.resident_status()), msg
+
+        res_stop_btn.click(_stop_resident, outputs=[res_status, status])
+
+        # --- Réception d'une image envoyée depuis un onglet de génération ---
+        if pending_3d is not None and tabs is not None:
+            def _consume3d(pend):
+                if not pend:
+                    return gr.update(), None
+                return gr.update(value=pend), None
+
+            tabs.select(_consume3d, inputs=[pending_3d],
+                        outputs=[image, pending_3d])
