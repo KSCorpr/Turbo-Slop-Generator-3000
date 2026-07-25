@@ -328,6 +328,19 @@ the ability to **pin a known-good commit** (workflow input `sd_ref`), or to
 apply engine **patches** when needed. Everything heavy happens in CI — your
 machine only ever downloads a ready binary.
 
+### Updating the engines
+
+| Script | Updates |
+|---|---|
+| `update-engine.bat` | **sd.cpp** — latest official prebuilt binary (image generation) |
+| `update-engine-ci.bat` | **sd.cpp** — our own CI build (arch-tuned, can carry PRs) |
+| `update-trellis.bat` | **trellis.cpp** — latest official Windows CUDA build (Image → 3D) |
+
+Each one replaces only the **engine binary** (the previous version is removed
+first, so DLLs from two releases never mix). **Models are never
+re-downloaded** — including the ~16 GB trellis 3D set; reinstall those from the
+**Image → 3D** tab if ever needed.
+
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
 **English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved

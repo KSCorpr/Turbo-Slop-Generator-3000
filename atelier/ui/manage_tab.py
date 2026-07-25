@@ -223,4 +223,7 @@ def build_manage_tab():
                 "que tout compile. Ne touche jamais à tes modèles/sorties.  \n"
                 "**update-engine.bat** — met à jour le moteur sd.cpp "
                 "(binaire officiel) ; **update-engine-ci.bat** installe notre "
-                "build maison (compilé pour nos cartes).")
+                "build maison (compilé pour nos cartes).  \n"
+                "**update-trellis.bat** — met à jour le moteur **3D** "
+                "(trellis.cpp). Les modèles 3D (~16 Go) ne sont pas "
+                "re-téléchargés.")

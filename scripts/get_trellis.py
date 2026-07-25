@@ -111,7 +111,12 @@ def install_binary(force: bool = False, log=print) -> bool:
         return False
     log(f"Release : {rel.get('tag_name')} — {asset['name']} "
         f"({asset.get('size', 0) / 1e6:.0f} Mo)")
-    # get_sdcpp._extract décompresse dans bin/ ; on cible bin/trellis/.
+    # MISE À JOUR : on vide l'ancienne version avant d'extraire, sinon des DLL
+    # obsolètes de la release précédente resteraient à côté des nouvelles.
+    if force and TRELLIS_BIN_DIR.exists():
+        import shutil
+        shutil.rmtree(TRELLIS_BIN_DIR, ignore_errors=True)
+        log("     (ancienne version du moteur retiree)")
     TRELLIS_BIN_DIR.mkdir(parents=True, exist_ok=True)
     blob = get_sdcpp._download(asset["browser_download_url"])
     import io
