@@ -140,9 +140,14 @@ def resident_stop() -> str:
 def build_server_args(res: int, decim: int = 0, atlas: int = 0,
                       no_texture: bool = False, box_uv: bool = False,
                       require_gpu: bool = True, f32: bool = False,
-                      no_fa: bool = False) -> list[str]:
+                      no_fa: bool = False,
+                      gpu: int | None = None) -> list[str]:
     """Flags de lancement du serveur trellis (voir README trellis.cpp)."""
     args = ["--models", str(MODELS_DIR), "--res", str(int(res))]
+    if gpu is not None:
+        # Flag OFFICIEL de trellis (« --gpu N », N<0 = CPU) : plus propre que
+        # CUDA_VISIBLE_DEVICES, et l'index correspond à celui affiché au démarrage.
+        args += ["--gpu", str(int(gpu))]
     if decim and int(decim) > 0:
         args += ["--decim", str(int(decim))]       # cible de décimation (faces)
     if atlas and int(atlas) > 0:
@@ -174,10 +179,10 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
     `resident=False` (défaut) : serveur démarré puis ARRÊTÉ (VRAM libérée).
     `resident=True` : serveur gardé en vie pour les générations suivantes.
-    `gpu_index` : ÉPINGLE le calcul sur UNE carte (CUDA_VISIBLE_DEVICES).
-      Important en multi-GPU : laisser ggml répartir sur une carte **Pascal**
-      (GTX 10xx, BF16 très faible) peut corrompre la géométrie (maillage en
-      « blobs »). Épingle la carte la plus récente.
+    `gpu_index` : carte de calcul, via le flag officiel « --gpu N » (N<0 = CPU).
+      Choisir la carte avec le plus de VRAM : le cascade 1024 est documenté
+      pour ~16 Go, en dessous la géométrie sort dégradée (« blobs ») au lieu
+      d'échouer proprement.
     """
     if requests is None:
         raise sdcpp.EngineError("Module « requests » manquant (pip install requests).")
@@ -212,12 +217,13 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
     cmd = [str(server)] + build_server_args(
         res, decim=decim, atlas=atlas, no_texture=no_texture, box_uv=box_uv,
-        require_gpu=require_gpu, f32=f32, no_fa=no_fa)
+        require_gpu=require_gpu, f32=f32, no_fa=no_fa, gpu=gpu_index)
     if extra and extra.strip():
         cmd += shlex.split(extra)
+    # NB : on n'utilise PAS CUDA_VISIBLE_DEVICES ici — le flag « --gpu N » de
+    # trellis fait le travail, et masquer les cartes en plus décalerait les
+    # index (la carte N deviendrait la 0 pour le process).
     env = None
-    if gpu_index is not None:
-        env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_index)}
 
     _log("$ " + " ".join(cmd))
     proc = subprocess.Popen(

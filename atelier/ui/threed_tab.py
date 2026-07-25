@@ -41,11 +41,14 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             "détourage est automatique. Le serveur trellis **démarre puis "
             "s'arrête** à chaque génération → toute la VRAM est libérée ensuite "
             "(stratégie low-VRAM).\n\n"
-            "💡 Sur une carte ≤ 12 Go, reste en **512** : les modes **1024/1536** "
-            "demandent **~16 Go+**. En dessous, la géométrie peut sortir "
-            "**corrompue (maillage en « blobs »)** plutôt que d'échouer "
-            "franchement — et c'est pire si le calcul déborde sur une carte "
-            "**Pascal (GTX 10xx)**. Voir « 🩺 Moteur » pour épingler une carte.")
+            "💡 **Reste en 512 sous 16 Go de VRAM.** Le cascade **1024/1536** "
+            "est documenté pour une carte **16 Go** : en dessous il ne plante "
+            "pas proprement, il **dégrade le calcul** et sort un maillage "
+            "**en « blobs »**. Aucun réglage ne contourne ça (trellis n'a ni "
+            "offload ni tiling).  \n"
+            "👉 Pour gagner en qualité **sans toucher à la résolution**, monte "
+            "l'**atlas UV** (2048/4096) et la **décimation** : une géométrie "
+            "512 bien texturée bat un 1024 raté, pour un coût VRAM quasi nul.")
 
         # ---- Installation (binaire + modèles) ----
         with gr.Accordion("⚙️ Installer trellis.cpp (binaire + modèles, 1 clic)",
@@ -125,13 +128,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                                              label="Dépliage UV « box »")
                 with gr.Accordion("🩺 Moteur (dépannage)", open=False):
                     gr.Markdown(
-                        "⚠️ **Multi-GPU** : ggml peut répartir le calcul sur "
-                        "toutes les cartes. Une carte **Pascal (GTX 10xx)** gère "
-                        "très mal le BF16 → géométrie corrompue (**maillage en "
-                        "« blobs »**), surtout en 1024. **Épingle la carte la "
-                        "plus récente** ci-dessous.")
+                        "**Carte utilisée** — passé au moteur via son flag "
+                        "officiel `--gpu N`. Choisis la carte avec le plus de "
+                        "VRAM (le mode 1024 en réclame ~16 Go).")
                     gpu_pick = gr.Dropdown(
-                        [(t("Auto (toutes les cartes)"), -1)] + _gpu_choices(),
+                        [(t("Défaut du moteur (carte 0)"), -1)] + _gpu_choices(),
                         value=(_gpu_choices()[0][1] if _gpu_choices() else -1),
                         label="Carte utilisée pour la 3D")
                     with gr.Row():
