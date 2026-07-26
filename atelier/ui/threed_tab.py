@@ -136,7 +136,12 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                         "chaque génération (VRAM libérée). Coché, il **reste en "
                         "vie** : les 3D suivantes évitent le rechargement des "
                         "modèles (~30 s gagnées), mais **la VRAM reste "
-                        "occupée** — arrête-le avant de générer des images.")
+                        "occupée** — arrête-le avant de générer des images.  \n"
+                        "ℹ️ Si tu changes un réglage de **lancement** "
+                        "(résolution, décimation, atlas, GPU, texture…), le "
+                        "serveur **redémarre automatiquement** pour "
+                        "l'appliquer — seuls seed et détourage sont "
+                        "modifiables sans rechargement.")
                     resident = gr.Checkbox(
                         value=False,
                         label="Garder le serveur résident entre les générations")

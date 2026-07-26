@@ -104,7 +104,13 @@ def _wait_health(port: int, proc: subprocess.Popen, deadline: float) -> bool:
 #  reste occupée. À réserver aux séries de 3D ; à arrêter avant de générer des
 #  images. Par défaut le mode transitoire (start/stop) reste actif.
 # --------------------------------------------------------------------------
-_RESIDENT: dict = {"proc": None, "port": None, "res": None}
+# « sig » = signature des flags de LANCEMENT (res, decim, atlas, gpu…). Ils ne
+# sont PAS renégociables par requête : si elle change, il faut relancer le
+# serveur, sinon les nouveaux réglages seraient silencieusement ignorés.
+# « log » = journal de la génération EN COURS : le lecteur de sortie y écrit
+# dynamiquement, sinon les logs resteraient attachés à la 1re génération.
+_RESIDENT: dict = {"proc": None, "port": None, "res": None, "sig": None,
+                   "log": None}
 _RES_LOCK = threading.Lock()
 
 
@@ -133,7 +139,8 @@ def resident_stop() -> str:
                     p.kill()
             except Exception:  # noqa: BLE001
                 pass
-        _RESIDENT.update({"proc": None, "port": None, "res": None})
+        _RESIDENT.update({"proc": None, "port": None, "res": None,
+                          "sig": None, "log": None})
     return "⏹️ Serveur résident arrêté — VRAM libérée."
 
 
@@ -200,26 +207,33 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
         if log:
             log(m)
 
-    # Réutilise le serveur résident s'il tourne DÉJÀ avec la même résolution.
-    reuse = (resident and resident_is_running()
-             and _RESIDENT.get("res") == int(res))
-    if reuse:
-        proc = _RESIDENT["proc"]
-        use_port = _RESIDENT["port"]
-        _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
-             "pas de rechargement des modèles.")
-        return _post_generate(image_path, out_path, res, seed, bg_removal,
-                              use_port, _log)
-
-    # Un résident d'une AUTRE résolution doit céder la place.
-    if resident_is_running():
-        _log(resident_stop())
-
-    cmd = [str(server)] + build_server_args(
+    launch_args = build_server_args(
         res, decim=decim, atlas=atlas, no_texture=no_texture, box_uv=box_uv,
         require_gpu=require_gpu, f32=f32, no_fa=no_fa, gpu=gpu_index)
     if extra and extra.strip():
-        cmd += shlex.split(extra)
+        launch_args += shlex.split(extra)
+    sig = tuple(launch_args)
+
+    # Réutilise le serveur résident SEULEMENT si TOUS les flags de lancement
+    # sont identiques. decim/atlas/no-texture/gpu… ne sont pas renégociables
+    # par requête : sans ce contrôle, les changer resterait sans effet.
+    if resident and resident_is_running():
+        if _RESIDENT.get("sig") == sig:
+            use_port = _RESIDENT["port"]
+            with _RES_LOCK:
+                _RESIDENT["log"] = _log      # journal de CETTE génération
+            _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
+                 "pas de rechargement des modèles.")
+            return _post_generate(image_path, out_path, res, seed, bg_removal,
+                                  use_port, _log)
+        _log("🔄 Réglages de lancement modifiés (résolution/décimation/atlas/"
+             "GPU…) — redémarrage du serveur pour les appliquer.")
+
+    # Un résident aux réglages différents doit céder la place.
+    if resident_is_running():
+        _log(resident_stop())
+
+    cmd = [str(server)] + launch_args
     # NB : on n'utilise PAS CUDA_VISIBLE_DEVICES ici — le flag « --gpu N » de
     # trellis fait le travail, et masquer les cartes en plus décalerait les
     # index (la carte N deviendrait la 0 pour le process).
@@ -237,7 +251,10 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
         assert proc.stdout is not None
         for line in proc.stdout:
             s = line.rstrip("\n")
-            _log(s)
+            # En résident, ce thread survit à la génération : il doit écrire
+            # dans le journal COURANT, pas celui (mort) de la 1re génération.
+            sink = _RESIDENT.get("log") if _RESIDENT.get("proc") is proc else None
+            (sink or _log)(s)
             if state["port"] is None:
                 m = re.search(r"https?://[^\s:]+:(\d{2,5})", s) \
                     or re.search(r"(?:listen|port)\D{0,12}(\d{4,5})", s, re.I)
@@ -273,10 +290,11 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                        _log)
     finally:
         if resident:
-            # Mode résident : on GARDE le serveur en vie pour la suite.
+            # Mode résident : on GARDE le serveur en vie pour la suite. On
+            # mémorise la signature des flags pour détecter tout changement.
             with _RES_LOCK:
                 _RESIDENT.update({"proc": proc, "port": use_port,
-                                  "res": int(res)})
+                                  "res": int(res), "sig": sig, "log": _log})
             _log("♻️ Serveur gardé résident (VRAM occupée — « Arrêter le "
                  "serveur résident » pour la libérer).")
         else:
