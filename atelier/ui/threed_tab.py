@@ -24,6 +24,30 @@ def _res_choices():
     return [(lbl, val) for lbl, val in trellis.RESOLUTIONS]
 
 
+def _pad_to_square(img, mode: str = "white"):
+    """Complète l'image en CARRÉ sans la déformer (sujet centré).
+
+    TRELLIS.2 pré-traite l'entrée en carré : lui donner une image 16:9 revient
+    à l'écraser horizontalement → modèle 3D déformé. On ajoute donc des bandes
+    neutres (que le détourage retire) au lieu de laisser l'étirement se faire.
+    """
+    from PIL import Image as _PI
+    w, h = img.size
+    side = max(w, h)
+    if mode == "transparent":
+        src = img.convert("RGBA")
+        canvas = _PI.new("RGBA", (side, side), (0, 0, 0, 0))
+    else:
+        src = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else \
+            img.convert("RGB")
+        fill = (255, 255, 255) if mode == "white" else (0, 0, 0)
+        canvas = _PI.new("RGB", (side, side), fill)
+    off = ((side - w) // 2, (side - h) // 2)
+    # Le masque alpha évite un liseré noir quand la source est transparente.
+    canvas.paste(src, off, src if src.mode == "RGBA" else None)
+    return canvas
+
+
 def _gpu_choices() -> list[tuple[str, int]]:
     from .. import hardware
     return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
@@ -87,6 +111,16 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             with gr.Column(scale=3):
                 image = gr.Image(label="Image d'entrée (objet unique)",
                                  type="filepath")
+                with gr.Row():
+                    square_pad = gr.Checkbox(
+                        value=True, scale=2,
+                        label="Compléter en carré (garde les proportions)",
+                        info="TRELLIS traite l'entrée en carré : sans ça, une "
+                             "image non carrée sort DÉFORMÉE.")
+                    pad_color = gr.Dropdown(
+                        [("Blanc", "white"), ("Noir", "black"),
+                         ("Transparent", "transparent")],
+                        value="white", scale=1, label="Bandes ajoutées")
                 res = gr.Radio(_res_choices(), value=512,
                                label="Résolution géométrie")
                 with gr.Row():
@@ -158,7 +192,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
-        def do_generate3d(image_path, res_val, seed_val, bg_val, resident_val,
+        def do_generate3d(image_path, square_val, pad_val, res_val, seed_val,
+                          bg_val, resident_val,
                           decim_val, atlas_val, no_tex_val, box_uv_val,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
                           extra_args):
@@ -172,7 +207,13 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             from PIL import Image as _PI
             in_png = settings.TMP_DIR / "trellis_in.png"
             try:
-                _PI.open(image_path).convert("RGB").save(in_png)
+                src = _PI.open(image_path)
+                w0, h0 = src.size
+                if square_val and w0 != h0:
+                    src = _pad_to_square(src, pad_val or "white")
+                elif src.mode not in ("RGB", "RGBA"):
+                    src = src.convert("RGB")
+                src.save(in_png)
             except Exception as exc:  # noqa: BLE001
                 raise gr.Error(t("Image illisible : {e}").format(e=exc))
             out_glb = settings.OUTPUT_DIR / \
@@ -233,7 +274,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
 
         gen_evt = run.click(
             do_generate3d,
-            inputs=[image, res, seed, bg, resident, decim, atlas, no_texture,
+            inputs=[image, square_pad, pad_color, res, seed, bg, resident,
+                    decim, atlas, no_texture,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
             outputs=[status, model3d, glb_file, log, res_status])
         stop.click(lambda: sdcpp.cancel_active(), outputs=None,

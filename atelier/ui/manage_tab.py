@@ -337,6 +337,11 @@ def build_manage_tab():
 
         with gr.Accordion("🧊 Image → 3D (trellis)", open=False):
             gr.Markdown(
+                "**Compléter en carré** — TRELLIS pré-traite l'entrée en "
+                "**carré** : une image 16:9 envoyée telle quelle sort "
+                "**déformée** (écrasée). Coché (défaut), des bandes neutres "
+                "sont ajoutées pour garder les proportions ; le détourage "
+                "les retire.  \n"
                 "**Résolution géométrie** — **512** = « light », le seul mode "
                 "qui tienne sur une carte ≤ 12 Go. **1024/1536** demandent "
                 "~16 Go+ : en dessous, la géométrie sort souvent **corrompue "
