@@ -181,7 +181,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
              resident: bool = False,
              decim: int = 0, atlas: int = 0, no_texture: bool = False,
              box_uv: bool = False, require_gpu: bool = True,
-             f32: bool = False, no_fa: bool = False) -> Path:
+             f32: bool = False, no_fa: bool = False,
+             meta: dict | None = None) -> Path:
     """Génère un GLB 3D à partir d'une image via le serveur trellis.
 
     `resident=False` (défaut) : serveur démarré puis ARRÊTÉ (VRAM libérée).
@@ -203,7 +204,15 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     settings.ensure_dirs()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    info: dict = meta if meta is not None else {}
+
     def _log(m: str) -> None:
+        # Le serveur annonce la graine RÉELLEMENT utilisée (« … with seed N
+        # (auto) » quand on lui laisse le choix) : on la capture pour pouvoir
+        # rejouer l'objet et la consigner dans le .txt.
+        mt = re.search(r"with seed\s+(\d+)", m)
+        if mt:
+            info["seed"] = int(mt.group(1))
         if log:
             log(m)
 
@@ -213,6 +222,12 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     if extra and extra.strip():
         launch_args += shlex.split(extra)
     sig = tuple(launch_args)
+    # Réglages consignés dans le .txt à côté du GLB (la graine réelle y est
+    # injectée après coup : le serveur la choisit quand on passe seed = auto).
+    params = {"image": Path(image_path).name, "res": int(res),
+              "bg_removal": bg_removal, "decim": decim, "atlas": atlas,
+              "no_texture": no_texture, "box_uv": box_uv, "f32": f32,
+              "no_fa": no_fa, "gpu": gpu_index}
 
     # Réutilise le serveur résident SEULEMENT si TOUS les flags de lancement
     # sont identiques. decim/atlas/no-texture/gpu… ne sont pas renégociables
@@ -224,8 +239,10 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                 _RESIDENT["log"] = _log      # journal de CETTE génération
             _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
                  "pas de rechargement des modèles.")
-            return _post_generate(image_path, out_path, res, seed, bg_removal,
-                                  use_port, _log)
+            _post_generate(image_path, out_path, res, seed, bg_removal,
+                           use_port, _log)
+            _sidecar(out_path, {**params, "seed": info.get("seed", seed)})
+            return out_path
         _log("🔄 Réglages de lancement modifiés (résolution/décimation/atlas/"
              "GPU…) — redémarrage du serveur pour les appliquer.")
 
@@ -307,7 +324,34 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                     proc.kill()
             except Exception:  # noqa: BLE001
                 pass
+    _sidecar(out_path, {**params, "seed": info.get("seed", seed)})
     return out_path
+
+
+def _sidecar(out_path: Path, params: dict) -> None:
+    """Écrit un .txt à côté du GLB (même principe que les images) : on retrouve
+    la graine réellement utilisée et tous les réglages dans outputs/."""
+    lines = [f"Source image: {params.get('image', '')}",
+             f"Resolution: {params.get('res')}",
+             f"Seed: {params.get('seed', '?')}",
+             f"Background removal: {params.get('bg_removal')}"]
+    if params.get("decim"):
+        lines.append(f"Decimation target: {params['decim']}")
+    if params.get("atlas"):
+        lines.append(f"UV atlas: {params['atlas']}")
+    flags = [k for k in ("no_texture", "box_uv", "f32", "no_fa")
+             if params.get(k)]
+    if flags:
+        lines.append("Flags: " + ", ".join(flags))
+    if params.get("gpu") is not None:
+        lines.append(f"GPU: {params['gpu']}")
+    lines.append(f"Engine: trellis.cpp (TRELLIS.2)")
+    lines.append(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    try:
+        out_path.with_suffix(".txt").write_text("\n".join(lines),
+                                                encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _post_generate(image_path: Path, out_path: Path, res: int,

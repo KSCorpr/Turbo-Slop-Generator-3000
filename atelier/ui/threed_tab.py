@@ -194,6 +194,12 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 model3d = gr.Model3D(label="Aperçu 3D (GLB)", clear_color=[
                     0.1, 0.1, 0.12, 1.0])
                 glb_file = gr.File(label="Fichier GLB", interactive=False)
+                with gr.Row():
+                    seed_used = gr.Textbox(
+                        label="Seed utilisé (pour rejouer cet objet)",
+                        interactive=False, show_copy_button=True, scale=2)
+                    seed_reuse = gr.Button("♻️ Réutiliser ce seed", size="sm",
+                                           scale=1)
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
@@ -232,6 +238,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             except (TypeError, ValueError):
                 _seed = -1
 
+            meta: dict = {}
+
             def worker():
                 try:
                     _gpu = None if (gpu_val is None or int(gpu_val) < 0) \
@@ -247,7 +255,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                                      box_uv=bool(box_uv_val),
                                      require_gpu=bool(req_gpu_val),
                                      f32=bool(f32_val), no_fa=bool(no_fa_val),
-                                     extra=extra_args or "", log=q.put)
+                                     extra=extra_args or "", log=q.put,
+                                     meta=meta)
                     state["ok"] = True
                 except Exception as exc:  # noqa: BLE001
                     state["err"] = str(exc)
@@ -256,35 +265,45 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
 
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
-            # (status, model3d, glb_file, log, res_status)
+            # (status, model3d, glb_file, log, res_status, seed_used)
             yield (t("⏳ Génération 3D en cours (mode {r})…").format(r=res_val),
-                   gr.update(), gr.update(), gr.update(), gr.update())
+                   gr.update(), gr.update(), gr.update(), gr.update(),
+                   gr.update())
             while True:
                 line = q.get()
                 if line is None:
                     break
                 logs.append(line)
                 yield (gr.update(), gr.update(), gr.update(),
-                       "\n".join(logs[-500:]), gr.update())
+                       "\n".join(logs[-500:]), gr.update(), gr.update())
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
                 yield (t("❌ Échec — voir le journal."), gr.update(),
                        gr.update(), "\n".join(logs),
-                       gr.update(value=trellis.resident_status()))
+                       gr.update(value=trellis.resident_status()), gr.update())
                 return
             yield (t("✅ 3D généré : {name}").format(name=out_glb.name),
                    gr.update(value=str(out_glb)), gr.update(value=str(out_glb)),
-                   "\n".join(logs), gr.update(value=trellis.resident_status()))
+                   "\n".join(logs), gr.update(value=trellis.resident_status()),
+                   gr.update(value=str(meta.get("seed", ""))))
 
         gen_evt = run.click(
             do_generate3d,
             inputs=[image, square_pad, pad_color, res, seed, bg, resident,
                     decim, atlas, no_texture,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
-            outputs=[status, model3d, glb_file, log, res_status])
+            outputs=[status, model3d, glb_file, log, res_status, seed_used])
         stop.click(lambda: sdcpp.cancel_active(), outputs=None,
                    cancels=[gen_evt])
+
+        def _reuse_seed(v):
+            try:
+                return gr.update(value=int(str(v).strip()))
+            except (TypeError, ValueError):
+                return gr.update()
+
+        seed_reuse.click(_reuse_seed, inputs=[seed_used], outputs=[seed])
 
         def _stop_resident():
             msg = trellis.resident_stop()
