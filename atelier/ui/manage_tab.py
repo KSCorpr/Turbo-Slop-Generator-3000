@@ -4,6 +4,8 @@ de toutes les options de l'application.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import gradio as gr
 
 from .. import inventory, settings, storage
@@ -39,6 +41,23 @@ def _choices_and_summary():
                 choices.append((label, i.key))
     rows.append(f"\n**Total occupé : {inventory.human(total)}**")
     return choices, "\n".join(rows)
+
+
+def _move_choices() -> list[tuple[str, str]]:
+    """Éléments (dossiers) déplaçables individuellement, avec leur état."""
+    out: list[tuple[str, str]] = []
+    for i in inventory.items():
+        dirs = [p for p in i.paths if p.is_dir()]
+        if not dirs:
+            continue
+        moved = [p for p in dirs if storage.is_link(p)]
+        if moved:
+            tgt = storage.link_target(moved[0])
+            label = f"↗️ {i.label} — déplacé vers {tgt}"
+        else:
+            label = f"{i.label} — {inventory.human(i.size)}"
+        out.append((label, i.key))
+    return out
 
 
 def build_manage_tab():
@@ -164,6 +183,78 @@ def build_manage_tab():
                         storage.save(None), gr.update(value=""))
 
             reset_btn.click(_do_reset, outputs=[loc_now, loc_log, dest_box])
+
+        with gr.Accordion("Déplacer SEULEMENT certains éléments "
+                          "(ex. les 16 Go de la 3D)", open=False):
+            gr.Markdown(
+                "Déplace **les éléments cochés** vers un autre disque et laisse "
+                "un **lien** à leur place : l'application continue de les "
+                "trouver, **sans redémarrage ni réglage**. Idéal pour sortir "
+                "les gros modèles 3D tout en gardant les modèles d'image sur "
+                "le NVMe.\n\n"
+                "⚠️ Le disque de destination doit rester **branché** — sinon "
+                "les éléments déplacés deviennent introuvables.")
+            sel_picks = gr.CheckboxGroup(choices=_move_choices(), value=[],
+                                         label="Éléments à déplacer / ramener")
+            sel_dest = gr.Textbox(
+                label="Dossier de destination (chemin absolu)",
+                placeholder=r"ex. E:\IA-gros-modeles  ou  /mnt/hdd/ia")
+            with gr.Row():
+                sel_move = gr.Button("📦 Déplacer + créer le lien",
+                                     variant="primary")
+                sel_back = gr.Button("↩️ Ramener dans le projet")
+                sel_refresh = gr.Button("↻ Rafraîchir", size="sm")
+            sel_log = gr.Textbox(label="Journal", lines=10, autoscroll=True,
+                                 elem_classes="log-box")
+
+            def _sel_paths(keys):
+                out = []
+                for k in keys or []:
+                    it = inventory.by_key(k)
+                    if it:
+                        out += [p for p in it.paths if p.is_dir()]
+                return out
+
+            def _sel_move(keys, raw):
+                paths = _sel_paths(keys)
+                if not paths:
+                    yield gr.update(), t("Rien de coché.")
+                    return
+                raw = (raw or "").strip().strip('"')
+                if not raw or not Path(raw).expanduser().is_absolute():
+                    yield gr.update(), t("❌ Indiquez un dossier de destination "
+                                         "en chemin **absolu**.")
+                    return
+                lines: list[str] = []
+                yield gr.update(), t("⏳ Déplacement en cours…")
+                for msg in storage.relocate(paths,
+                                            Path(raw).expanduser()):
+                    lines.append(msg)
+                    yield gr.update(), "\n".join(lines)
+                yield gr.update(choices=_move_choices(), value=[]), \
+                    "\n".join(lines)
+
+            sel_move.click(_sel_move, inputs=[sel_picks, sel_dest],
+                           outputs=[sel_picks, sel_log])
+
+            def _sel_back(keys):
+                paths = _sel_paths(keys)
+                if not paths:
+                    yield gr.update(), t("Rien de coché.")
+                    return
+                lines: list[str] = []
+                yield gr.update(), t("⏳ Retour en cours…")
+                for msg in storage.restore(paths):
+                    lines.append(msg)
+                    yield gr.update(), "\n".join(lines)
+                yield gr.update(choices=_move_choices(), value=[]), \
+                    "\n".join(lines)
+
+            sel_back.click(_sel_back, inputs=[sel_picks],
+                           outputs=[sel_picks, sel_log])
+            sel_refresh.click(lambda: (gr.update(choices=_move_choices(),
+                                                 value=[]), ""),
+                              outputs=[sel_picks, sel_log])
 
         # ------------------------------------------------------------------ #
         #  Documentation des options

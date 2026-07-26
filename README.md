@@ -549,6 +549,16 @@ Models don't have to live inside the project folder. In **🧹 Manage & help →
 The setting is stored as `models_dir` in `userdata/preferences.json` and applies
 on **restart** (several modules resolve the path at import time).
 
+**Moving only *some* items** — a second accordion lets you relocate **selected
+items** (e.g. the ~16 GB trellis 3D set) to another drive and leaves a
+**junction/symlink** behind. The app keeps finding them at the original path, so
+there is **no setting and no restart** involved; a **↩️ Bring back** button undoes
+it. Handy to keep image models on the NVMe while parking bulky ones elsewhere.
+
+> The destination drive must stay connected — relocated items become unreachable
+> if it isn't. On Windows the link is a directory *junction*, which does not
+> require administrator rights.
+
 > Repeatedly loading models does **not** wear out an SSD — flash endurance is
 > consumed by *writes* (TBW), not reads. Putting models on your NVMe is exactly
 > what it's for.
