@@ -74,12 +74,35 @@ def find_server() -> Path | None:
     return None
 
 
-def models_ready() -> bool:
-    return MODELS_DIR.is_dir() and any(MODELS_DIR.rglob("*.gguf"))
+# Variantes de poids (dépôt ilintar/trellis2-gguf) : f16 à la racine, q8/ et
+# q4/ en sous-dossiers. Quantifier réduit fortement l'empreinte mémoire, ce qui
+# peut rendre les modes 1024/1536 atteignables sur une carte modeste.
+VARIANTS = [
+    ("f16 — référence (~16,5 Go)", "f16"),
+    ("q8 — quasi sans perte (~9,9 Go)", "q8"),
+    ("q4 — léger grain, plus léger (~6 Go)", "q4"),
+]
+
+
+def variant_dir(variant: str = "f16") -> Path:
+    return MODELS_DIR if variant in (None, "", "f16") else MODELS_DIR / variant
+
+
+def models_ready(variant: str = "f16") -> bool:
+    d = variant_dir(variant)
+    if not d.is_dir():
+        return False
+    # En f16, les .gguf des sous-dossiers q8//q4/ ne comptent pas.
+    return any(d.glob("*.gguf") if variant in (None, "", "f16")
+               else d.rglob("*.gguf"))
+
+
+def installed_variants() -> list[str]:
+    return [v for _, v in VARIANTS if models_ready(v)]
 
 
 def is_ready() -> bool:
-    return find_server() is not None and models_ready()
+    return find_server() is not None and bool(installed_variants())
 
 
 def _wait_health(port: int, proc: subprocess.Popen, deadline: float) -> bool:
@@ -148,9 +171,14 @@ def build_server_args(res: int, decim: int = 0, atlas: int = 0,
                       no_texture: bool = False, box_uv: bool = False,
                       require_gpu: bool = True, f32: bool = False,
                       no_fa: bool = False,
-                      gpu: int | None = None) -> list[str]:
+                      gpu: int | None = None, variant: str = "f16",
+                      band: float = 0.0) -> list[str]:
     """Flags de lancement du serveur trellis (voir README trellis.cpp)."""
-    args = ["--models", str(MODELS_DIR), "--res", str(int(res))]
+    args = ["--models", str(variant_dir(variant)), "--res", str(int(res))]
+    if band and float(band) > 0:
+        # Surcharge l'offset de remaillage « narrow-band » (v0.5.4 : il s'adapte
+        # désormais à la résolution, ce qui corrige les speckles en 1024).
+        args += ["--band", str(band)]
     if gpu is not None:
         # Flag OFFICIEL de trellis (« --gpu N », N<0 = CPU) : plus propre que
         # CUDA_VISIBLE_DEVICES, et l'index correspond à celui affiché au démarrage.
@@ -182,6 +210,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
              decim: int = 0, atlas: int = 0, no_texture: bool = False,
              box_uv: bool = False, require_gpu: bool = True,
              f32: bool = False, no_fa: bool = False,
+             variant: str = "f16", band: float = 0.0,
              meta: dict | None = None) -> Path:
     """Génère un GLB 3D à partir d'une image via le serveur trellis.
 
@@ -198,9 +227,10 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     if server is None:
         raise sdcpp.EngineError(
             "Serveur trellis introuvable — installez trellis.cpp (onglet 3D).")
-    if not models_ready():
+    if not models_ready(variant):
         raise sdcpp.EngineError(
-            "Modèles trellis absents — installez-les (onglet 3D).")
+            f"Modèles trellis « {variant} » absents — installez cette variante "
+            "(onglet 3D).")
     settings.ensure_dirs()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -218,7 +248,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
     launch_args = build_server_args(
         res, decim=decim, atlas=atlas, no_texture=no_texture, box_uv=box_uv,
-        require_gpu=require_gpu, f32=f32, no_fa=no_fa, gpu=gpu_index)
+        require_gpu=require_gpu, f32=f32, no_fa=no_fa, gpu=gpu_index,
+        variant=variant, band=band)
     if extra and extra.strip():
         launch_args += shlex.split(extra)
     sig = tuple(launch_args)
@@ -227,7 +258,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     params = {"image": Path(image_path).name, "res": int(res),
               "bg_removal": bg_removal, "decim": decim, "atlas": atlas,
               "no_texture": no_texture, "box_uv": box_uv, "f32": f32,
-              "no_fa": no_fa, "gpu": gpu_index}
+              "no_fa": no_fa, "gpu": gpu_index, "variant": variant}
 
     # Réutilise le serveur résident SEULEMENT si TOUS les flags de lancement
     # sont identiques. decim/atlas/no-texture/gpu… ne sont pas renégociables
@@ -334,7 +365,8 @@ def _sidecar(out_path: Path, params: dict) -> None:
     lines = [f"Source image: {params.get('image', '')}",
              f"Resolution: {params.get('res')}",
              f"Seed: {params.get('seed', '?')}",
-             f"Background removal: {params.get('bg_removal')}"]
+             f"Background removal: {params.get('bg_removal')}",
+             f"Weights: {params.get('variant', 'f16')}"]
     if params.get("decim"):
         lines.append(f"Decimation target: {params['decim']}")
     if params.get("atlas"):

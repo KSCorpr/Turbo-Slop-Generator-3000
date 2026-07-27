@@ -48,6 +48,24 @@ def _pad_to_square(img, mode: str = "white"):
     return canvas
 
 
+def _variant_choices() -> list[tuple[str, str]]:
+    """Variantes de poids, en signalant celles qui ne sont pas installées."""
+    installed = trellis.installed_variants()
+    out = []
+    for lbl, v in trellis.VARIANTS:
+        out.append((lbl if v in installed else f"{lbl} — non installé", v))
+    return out
+
+
+def _default_variant() -> str:
+    """La plus légère des variantes installées (moins de mémoire), sinon q8."""
+    installed = trellis.installed_variants()
+    for v in ("q4", "q8", "f16"):
+        if v in installed:
+            return v
+    return "q8"
+
+
 def _gpu_choices() -> list[tuple[str, int]]:
     from .. import hardware
     return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
@@ -79,16 +97,24 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                           open=not ready):
             gr.Markdown(
                 "Télécharge le **binaire Windows CUDA** "
-                "(`pwilkin/trellis.cpp`, ~700 Mo) dans `bin/trellis/` et le "
-                "**jeu de modèles GGUF** (`ilintar/trellis2-gguf`, ~10 Go) dans "
-                "`models/trellis/`. À faire une seule fois.")
+                "(`pwilkin/trellis.cpp`, ~700 Mo) dans `bin/trellis/` et un "
+                "**jeu de modèles GGUF** (`ilintar/trellis2-gguf`) dans "
+                "`models/trellis/`.\n\n"
+                "**Variante de poids** — les versions quantifiées occupent "
+                "beaucoup moins de mémoire, ce qui peut rendre les modes "
+                "**1024/1536 atteignables** sur une carte modeste. Tu peux en "
+                "installer plusieurs et basculer à la génération.")
+            inst_variant = gr.Radio(
+                [(lbl, v) for lbl, v in trellis.VARIANTS], value="q8",
+                label="Variante à installer")
             inst_log = gr.Textbox(label="Journal d'installation", lines=8,
                                   autoscroll=True, elem_classes="log-box")
             inst_btn = gr.Button("⬇️ Installer trellis.cpp (binaire + modèles)")
 
-            def _install():
+            def _install(inst_var):
                 cmd = [sys.executable, str(settings.ROOT / "scripts"
-                                           / "get_trellis.py")]
+                                           / "get_trellis.py"),
+                       "--variant", str(inst_var or "f16")]
                 logs: list[str] = []
                 yield t("⏳ Installation en cours (binaire + ~10 Go de modèles)…")
                 proc = subprocess.Popen(
@@ -104,7 +130,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                             else "\n⚠️ Installation incomplète — voir ci-dessus.")
                 yield "\n".join(logs[-400:])
 
-            inst_btn.click(_install, outputs=[inst_log])
+            inst_btn.click(_install, inputs=[inst_variant],
+                           outputs=[inst_log])
 
         # ---- Génération ----
         with gr.Row():
@@ -121,8 +148,13 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                         [("Blanc", "white"), ("Noir", "black"),
                          ("Transparent", "transparent")],
                         value="white", scale=1, label="Bandes ajoutées")
-                res = gr.Radio(_res_choices(), value=512,
-                               label="Résolution géométrie")
+                with gr.Row():
+                    res = gr.Radio(_res_choices(), value=512, scale=2,
+                                   label="Résolution géométrie")
+                    variant = gr.Dropdown(
+                        _variant_choices(), value=_default_variant(), scale=1,
+                        label="Poids utilisés",
+                        info="Quantifié = moins de mémoire.")
                 with gr.Row():
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = aléatoire)")
@@ -174,6 +206,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                         [(t("Défaut du moteur (carte 0)"), -1)] + _gpu_choices(),
                         value=(_gpu_choices()[0][1] if _gpu_choices() else -1),
                         label="Carte utilisée pour la 3D")
+                    band = gr.Number(
+                        value=0, precision=4,
+                        label="Offset de remaillage « band » (0 = auto)",
+                        info="v0.5.4 l'adapte à la résolution (corrige les "
+                             "speckles en 1024). À ne changer qu'en dépannage.")
                     with gr.Row():
                         require_gpu = gr.Checkbox(
                             value=True,
@@ -203,7 +240,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
-        def do_generate3d(image_path, square_val, pad_val, res_val, seed_val,
+        def do_generate3d(image_path, square_val, pad_val, res_val,
+                          variant_val, band_val, seed_val,
                           bg_val, resident_val,
                           decim_val, atlas_val, no_tex_val, box_uv_val,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
@@ -255,6 +293,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                                      box_uv=bool(box_uv_val),
                                      require_gpu=bool(req_gpu_val),
                                      f32=bool(f32_val), no_fa=bool(no_fa_val),
+                                     variant=variant_val or "f16",
+                                     band=float(band_val or 0),
                                      extra=extra_args or "", log=q.put,
                                      meta=meta)
                     state["ok"] = True
@@ -290,7 +330,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
 
         gen_evt = run.click(
             do_generate3d,
-            inputs=[image, square_pad, pad_color, res, seed, bg, resident,
+            inputs=[image, square_pad, pad_color, res, variant, band,
+                    seed, bg, resident,
                     decim, atlas, no_texture,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
             outputs=[status, model3d, glb_file, log, res_status, seed_used])

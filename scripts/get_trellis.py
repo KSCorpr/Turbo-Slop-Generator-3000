@@ -136,9 +136,36 @@ def install_binary(force: bool = False, log=print) -> bool:
     return False
 
 
-def install_models(log=print) -> bool:
-    if has_models():
-        log("Modèles trellis déjà présents, on saute.")
+# Variantes de poids : f16 (défaut, dépôt racine) ou quantifiées (sous-dossiers
+# q8/ et q4/ du dépôt HF). Tailles annoncées en amont.
+VARIANTS = {
+    "f16": ("racine du dépôt", "~16,5 Go — référence"),
+    "q8": ("q8/", "~9,9 Go — quasi sans perte"),
+    "q4": ("q4/", "~6 Go — léger grain de texture"),
+}
+
+
+def variant_dir(variant: str) -> Path:
+    """Dossier local d'une variante (f16 = racine de models/trellis)."""
+    return MODELS_DIR if variant == "f16" else MODELS_DIR / variant
+
+
+def has_models(variant: str = "f16") -> bool:
+    d = variant_dir(variant)
+    if not d.is_dir():
+        return False
+    # En f16, ne PAS compter les .gguf des sous-dossiers q8//q4/.
+    files = d.glob("*.gguf") if variant == "f16" else d.rglob("*.gguf")
+    return any(files)
+
+
+def install_models(variant: str = "f16", log=print) -> bool:
+    if variant not in VARIANTS:
+        log(f"Variante inconnue : {variant} (attendu : "
+            f"{', '.join(VARIANTS)}).")
+        return False
+    if has_models(variant):
+        log(f"Modèles trellis « {variant} » déjà présents, on saute.")
         return True
     try:
         import os
@@ -148,24 +175,33 @@ def install_models(log=print) -> bool:
         log("huggingface_hub manquant (pip install huggingface_hub).")
         return False
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    log(f"Téléchargement du jeu de modèles {HF_MODEL_REPO} → {MODELS_DIR} "
-        "(~10 Go, reprise auto)…")
+    if variant == "f16":
+        # Racine seulement : on EXCLUT les sous-dossiers quantifiés.
+        allow = ["*.gguf", "*.json", "*.txt"]
+        ignore = ["q8/*", "q4/*"]
+    else:
+        allow = [f"{variant}/*"]
+        ignore = None
+    log(f"Téléchargement des modèles trellis « {variant} » "
+        f"({VARIANTS[variant][1]}) → {variant_dir(variant)} (reprise auto)…")
     try:
+        # local_dir = racine : les fichiers q8/ et q4/ atterrissent
+        # naturellement dans leur sous-dossier.
         snapshot_download(repo_id=HF_MODEL_REPO, local_dir=str(MODELS_DIR),
-                          allow_patterns=["*.gguf", "*.json", "*.txt"])
+                          allow_patterns=allow, ignore_patterns=ignore)
     except Exception as exc:  # noqa: BLE001
         log(f"Échec du téléchargement des modèles : {exc}")
         return False
-    if has_models():
-        log("[OK] Modèles trellis en place.")
+    if has_models(variant):
+        log(f"[OK] Modèles trellis « {variant} » en place.")
         return True
     log("[!] Aucun .gguf après téléchargement — vérifiez le dépôt HF.")
     return False
 
 
-def install_all(force: bool = False, log=print) -> bool:
+def install_all(force: bool = False, variant: str = "f16", log=print) -> bool:
     ok_bin = install_binary(force=force, log=log)
-    ok_mdl = install_models(log=log)
+    ok_mdl = install_models(variant=variant, log=log)
     return ok_bin and ok_mdl
 
 
@@ -181,6 +217,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", action="store_true", help="binaire seul")
     ap.add_argument("--models", action="store_true", help="modèles seuls")
+    ap.add_argument("--variant", choices=list(VARIANTS), default="f16",
+                    help="variante de poids : f16 (défaut), q8 ou q4")
     ap.add_argument("--force", action="store_true",
                     help="re-télécharger le binaire même s'il est présent")
     ap.add_argument("--allow-ipv6", action="store_true")
@@ -191,9 +229,9 @@ def main():
     if args.binary:
         ok = install_binary(force=args.force)
     elif args.models:
-        ok = install_models()
+        ok = install_models(variant=args.variant)
     else:
-        ok = install_all(force=args.force)
+        ok = install_all(force=args.force, variant=args.variant)
     print("Terminé." if ok else "Terminé avec des erreurs (voir ci-dessus).")
     sys.exit(0 if ok else 1)
 
