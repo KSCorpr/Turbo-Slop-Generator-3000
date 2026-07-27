@@ -101,6 +101,37 @@ def installed_variants() -> list[str]:
     return [v for _, v in VARIANTS if models_ready(v)]
 
 
+def diagnose() -> str:
+    """État lisible : OÙ l'app cherche, et ce qu'elle y trouve.
+
+    Rend visible le cas « installé ailleurs que là où on regarde » (dossier de
+    modèles externe), au lieu d'un silencieux « pas installé ».
+    """
+    srv = find_server()
+    lines = [f"- Moteur : {'`' + str(srv) + '`' if srv else '**introuvable**'}",
+             f"- Dossier des modèles : `{MODELS_DIR}`"]
+    if not MODELS_DIR.exists():
+        lines.append("  - ⚠️ **ce dossier n'existe pas** — rien n'a été "
+                     "installé ici.")
+    for lbl, v in VARIANTS:
+        d = variant_dir(v)
+        if models_ready(v):
+            n = len(list(d.glob("*.gguf")))
+            lines.append(f"- ✅ **{v}** — {n} fichier(s) dans `{d}`")
+        else:
+            lines.append(f"- — {v} : absent (`{d}`)")
+    # Un jeu de modèles présent dans le dossier PROJET alors qu'on regarde
+    # ailleurs = installation faite avant/hors du déplacement des modèles.
+    proj = settings.DEFAULT_MODELS_DIR / "trellis"
+    if proj.resolve() != MODELS_DIR.resolve() and proj.is_dir() \
+            and any(proj.rglob("*.gguf")):
+        lines.append(f"\n⚠️ **Des modèles trellis existent aussi dans le dossier "
+                     f"du projet** (`{proj}`) alors que l'app regarde "
+                     f"`{MODELS_DIR}`. Déplace-les vers le dossier ci-dessus "
+                     "(ou relance l'installation) pour qu'ils soient vus.")
+    return "\n".join(lines)
+
+
 def is_ready() -> bool:
     return find_server() is not None and bool(installed_variants())
 

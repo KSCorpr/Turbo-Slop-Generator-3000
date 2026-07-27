@@ -27,13 +27,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(ROOT))
 
 # Réutilise les téléchargements ROBUSTES de get_sdcpp (reprise, miroirs, IPv4).
 import get_sdcpp  # noqa: E402
 
-BIN_DIR = ROOT / "bin"
+# SOURCE DE VÉRITÉ UNIQUE pour les emplacements : atelier.settings (qui honore
+# la préférence « models_dir », donc un dossier externe type NVMe). Ne JAMAIS
+# redéfinir les chemins ici : l'installeur écrirait ailleurs que là où l'app
+# cherche, et rien ne le signalerait.
+from atelier import settings as _settings  # noqa: E402
+
+BIN_DIR = _settings.BIN_DIR
 TRELLIS_BIN_DIR = BIN_DIR / "trellis"
-MODELS_DIR = ROOT / "models" / "trellis"
+MODELS_DIR = _settings.MODELS_DIR / "trellis"
 
 GH_RELEASE = "https://api.github.com/repos/pwilkin/trellis.cpp/releases/latest"
 ASSET_MATCH = ("cuda", "win")          # archive Windows CUDA
@@ -225,6 +232,11 @@ def main():
     args = ap.parse_args()
     if not args.allow_ipv6:
         get_sdcpp._force_ipv4()
+
+    # Trace explicite : on voit tout de suite OÙ ça s'installe (et donc si un
+    # dossier de modèles externe est bien pris en compte).
+    print(f"Dossier des modèles : {MODELS_DIR}")
+    print(f"Dossier du moteur   : {TRELLIS_BIN_DIR}")
 
     if args.binary:
         ok = install_binary(force=args.force)

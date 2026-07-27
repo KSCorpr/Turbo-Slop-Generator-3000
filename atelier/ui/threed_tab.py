@@ -104,6 +104,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 "beaucoup moins de mémoire, ce qui peut rendre les modes "
                 "**1024/1536 atteignables** sur une carte modeste. Tu peux en "
                 "installer plusieurs et basculer à la génération.")
+            diag_md = gr.Markdown(trellis.diagnose())
+            diag_btn = gr.Button("↻ Vérifier l'installation", size="sm")
             inst_variant = gr.Radio(
                 [(lbl, v) for lbl, v in trellis.VARIANTS], value="q8",
                 label="Variante à installer")
@@ -130,8 +132,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                             else "\n⚠️ Installation incomplète — voir ci-dessus.")
                 yield "\n".join(logs[-400:])
 
-            inst_btn.click(_install, inputs=[inst_variant],
-                           outputs=[inst_log])
+            inst_evt = inst_btn.click(_install, inputs=[inst_variant],
+                                      outputs=[inst_log])
 
         # ---- Génération ----
         with gr.Row():
@@ -345,6 +347,16 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 return gr.update()
 
         seed_reuse.click(_reuse_seed, inputs=[seed_used], outputs=[seed])
+
+        # Diagnostic d'installation : câblé ICI car il rafraîchit aussi le
+        # sélecteur « variant », créé plus bas dans la mise en page.
+        def _refresh_diag():
+            return (gr.update(value=trellis.diagnose()),
+                    gr.update(choices=_variant_choices(),
+                              value=_default_variant()))
+
+        diag_btn.click(_refresh_diag, outputs=[diag_md, variant])
+        inst_evt.then(_refresh_diag, outputs=[diag_md, variant])
 
         def _stop_resident():
             msg = trellis.resident_stop()
