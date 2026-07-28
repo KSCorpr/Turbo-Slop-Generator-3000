@@ -337,12 +337,15 @@ def build_manage_tab():
 
         with gr.Accordion("🧊 Image → 3D (trellis)", open=False):
             gr.Markdown(
-                "**Poids utilisés** — variante des modèles : **f16** (~16,5 Go, "
-                "référence), **q8** (~9,9 Go, quasi sans perte) ou **q4** "
-                "(~6 Go, léger grain). Quantifié = beaucoup moins de "
-                "mémoire → les modes 1024/1536 peuvent devenir "
-                "atteignables sur une carte modeste. Plusieurs variantes "
-                "peuvent coexister ; on bascule à la génération.  \n"
+                "**Poids utilisés** — variante des modèles : **f16** (~16,5 Go), "
+                "**q8** (~9,9 Go) ou **q4** (~6 Go). ⚠️ **f16 est le plus "
+                "RAPIDE** quand il tient en mémoire : en ggml, les poids "
+                "quantifiés sont déquantifiés à la volée pendant le calcul, "
+                "et ce surcoût n'est PAS amorti sur une charge 3D "
+                "(compute-bound) — contrairement aux LLM. q8/q4 ne servent "
+                "donc qu'à faire tenir un mode (1024/1536) qui déborderait "
+                "autrement. Plusieurs variantes peuvent coexister ; on "
+                "bascule à la génération.  \n"
                 "**Compléter en carré** — TRELLIS pré-traite l'entrée en "
                 "**carré** : une image 16:9 envoyée telle quelle sort "
                 "**déformée** (écrasée). Coché (défaut), des bandes neutres "

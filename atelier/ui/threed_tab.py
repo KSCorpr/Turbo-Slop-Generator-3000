@@ -58,12 +58,18 @@ def _variant_choices() -> list[tuple[str, str]]:
 
 
 def _default_variant() -> str:
-    """La plus légère des variantes installées (moins de mémoire), sinon q8."""
+    """Priorité à f16 : c'est le PLUS RAPIDE quand il tient en mémoire.
+
+    En ggml les poids quantifiés sont déquantifiés à la volée pendant le calcul.
+    Sur une charge compute-bound comme la 3D, ce surcoût n'est jamais amorti :
+    q8/q4 sont plus LENTS que f16. Ils ne servent qu'à faire tenir un mode
+    (1024/1536) qui déborderait autrement.
+    """
     installed = trellis.installed_variants()
-    for v in ("q4", "q8", "f16"):
+    for v in ("f16", "q8", "q4"):
         if v in installed:
             return v
-    return "q8"
+    return "f16"
 
 
 def _gpu_choices() -> list[tuple[str, int]]:
@@ -100,15 +106,20 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 "(`pwilkin/trellis.cpp`, ~700 Mo) dans `bin/trellis/` et un "
                 "**jeu de modèles GGUF** (`ilintar/trellis2-gguf`) dans "
                 "`models/trellis/`.\n\n"
-                "**Variante de poids** — les versions quantifiées occupent "
-                "beaucoup moins de mémoire, ce qui peut rendre les modes "
-                "**1024/1536 atteignables** sur une carte modeste. Tu peux en "
-                "installer plusieurs et basculer à la génération.")
+                "**Variante de poids** — **f16 est le plus RAPIDE** quand il "
+                "tient en mémoire : garde-le pour le 512. Les versions "
+                "quantifiées (q8/q4) occupent beaucoup moins de mémoire — ce "
+                "qui peut rendre le **1024/1536 atteignable** — mais elles "
+                "sont **plus LENTES** (les poids sont déquantifiés à la volée "
+                "à chaque calcul, surcoût non amorti sur une charge 3D). "
+                "Tu peux en installer plusieurs et basculer à la génération.")
             diag_md = gr.Markdown(trellis.diagnose())
             diag_btn = gr.Button("↻ Vérifier l'installation", size="sm")
             inst_variant = gr.Radio(
-                [(lbl, v) for lbl, v in trellis.VARIANTS], value="q8",
-                label="Variante à installer")
+                [(lbl, v) for lbl, v in trellis.VARIANTS], value="f16",
+                label="Variante à installer",
+                info="Commence par f16 (le plus rapide). N'ajoute q8/q4 que si "
+                     "tu veux tenter le 1024/1536.")
             inst_log = gr.Textbox(label="Journal d'installation", lines=8,
                                   autoscroll=True, elem_classes="log-box")
             inst_btn = gr.Button("⬇️ Installer trellis.cpp (binaire + modèles)")
@@ -156,7 +167,9 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                     variant = gr.Dropdown(
                         _variant_choices(), value=_default_variant(), scale=1,
                         label="Poids utilisés",
-                        info="Quantifié = moins de mémoire.")
+                        info="f16 = le PLUS RAPIDE s'il tient. q8/q4 = moins "
+                             "de mémoire mais plus LENTS (déquantification à "
+                             "la volée) — à réserver au 1024/1536.")
                 with gr.Row():
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = aléatoire)")
