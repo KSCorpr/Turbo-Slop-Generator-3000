@@ -25,6 +25,11 @@ SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
+# SeedVR2 : code d'inférence cloné + poids. On appelle son « inference_cli.py »
+# en sous-process (chemin officiellement documenté « sans ComfyUI »).
+SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
+SEEDVR2_REPO_DIR = SEEDVR2_DIR / "repo"
+SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models"
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -135,6 +140,10 @@ def install_sam_stream():
 
 def install_enhance_stream():
     yield from _install_stream("enhance")
+
+
+def install_seedvr2_stream():
+    yield from _install_stream("seedvr2")
 
 
 def install_upscale_stream():
@@ -262,6 +271,86 @@ def sam_segment(image, x: int, y: int,
 
 
 ENHANCE_STYLES = ("generic", "krea2", "mj")
+
+
+# --------------------------------------------------------------------------- #
+#  SeedVR2 — upscale de RESTAURATION en UN pas (image fixe, sans prompt)
+# --------------------------------------------------------------------------- #
+def seedvr2_is_installed() -> bool:
+    return ((SEEDVR2_REPO_DIR / "inference_cli.py").is_file()
+            and SEEDVR2_MODEL_DIR.is_dir()
+            and bool(list(SEEDVR2_MODEL_DIR.glob("*.safetensors"))
+                     or list(SEEDVR2_MODEL_DIR.glob("*.gguf"))))
+
+
+def seedvr2_has_1_4b() -> bool:
+    """Le 1.4B n'est sélectionnable que si la config d'architecture a bien été
+    posée ET la sélection étendue en amont (cf. setup_tools._seedvr2_enable_1_4b)."""
+    cfg = SEEDVR2_REPO_DIR / "configs_1_4b" / "main.yaml"
+    sel = SEEDVR2_REPO_DIR / "src" / "core" / "model_configuration.py"
+    if not (cfg.is_file() and sel.is_file()):
+        return False
+    try:
+        return "configs_1_4b" in sel.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def seedvr2_models() -> list[str]:
+    """Poids présents sur le disque.
+
+    Le CLI amont accepte, en plus de son catalogue 3B/7B, tout fichier trouvé
+    dans son dossier de modèles — c'est ce qui rend le 1.4B utilisable sans
+    toucher à son registre."""
+    if not SEEDVR2_MODEL_DIR.is_dir():
+        return []
+    out = [p.name for p in sorted(SEEDVR2_MODEL_DIR.iterdir())
+           if p.suffix.lower() in (".safetensors", ".gguf")]
+    return out
+
+
+def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
+                    seed: int = 42, color_correction: str = "lab",
+                    tiled: bool = False, tile_size: int = 512,
+                    log: Callable[[str], None] | None = None) -> Path:
+    """Restaure/agrandit une image fixe (1 pas de diffusion, aucun prompt).
+
+    `resolution` = côté COURT visé en pixels (sémantique du CLI amont) ; le
+    rapport d'aspect est conservé. Recommandé : ×2 à ×4 de l'original."""
+    if not seedvr2_is_installed():
+        raise ToolError("SeedVR2 n'est pas installé "
+                        "(bouton « Installer » de l'onglet Restauration).")
+    models = seedvr2_models()
+    if not models:
+        raise ToolError("Aucun poids SeedVR2 trouvé. Relancez l'installation.")
+    model = model or models[0]
+
+    settings.ensure_dirs()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    src = _to_src(image, "seedvr2_src")
+    out_dir = settings.TMP_DIR / f"seedvr2_{stamp}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [sys.executable, str(SEEDVR2_REPO_DIR / "inference_cli.py"), str(src),
+           "--output", str(out_dir / "seedvr2.png"),
+           "--output_format", "png",
+           "--dit_model", model,
+           "--model_dir", str(SEEDVR2_MODEL_DIR),
+           "--resolution", str(int(resolution)),
+           "--seed", str(int(seed)),
+           "--color_correction", color_correction or "lab",
+           "--batch_size", "1"]
+    if tiled:
+        # Le VAE s'auto-attentionne sur toute la tuile : le coût est en O(n²)
+        # sur (tuile/8)². 512 est le réglage sûr ; monter dessus n'apporte rien
+        # et fait exploser la mémoire. Descendre à 256 si ça déborde encore.
+        cmd += ["--vae_decode_tiled", "--vae_decode_tile_size", str(int(tile_size)),
+                "--vae_encode_tiled", "--vae_encode_tile_size", str(int(tile_size))]
+    # Le GPU est choisi via CUDA_VISIBLE_DEVICES (_run_tool) : on ne passe PAS
+    # --cuda_device en plus, les deux se marcheraient dessus.
+    _run_tool(cmd, log, "L'agrandissement SeedVR2 a échoué (voir le journal).",
+              gpu_index=_gen_gpu_index())
+    return _collect(out_dir, "seedvr2", stamp)
 
 
 def enhance_prompt_variants(prompt: str, style: str = "generic",

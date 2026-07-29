@@ -279,6 +279,125 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                 u_stop.click(lambda: gen_engine.cancel(), outputs=None,
                              cancels=[u_evt])
 
+            # ---------- Restauration SeedVR2 (1 pas, sans prompt) ----------
+            with gr.Tab("🎯 Restaurer (SeedVR2)", id="seedvr2"):
+                gr.Markdown(
+                    "Agrandissement par **restauration** : SeedVR2 reconstruit "
+                    "le détail réellement plausible (peau, tissu, feuillage, "
+                    "texte) au lieu de lisser comme ESRGAN ou de réinventer "
+                    "comme l'upscale créatif. **Un seul pas de diffusion, sans "
+                    "prompt** — c'est presque instantané et il n'y a rien à "
+                    "régler.\n\n"
+                    "Zone de confort : **×2 à ×4**. Au-delà, la qualité "
+                    "décroche.")
+
+                with gr.Accordion("⬇️ Installer SeedVR2 (1 clic)",
+                                  open=not tools.seedvr2_is_installed()):
+                    gr.Markdown(
+                        "Récupère le **code d'inférence** (PyTorch pur : ni "
+                        "apex, ni flash-attn, ni compilation) et les **poids "
+                        "1.4B** (~2,9 Go). Environ **4,6 Go de VRAM** au pic "
+                        "pour un 512→2048.\n\n"
+                        "ℹ️ Le code vient du dépôt de référence SeedVR2, qui est "
+                        "distribué comme nœud ComfyUI mais fournit un "
+                        "`inference_cli.py` officiellement prévu pour tourner "
+                        "**sans ComfyUI** : on n'installe ni ne lance ComfyUI, "
+                        "on appelle ce script en sous-process. Le **VAE "
+                        "(~0,5 Go)** est téléchargé automatiquement au tout "
+                        "premier agrandissement.")
+                    v_inst_log = gr.Textbox(label="Journal d'installation",
+                                            lines=8, autoscroll=True,
+                                            elem_classes="log-box")
+                    v_inst = gr.Button("⬇️ Installer SeedVR2")
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        v_image = gr.Image(label="Image à restaurer", type="pil")
+                        v_res = gr.Slider(
+                            512, 2560, value=1440, step=64,
+                            label="Côté court visé (px)",
+                            info="Le rapport d'aspect est conservé. Visez 2 à "
+                                 "4 fois le côté court de votre image.")
+                        v_model = gr.Dropdown(
+                            tools.seedvr2_models(),
+                            value=(tools.seedvr2_models() or [None])[0],
+                            label="Poids utilisés")
+                        with gr.Accordion("Réglages avancés", open=False):
+                            v_color = gr.Dropdown(
+                                ["lab", "wavelet", "wavelet_adaptive", "hsv",
+                                 "adain", "none"], value="lab",
+                                label="Correction colorimétrique",
+                                info="Recale les couleurs sur l'original. "
+                                     "« lab » convient presque toujours.")
+                            v_tiled = gr.Checkbox(
+                                value=False, label="VAE par tuiles",
+                                info="À cocher seulement en cas de manque de "
+                                     "mémoire, sur une grande image.")
+                            v_tile = gr.Slider(
+                                256, 768, value=512, step=128,
+                                label="Taille de tuile",
+                                info="Ne montez PAS au-dessus de 512 : le VAE "
+                                     "s'auto-attentionne sur la tuile entière, "
+                                     "le coût explose en O(n²). Descendez à 256 "
+                                     "si ça déborde encore.")
+                            v_seed = gr.Number(value=42, precision=0,
+                                               label="Seed")
+                        with gr.Row():
+                            v_refresh = gr.Button("↻ Rafraîchir", size="sm")
+                            v_run = gr.Button("🎯 Restaurer", variant="primary",
+                                              size="lg", scale=2)
+                        v_stop = gr.Button("⏹️ Annuler", variant="stop",
+                                           size="sm")
+                    with gr.Column(scale=4):
+                        v_result = gr.Image(
+                            label="Résultat (pleine résolution dans outputs/)",
+                            height=520, format="png", show_download_button=True)
+                        v_log = gr.Textbox(label="Journal", lines=10,
+                                           autoscroll=True,
+                                           elem_classes="log-box")
+
+                def _install_seedvr2():
+                    for msg in tools.install_seedvr2_stream():
+                        yield msg, gr.update()
+                    ms = tools.seedvr2_models()
+                    yield gr.update(), gr.update(choices=ms,
+                                                 value=(ms or [None])[0])
+
+                v_inst.click(_install_seedvr2, outputs=[v_inst_log, v_model])
+
+                def _refresh_seedvr2():
+                    ms = tools.seedvr2_models()
+                    return gr.update(choices=ms, value=(ms or [None])[0])
+
+                v_refresh.click(_refresh_seedvr2, outputs=[v_model])
+
+                def do_seedvr2(img, res, model, color, tiled, tile, seed,
+                               progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    logs: list[str] = []
+                    progress(0.1, desc="Restauration…")
+                    try:
+                        out = tools.seedvr2_upscale(
+                            img, resolution=int(res), model=model or None,
+                            seed=int(seed), color_correction=color,
+                            tiled=bool(tiled), tile_size=int(tile),
+                            log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERREUR] {exc}")
+                        return None, "\n".join(logs)
+                    progress(1.0, desc="Terminé")
+                    logs.append(f"\n✅ Image restaurée : {out}")
+                    return str(out), "\n".join(logs)
+
+                v_evt = v_run.click(
+                    do_seedvr2,
+                    inputs=[v_image, v_res, v_model, v_color, v_tiled, v_tile,
+                            v_seed],
+                    outputs=[v_result, v_log])
+                v_stop.click(lambda: tools.cancel(), outputs=None,
+                             cancels=[v_evt])
+
             # ---------- Upscale créatif tuilé (SDXL, façon Magnific) ----------
             with gr.Tab("✨ Upscale créatif (SDXL)", id="creative"):
                 gr.Markdown(
@@ -496,11 +615,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:
-            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
+            _keys = ["depth", "bg", "sam", "esrgan", "seedvr2", "creative"]
 
             def _consume(pend):
                 if not pend:
-                    return tuple([gr.update()] * 6 + [None])
+                    return tuple([gr.update()] * (len(_keys) + 1) + [None])
                 path, dest = pend
                 sub = gr.Tabs(selected=dest) if dest in _keys else gr.update()
                 img_upd = [gr.update(value=path) if k == dest else gr.update()
@@ -509,4 +628,4 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
             tabs.select(_consume, inputs=[pending_toolkit],
                         outputs=[sub_tabs, d_image, b_image, s_image, u_image,
-                                 c_image, pending_toolkit])
+                                 v_image, c_image, pending_toolkit])

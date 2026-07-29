@@ -353,7 +353,8 @@ shown at the top. Engine logs and progress hints stay in French.
 
 ## Upscaling
 
-Two complementary upscalers live under **Toolkit**.
+Three complementary upscalers live under **Toolkit**, in increasing order of
+invention: ESRGAN interpolates, SeedVR2 restores, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
 Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
@@ -362,6 +363,41 @@ no prompt**. One-click downloads **all** models from
 (2x-ESRGAN, RealESRGAN_x4plus, 4xUltrasharpV10, 4x_foolhardy_Remacri…). Pick a
 model (×2/×4 depending on its name); **Repeat ×2** chains two passes (a ×2 model
 twice = ×4). Best for a clean, faithful enlargement.
+
+### 🎯 Restoration (SeedVR2 1.4B)
+
+**One diffusion step, no prompt, no text encoder.** SeedVR2 reconstructs
+plausible detail — skin, fabric, foliage, text — instead of smoothing like ESRGAN
+or inventing like the creative upscale. Its sweet spot is **×2 to ×4**; quality
+degrades past that.
+
+Small and fast: **2.9 GB** of weights, **~4.6 GB VRAM peak** for a 512→2048.
+Fixed sampler settings (steps 1, cfg 1, euler), so the only control that matters
+is the **target short-side resolution**.
+
+> **How it is wired.** There is no pip package and no `diffusers` pipeline for
+> SeedVR2. The reference inference code is the
+> [numz repository](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler),
+> which ships as a ComfyUI node **but provides an `inference_cli.py` explicitly
+> documented as usable without ComfyUI**. The installer clones that repo and we
+> call its CLI as a subprocess — **ComfyUI is never installed or run**, and we do
+> not copy hundreds of lines of model architecture that would then need
+> maintaining. Dependencies are ordinary pip packages (einops, omegaconf,
+> diffusers, peft, rotary_embedding_torch…); **no apex, flash-attn or triton** —
+> those are optional accelerators and the code falls back to PyTorch SDPA.
+
+The **1.4B** weights come from
+[`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a
+6-block distillation of the 7B teacher. Upstream only knows the 3B and 7B, so the
+installer adds a `configs_1_4b/main.yaml` (architecture supplied by the weights'
+author, cross-checked tensor by tensor) and extends one line in
+`src/core/model_configuration.py` that picks the config directory. That edit is
+**idempotent and verified**: if the upstream pattern ever changes, the installer
+refuses to patch, says so, and the official 3B/7B models keep working. Any weight
+file dropped in the models folder is selectable, because upstream's
+`get_available_dit_models()` also discovers models on disk.
+
+The VAE (~0.5 GB) is fetched automatically on the first upscale.
 
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
@@ -479,7 +515,8 @@ subprocesses so torch DLLs never lock the UI process):
   license).
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
-- **Upscale (ESRGAN)** and **Creative upscale (SDXL)** — see [Upscaling](#upscaling).
+- **Upscale (ESRGAN)**, **Restore (SeedVR2)** and **Creative upscale (SDXL)** —
+  see [Upscaling](#upscaling).
 
 ### Prompt enhancer (AI)
 The **✨ Enhance prompt** button (in each generation tab) runs a small instruct

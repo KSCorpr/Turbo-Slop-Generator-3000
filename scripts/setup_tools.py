@@ -195,9 +195,165 @@ def install_upscale():
           "(onglet Toolkit → Upscale créatif).")
 
 
+# --------------------------------------------------------------------------- #
+#  SeedVR2 — upscale de RESTAURATION en un pas (image fixe)
+#
+#  Il n'existe ni paquet pip ni pipeline diffusers pour SeedVR2 : le code
+#  d'inférence de référence est celui du dépôt numz, qui fournit un
+#  « inference_cli.py » explicitement documenté comme utilisable SANS ComfyUI.
+#  On clone donc ce dépôt et on appelle son CLI en sous-process — on n'installe
+#  ni ne lance ComfyUI, et on ne recopie pas non plus des centaines de lignes
+#  d'architecture qu'il faudrait ensuite maintenir à la main.
+# --------------------------------------------------------------------------- #
+SEEDVR2_GIT = "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler"
+SEEDVR2_W_REPO = "lvladikov/SeedVR2-1.4B"
+SEEDVR2_DIT = "seedvr2_distill_6L_1.4B_sharp_fp16.safetensors"
+
+# Config d'architecture du 1.4B (distillation 6 blocs du 7B). Fournie par
+# l'auteur des poids, dimensions recoupées tenseur par tenseur avec le
+# checkpoint. Le dépôt d'inférence ne connaît que le 3B et le 7B.
+SEEDVR2_CFG_1_4B = """\
+# SeedVR2-1.4B (6-layer distillation) — architecture config.
+# configs_7b/main.yaml avec la PROFONDEUR changée, rien d'autre : le modèle est
+# une tranche de 6 blocs du 7B, donc toutes les dimensions sont celles du 7B.
+#   vid_dim 3072  <- blocks.0.ada.vid.attn_gate a la forme [3072]
+#   txt_in_dim 5120 <- txt_in.weight a la forme [3072, 5120]
+#   heads 24 x head_dim 128 = 3072 = vid_dim
+#   num_layers 6  <- le checkpoint contient blocks.0 a blocks.5, et rien d'autre
+__object__:
+  path: projects.video_diffusion_sr.train
+  name: VideoDiffusionTrainer
+
+dit:
+  model:
+    __object__:
+      path: "dit_7b.nadit"
+      name: "NaDiT"
+      args: "as_params"
+    vid_in_channels: 33
+    vid_out_channels: 16
+    vid_dim: 3072
+    vid_out_norm: fusedrms
+    txt_in_dim: 5120
+    txt_in_norm: fusedln
+    txt_dim: ${.vid_dim}
+    emb_dim: ${eval:'6 * ${.vid_dim}'}
+    heads: 24
+    head_dim: 128
+    expand_ratio: 4
+    norm: fusedrms
+    norm_eps: 1.0e-05
+    ada: single
+    qk_bias: False
+    qk_norm: fusedrms
+    patch_size: [1, 2, 2]
+    num_layers: 6
+    mm_layers: 6
+    mlp_type: swiglu
+    msa_type: None
+    block_type: ${eval:'${.num_layers} * ["mmdit_sr"]'}
+    window: ${eval:'${.num_layers} * [(4,3,3)]'}
+    window_method: ${eval:'${.num_layers} // 2 * ["720pwin_by_size_bysize","720pswin_by_size_bysize"]'}
+    rope_type: mmrope3d
+    rope_dim: 128
+  compile: False
+  gradient_checkpoint: True
+  fsdp:
+    sharding_strategy: _HYBRID_SHARD_ZERO2
+"""
+
+# Sélection d'architecture dans le dépôt amont : un ternaire d'une seule ligne.
+# On l'étend au 1.4B. Le motif est distinctif ; s'il disparaît (mise à jour
+# amont), on le DIT au lieu de patcher au hasard — le 3B et le 7B continuent de
+# fonctionner sans ce correctif.
+_SEEDVR2_NEEDLE = ("'./configs_7b' if \"7b\" in dit_model else './configs_3b'")
+_SEEDVR2_PATCH = ("('./configs_1_4b' if (\"1.4b\" in dit_model.lower() or "
+                  "\"6l\" in dit_model.lower()) else "
+                  "'./configs_7b' if \"7b\" in dit_model else './configs_3b')")
+
+
+def _seedvr2_enable_1_4b(repo: Path) -> bool:
+    """Ajoute la config 1.4B et enseigne au dépôt à la sélectionner."""
+    cfg = repo / "configs_1_4b"
+    cfg.mkdir(parents=True, exist_ok=True)
+    (cfg / "main.yaml").write_text(SEEDVR2_CFG_1_4B, encoding="utf-8")
+    print(f"[OK] Config 1.4B ecrite : {cfg / 'main.yaml'}")
+
+    target = repo / "src" / "core" / "model_configuration.py"
+    if not target.is_file():
+        print(f"[!] {target} introuvable — le 1.4B ne sera pas selectionnable.")
+        return False
+    src = target.read_text(encoding="utf-8")
+    if "configs_1_4b" in src:
+        print("[OK] Selection 1.4B deja en place (rien a faire).")
+        return True
+    if _SEEDVR2_NEEDLE not in src:
+        print("[!] Le motif de selection d'architecture a change en amont : "
+              "le 1.4B ne sera pas selectionnable.")
+        print("    Les modeles 3B / 7B officiels restent utilisables.")
+        return False
+    target.write_text(src.replace(_SEEDVR2_NEEDLE, _SEEDVR2_PATCH, 1),
+                      encoding="utf-8")
+    print("[OK] Selection d'architecture etendue au 1.4B.")
+    return True
+
+
+def install_seedvr2():
+    base = settings.ROOT / "tools_repo" / "seedvr2"
+    repo = base / "repo"
+    models = base / "models"
+    models.mkdir(parents=True, exist_ok=True)
+
+    ensure_torch_cuda()
+
+    # 1) code d'inference (clone superficiel, ou mise a jour)
+    if (repo / ".git").is_dir():
+        print("Mise a jour du code d'inference SeedVR2…")
+        sh(["git", "-C", str(repo), "fetch", "--depth", "1", "origin"])
+        sh(["git", "-C", str(repo), "reset", "--hard", "origin/HEAD"])
+    else:
+        print(f"Recuperation du code d'inference ({SEEDVR2_GIT})…")
+        repo.parent.mkdir(parents=True, exist_ok=True)
+        sh(["git", "clone", "--depth", "1", SEEDVR2_GIT, str(repo)])
+
+    # 2) dependances — torch/torchvision sont deja gerees par ensure_torch_cuda,
+    #    on ne les laisse SURTOUT pas etre reinstallees par pip (build CPU).
+    reqs_file = repo / "requirements.txt"
+    reqs = []
+    if reqs_file.is_file():
+        for line in reqs_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            name = line.split(">=")[0].split("==")[0].split("<")[0].strip()
+            if name.lower() in ("torch", "torchvision", "torchaudio"):
+                continue
+            reqs.append(line)
+    if reqs:
+        print("Installation des dependances SeedVR2…")
+        sh([sys.executable, "-m", "pip", "install", *reqs])
+
+    # 3) poids du 1.4B (le VAE est recupere automatiquement au 1er lancement)
+    print(f"\nTelechargement des poids 1.4B ({SEEDVR2_W_REPO})…")
+    from huggingface_hub import hf_hub_download
+    p = hf_hub_download(repo_id=SEEDVR2_W_REPO, filename=SEEDVR2_DIT,
+                        local_dir=str(models))
+    print(f"[OK] {Path(p).name} ({Path(p).stat().st_size / 2**30:.2f} Go)")
+
+    # 4) rendre le 1.4B selectionnable
+    ok = _seedvr2_enable_1_4b(repo)
+
+    pin_numpy()
+    print("\n[OK] SeedVR2 installe (onglet Toolkit -> Restauration).")
+    if ok:
+        print("    Modele 1.4B pret. Le VAE (~0,5 Go) sera telecharge")
+        print("    automatiquement au tout premier agrandissement.")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("tool", choices=["depth", "bg", "sam", "enhance", "upscale"])
+    ap.add_argument("tool", choices=["depth", "bg", "sam", "enhance", "upscale",
+                                     "seedvr2"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -210,6 +366,8 @@ def main():
         install_enhance()
     elif args.tool == "upscale":
         install_upscale()
+    elif args.tool == "seedvr2":
+        install_seedvr2()
 
 
 if __name__ == "__main__":

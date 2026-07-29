@@ -133,6 +133,9 @@ def items(prefs: dict | None = None) -> list[Item]:
              [tools.ENHANCE_MODEL_DIR], note="Réinstallable en 1 clic."),
         Item("tool_upscale", "Toolkit — Upscale créatif SDXL", "Add-ons Toolkit",
              [tools.UPSCALE_DIR], note="Inclut ControlNet et checkpoints perso."),
+        Item("tool_seedvr2", "Toolkit — Restauration SeedVR2", "Add-ons Toolkit",
+             [tools.SEEDVR2_DIR],
+             note="Code d'inférence + poids 1.4B. Réinstallable en 1 clic."),
     ]
 
     # --- Données utilisateur (prudence) -----------------------------------
