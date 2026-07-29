@@ -133,6 +133,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, cwd=str(settings.ROOT),
+                    env=settings.child_env(),
                     encoding="utf-8", errors="replace")
                 assert proc.stdout is not None
                 for line in proc.stdout:

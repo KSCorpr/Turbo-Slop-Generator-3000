@@ -6,7 +6,6 @@ verrouiller les DLL de torch dans le process Gradio.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -114,6 +113,7 @@ def _install_stream(tool: str):
     yield "\n".join(buf)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1, cwd=str(settings.ROOT),
+                            env=settings.child_env(),
                             encoding="utf-8", errors="replace")
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -181,9 +181,7 @@ def _to_src(image: Image.Image | str | Path, prefix: str) -> Path:
 def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
               err_msg: str, gpu_index: int | None = None) -> None:
     global _CANCELLED
-    env = dict(os.environ)
-    if gpu_index is not None:
-        env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
+    env = settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))
     _CANCELLED = False

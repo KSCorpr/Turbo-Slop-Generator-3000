@@ -140,6 +140,26 @@ def model_repo_dir(repo: str) -> Path:
     return MODELS_DIR / repo.replace("/", "__")
 
 
+def child_env(gpu_index: "int | None" = None) -> dict:
+    """Environnement des sous-process Python (outils, installeurs).
+
+    Force l'UTF-8 côté ENFANT. Sans ça, sous Windows la sortie standard d'un
+    sous-process hérite de la page de codes de la console (cp1252) : le moindre
+    emoji affiché par du code tiers lève un UnicodeEncodeError et tue le
+    process — souvent à l'import, avant même d'avoir commencé à travailler.
+    On ne peut pas corriger le code tiers, mais on peut lui donner un stdout
+    capable d'encoder ce qu'il écrit. Nos propres lecteurs décodent déjà en
+    UTF-8, donc les deux bouts sont cohérents.
+    """
+    import os
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"   # stdout/stderr de l'enfant en UTF-8
+    env["PYTHONUTF8"] = "1"             # mode UTF-8 global (PEP 540)
+    if gpu_index is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
+    return env
+
+
 def configure_hf_env() -> None:
     """Configure l'environnement Hugging Face pour des téléchargements fiables.
 
