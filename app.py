@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo / Boogu Edit, GGUF) · Catalogue de
+Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo / Boogu Edit Turbo, GGUF) · Catalogue de
 modèles · Toolkit (profondeur, détourage, SAM, upscale) · Réglages.
 """
 from __future__ import annotations
@@ -95,7 +95,7 @@ def build_app() -> gr.Blocks:
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
             f"<div class='sub'>{_subtitle} · "
-            f"Flux.2 Klein 9B · Krea 2 Turbo · Boogu Edit · "
+            f"Flux.2 Klein 9B · Krea 2 Turbo · Boogu Edit Turbo · "
             f"v{__version__}</div></div>")
 
         # Premier démarrage : choix de la langue (bilingue, persisté).
@@ -139,7 +139,7 @@ def build_app() -> gr.Blocks:
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)
-            build_generative_tab("boogu-edit", "🖌️ Boogu Edit 10B",
+            build_generative_tab("boogu-edit-turbo", "🖌️ Boogu Edit Turbo 10B",
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)

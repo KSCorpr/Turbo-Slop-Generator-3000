@@ -111,48 +111,60 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
-  # Boogu-Image 0.1 « Edit » — édition PAR INSTRUCTION (doc sd.cpp : boogu_image.md)
+  # Boogu-Image 0.1 « Edit-Turbo » — édition PAR INSTRUCTION en 4 pas
+  # (doc sd.cpp : boogu_image.md)
   #
-  # Pourquoi la variante NON-Turbo alors qu'un Edit-Turbo 4 pas existe :
-  # l'équipe Boogu a publié le 8 juillet 2026 un correctif de l'Edit-Turbo qui
-  # règle « une dégradation sévère de la qualité d'image et de mauvaises
-  # performances sur la suppression d'objets et d'autres tâches d'édition »
-  # (révisions hotfix-1k-20260708 / hotfix-1k5-20260708). Or les DEUX dépôts
-  # GGUF d'Edit-Turbo existants datent d'AVANT ce correctif (realrebelai
-  # 01/07, chfm 06/07) : les câbler reviendrait à livrer la version cassée,
-  # précisément sur l'usage visé. On prend donc l'Edit standard, jamais signalé
-  # défectueux — plus lent (25-50 pas, CFG 5) mais correct.
-  # À réévaluer dès qu'un GGUF de la révision hotfix-1k apparaît ; en attendant,
-  # les poids bf16 corrigés sont sur Comfy-Org/Boogu-Image
-  # (boogu_image_edit_turbo_hotfix_1k_20260708_bf16.safetensors) et peuvent être
-  # convertis en GGUF depuis l'onglet « 🔧 Convertir en GGUF ».
-  - id: boogu-edit
-    name: "Boogu Image Edit 10B"
+  # ⚠️ VERSION PRÉ-CORRECTIF, CHOIX ASSUMÉ. L'équipe Boogu a publié le 8 juillet
+  # 2026 un correctif de l'Edit-Turbo réglant « une dégradation sévère de la
+  # qualité d'image et de mauvaises performances sur la suppression d'objets et
+  # d'autres tâches d'édition » (révisions hotfix-1k-20260708 / hotfix-1k5).
+  # Les deux dépôts GGUF d'Edit-Turbo existants sont ANTÉRIEURS (realrebelai
+  # 01/07, chfm 06/07) et aucun GGUF de la révision corrigée n'a été publié
+  # depuis (vérifié le 29/07/2026 : le seul dérivé du hotfix, jqw5585/
+  # boogu-image-edit-turbo-hotfix-mxfp8, est en mxfp8, non chargeable par sd.cpp).
+  # On prend donc la version pré-correctif pour avoir les 4 pas, en connaissance
+  # de cause.
+  #
+  # DEUX PORTES DE SORTIE si la qualité déçoit (surtout en suppression d'objet) :
+  #  1. la variante NON-Turbo, jamais signalée défectueuse, partage encodeur,
+  #     mmproj et VAE — seul le DiT change. Télécharger un
+  #     boogu-edit-dit-*.gguf depuis realrebelai/Boogu-Image-Edit_GGUFs et le
+  #     désigner via « 📂 Fichiers locaux → diffusion » dans le même onglet
+  #     (25-50 pas, CFG 2-5 : régler les curseurs en conséquence) ;
+  #  2. les poids bf16 CORRIGÉS sont sur Comfy-Org/Boogu-Image
+  #     (boogu_image_edit_turbo_hotfix_1k_20260708_bf16.safetensors, 20,6 Go) et
+  #     se quantifient depuis l'onglet « 🔧 Convertir en GGUF ».
+  # À rebrancher dès qu'un GGUF de la révision hotfix-1k est publié.
+  - id: boogu-edit-turbo
+    name: "Boogu Image Edit Turbo 10B"
     family: boogu
-    tags: [édition, instruction, qualité, apache]
+    tags: [édition, instruction, rapide, distillé, apache]
     description: >
-      Boogu-Image-0.1 **Edit** (10,3 B, **Apache 2.0**) — édition **par
+      Boogu-Image-0.1 **Edit-Turbo** (10,3 B, **Apache 2.0**) — édition **par
       instruction** : « enlève la voiture », « change le fond en plage »,
       « remplace le texte par … ». C'est ce qui se rapproche le plus d'un
       Gemini/ChatGPT parmi les poids ouverts qui tiennent sur 11-12 Go, et il
       devance sur Qwen-Image-Bench des modèles deux à huit fois plus gros.
-      Architecture unifiée compréhension + génération : encodeur
+      Variante **distillée : 4 pas, CFG 1.0** — même profil de vitesse que
+      Flux.2 Klein. Architecture unifiée compréhension + génération : encodeur
       **Qwen3-VL-8B** (avec projecteur vision, chargé seulement en édition) et
       **VAE Flux.1**. Diffusion Q4_1 ≈ 7,4 Go, Q5_1 ≈ 8,6 Go.
-      ⚠️ **Lent, et c'est normal** : contrairement à Flux.2 Klein et Krea 2 qui
-      sont distillés (4-8 pas, CFG 1.0), celui-ci demande **25 à 50 pas et un
-      CFG de 5** — comptez plusieurs minutes par édition. En contrepartie, le
-      **prompt négatif fonctionne vraiment** ici (CFG > 1).
-      ℹ️ La doc sd.cpp ne montre qu'**une seule image de référence** pour Boogu
-      (contrairement à Flux.2 qui en accepte 3) : commencez par une seule ; les
-      emplacements 2 et 3 restent utilisables mais ne sont pas documentés.
+      ⚠️ **Poids antérieurs au correctif du 8 juillet 2026**, qui réglait une
+      dégradation de qualité et de mauvaises performances **sur la suppression
+      d'objets** : aucun GGUF de la version corrigée n'existe à ce jour. Si un
+      « enlève ceci » donne un résultat médiocre, c'est ça — voir l'aide de
+      l'onglet « 🧹 Gestion & aide » pour les deux solutions de repli.
+      ℹ️ CFG 1.0 : le **prompt négatif est ignoré** (champ masqué), comme sur
+      Flux.2 Klein et Krea 2. La doc sd.cpp ne montre qu'**une seule image de
+      référence** pour Boogu (Flux.2 en accepte 3) : les emplacements 2 et 3
+      restent utilisables mais ne sont pas documentés.
     sources:
       diffusion:
         # Quants « plats » uniquement (Q4_0/Q4_1/Q5_0/Q5_1/Q8_0) : les K-quants
         # n'existent pas encore pour l'architecture Boogu/OmniGen dans llama.cpp.
         # Le repli quant du téléchargeur arrondit vers le bas (Q4_K_M -> Q4_1).
-        repo: realrebelai/Boogu-Image-Edit_GGUFs
-        match: "boogu-edit-dit-{quant}.gguf"
+        repo: realrebelai/Boogu-Image-Edit-Turbo_GGUFs
+        match: "boogu-edit-turbo-dit-{quant}.gguf"
         quantizable: true
       text_encoder:
         # Dépôt officiel Qwen, même convention de nommage que Krea 2.
@@ -172,20 +184,21 @@ base_models:
         repo: Comfy-Org/Boogu-Image
         match: "vae/flux1_vae_bf16.safetensors"
     defaults:
-      steps: 25
-      cfg_scale: 5.0
+      steps: 4
+      cfg_scale: 1.0
       sampler: euler
       scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
       width: 1024
       height: 1024
-      supports_negative: true   # CFG 5 -> le prompt négatif est pris en compte
+      supports_negative: false  # CFG 1.0 (distillé) -> le négatif est ignoré
       edit: full          # modèle d'édition natif : UI « images de référence »
     presets:
-      # Model Zoo officiel : Edit (TI2I) = 25~50 pas, CFG 2.0~5.0 (ex. 5.0).
-      - {name: "⚡ Le plus rapide (25 pas, CFG 5)", sampler: euler, scheduler: auto, steps: 25, cfg_scale: 5.0}
-      - {name: "Équilibré (35 pas, CFG 5)",        sampler: euler, scheduler: auto, steps: 35, cfg_scale: 5.0}
-      - {name: "Qualité (50 pas, CFG 5)",          sampler: euler, scheduler: auto, steps: 50, cfg_scale: 5.0}
-      - {name: "Édition douce (25 pas, CFG 2.5)",  sampler: euler, scheduler: auto, steps: 25, cfg_scale: 2.5}
+      # Model Zoo officiel : Edit-Turbo (TI2I) = 4 pas, CFG 1.0, résolution 1K.
+      # Les variantes ne font qu'ajouter des pas ; monter le CFG n'a pas de sens
+      # sur un modèle distillé (il est entraîné pour CFG 1.0).
+      - {name: "⚡ Officiel (4 pas)",   sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - {name: "Équilibré (6 pas)",     sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - {name: "Qualité (8 pas)",       sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
     vram_min_gb: 10
 
 # ============================================================================
