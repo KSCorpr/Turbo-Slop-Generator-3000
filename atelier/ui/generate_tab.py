@@ -107,7 +107,8 @@ def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
 
 def build_generative_tab(model_id: str, title: str,
                          pending_toolkit=None, tabs=None, toolkit_tab_id="toolkit",
-                         pending_3d=None, threed_tab_id="threed"):
+                         pending_3d=None, threed_tab_id="threed",
+                         pending_outpaint=None, outpaint_tab_id="outpaint"):
     d = _defaults(model_id)
 
     with gr.Tab(title):
@@ -290,10 +291,13 @@ def build_generative_tab(model_id: str, title: str,
                     if is_edit:
                         outpaint = gr.Slider(
                             1.0, 2.0, value=1.0, step=0.1,
-                            label="🧩 Outpaint — étendre la toile (1.0 = off ; "
-                                  "⚠️ expérimental)",
-                            info="Agrandit la toile et laisse le modèle remplir "
-                                 "les bords. Décrivez l'extension dans le prompt.")
+                            label="🧩 Outpaint centré — étendre la toile "
+                                  "(1.0 = off ; ⚠️ expérimental)",
+                            info="Agrandit la toile de façon symétrique et laisse "
+                                 "le modèle remplir les bords. Pour un outpaint "
+                                 "directionnel (gauche/droite/haut/bas), sans "
+                                 "prompt et avec n'importe quel modèle, utilisez "
+                                 "l'onglet « 🖼️ Outpaint ».")
                     else:
                         outpaint = gr.State(1.0)
 
@@ -459,6 +463,9 @@ def build_generative_tab(model_id: str, title: str,
                 send_3d = gr.Button("🧊 Envoyer la sélection vers Image → 3D",
                                     size="sm",
                                     visible=pending_3d is not None)
+                send_op = gr.Button("🖼️ Envoyer la sélection vers Outpaint",
+                                    size="sm",
+                                    visible=pending_outpaint is not None)
                 logbox = gr.Textbox(label="Journal", lines=10, max_lines=24,
                                     autoscroll=True, elem_classes="log-box")
 
@@ -938,3 +945,14 @@ def build_generative_tab(model_id: str, title: str,
 
             send_3d.click(_send_3d, inputs=[last_paths, sel_index],
                           outputs=[pending_3d, tabs])
+
+        # Envoi de l'image sélectionnée vers l'onglet « Outpaint ».
+        if pending_outpaint is not None and tabs is not None:
+            def _send_outpaint(paths, idx):
+                if not paths:
+                    raise gr.Error(t("Générez puis sélectionnez une image."))
+                i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
+                return paths[i], gr.Tabs(selected=outpaint_tab_id)
+
+            send_op.click(_send_outpaint, inputs=[last_paths, sel_index],
+                          outputs=[pending_outpaint, tabs])

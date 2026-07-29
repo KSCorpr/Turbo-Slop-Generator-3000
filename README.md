@@ -48,6 +48,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Generation options](#generation-options)
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
+- [Outpaint](#outpaint)
 - [Toolkit](#toolkit)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
@@ -397,6 +398,47 @@ Controls:
 
 ---
 
+## Outpaint
+
+The **🖼️ Outpaint** tab extends an image **left, right, up, down — or all
+around**, Midjourney-style. It works with **any model in the catalog** and
+**without a prompt**; no inpainting checkpoint is required.
+
+**How it works** (`atelier/engine/outpaint.py`), deliberately independent of any
+engine-side mask, which is what makes it model-agnostic:
+
+1. the canvas is enlarged in the chosen directions (snapped to 16 px, capped at
+   2048 px per side — margins shrink proportionally if the cap is hit);
+2. the new areas are pre-filled by **mirroring** the edges, so the model starts
+   from plausible colors/textures instead of noise or blur;
+3. the whole canvas goes through **image-to-image** with the chosen model, using
+   that model's own recommended sampler / CFG / steps;
+4. the **original is composited back on top**, with an optional feather — so the
+   original region is preserved **pixel-for-pixel**.
+
+**Controls**
+
+| Control | What it does |
+| --- | --- |
+| **Direction** | left / right / top / bottom / horizontal / vertical / all around |
+| **Extension per side** | fraction of the original added to each chosen side (0.25 = +25 %); the resulting size is previewed live |
+| **Model** | any installed model; sampler, CFG and steps follow its catalog defaults |
+| **Prompt** | *optional* — leave empty for a neutral extension, fill it only to steer what appears in the new area |
+| **Generation strength** | high (0.8–1.0) = invents freely; low = stays close to the mirror fill (good for sky, sand, uniform textures) |
+| **Feather** | width of the blend at the seam; **0 = hard paste** (original untouched right up to its edge) |
+| **Seed** | -1 = random; a fixed value replays the same extension |
+
+**♻️ Re-extend the result** reloads the output as the new input, so extensions
+can be chained (right, then up, …). Results land in `outputs/` with a `.txt`
+sidecar recording model, seed and settings. Generation tabs have a
+**🖼️ Send selection to Outpaint** button.
+
+> The old **🧩 Centered outpaint** slider inside the Flux.2 tab is a different,
+> experimental thing: symmetric only, edit-capable models only, prompt-driven.
+> The dedicated tab supersedes it.
+
+---
+
 ## Toolkit
 
 One-click installable utilities (models pulled from Hugging Face, run as
@@ -494,10 +536,11 @@ atelier/
   engine/
     sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, LoRA)
     generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale
+    outpaint.py              # directional outpaint: canvas plan, mirror fill, composite-back
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
   ui/
     theme.py                 # light theme + CSS
-    generate_tab.py · library_tab.py · toolkit_tab.py · settings_tab.py
+    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   _torch_setup.py            # shared PyTorch-CUDA install helpers
