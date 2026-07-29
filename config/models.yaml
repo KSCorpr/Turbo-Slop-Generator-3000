@@ -110,6 +110,84 @@ base_models:
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 10
 
+  # --------------------------------------------------------------------------
+  # Boogu-Image 0.1 « Edit » — édition PAR INSTRUCTION (doc sd.cpp : boogu_image.md)
+  #
+  # Pourquoi la variante NON-Turbo alors qu'un Edit-Turbo 4 pas existe :
+  # l'équipe Boogu a publié le 8 juillet 2026 un correctif de l'Edit-Turbo qui
+  # règle « une dégradation sévère de la qualité d'image et de mauvaises
+  # performances sur la suppression d'objets et d'autres tâches d'édition »
+  # (révisions hotfix-1k-20260708 / hotfix-1k5-20260708). Or les DEUX dépôts
+  # GGUF d'Edit-Turbo existants datent d'AVANT ce correctif (realrebelai
+  # 01/07, chfm 06/07) : les câbler reviendrait à livrer la version cassée,
+  # précisément sur l'usage visé. On prend donc l'Edit standard, jamais signalé
+  # défectueux — plus lent (25-50 pas, CFG 5) mais correct.
+  # À réévaluer dès qu'un GGUF de la révision hotfix-1k apparaît ; en attendant,
+  # les poids bf16 corrigés sont sur Comfy-Org/Boogu-Image
+  # (boogu_image_edit_turbo_hotfix_1k_20260708_bf16.safetensors) et peuvent être
+  # convertis en GGUF depuis l'onglet « 🔧 Convertir en GGUF ».
+  - id: boogu-edit
+    name: "Boogu Image Edit 10B"
+    family: boogu
+    tags: [édition, instruction, qualité, apache]
+    description: >
+      Boogu-Image-0.1 **Edit** (10,3 B, **Apache 2.0**) — édition **par
+      instruction** : « enlève la voiture », « change le fond en plage »,
+      « remplace le texte par … ». C'est ce qui se rapproche le plus d'un
+      Gemini/ChatGPT parmi les poids ouverts qui tiennent sur 11-12 Go, et il
+      devance sur Qwen-Image-Bench des modèles deux à huit fois plus gros.
+      Architecture unifiée compréhension + génération : encodeur
+      **Qwen3-VL-8B** (avec projecteur vision, chargé seulement en édition) et
+      **VAE Flux.1**. Diffusion Q4_1 ≈ 7,4 Go, Q5_1 ≈ 8,6 Go.
+      ⚠️ **Lent, et c'est normal** : contrairement à Flux.2 Klein et Krea 2 qui
+      sont distillés (4-8 pas, CFG 1.0), celui-ci demande **25 à 50 pas et un
+      CFG de 5** — comptez plusieurs minutes par édition. En contrepartie, le
+      **prompt négatif fonctionne vraiment** ici (CFG > 1).
+      ℹ️ La doc sd.cpp ne montre qu'**une seule image de référence** pour Boogu
+      (contrairement à Flux.2 qui en accepte 3) : commencez par une seule ; les
+      emplacements 2 et 3 restent utilisables mais ne sont pas documentés.
+    sources:
+      diffusion:
+        # Quants « plats » uniquement (Q4_0/Q4_1/Q5_0/Q5_1/Q8_0) : les K-quants
+        # n'existent pas encore pour l'architecture Boogu/OmniGen dans llama.cpp.
+        # Le repli quant du téléchargeur arrondit vers le bas (Q4_K_M -> Q4_1).
+        repo: realrebelai/Boogu-Image-Edit_GGUFs
+        match: "boogu-edit-dit-{quant}.gguf"
+        quantizable: true
+      text_encoder:
+        # Dépôt officiel Qwen, même convention de nommage que Krea 2.
+        repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
+        match: "Qwen3VL-8B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        # Projecteur vision (--llm_vision) : indispensable pour que l'encodeur
+        # VOIE l'image de référence. Chargé uniquement en édition.
+        repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
+        optional: true
+      vae:
+        # VAE Flux.1 repackagé (168 Mo). La doc sd.cpp pointe vers
+        # black-forest-labs/FLUX.1-dev, dont l'accès demande d'accepter une
+        # licence : ce dépôt-ci est libre d'accès et contient le même VAE.
+        repo: Comfy-Org/Boogu-Image
+        match: "vae/flux1_vae_bf16.safetensors"
+    defaults:
+      steps: 25
+      cfg_scale: 5.0
+      sampler: euler
+      scheduler: auto     # doc sd.cpp : scheduler non forcé (défaut moteur)
+      width: 1024
+      height: 1024
+      supports_negative: true   # CFG 5 -> le prompt négatif est pris en compte
+      edit: full          # modèle d'édition natif : UI « images de référence »
+    presets:
+      # Model Zoo officiel : Edit (TI2I) = 25~50 pas, CFG 2.0~5.0 (ex. 5.0).
+      - {name: "⚡ Le plus rapide (25 pas, CFG 5)", sampler: euler, scheduler: auto, steps: 25, cfg_scale: 5.0}
+      - {name: "Équilibré (35 pas, CFG 5)",        sampler: euler, scheduler: auto, steps: 35, cfg_scale: 5.0}
+      - {name: "Qualité (50 pas, CFG 5)",          sampler: euler, scheduler: auto, steps: 50, cfg_scale: 5.0}
+      - {name: "Édition douce (25 pas, CFG 2.5)",  sampler: euler, scheduler: auto, steps: 25, cfg_scale: 2.5}
+    vram_min_gb: 10
+
 # ============================================================================
 #  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
 #  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux2.

@@ -261,7 +261,44 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         gr.Markdown("---\n### 📖 Aide — que fait chaque option ?")
 
-        with gr.Accordion("🎨 Onglets de génération (Flux.2 / Krea 2)",
+        with gr.Accordion("🖌️ Boogu Edit 10B — édition par instruction",
+                          open=False):
+            gr.Markdown(
+                "Le seul modèle du catalogue conçu pour **éditer sur "
+                "instruction** — *« enlève la voiture »*, *« mets un fond de "
+                "plage »*, *« remplace le texte par … »* — plutôt que pour "
+                "fabriquer une image à partir de rien. C'est ce qui se rapproche "
+                "le plus d'un Gemini / ChatGPT parmi les poids ouverts qui "
+                "tiennent sur 11-12 Go. 10,3 milliards de paramètres, licence "
+                "Apache 2.0.\n\n"
+                "**⚠️ Il est lent, et c'est voulu.** Flux.2 Klein et Krea 2 sont "
+                "*distillés* : 4 à 8 pas, CFG 1.0, quelques secondes. Boogu Edit "
+                "ne l'est pas — sa doc officielle demande **25 à 50 pas à un CFG "
+                "de 2 à 5**. Comptez plusieurs minutes par édition. Si c'est "
+                "trop long, prends le préréglage *Le plus rapide* (25 pas) ou "
+                "*Édition douce* (CFG 2.5).\n\n"
+                "**Le prompt négatif marche ici** — et seulement ici. C'est le "
+                "seul modèle qui tourne à CFG > 1 ; ailleurs le champ est masqué "
+                "parce qu'il serait ignoré.\n\n"
+                "**Une seule image de référence.** La doc de sd.cpp ne montre "
+                "qu'une image pour Boogu (Flux.2 en accepte trois). Les "
+                "emplacements 2 et 3 restent utilisables, mais non documentés.\n\n"
+                "**Place disque** ≈ 17 Go : diffusion 7,4 Go (Q4_1) ou 8,6 Go "
+                "(Q5_1) selon ta VRAM, encodeur Qwen3-VL-8B 8,7 Go déchargé en "
+                "RAM, projecteur vision 0,75 Go, VAE 0,17 Go.\n\n"
+                "💡 **Sur deux cartes** : c'est le cas d'usage idéal du réglage "
+                "*Encodeur sur la 2e carte* — la diffusion sur la 3060, "
+                "l'encodeur Qwen3-VL sur la 1080 Ti.\n\n"
+                "*Pourquoi pas la version « Turbo » à 4 pas ?* Elle existe, mais "
+                "l'équipe Boogu a publié le 8 juillet 2026 un correctif réglant "
+                "« une dégradation sévère de la qualité et de mauvaises "
+                "performances sur la suppression d'objets » — et les deux dépôts "
+                "GGUF disponibles datent d'avant ce correctif. Les brancher "
+                "reviendrait à livrer la version cassée, pile sur l'usage visé. "
+                "Les poids corrigés (bf16) sont convertissables depuis l'onglet "
+                "**🔧 Convertir en GGUF** si tu veux tenter la voie rapide.")
+
+        with gr.Accordion("🎨 Onglets de génération (Flux.2 / Krea 2 / Boogu)",
                           open=False):
             gr.Markdown(
                 "**Prompt** — ta description. Sur un **modèle d'édition** "

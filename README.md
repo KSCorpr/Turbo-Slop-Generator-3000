@@ -566,6 +566,35 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
+**Boogu Image Edit 10B** (family `boogu`, instruction editing, Apache 2.0)
+- diffusion — [`realrebelai/Boogu-Image-Edit_GGUFs`](https://huggingface.co/realrebelai/Boogu-Image-Edit_GGUFs) (25–50 steps, CFG 5.0)
+- text encoder — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (via `--llm`) + its `mmproj` vision projector (via `--llm_vision`, editing only)
+- VAE — [`Comfy-Org/Boogu-Image`](https://huggingface.co/Comfy-Org/Boogu-Image) (`vae/flux1_vae_bf16.safetensors`, 168 MB — the Flux.1 VAE, from an ungated mirror rather than the license-gated `FLUX.1-dev`)
+
+This is the one model here built for **instruction editing** — *"remove the car"*,
+*"make the background a beach"* — rather than text-to-image. Trade-offs worth
+knowing before you download ~17 GB:
+
+- **It is slow, by design.** Flux.2 Klein and Krea 2 are *distilled* (4–8 steps,
+  CFG 1.0). Boogu Edit is not: the official Model Zoo calls for **25–50 steps at
+  CFG 2.0–5.0**, so an edit takes minutes, not seconds.
+- **The negative prompt actually works here** — it is the only model in the
+  catalog running at CFG > 1, so the field is visible in its tab and ignored in
+  the others.
+- **One reference image.** The sd.cpp docs only show a single `-r` for Boogu
+  (Flux.2 takes three). Slots 2–3 stay available but are undocumented.
+
+> **Why the non-Turbo variant?** A 4-step `Edit-Turbo` exists and would be far
+> faster. But on 2026-07-08 the Boogu team shipped a hotfix for it, addressing
+> *"severe image quality degradation and poor performance on removal and other
+> editing tasks"* (revisions `hotfix-1k-20260708` / `hotfix-1k5-20260708`), and
+> **both existing Edit-Turbo GGUF repos predate that fix** (realrebelai 07-01,
+> chfm 07-06). Wiring one up would ship the broken build on exactly the task it
+> is meant for. If you want the fast path today, the fixed bf16 weights are on
+> `Comfy-Org/Boogu-Image`
+> (`boogu_image_edit_turbo_hotfix_1k_20260708_bf16.safetensors`) and can be
+> quantized locally from the **🔧 Convert to GGUF** tab.
+
 **Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
