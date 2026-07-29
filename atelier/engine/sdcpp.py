@@ -65,6 +65,9 @@ class GenRequest:
     batch_count: int = 1
     init_image: Path | None = None     # img2img classique (-i + --strength)
     strength: float = 0.6
+    # Masque d'inpainting (blanc = à régénérer, noir = à conserver). L'option
+    # est DÉTECTÉE sur le binaire (mask_flag) : ignorée s'il ne la connaît pas.
+    mask_image: Path | None = None
     # édition (-r / --ref-image, Flux.2) : un chemin OU une liste (multi-référence)
     ref_image: "Path | list[Path] | None" = None
     vae_format: str = ""               # --vae-format (ex. "flux" pour PiD)
@@ -83,6 +86,58 @@ class GenRequest:
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
+
+
+# --------------------------------------------------------------------------- #
+#  Découverte des options réellement supportées par LE binaire installé.
+#
+#  L'orthographe des options bouge d'une version de sd.cpp à l'autre (et notre
+#  build maison peut différer de l'officielle). Plutôt que de coder en dur un
+#  nom d'option et d'échouer à l'exécution, on lit « sd-cli -h » une fois et on
+#  s'adapte. Coût : un lancement de quelques millisecondes, mis en cache.
+# --------------------------------------------------------------------------- #
+_OPTS_CACHE: dict[tuple, frozenset] = {}
+
+
+def supported_options(sd_cli: Path | None) -> frozenset:
+    """Ensemble des options longues (« --xxx ») acceptées par le binaire."""
+    if not sd_cli or not Path(sd_cli).is_file():
+        return frozenset()
+    p = Path(sd_cli)
+    try:
+        key = (str(p), p.stat().st_mtime_ns, p.stat().st_size)
+    except OSError:
+        return frozenset()
+    if key in _OPTS_CACHE:
+        return _OPTS_CACHE[key]
+    import re
+    text = ""
+    try:
+        # -h sort parfois sur stderr et/ou avec un code de retour non nul.
+        r = subprocess.run([str(p), "-h"], capture_output=True, text=True,
+                           timeout=30, errors="replace")
+        text = (r.stdout or "") + "\n" + (r.stderr or "")
+    except Exception:  # noqa: BLE001
+        text = ""
+    opts = frozenset(re.findall(r"--[A-Za-z][A-Za-z0-9_-]*", text))
+    _OPTS_CACHE[key] = opts
+    return opts
+
+
+# Orthographes possibles de l'option « image de masque », par ordre de préférence.
+_MASK_CANDIDATES = ("--mask-image", "--mask-img", "--mask")
+
+
+def mask_flag(sd_cli: Path | None) -> str | None:
+    """Nom de l'option de masque supportée, ou None si le binaire n'en a pas.
+
+    Le masque de sd.cpp est appliqué PENDANT l'échantillonnage : blanc = zone à
+    (re)générer, noir = zone conservée. Sans masque, sd.cpp en fabrique un tout
+    blanc — c'est-à-dire « repeins tout », le comportement img2img normal."""
+    opts = supported_options(sd_cli)
+    if not opts:
+        return None
+    return next((c for c in _MASK_CANDIDATES if c in opts), None)
 
 
 def _flag_args(flags: Mapping[str, bool]) -> list[str]:
@@ -117,7 +172,7 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
              req.llm_vision, req.t5xxl, req.clip_l, req.uncond_model,
-             req.init_image, *refs)
+             req.init_image, req.mask_image, *refs)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
     if req.model_path:
@@ -162,6 +217,12 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--flow-shift", f"{req.flow_shift}"]
     if req.init_image:
         cmd += ["-i", str(req.init_image), "--strength", f"{req.strength}"]
+        # Masque : uniquement si CE binaire connaît l'option (sinon sd.cpp
+        # planterait sur un argument inconnu — on dégrade en img2img simple).
+        if req.mask_image:
+            mf = mask_flag(sd_cli)
+            if mf:
+                cmd += [mf, str(req.mask_image)]
     for r in refs:
         # Édition d'image (Flux.2) : pilotée par le prompt, sans strength.
         # Plusieurs « -r » = édition multi-référence (combine les images).

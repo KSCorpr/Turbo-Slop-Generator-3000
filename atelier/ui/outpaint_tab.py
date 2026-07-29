@@ -17,6 +17,7 @@ import gradio as gr
 from .. import registry, settings
 from ..engine import generate as gen_engine
 from ..engine import outpaint as op
+from ..engine import sdcpp
 from ..i18n import t
 
 PRESETS = [
@@ -59,15 +60,24 @@ def _defaults(model_id: str | None) -> dict:
 
 def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
     with gr.Tab("🖼️ Outpaint", id=tab_id):
+        _mf = sdcpp.mask_flag(settings.find_sd_cli())
         gr.Markdown(
             "### Étendre une image (outpaint)\n"
             "Agrandit la toile dans les directions choisies et laisse le modèle "
             "**inventer la suite**. Fonctionne avec **tous les modèles** du "
-            "catalogue et **sans prompt** : les bords sont pré-remplis en "
-            "**miroir** (continuité naturelle), le modèle harmonise, puis "
-            "**l'image d'origine est recollée intacte** par-dessus.\n\n"
-            "💡 Le prompt est **facultatif** — utile seulement pour orienter ce "
-            "qui apparaît dans la nouvelle zone.")
+            "catalogue et **sans prompt** : les bords sont pré-remplis à partir "
+            "des pixels du contour, le modèle génère la nouvelle zone, sa "
+            "tonalité est recalée sur celle de l'original, puis **l'image "
+            "d'origine est recollée** par-dessus.\n\n"
+            + ("✅ Ton moteur gère le **masque d'inpainting** "
+               f"(`{_mf}`) : la zone d'origine n'est pas rebruitée — "
+               "c'est le mode de qualité.\n\n" if _mf else
+               "ℹ️ Ton moteur **ne propose pas d'option de masque** : on "
+               "utilise le repli img2img + recalage + recollage. Ça marche, "
+               "mais une mise à jour du moteur (`update-engine.bat`) peut "
+               "améliorer le raccord.\n\n")
+            + "💡 Le prompt est **facultatif** — utile seulement pour orienter "
+              "ce qui apparaît dans la nouvelle zone.")
 
         _choices, _first = _model_choices()
         with gr.Row():
@@ -88,16 +98,27 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                     label="Prompt (facultatif)", lines=2,
                     placeholder="Laisse vide pour une extension neutre…")
                 with gr.Accordion("Réglages avancés", open=False):
+                    fill = gr.Radio(
+                        op.FILLS, value="edge", label="Remplissage des bords",
+                        info="Point de départ donné au modèle. « Miroir » colle "
+                             "parfaitement pour un motif régulier, mais duplique "
+                             "un sujet proche du bord.")
                     strength = gr.Slider(
                         0.3, 1.0, value=0.85, step=0.05,
                         label="Force de génération sur la nouvelle zone",
                         info="Haut = invente librement. Bas = reste proche du "
-                             "remplissage miroir.")
+                             "pré-remplissage.")
                     feather = gr.Slider(
                         0, 96, value=24, step=4,
                         label="Fondu de raccord (px)",
                         info="Adoucit la jonction avec l'image d'origine. "
                              "0 = collage net.")
+                    tone = gr.Slider(
+                        0.0, 1.0, value=1.0, step=0.1,
+                        label="Recalage de tonalité",
+                        info="Ramène le contraste/la couleur du neuf sur ceux de "
+                             "l'original. À 0, le centre peut paraître plus terne "
+                             "que le décor généré.")
                     steps = gr.Slider(
                         1, 40, value=_defaults(_first)["steps"], step=1,
                         label="Étapes",
@@ -131,8 +152,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
         model.change(lambda mid: gr.update(value=_defaults(mid)["steps"]),
                      inputs=[model], outputs=[steps])
 
-        def do_outpaint(img, dirs, amt, model_id, prompt_txt, strength_v,
-                        feather_v, steps_v, seed_v):
+        def do_outpaint(img, dirs, amt, model_id, prompt_txt, fill_v, strength_v,
+                        feather_v, tone_v, steps_v, seed_v):
             if img is None:
                 raise gr.Error(t("Chargez une image à étendre."))
             if not model_id:
@@ -142,9 +163,19 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                 raise gr.Error(t("Aucune direction sélectionnée."))
 
             settings.ensure_dirs()
-            canvas = op.build_canvas(img, p)
+            canvas = op.build_canvas(img, p, fill=fill_v or "edge")
             init_path = settings.TMP_DIR / "outpaint_init.png"
             canvas.save(init_path)
+
+            # Masque : seulement si CE binaire sd-cli connaît l'option (elle est
+            # détectée sur « sd-cli -h »). Avec masque, la zone d'origine n'est
+            # pas rebruitée du tout — c'est nettement mieux. Sans, on retombe sur
+            # l'img2img simple + recalage + recollage, qui marche partout.
+            mask_path = None
+            mf = sdcpp.mask_flag(settings.find_sd_cli())
+            if mf:
+                mask_path = settings.TMP_DIR / "outpaint_mask.png"
+                op.build_mask(p, feather=int(feather_v)).save(mask_path)
 
             try:
                 s = int(seed_v)
@@ -167,7 +198,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                         batch_count=1, sampler=d["sampler"],
                         schedule=d["schedule"], flow_shift=d["flow_shift"],
                         init_image=init_path, strength=float(strength_v),
-                        log=q.put, save_prompt=False)
+                        mask_image=mask_path, log=q.put, save_prompt=False)
                     state["outs"] = [str(x) for x in outs]
                 except Exception as exc:  # noqa: BLE001
                     state["err"] = str(exc)
@@ -176,6 +207,10 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
 
             threading.Thread(target=worker, daemon=True).start()
             logs = [f"Plan : {op.describe(p)}", f"Seed : {s}",
+                    f"Remplissage : {fill_v or 'edge'}",
+                    (f"Masque moteur : oui ({mf})" if mf else
+                     "Masque moteur : non supporté par ce binaire — "
+                     "img2img + recollage"),
                     f"Modèle : {model_id} · {d['sampler']} · "
                     f"cfg {d['cfg_scale']} · {int(steps_v)} pas"]
             yield t("⏳ Extension en cours…"), gr.update(), "\n".join(logs)
@@ -192,24 +227,28 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                        "\n".join(logs))
                 return
 
-            # Recollage de l'original : la zone d'origine reste intacte.
+            # 1) recalage de tonalité : le modèle re-rend toute la toile plus
+            #    contrastée ; sans ça l'original recollé fait un rectangle terne.
+            # 2) recollage de l'original : la zone d'origine reste intacte.
             from PIL import Image as _PI
             gen = _PI.open(state["outs"][0])
+            gen = op.match_tone(gen, img, p, amount=float(tone_v))
             final = op.composite_back(gen, img, p, feather=int(feather_v))
             out_path = settings.OUTPUT_DIR / \
                 f"outpaint-{time.strftime('%Y%m%d-%H%M%S')}.png"
             final.save(out_path)
             _sidecar(out_path, p, model_id, prompt_txt, s, strength_v,
-                     feather_v, steps_v, d)
-            logs.append(f"\n✅ Original recollé (fondu {int(feather_v)} px) → "
+                     feather_v, steps_v, d, fill_v, tone_v, mf)
+            logs.append(f"\n✅ Tonalité recalée ({float(tone_v):.1f}) puis "
+                        f"original recollé (fondu {int(feather_v)} px) → "
                         f"{out_path.name}")
             yield (t("✅ Étendu : {n}").format(n=out_path.name),
                    gr.update(value=str(out_path)), "\n".join(logs))
 
         evt = run.click(
             do_outpaint,
-            inputs=[image, direction, amount, model, prompt, strength, feather,
-                    steps, seed],
+            inputs=[image, direction, amount, model, prompt, fill, strength,
+                    feather, tone, steps, seed],
             outputs=[status, result, log])
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])
 
@@ -238,7 +277,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
 
 
 def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
-             steps_v, d) -> None:
+             steps_v, d, fill_v=None, tone_v=None, mask_used=None) -> None:
     """Journal .txt à côté du PNG, comme pour les images et les GLB."""
     lines = [
         f"Fichier: {out_path.name}",
@@ -246,8 +285,11 @@ def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
         f"Prompt: {prompt_txt or '(aucun)'}",
         f"Extension: {op.describe(p)}",
         f"Seed: {seed}",
+        f"Remplissage: {fill_v or 'edge'}",
+        f"Masque moteur: {mask_used or 'non'}",
         f"Force: {strength_v}",
         f"Fondu: {int(feather_v)} px",
+        f"Recalage de tonalité: {tone_v}",
         f"Étapes: {int(steps_v)}  ·  Sampler: {d['sampler']}  ·  "
         f"CFG: {d['cfg_scale']}",
         f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}",
