@@ -346,7 +346,11 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
                 "--vae_encode_tiled", "--vae_encode_tile_size", str(int(tile_size))]
     # Le GPU est choisi via CUDA_VISIBLE_DEVICES (_run_tool) : on ne passe PAS
     # --cuda_device en plus, les deux se marcheraient dessus.
-    _run_tool(cmd, log, "L'agrandissement SeedVR2 a échoué (voir le journal).",
+    _run_tool(cmd, log,
+              "L'agrandissement SeedVR2 a échoué (voir le journal). Si le "
+              "journal montre une erreur à l'IMPORT (diffusers, torch), "
+              "relancez « Installer SeedVR2 » : l'installation d'un autre "
+              "add-on a pu changer la version de diffusers sous SeedVR2.",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "seedvr2", stamp)
 

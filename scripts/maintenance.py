@@ -240,6 +240,37 @@ def check_deps() -> None:
               "(ou install.sh).")
     else:
         print(OK + "présentes.")
+    check_diffusers()
+
+
+def check_diffusers() -> None:
+    """Cohérence de diffusers entre les add-ons.
+
+    Tous partagent le même Python : un add-on installé avec une contrainte plus
+    large peut écraser la version dont un autre a besoin, et la casse se voit
+    seulement au premier usage, sous forme d'un ValueError illisible à l'import.
+    """
+    print("• Version de diffusers (partagée par les add-ons PyTorch)…")
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from setup_tools import DIFFUSERS_PIN
+        want = DIFFUSERS_PIN.split("==")[1]
+    except Exception:  # noqa: BLE001
+        print(OK + "non vérifiable (installeur absent).")
+        return
+    try:
+        import importlib.metadata as md
+        got = md.version("diffusers")
+    except Exception:  # noqa: BLE001
+        print(OK + "diffusers non installé (aucun add-on PyTorch concerné).")
+        return
+    if got == want:
+        print(OK + f"{got} — conforme.")
+    else:
+        _warn(f"diffusers {got} installé, {want} attendu. Un add-on a pu "
+              "changer la version sous les autres.")
+        _warn("  Correctif : relancez l'installation de l'add-on concerné "
+              "(Toolkit → Installer), qui repose la bonne version.")
 
 
 def check_engine() -> None:

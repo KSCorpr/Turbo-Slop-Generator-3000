@@ -130,11 +130,31 @@ def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
                 raise
 
 
+# --------------------------------------------------------------------------- #
+#  Version de diffusers COMMUNE à tous les outils.
+#
+#  Tous les add-ons partagent le MÊME Python embarqué : deux outils qui exigent
+#  des versions incompatibles se écrasent mutuellement, et c'est le dernier
+#  installé qui gagne. Deux contraintes se croisent ici :
+#    - SeedVR2 exige diffusers >= 0.33.1 ;
+#    - notre torch est 2.4.1 (choisi pour couvrir Pascal -> Ada, cf.
+#      _torch_setup), et son torch._library.infer_schema ne sait PAS lire les
+#      annotations « X | None ». Or diffusers >= 0.35 en utilise dans
+#      attention_dispatch.py, importé en cascade au chargement du module
+#      transformers -> ValueError au tout premier import.
+#  0.33.1 satisfait SeedVR2, précède attention_dispatch, et couvre largement les
+#  API SDXL (img2img + ControlNet) utilisées par l'upscale créatif.
+#  ⚠️ Une seule valeur pour tout le monde : c'est ce qui garde l'environnement
+#  cohérent quel que soit l'ordre d'installation des outils.
+# --------------------------------------------------------------------------- #
+DIFFUSERS_PIN = "diffusers==0.33.1"
+
+
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
     ensure_torch_cuda()
-    print("Installation de diffusers + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", "diffusers>=0.30,<0.32",
+    print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
+    sh([sys.executable, "-m", "pip", "install", DIFFUSERS_PIN,
         "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
     # Dossier où déposer des checkpoints SDXL perso (sélectionnables dans l'UI).
@@ -328,10 +348,14 @@ def install_seedvr2():
             name = line.split(">=")[0].split("==")[0].split("<")[0].strip()
             if name.lower() in ("torch", "torchvision", "torchaudio"):
                 continue
+            # diffusers : l'amont demande « >=0.33.1 » SANS borne haute. Laisser
+            # pip prendre la derniere cassait tout — voir DIFFUSERS_PIN.
+            if name.lower() == "diffusers":
+                continue
             reqs.append(line)
-    if reqs:
-        print("Installation des dependances SeedVR2…")
-        sh([sys.executable, "-m", "pip", "install", *reqs])
+    reqs.append(DIFFUSERS_PIN)
+    print(f"Installation des dependances SeedVR2 (dont {DIFFUSERS_PIN})…")
+    sh([sys.executable, "-m", "pip", "install", *reqs])
 
     # 3) poids du 1.4B (le VAE est recupere automatiquement au 1er lancement)
     print(f"\nTelechargement des poids 1.4B ({SEEDVR2_W_REPO})…")

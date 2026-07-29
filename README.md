@@ -386,6 +386,19 @@ is the **target short-side resolution**.
 > diffusers, peft, rotary_embedding_torch…); **no apex, flash-attn or triton** —
 > those are optional accelerators and the code falls back to PyTorch SDPA.
 
+> **One diffusers version for every add-on.** All PyTorch tools share the same
+> embedded Python, so a tool installed with a looser constraint can silently
+> replace the version another one needs — and the breakage only shows up at the
+> next use, as an unreadable import-time `ValueError`. Both the SDXL upscale and
+> SeedVR2 therefore install the same pin, `DIFFUSERS_PIN` in
+> `scripts/setup_tools.py` (currently `diffusers==0.33.1`). It satisfies
+> SeedVR2's `>=0.33.1`, predates `attention_dispatch.py`, and comfortably covers
+> the SDXL img2img/ControlNet APIs. The cap matters because our torch is 2.4.1
+> (chosen to span Pascal→Ada): its `torch._library.infer_schema` cannot parse the
+> `X | None` annotations that diffusers ≥ 0.35 uses, so it raises on the very
+> first import. `maintenance` verifies the installed version and tells you which
+> add-on to reinstall if it drifted.
+
 The **1.4B** weights come from
 [`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a
 6-block distillation of the 7B teacher. Upstream only knows the 3B and 7B, so the
