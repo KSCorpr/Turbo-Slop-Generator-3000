@@ -135,71 +135,16 @@ def build_generative_tab(model_id: str, title: str,
         with gr.Row():
             # ----- Entrées -----
             with gr.Column(scale=3):
-                with gr.Accordion("🎭 Prompt système / style (préfixe, optionnel)",
-                                  open=False):
-                    system_prompt = gr.Textbox(
-                        label="Appliqué en tête de chaque génération", lines=2,
-                        placeholder="ex. : style aquarelle, palette pastel, "
-                                    "éclairage doux")
-                    with gr.Row():
-                        style_pick = gr.Dropdown(
-                            _style_choices(), value=_NONE_STYLE, scale=3,
-                            label="Styles enregistrés (« Aucun » = retirer le "
-                                  "style appliqué)", allow_custom_value=False)
-                        style_name = gr.Textbox(
-                            label="Nom du style à enregistrer", scale=2,
-                            placeholder="ex. : Aquarelle pastel")
-                    with gr.Row():
-                        style_save = gr.Button("💾 Enregistrer", size="sm")
-                        style_del = gr.Button("🗑️ Supprimer", size="sm")
-                        style_refresh = gr.Button("↻ Rafraîchir", size="sm")
-
-                # 📷 Styles photo Krea 2 (cumulables) — banque de 139 styles
-                # photographiques (© ghleg, MIT). Multi-sélection : on empile
-                # plusieurs axes (qualité, lumière, objectif, pellicule…) ; le
-                # sujet du prompt est inséré dans chaque style, et les négatifs
-                # ne sont combinés que si le modèle en tient compte (CFG > 1).
-                _photo_labels = styles.photo_style_labels()
-                _photo_neg_note = ("" if d.get("supports_negative", False) else
-                                   " · négatifs ignorés (CFG 1.0 — sans effet ici)")
-                with gr.Accordion("📷 Styles photo Krea 2 — cumulables "
-                                  f"({len(_photo_labels)} styles)", open=False):
-                    gr.Markdown(
-                        "Styles photographiques prêts à l'emploi, **combinables** "
-                        "(qualité, lumière, objectif, pellicule, ambiance…). Le "
-                        "**sujet de votre prompt** est inséré dans chaque style "
-                        "choisi ; enchaînez-en plusieurs pour cumuler leurs effets."
-                        + _photo_neg_note + "  \n*Banque © ghleg — MIT "
-                        "(aoleg/Photographic-styles-and-wildcards-for-Krea-2).*")
-                    photo_pick = gr.Dropdown(
-                        _photo_labels, value=[], multiselect=True,
-                        label="Styles à combiner (regroupés par catégorie)",
-                        allow_custom_value=False)
-
-                # 🎨 Styles ARTISTIQUES Krea (cumulables) — anime, cartoon, BD,
-                # dessin, photographie, design, peinture… Sans négatifs : la
-                # description du style est simplement ajoutée après le sujet.
-                # Empilables entre eux ET avec les styles photo ci-dessus. Le
-                # bouton 🎲 en pioche un au hasard (comportement « wildcard »).
-                _art_labels = styles.bank_labels(styles.ART_STYLES_FILE)
-                with gr.Accordion("🎨 Styles artistiques Krea — cumulables "
-                                  f"({len(_art_labels)} styles)", open=False):
-                    gr.Markdown(
-                        "Styles **artistiques** nommés (anime, cartoon, BD, "
-                        "dessin, photographie, design, peinture numérique, "
-                        "peinture), **combinables** et empilables avec les styles "
-                        "photo ci-dessus. La description du style est ajoutée "
-                        "après votre sujet. **🎲 Aléatoire** en tire un au hasard "
-                        "(wildcard).  \n*Collection Krea fournie par "
-                        "l'utilisateur — provenance/licence à confirmer.*")
-                    art_pick = gr.Dropdown(
-                        _art_labels, value=[], multiselect=True,
-                        label="Styles à combiner (regroupés par catégorie)",
-                        allow_custom_value=False)
-                    art_dice = gr.Button("🎲 Aléatoire (wildcard)", size="sm")
-
+                # Le PROMPT d'abord : c'est le champ principal, il ne doit pas
+                # être enterré sous des accordéons. Tout le reste (styles,
+                # réglages de l'améliorateur) est replié en dessous, groupé par
+                # intention : « 🎨 Styles » d'un côté, « ✨ Améliorateur » de
+                # l'autre. Les explications longues vivent dans l'onglet
+                # « 🧹 Gestion & aide » ; ici on s'en tient à une ligne par bloc.
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Décrivez l'image…")
+                negative = gr.Textbox(label="Prompt négatif", lines=1,
+                                      visible=d.get("supports_negative", False))
                 with gr.Row():
                     enhance_btn = gr.Button("✨ Améliorer le prompt (IA)",
                                             size="sm", scale=3)
@@ -213,18 +158,89 @@ def build_generative_tab(model_id: str, title: str,
                 enh_msg = gr.Markdown("")
                 enh_props = gr.Radio([], label="Propositions — cliquez pour "
                                               "l'utiliser", visible=False)
-                with gr.Accordion("🎨 Options d'amélioration (façon Midjourney)",
-                                  open=False):
+
+                # ----- 🎨 Styles : les trois banques sous UN seul repli -----
+                # Trois mécanismes distincts mais un seul but (habiller le
+                # prompt), donc un seul accordéon de premier niveau : replié, il
+                # ne prend qu'une ligne au lieu de trois.
+                _photo_labels = styles.photo_style_labels()
+                _art_labels = styles.bank_labels(styles.ART_STYLES_FILE)
+                _photo_neg_note = ("" if d.get("supports_negative", False) else
+                                   " · négatifs sans effet ici (CFG 1.0)")
+                with gr.Accordion(
+                        "🎨 Styles — préréglages, photo, artistiques "
+                        f"({len(_photo_labels) + len(_art_labels)} styles)",
+                        open=False):
                     gr.Markdown(
-                        "**Style** — *Détaillé* écrit un paragraphe descriptif "
-                        "complet ; ***Midjourney*** écrit court et dense, en "
-                        "phrases juxtaposées, l'esthétique d'abord (et bannit le "
-                        "bourrage de mots-clés type *8k, masterpiece*).\n\n"
-                        "Vous pouvez aussi taper les **paramètres Midjourney** "
-                        "directement dans le prompt : `--ar 16:9` (format, à "
-                        "surface constante), `--stylize 500`, `--chaos 40`, "
-                        "`--no voitures` (prompt négatif). Ils sont retirés du "
-                        "texte et appliqués aux réglages.")
+                        "Les trois se **cumulent** : le préréglage est ajouté en "
+                        "tête, les styles photo et artistiques habillent votre "
+                        "sujet. Détail de chacun dans « 🧹 Gestion & aide ».")
+
+                    with gr.Accordion("🎭 Préréglage perso (préfixe de prompt)",
+                                      open=False):
+                        system_prompt = gr.Textbox(
+                            label="Appliqué en tête de chaque génération",
+                            lines=2,
+                            placeholder="ex. : style aquarelle, palette pastel, "
+                                        "éclairage doux")
+                        with gr.Row():
+                            style_pick = gr.Dropdown(
+                                _style_choices(), value=_NONE_STYLE, scale=3,
+                                label="Préréglages enregistrés",
+                                info="« — Aucun — » retire le style appliqué.",
+                                allow_custom_value=False)
+                            style_name = gr.Textbox(
+                                label="Nom du préréglage à enregistrer", scale=2,
+                                placeholder="ex. : Aquarelle pastel")
+                        with gr.Row():
+                            style_save = gr.Button("💾 Enregistrer", size="sm")
+                            style_del = gr.Button("🗑️ Supprimer", size="sm")
+                            style_refresh = gr.Button("↻ Rafraîchir", size="sm")
+
+                    # Banque photo (© ghleg, MIT) : le sujet du prompt est
+                    # inséré dans chaque style coché ; les négatifs des styles ne
+                    # sont repris que si le modèle en tient compte (CFG > 1).
+                    with gr.Accordion(
+                            f"📷 Styles photo ({len(_photo_labels)})",
+                            open=False):
+                        photo_pick = gr.Dropdown(
+                            _photo_labels, value=[], multiselect=True,
+                            label="Styles à combiner (par catégorie)",
+                            info="Qualité, lumière, objectif, pellicule, "
+                                 "ambiance… Votre sujet est inséré dans chaque "
+                                 "style coché." + _photo_neg_note
+                                 + " · Banque © ghleg, MIT.",
+                            allow_custom_value=False)
+
+                    # Banque artistique : sans négatifs, la description du style
+                    # est simplement ajoutée après le sujet. 🎲 = wildcard.
+                    with gr.Accordion(
+                            f"🖍️ Styles artistiques ({len(_art_labels)})",
+                            open=False):
+                        art_pick = gr.Dropdown(
+                            _art_labels, value=[], multiselect=True,
+                            label="Styles à combiner (par catégorie)",
+                            info="Anime, cartoon, BD, dessin, design, "
+                                 "peinture… Ajoutés après votre sujet. "
+                                 "Provenance de la collection à confirmer.",
+                            allow_custom_value=False)
+                        art_dice = gr.Button("🎲 Aléatoire (wildcard)", size="sm")
+
+                # ----- ✨ Améliorateur : réglages ET installation ensemble -----
+                # C'était éclaté en deux accordéons séparés par le champ négatif.
+                # Ouvert d'office tant que l'add-on n'est pas installé.
+                _enh_ready = tools.enhance_is_installed()
+                with gr.Accordion("✨ Améliorateur de prompt — réglages"
+                                  + ("" if _enh_ready else " & installation"),
+                                  open=not _enh_ready):
+                    gr.Markdown(
+                        "**Style** — *Détaillé* écrit un paragraphe descriptif ; "
+                        "***Midjourney*** écrit court et dense, l'esthétique "
+                        "d'abord.  \n"
+                        "**Paramètres Midjourney** utilisables directement dans "
+                        "le prompt : `--ar 16:9` (format à surface constante), "
+                        "`--stylize 500`, `--chaos 40`, `--no voitures`. Ils sont "
+                        "retirés du texte et appliqués aux réglages.")
                     with gr.Row():
                         enh_variants = gr.Radio(
                             [("1", 1), ("2", 2), ("4", 4)], value=4,
@@ -234,33 +250,32 @@ def build_generative_tab(model_id: str, title: str,
                         enh_stylize = gr.Slider(
                             0, 1000, value=250, step=50, label="Stylize",
                             interactive=False,
-                            info="Style « Midjourney » uniquement. Licence "
-                                 "artistique laissée au modèle : bas = littéral ; "
-                                 "haut = direction artistique forte.")
+                            info="Style « Midjourney » uniquement. Bas = "
+                                 "littéral ; haut = direction artistique forte.")
                         enh_chaos = gr.Slider(
                             0, 100, value=25, step=5, label="Chaos",
-                            info="Écart entre les propositions. 0 = variations "
-                                 "proches ; 100 = directions très différentes.")
-                negative = gr.Textbox(label="Prompt négatif", lines=1,
-                                      visible=d.get("supports_negative", False))
+                            info="Écart entre les propositions. 0 = proches ; "
+                                 "100 = très différentes.")
 
-                with gr.Accordion("✨ Améliorateur de prompt — installer (1 clic)",
-                                  open=not tools.enhance_is_installed()):
-                    gr.Markdown(
-                        "Petit LLM (**Qwen2.5-3B-Instruct**, PyTorch ~6 Go) qui "
-                        "réécrit votre idée en un prompt **anglais** détaillé "
-                        "(sujet, lumière, cadrage, style). Chargé puis déchargé à "
-                        "chaque appel : **aucun conflit de VRAM** avec la "
-                        "génération. Aucune commande à taper.")
-                    enh_log = gr.Textbox(label="Journal d'installation", lines=6,
-                                         autoscroll=True, elem_classes="log-box")
-                    enh_inst = gr.Button("⬇️ Installer l'améliorateur de prompt")
+                    with gr.Accordion("⬇️ Installation (1 clic)",
+                                      open=not _enh_ready):
+                        gr.Markdown(
+                            "Petit LLM (**Qwen2.5-3B-Instruct**, PyTorch ~6 Go) "
+                            "chargé puis déchargé à chaque appel : **aucun "
+                            "conflit de VRAM** avec la génération. Aucune "
+                            "commande à taper."
+                            + ("  \n✅ **Déjà installé.**" if _enh_ready else ""))
+                        enh_log = gr.Textbox(
+                            label="Journal d'installation", lines=6,
+                            autoscroll=True, elem_classes="log-box")
+                        enh_inst = gr.Button(
+                            "⬇️ Installer l'améliorateur de prompt")
 
-                    def _install_enh():
-                        for msg in tools.install_enhance_stream():
-                            yield msg
+                        def _install_enh():
+                            for msg in tools.install_enhance_stream():
+                                yield msg
 
-                    enh_inst.click(_install_enh, outputs=[enh_log])
+                        enh_inst.click(_install_enh, outputs=[enh_log])
 
                 _acc_title = ("🖼️ Images de référence (édition d'image)" if is_edit
                               else "🖼️ Image de référence / départ (image-to-image)")
