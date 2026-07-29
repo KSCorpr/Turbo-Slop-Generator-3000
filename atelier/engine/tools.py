@@ -5,6 +5,7 @@ verrouiller les DLL de torch dans le process Gradio.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -260,13 +261,21 @@ def sam_segment(image, x: int, y: int,
     return _collect(out_dir, "sam", stamp), (overlay if overlay.exists() else None)
 
 
-def enhance_prompt(prompt: str, style: str = "generic", level: str = "medium",
-                   log: Callable[[str], None] | None = None) -> str:
+ENHANCE_STYLES = ("generic", "krea2", "mj")
+
+
+def enhance_prompt_variants(prompt: str, style: str = "generic",
+                            level: str = "medium", variants: int = 1,
+                            stylize: int = -1, chaos: int = 0,
+                            log: Callable[[str], None] | None = None) -> list[str]:
     """Améliore un prompt brut via un petit LLM instruct (transformers).
 
-    `style` choisit le system prompt : "krea2" (guide Krea) ou "generic"
-    (Flux/SD/MJ). Renvoie UNIQUEMENT le prompt enrichi en anglais. S'exécute en
-    sous-process (chargé puis déchargé : aucun conflit VRAM avec sd.cpp)."""
+    `style` choisit le system prompt : "krea2" (guide Krea), "mj" (style maison
+    Midjourney : court, esthétique, phrases juxtaposées) ou "generic" (Flux/SD).
+    `variants` demande plusieurs PROPOSITIONS en un seul chargement du modèle
+    (façon Midjourney) ; `stylize` (0–1000) et `chaos` (0–100) reprennent la
+    sémantique de Midjourney. S'exécute en sous-process (chargé puis déchargé :
+    aucun conflit VRAM avec sd.cpp)."""
     if not enhance_is_installed():
         raise ToolError("L'améliorateur de prompt n'est pas installé "
                         "(accordéon « ✨ Améliorer » de l'onglet de génération).")
@@ -274,22 +283,40 @@ def enhance_prompt(prompt: str, style: str = "generic", level: str = "medium",
         raise ToolError("Saisissez d'abord un prompt à améliorer.")
     settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out_file = settings.TMP_DIR / f"enhance_{stamp}.txt"
+    out_file = settings.TMP_DIR / f"enhance_{stamp}.json"
     runner = settings.ROOT / "scripts" / "tools" / "run_enhance.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(ENHANCE_MODEL_DIR),
            "--prompt", prompt, "--output", str(out_file),
-           "--style", style if style in ("generic", "krea2") else "generic",
-           "--level", level if level in ("light", "medium", "strong") else "medium"]
+           "--style", style if style in ENHANCE_STYLES else "generic",
+           "--level", level if level in ("light", "medium", "strong") else "medium",
+           "--variants", str(max(1, min(8, int(variants or 1)))),
+           "--chaos", str(max(0, min(100, int(chaos or 0))))]
+    if stylize is not None and int(stylize) >= 0:
+        cmd += ["--stylize", str(max(0, min(1000, int(stylize))))]
     # Améliorateur = TEXTE → GPU secondaire dédié au texte (ex. 1080 Ti).
     _run_tool(cmd, log, "L'amélioration du prompt a échoué (voir le journal).",
               gpu_index=_text_gpu_index())
     try:
-        text = out_file.read_text(encoding="utf-8").strip()
+        raw = out_file.read_text(encoding="utf-8").strip()
     except OSError:
-        text = ""
-    if not text:
+        raw = ""
+    out: list[str] = []
+    if raw:
+        try:
+            data = json.loads(raw)
+            out = [str(x).strip() for x in data if str(x).strip()]
+        except (ValueError, TypeError):
+            out = [raw]           # repli : ancien format texte brut
+    if not out:
         raise ToolError("L'améliorateur n'a renvoyé aucun texte (voir le journal).")
-    return text
+    return out
+
+
+def enhance_prompt(prompt: str, style: str = "generic", level: str = "medium",
+                   log: Callable[[str], None] | None = None) -> str:
+    """Une seule proposition (compatibilité)."""
+    return enhance_prompt_variants(prompt, style=style, level=level,
+                                   variants=1, log=log)[0]
 
 
 def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",

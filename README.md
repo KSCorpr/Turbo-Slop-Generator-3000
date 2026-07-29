@@ -461,6 +461,43 @@ system prompt **detects intent from keywords** (medium/style/subject/mood) and
 keeps the output medium-coherent; a **strength** selector (Light / Medium / Strong)
 controls how far it expands. Krea 2 uses a Krea-specific system prompt.
 
+#### Midjourney mode
+
+The **Style** selector next to the button switches between two house styles:
+
+- **Detailed** (default) — a full descriptive paragraph. Krea 2 automatically
+  uses the official Krea system prompt here; other models use the generic one.
+- **Midjourney** — the Midjourney house style: short and dense, comma-separated
+  visual phrases instead of sentences, aesthetics first, ordered *subject →
+  setting → lighting → mood → palette → medium → camera*. Target 20–45 words,
+  one medium only, and keyword spam (`8k`, `masterpiece`, `trending on
+  artstation`) is explicitly banned — evocative, not stuffed.
+
+Also Midjourney-like: **several proposals at once**. Pick 1, 2 or 4 in
+**🎨 Enhancement options**; they're generated in a *single* model load
+(`num_return_sequences`), listed under the prompt field, and clicking one puts it
+in the prompt. Two sliders shape them:
+
+| Slider | Effect |
+| --- | --- |
+| **Stylize** (0–1000, Midjourney style only) | artistic licence: low = literal and documentary; high = bold art direction, dramatic lighting, stylized palette |
+| **Chaos** (0–100) | spread between proposals — raises sampling temperature (0.70 → 1.30) so directions diverge |
+
+**Midjourney parameters typed in the prompt** work too, in both the enhancer and
+plain generation (`atelier/mjparams.py`):
+
+| Written in the prompt | Effect |
+| --- | --- |
+| `--ar 16:9` / `--aspect 3:2` | sets width/height **at constant area** — same native pixel count as the model, only the shape changes |
+| `--stylize 500` / `--s 500` | overrides the Stylize slider |
+| `--chaos 40` / `--c 40` | overrides the Chaos slider |
+| `--no cars, people` | fills the negative prompt |
+| `--v`, `--q`, `--niji`, `--tile`, `--weird`, `--seed`… | Midjourney-only, no equivalent here: stripped from the prompt and reported |
+
+They're removed from the text before it reaches the model, and what was applied
+is echoed under the button. An unknown or malformed parameter is deliberately
+left in the prompt rather than silently dropped.
+
 ---
 
 

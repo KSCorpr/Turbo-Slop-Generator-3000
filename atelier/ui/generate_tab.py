@@ -8,7 +8,7 @@ import re
 
 import gradio as gr
 
-from .. import downloader, i18n, registry, settings, styles
+from .. import downloader, i18n, mjparams, registry, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -203,10 +203,44 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Row():
                     enhance_btn = gr.Button("✨ Améliorer le prompt (IA)",
                                             size="sm", scale=3)
+                    enh_style = gr.Dropdown(
+                        [(t("Détaillé"), "auto"), (t("Midjourney"), "mj")],
+                        value="auto", label="Style", scale=2)
                     enh_level = gr.Dropdown(
                         [(t("Léger"), "light"), (t("Moyen"), "medium"),
                          (t("Fort"), "strong")],
                         value="medium", label="Intensité", scale=2)
+                enh_msg = gr.Markdown("")
+                enh_props = gr.Radio([], label="Propositions — cliquez pour "
+                                              "l'utiliser", visible=False)
+                with gr.Accordion("🎨 Options d'amélioration (façon Midjourney)",
+                                  open=False):
+                    gr.Markdown(
+                        "**Style** — *Détaillé* écrit un paragraphe descriptif "
+                        "complet ; ***Midjourney*** écrit court et dense, en "
+                        "phrases juxtaposées, l'esthétique d'abord (et bannit le "
+                        "bourrage de mots-clés type *8k, masterpiece*).\n\n"
+                        "Vous pouvez aussi taper les **paramètres Midjourney** "
+                        "directement dans le prompt : `--ar 16:9` (format, à "
+                        "surface constante), `--stylize 500`, `--chaos 40`, "
+                        "`--no voitures` (prompt négatif). Ils sont retirés du "
+                        "texte et appliqués aux réglages.")
+                    with gr.Row():
+                        enh_variants = gr.Radio(
+                            [("1", 1), ("2", 2), ("4", 4)], value=4,
+                            label="Propositions",
+                            info="Plusieurs prompts en un seul chargement du "
+                                 "modèle — vous choisissez.")
+                        enh_stylize = gr.Slider(
+                            0, 1000, value=250, step=50, label="Stylize",
+                            interactive=False,
+                            info="Style « Midjourney » uniquement. Licence "
+                                 "artistique laissée au modèle : bas = littéral ; "
+                                 "haut = direction artistique forte.")
+                        enh_chaos = gr.Slider(
+                            0, 100, value=25, step=5, label="Chaos",
+                            info="Écart entre les propositions. 0 = variations "
+                                 "proches ; 100 = directions très différentes.")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
                                       visible=d.get("supports_negative", False))
 
@@ -595,19 +629,71 @@ def build_generative_tab(model_id: str, title: str,
 
         # --- Améliorateur de prompt (LLM) ---
         # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
-        _enh_style = "krea2" if family == "krea2" else "generic"
+        # « Midjourney » (mj) est un choix explicite qui prime sur le modèle.
+        _enh_auto = "krea2" if family == "krea2" else "generic"
 
-        def _enhance(text, level):
+        def _enhance(text, style_choice, level, variants, stylize, chaos):
+            # Paramètres façon Midjourney tapés dans le prompt : on les sort du
+            # texte AVANT d'appeler le LLM, et on les applique aux réglages.
+            clean, mp = mjparams.parse(text or "")
+            if not clean.strip():
+                raise gr.Error(t("Saisissez d'abord un prompt à améliorer."))
+            is_mj = style_choice == "mj"
+            style = "mj" if is_mj else _enh_auto
+            # --stylize / --chaos écrits dans le prompt priment sur les curseurs.
+            sty = mp.get("stylize", stylize if is_mj else -1)
+            cha = mp.get("chaos", chaos)
             try:
-                better = tools.enhance_prompt(text or "", style=_enh_style,
-                                              level=level or "medium")
+                props = tools.enhance_prompt_variants(
+                    clean, style=style, level=level or "medium",
+                    variants=int(variants or 1), stylize=int(sty),
+                    chaos=int(cha))
             except tools.ToolError as exc:
                 raise gr.Error(str(exc))
             except Exception as exc:  # noqa: BLE001
                 raise gr.Error(f"Échec de l'amélioration : {exc}")
-            return gr.update(value=better)
 
-        enhance_btn.click(_enhance, inputs=[prompt, enh_level], outputs=[prompt])
+            # Format demandé (--ar) : on garde la surface native du modèle.
+            w_up, h_up = gr.update(), gr.update()
+            if mp.get("ar"):
+                nw, nh = mjparams.aspect_size(
+                    mp["ar"], int(d.get("width", 1024)),
+                    int(d.get("height", 1024)))
+                w_up, h_up = gr.update(value=nw), gr.update(value=nh)
+            neg_up = gr.update(value=mp["no"]) if mp.get("no") else gr.update()
+
+            note = mjparams.describe(mp)
+            msg = ""
+            if note:
+                msg = f"🎛️ Paramètres appliqués : {note}"
+            if len(props) > 1:
+                msg = (msg + "  \n" if msg else "") + t(
+                    "Choisissez une proposition ci-dessous (le prompt affiché "
+                    "est la première).")
+            # La 1re proposition part dans le champ ; les autres restent
+            # cliquables. Libellés numérotés : un prompt long casse un Radio.
+            choices = [(f"{i + 1}. {p[:110]}{'…' if len(p) > 110 else ''}", p)
+                       for i, p in enumerate(props)]
+            return (gr.update(value=props[0]),
+                    gr.update(choices=choices, value=props[0],
+                              visible=len(props) > 1),
+                    gr.update(value=msg), w_up, h_up, neg_up)
+
+        enhance_btn.click(
+            _enhance,
+            inputs=[prompt, enh_style, enh_level, enh_variants, enh_stylize,
+                    enh_chaos],
+            outputs=[prompt, enh_props, enh_msg, width, height, negative])
+
+        # Cliquer une proposition la met dans le champ Prompt (.input : ne se
+        # redéclenche pas quand l'améliorateur remplit le Radio lui-même).
+        enh_props.input(lambda p: gr.update(value=p) if p else gr.update(),
+                        inputs=[enh_props], outputs=[prompt])
+
+        # « Stylize » n'a de sens que dans le style Midjourney (Chaos, lui, joue
+        # sur la diversité des propositions dans les deux styles).
+        enh_style.change(lambda s: gr.update(interactive=s == "mj"),
+                         inputs=[enh_style], outputs=[enh_stylize])
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ
@@ -652,6 +738,17 @@ def build_generative_tab(model_id: str, title: str,
             import queue
             import threading
             import time
+
+            # Paramètres façon Midjourney tapés dans le prompt (--ar, --no…) :
+            # ils sont retirés du texte et appliqués ici aussi, pour que la
+            # syntaxe marche même sans passer par l'améliorateur.
+            prompt, _mp = mjparams.parse(prompt or "")
+            if _mp.get("ar"):
+                width, height = mjparams.aspect_size(
+                    _mp["ar"], int(d.get("width", 1024)),
+                    int(d.get("height", 1024)))
+            if _mp.get("no") and not (negative or "").strip():
+                negative = _mp["no"]
 
             if not (prompt or "").strip():
                 raise gr.Error(t("Saisissez un prompt (décrivez l'image, ou la "

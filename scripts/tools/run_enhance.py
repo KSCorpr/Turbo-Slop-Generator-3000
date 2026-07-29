@@ -8,6 +8,7 @@ DLL torch ni occuper la VRAM pendant la génération sd.cpp.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -114,7 +115,61 @@ SYSTEM_GENERIC = (
     + _CORE
 )
 
-STYLES = {"generic": SYSTEM_GENERIC, "krea2": SYSTEM_KREA2}
+# Système MIDJOURNEY : l'esthétique d'abord, en phrases courtes juxtaposées.
+# C'est l'opposé du système générique (paragraphe descriptif exhaustif) : ici on
+# vise le style « maison » de Midjourney — dense, évocateur, court, et surtout
+# JAMAIS du bourrage de mots-clés ('masterpiece, 8k, trending on artstation').
+SYSTEM_MJ = (
+    "You are a prompt engineer writing in the MIDJOURNEY house style.\n"
+    "\n"
+    "Turn the user's idea into ONE image prompt written as a compact chain of "
+    "comma-separated visual phrases — NOT full sentences. Never open with "
+    "'a photo of', 'an image of', 'this image shows'. Target 20–45 words.\n"
+    "\n"
+    "ORDER the phrases: subject and what it is doing → setting → lighting → "
+    "mood / atmosphere → color palette → medium and art direction → camera, lens "
+    "or composition.\n"
+    "\n"
+    "RULES:\n"
+    "• Every phrase must be CONCRETE and VISIBLE. Cut anything a camera could "
+    "not see (backstory, feelings, sounds, smells).\n"
+    "• Choose exactly ONE medium and stay strictly inside its vocabulary — never "
+    "mix 'oil painting' with '85mm lens', or 'octane render' with 'film grain'.\n"
+    "• BANNED as empty filler: masterpiece, best quality, 8k, 4k, ultra "
+    "detailed, highly detailed, award-winning, trending on artstation, stunning, "
+    "beautiful, amazing, epic (unless it describes actual scale). Midjourney "
+    "style is evocative, not keyword spam — show why it looks good instead.\n"
+    "• Name an art movement, genre or era rather than a living artist.\n"
+    "• Words the user wants written IN the image go in \"double quotes\".\n"
+    "• Stay faithful: keep the user's subject, action and stated medium. Add "
+    "art direction, never replace their idea.\n"
+    "• NEVER output Midjourney parameters (--ar, --v, --stylize, --no…): the "
+    "application handles format and settings itself.\n"
+    "\n"
+    "OUTPUT: only the final prompt in English, one line, no preamble, no "
+    "explanation, no markdown, no numbering, no surrounding quotes."
+)
+
+STYLES = {"generic": SYSTEM_GENERIC, "krea2": SYSTEM_KREA2, "mj": SYSTEM_MJ}
+
+# « Stylize » de Midjourney : licence artistique laissée au modèle.
+def _stylize_text(value: int) -> str:
+    v = max(0, min(1000, int(value)))
+    if v <= 50:
+        return ("STYLIZE {v}/1000 — VERY LOW: stay literal and documentary. Add "
+                "almost no art direction; describe what is there, plainly.")\
+            .format(v=v)
+    if v <= 250:
+        return ("STYLIZE {v}/1000 — LOW: light art direction. Real, plausible "
+                "lighting and framing; no dramatization.").format(v=v)
+    if v <= 600:
+        return ("STYLIZE {v}/1000 — MEDIUM: balanced. Deliberate lighting, "
+                "composition and palette, while the scene stays believable.")\
+            .format(v=v)
+    return ("STYLIZE {v}/1000 — HIGH: take strong artistic license. Bold art "
+            "direction, dramatic or unusual lighting, stylized palette, "
+            "striking composition — the aesthetic may lead over literal "
+            "accuracy, but NEVER drop the user's subject or medium.").format(v=v)
 
 # Intensité de l'amélioration (ajoutée au system prompt) + budget de tokens.
 LEVELS = {
@@ -149,6 +204,12 @@ def main():
     ap.add_argument("--style", default="generic", choices=list(STYLES))
     ap.add_argument("--level", default="medium", choices=list(LEVELS))
     ap.add_argument("--max-new-tokens", type=int, default=0)
+    ap.add_argument("--variants", type=int, default=1,
+                    help="nombre de propositions (façon Midjourney)")
+    ap.add_argument("--stylize", type=int, default=-1,
+                    help="0-1000 : licence artistique (style mj)")
+    ap.add_argument("--chaos", type=int, default=0,
+                    help="0-100 : diversité entre les propositions")
     args = ap.parse_args()
 
     import torch
@@ -167,6 +228,23 @@ def main():
     level_text, level_tokens = LEVELS.get(args.level, LEVELS["medium"])
     max_new = int(args.max_new_tokens) or level_tokens
     system = STYLES.get(args.style, SYSTEM_GENERIC) + "\n\n" + level_text
+    # Midjourney reste COURT quelle que soit l'intensité : on plafonne le budget
+    # de tokens, sinon le LLM déborde en paragraphe et casse le style maison.
+    if args.style == "mj":
+        max_new = min(max_new, 200)
+        if args.stylize >= 0:
+            system += "\n\n" + _stylize_text(args.stylize)
+
+    n = max(1, min(8, int(args.variants)))
+    if n > 1:
+        system += ("\n\nYou will be sampled several times for the same idea. "
+                   "Commit to ONE clear artistic direction per answer rather "
+                   "than hedging, so the proposals differ from each other.")
+    # « Chaos » de Midjourney : plus il est haut, plus les propositions divergent.
+    chaos = max(0, min(100, int(args.chaos)))
+    temperature = round(0.7 + 0.006 * chaos, 3)          # 0.70 → 1.30
+    top_p = round(0.90 + 0.0007 * chaos, 4)              # 0.90 → 0.97
+
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": args.prompt.strip()},
@@ -174,18 +252,30 @@ def main():
     text = tok.apply_chat_template(messages, tokenize=False,
                                    add_generation_prompt=True)
     inputs = tok(text, return_tensors="pt").to(device)
-    print(f"[enhance] génération (niveau {args.level})…", flush=True)
+    print(f"[enhance] génération ({args.style}, niveau {args.level}, "
+          f"{n} proposition(s), temp {temperature})…", flush=True)
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=max_new,
-                             do_sample=True, temperature=0.7, top_p=0.9,
+                             do_sample=True, temperature=temperature,
+                             top_p=top_p, num_return_sequences=n,
                              pad_token_id=tok.eos_token_id)
-    gen = out[0][inputs["input_ids"].shape[1]:]
-    result = _clean(tok.decode(gen, skip_special_tokens=True))
+    start = inputs["input_ids"].shape[1]
+    results, seen = [], set()
+    for row in out:
+        cand = _clean(tok.decode(row[start:], skip_special_tokens=True))
+        key = cand.lower()
+        if cand and key not in seen:      # doublons possibles à faible chaos
+            seen.add(key)
+            results.append(cand)
+    if not results:
+        sys.exit("[enhance] le modèle n'a produit aucun texte exploitable.")
 
     dest = Path(args.output)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(result, encoding="utf-8")
-    print(f"[enhance] prompt enrichi ({len(result)} car.) : {dest}", flush=True)
+    # Toujours du JSON : un seul format à lire côté application.
+    dest.write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
+    print(f"[enhance] {len(results)} proposition(s) écrite(s) : {dest}",
+          flush=True)
 
 
 if __name__ == "__main__":
