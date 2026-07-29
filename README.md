@@ -401,32 +401,48 @@ Controls:
 ## Outpaint
 
 The **🖼️ Outpaint** tab extends an image **left, right, up, down — or all
-around**, Midjourney-style. It works with **any model in the catalog** and
-**without a prompt**; no inpainting checkpoint is required.
+around**, Midjourney-style.
 
-**How it works** (`atelier/engine/outpaint.py`):
+> **Use it with an *edit* model** — Flux.2 Klein or Boogu Edit. This is not a
+> preference, it is what makes the feature work at all.
+
+**Why the model has to be an edit model.** An edit model receives the enlarged
+canvas as a **reference image** (`-r`): its image conditioning tells it what the
+scene actually contains, and an **auto-generated extension instruction** tells it
+what to do with it. A plain text-to-image model gets none of that — in img2img it
+only sees a noised latent, so it does not know what it is continuing and
+**reinvents instead of extending**. No amount of tuning strength, feather or edge
+fill fixes that; it is a limitation of the method, not a setting. The img2img path
+is kept as a fallback so nothing is blocked, not because it produces good output.
+
+That auto-generated instruction is what "no prompt" means here: you write
+nothing, but the model still receives a precise directive naming which sides were
+extended and telling it to continue perspective, lighting, palette and style
+without touching the original or duplicating subjects.
+
+**The pipeline** (`atelier/engine/outpaint.py`):
 
 1. the canvas is enlarged in the chosen directions (snapped to 16 px, capped at
    2048 px per side — margins shrink proportionally if the cap is hit);
-2. the new areas are pre-filled from the border pixels, then blurred, so the
-   model starts from plausible colors instead of noise;
-3. an **inpainting mask** is written (white = generate, black = keep) and passed
-   to the engine — but **only if the installed `sd-cli` actually has a mask
-   option**. The flag is *discovered at runtime* by parsing `sd-cli -h`
-   (`sdcpp.supported_options` / `sdcpp.mask_flag`) rather than hard-coded, since
-   its spelling varies between versions and between the official and self-built
-   binaries. No mask option → the step is skipped, nothing breaks;
-4. the canvas goes through **image-to-image** with the chosen model, using that
-   model's own recommended sampler / CFG / steps;
-5. the result's **tone is matched back to the original** (per-channel mean and
+2. the new area is pre-filled: **neutral grey** for an edit model (an obviously
+   empty zone reads as "fill this"; a fake backdrop would mislead it), or an
+   edge-stretch/mirror fill for the img2img fallback, which has nothing else to
+   go on;
+3. **edit path** — canvas as `-r` plus the instruction, no strength, no mask.
+   **Fallback path** — canvas as `-i` with a strength, plus an inpainting mask
+   *if* the installed `sd-cli` has a mask option. That flag is **discovered at
+   runtime** by parsing `sd-cli -h` (`sdcpp.supported_options` /
+   `sdcpp.mask_flag`) rather than hard-coded, since its spelling varies between
+   versions and between official and self-built binaries;
+4. the result's **tone is matched back to the original** (per-channel mean and
    standard deviation, measured on the overlap region);
-6. the **original is composited back on top**, with a feather at the seam.
+5. the **original is composited back on top**, with a feather at the seam.
 
-Step 5 is not cosmetic. In img2img the model re-renders the *whole* canvas with
-punchier contrast and saturation; pasting the untouched original back on top then
-leaves a visibly duller rectangle in the middle, which a feather cannot hide
-because the mismatch is global, not local. The fix corrects the *new* area toward
-the original, never the reverse.
+Step 4 is not cosmetic. The model re-renders the *whole* canvas with punchier
+contrast and saturation; pasting the untouched original back on top then leaves a
+visibly duller rectangle in the middle, which a feather cannot hide because the
+mismatch is global, not local. The fix corrects the *new* area toward the
+original, never the reverse.
 
 **Controls**
 
@@ -436,8 +452,8 @@ the original, never the reverse.
 | **Extension per side** | fraction of the original added to each chosen side (0.25 = +25 %); the resulting size is previewed live |
 | **Model** | any installed model; sampler, CFG and steps follow its catalog defaults |
 | **Prompt** | *optional* — leave empty for a neutral extension, fill it only to steer what appears in the new area |
-| **Edge fill** | **Blurred stretch** (default) replicates the border outward — carries color only, no shape. **Mirror** gives perfect continuity for regular patterns and textures, but reflects any subject near the edge, and the model happily turns that reflection into a second real object — use it only on uniform backgrounds |
-| **Generation strength** | high (0.8–1.0) = invents freely; low = stays close to the pre-fill (good for sky, sand, uniform textures) |
+| **Edge fill** | **Neutral grey** (default on an edit model) — the empty zone is unambiguous. **Blurred stretch** replicates the border outward, carrying color but no shape. **Mirror** gives perfect continuity on regular patterns, but reflects any subject near the edge and the model turns that reflection into a second real object — uniform backgrounds only |
+| **Generation strength** | fallback path only, and greyed out on an edit model (which is driven by the instruction, not by a strength). High = invents freely; low = stays close to the pre-fill |
 | **Feather** | width of the blend at the seam. Note it blends a band of roughly **2× its value** *inside* the original's border — that is what makes the seam disappear. **0 = hard paste**, original strictly untouched everywhere |
 | **Tone match** | 0–1, how strongly the new area is pulled onto the original's contrast and color. Lower it only if the correction over-corrects on an unusual image |
 | **Seed** | -1 = random; a fixed value replays the same extension |

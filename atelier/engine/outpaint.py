@@ -1,6 +1,15 @@
 """Outpaint directionnel (façon Midjourney) : étendre une image à gauche,
 à droite, en haut, en bas — ou tout autour.
 
+CE QUI DÉTERMINE LA QUALITÉ, avant tout réglage : le modèle doit VOIR l'image.
+Un modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) reçoit la toile en référence
+(-r) : son conditionnement image lui donne le contenu de la scène, et une
+consigne d'extension (`instruction()`) lui dit quoi en faire. Un modèle de
+text-to-image ordinaire n'a, lui, qu'un latent bruité en img2img : il ne sait
+pas ce qu'il prolonge, donc il réinvente — bords incohérents garantis, quels
+que soient la force, le fondu ou le remplissage. Le repli img2img existe pour
+ne pas bloquer, pas parce qu'il donne un bon résultat.
+
 Chaîne complète :
 
 1. `plan()`         — géométrie : combien de pixels de chaque côté, toile finale.
@@ -26,9 +35,37 @@ DIRECTIONS = ["left", "right", "top", "bottom"]
 
 # Modes de pré-remplissage de la nouvelle zone.
 FILLS = [
-    ("Étirement flou (recommandé)", "edge"),
+    ("Gris neutre (modèles d'édition)", "neutral"),
+    ("Étirement flou", "edge"),
     ("Miroir (motifs, textures)", "mirror"),
 ]
+
+
+def instruction(p: dict, user_prompt: str = "") -> str:
+    """Consigne d'extension envoyée au modèle d'édition.
+
+    C'est ELLE qui remplace le « sans prompt » : l'utilisateur n'écrit rien, mais
+    le modèle reçoit une instruction explicite. Un modèle d'édition ne devine pas
+    qu'on veut prolonger une image — sans consigne, il se contente de reproduire
+    ou de réinventer, d'où des bords incohérents.
+    """
+    fr = {"left": "left", "right": "right", "top": "top", "bottom": "bottom"}
+    sides = [fr[d] for d in DIRECTIONS if p.get(d)]
+    if len(sides) > 1:
+        where = ", ".join(sides[:-1]) + " and " + sides[-1]
+    else:
+        where = sides[0] if sides else "border"
+    base = (
+        "Outpainting task. The image has empty margins added on the "
+        f"{where}. Fill ONLY those empty margins by continuing the existing "
+        "scene outward, as if the photograph or artwork had always been wider. "
+        "Keep the exact same perspective, horizon line, lighting direction, "
+        "color palette, materials, grain and art style. Objects cut off at the "
+        "old border must continue naturally into the new space. Do not add new "
+        "subjects, do not repeat or mirror existing ones, and do not alter the "
+        "original centre of the image in any way.")
+    extra = (user_prompt or "").strip()
+    return f"{base} In the new area: {extra}" if extra else base
 
 
 def plan(size: tuple[int, int], directions: list[str], amount: float,
@@ -87,9 +124,12 @@ def plan(size: tuple[int, int], directions: list[str], amount: float,
 def build_canvas(img, p: dict, fill: str = "edge"):
     """Toile agrandie, nouvelles zones pré-remplies à partir des bords.
 
-    `fill="edge"` (défaut) — les pixels du bord sont ÉTIRÉS vers l'extérieur puis
-    floutés : on ne transmet que la couleur et la luminosité, aucune forme. C'est
-    le mode sûr.
+    `fill="neutral"` — gris uni. À utiliser avec un MODÈLE D'ÉDITION : il voit
+    l'image via son encodeur vision, et une zone franchement vide se lit comme
+    « à remplir ». Un faux décor l'induirait en erreur.
+    `fill="edge"` — les pixels du bord sont ÉTIRÉS vers l'extérieur puis floutés :
+    on ne transmet que la couleur et la luminosité, aucune forme. Pour les
+    modèles SANS édition, qui n'ont que ça comme point de départ.
     `fill="mirror"` — reflet des bords : la continuité est parfaite pour un motif
     ou une texture, MAIS un sujet proche du bord est dupliqué en miroir, et le
     modèle transforme volontiers ce reflet en un second objet bien réel. À
@@ -102,6 +142,11 @@ def build_canvas(img, p: dict, fill: str = "edge"):
     right, bottom = p["right"], p["bottom"]
     if not any((left, right, top, bottom)):
         return src.copy()
+
+    if fill == "neutral":
+        canvas = Image.new("RGB", (p["width"], p["height"]), (128, 128, 128))
+        canvas.paste(src, (left, top))
+        return canvas
 
     canvas = Image.new("RGB", (p["width"], p["height"]))
     canvas.paste(src, (left, top))

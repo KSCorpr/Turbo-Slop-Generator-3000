@@ -1,9 +1,16 @@
 """Onglet « 🖼️ Outpaint » : étendre une image à gauche / à droite / en haut /
 en bas — ou tout autour — façon Midjourney.
 
-Fonctionne avec **n'importe quel modèle du catalogue** et **sans prompt** :
-l'extension repose sur un remplissage miroir + img2img, puis l'original est
-recollé par-dessus (voir engine/outpaint.py). Aucun modèle d'inpainting requis.
+Deux chemins, selon le modèle choisi (voir engine/outpaint.py) :
+
+* modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) — la toile agrandie part en
+  RÉFÉRENCE (-r) avec une consigne d'extension générée automatiquement. Le
+  modèle voit la scène et la prolonge. C'est le seul mode qui donne un résultat
+  cohérent ;
+* modèle sans édition — repli img2img (-i), conservé pour ne pas bloquer, mais
+  le modèle ne voit rien et réinvente au lieu de prolonger.
+
+Dans les deux cas la tonalité est recalée puis l'original recollé.
 """
 from __future__ import annotations
 
@@ -35,15 +42,30 @@ def _models() -> list:
     return registry.load_base_models(settings.load_prefs())
 
 
+def _is_edit(m) -> bool:
+    """Modèle d'ÉDITION natif (Flux.2, Boogu Edit) : il « voit » l'image qu'on
+    lui passe en référence grâce à son encodeur vision. C'est la seule famille
+    capable de prolonger une scène de façon sensée."""
+    return (m.defaults.get("edit") if m else None) in (True, "full")
+
+
 def _model_choices() -> tuple[list[tuple[str, str]], str | None]:
-    """(choix du menu, modèle installé à présélectionner)."""
-    choices, first_ready = [], None
+    """(choix du menu, modèle à présélectionner).
+
+    On préfère un modèle d'ÉDITION installé : sur les autres, l'outpaint n'a
+    pratiquement aucune chance de donner un résultat cohérent (cf. do_outpaint).
+    """
+    choices, first_edit, first_any = [], None, None
     for m in _models():
         ready = registry.model_is_ready(m)
-        if ready and first_ready is None:
-            first_ready = m.id
-        choices.append((m.name if ready else f"{m.name} — non installé", m.id))
-    return choices, first_ready
+        edit = _is_edit(m)
+        if ready and edit and first_edit is None:
+            first_edit = m.id
+        if ready and first_any is None:
+            first_any = m.id
+        label = m.name if edit else f"{m.name} — sans édition, déconseillé"
+        choices.append((label if ready else f"{label} (non installé)", m.id))
+    return choices, (first_edit or first_any)
 
 
 def _defaults(model_id: str | None) -> dict:
@@ -55,29 +77,27 @@ def _defaults(model_id: str | None) -> dict:
             "cfg_scale": float(d.get("cfg_scale", 1.0) or 1.0),
             "sampler": d.get("sampler") or "euler",
             "schedule": d.get("scheduler") or "auto",
-            "flow_shift": float(d.get("flow_shift", 0.0) or 0.0)}
+            "flow_shift": float(d.get("flow_shift", 0.0) or 0.0),
+            "edit": _is_edit(m)}
 
 
 def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
     with gr.Tab("🖼️ Outpaint", id=tab_id):
-        _mf = sdcpp.mask_flag(settings.find_sd_cli())
         gr.Markdown(
             "### Étendre une image (outpaint)\n"
             "Agrandit la toile dans les directions choisies et laisse le modèle "
-            "**inventer la suite**. Fonctionne avec **tous les modèles** du "
-            "catalogue et **sans prompt** : les bords sont pré-remplis à partir "
-            "des pixels du contour, le modèle génère la nouvelle zone, sa "
-            "tonalité est recalée sur celle de l'original, puis **l'image "
-            "d'origine est recollée** par-dessus.\n\n"
-            + ("✅ Ton moteur gère le **masque d'inpainting** "
-               f"(`{_mf}`) : la zone d'origine n'est pas rebruitée — "
-               "c'est le mode de qualité.\n\n" if _mf else
-               "ℹ️ Ton moteur **ne propose pas d'option de masque** : on "
-               "utilise le repli img2img + recalage + recollage. Ça marche, "
-               "mais une mise à jour du moteur (`update-engine.bat`) peut "
-               "améliorer le raccord.\n\n")
-            + "💡 Le prompt est **facultatif** — utile seulement pour orienter "
-              "ce qui apparaît dans la nouvelle zone.")
+            "**prolonger la scène**, façon Midjourney.\n\n"
+            "**À utiliser avec un modèle d'ÉDITION** (Flux.2 Klein, Boogu Edit). "
+            "Lui seul *regarde* l'image, via son encodeur vision : il sait ce "
+            "qu'il prolonge. La toile agrandie lui est passée en **référence** "
+            "avec une **consigne d'extension écrite automatiquement** — c'est "
+            "ça, le « sans prompt » : tu n'écris rien, mais le modèle reçoit "
+            "une instruction précise.\n\n"
+            "Sur un modèle **sans** édition, l'onglet retombe sur de l'img2img : "
+            "le modèle ne voit pas l'image, il ne reçoit qu'un latent bruité, et "
+            "il **réinvente au lieu de prolonger**. C'est gardé en repli, mais "
+            "le résultat est incohérent par construction — c'est une limite de "
+            "méthode, pas un réglage à ajuster.")
 
         _choices, _first = _model_choices()
         with gr.Row():
@@ -94,20 +114,27 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                 plan_md = gr.Markdown("")
                 model = gr.Dropdown(_choices, value=_first,
                                     label="Modèle utilisé")
+                mode_md = gr.Markdown("")
                 prompt = gr.Textbox(
                     label="Prompt (facultatif)", lines=2,
-                    placeholder="Laisse vide pour une extension neutre…")
+                    placeholder="Laisse vide : la consigne d'extension est "
+                                "écrite automatiquement…",
+                    info="Sert uniquement à préciser ce qui doit apparaître "
+                         "dans la nouvelle zone. La consigne d'extension, elle, "
+                         "est toujours envoyée au modèle.")
                 with gr.Accordion("Réglages avancés", open=False):
                     fill = gr.Radio(
-                        op.FILLS, value="edge", label="Remplissage des bords",
-                        info="Point de départ donné au modèle. « Miroir » colle "
-                             "parfaitement pour un motif régulier, mais duplique "
-                             "un sujet proche du bord.")
+                        op.FILLS, value="neutral",
+                        label="Remplissage des bords",
+                        info="Ce que voit le modèle à la place du vide. « Gris "
+                             "neutre » avec un modèle d'édition : la zone à "
+                             "remplir est sans ambiguïté.")
                     strength = gr.Slider(
                         0.3, 1.0, value=0.85, step=0.05,
-                        label="Force de génération sur la nouvelle zone",
-                        info="Haut = invente librement. Bas = reste proche du "
-                             "pré-remplissage.")
+                        label="Force de génération (modèles SANS édition)",
+                        interactive=False,
+                        info="Sans effet sur un modèle d'édition : celui-ci est "
+                             "piloté par la consigne, pas par une force.")
                     feather = gr.Slider(
                         0, 96, value=24, step=4,
                         label="Fondu de raccord (px)",
@@ -148,9 +175,26 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
             comp.change(_preview, inputs=[image, direction, amount],
                         outputs=[plan_md])
 
-        # Le nombre d'étapes suit le modèle (4 pour Flux.2, 8 pour Krea 2…).
-        model.change(lambda mid: gr.update(value=_defaults(mid)["steps"]),
-                     inputs=[model], outputs=[steps])
+        # Le choix du modèle change tout : nombre d'étapes, chemin utilisé, et
+        # donc quels réglages ont encore un sens.
+        def _on_model(mid):
+            dd = _defaults(mid)
+            if dd["edit"]:
+                note = ("✅ **Modèle d'édition** — la toile lui est passée en "
+                        "référence avec une consigne d'extension : il *voit* "
+                        "l'image et prolonge la scène.")
+            else:
+                note = ("⚠️ **Modèle sans édition** — repli img2img : il ne voit "
+                        "pas l'image, il reçoit un latent bruité et **réinvente** "
+                        "au lieu de prolonger. Résultat souvent incohérent. "
+                        "Préférez Flux.2 Klein ou Boogu Edit.")
+            return (gr.update(value=dd["steps"]),
+                    gr.update(interactive=not dd["edit"]),
+                    gr.update(value="neutral" if dd["edit"] else "edge"),
+                    gr.update(value=note))
+
+        model.change(_on_model, inputs=[model],
+                     outputs=[steps, strength, fill, mode_md])
 
         def do_outpaint(img, dirs, amt, model_id, prompt_txt, fill_v, strength_v,
                         feather_v, tone_v, steps_v, seed_v):
@@ -163,19 +207,10 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                 raise gr.Error(t("Aucune direction sélectionnée."))
 
             settings.ensure_dirs()
+            d = _defaults(model_id)
             canvas = op.build_canvas(img, p, fill=fill_v or "edge")
-            init_path = settings.TMP_DIR / "outpaint_init.png"
-            canvas.save(init_path)
-
-            # Masque : seulement si CE binaire sd-cli connaît l'option (elle est
-            # détectée sur « sd-cli -h »). Avec masque, la zone d'origine n'est
-            # pas rebruitée du tout — c'est nettement mieux. Sans, on retombe sur
-            # l'img2img simple + recalage + recollage, qui marche partout.
-            mask_path = None
-            mf = sdcpp.mask_flag(settings.find_sd_cli())
-            if mf:
-                mask_path = settings.TMP_DIR / "outpaint_mask.png"
-                op.build_mask(p, feather=int(feather_v)).save(mask_path)
+            canvas_path = settings.TMP_DIR / "outpaint_init.png"
+            canvas.save(canvas_path)
 
             try:
                 s = int(seed_v)
@@ -183,22 +218,50 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                 s = -1
             if s < 0:
                 s = random.randint(0, 2**31 - 1)
-            d = _defaults(model_id)
+
+            # ------------------------------------------------------------------
+            # DEUX CHEMINS RADICALEMENT DIFFÉRENTS.
+            #
+            # Modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) -> la toile part en
+            # RÉFÉRENCE (-r) avec une consigne d'extension explicite. Le modèle
+            # REGARDE l'image via son encodeur vision : il sait ce qu'il prolonge.
+            # C'est la seule façon d'obtenir une extension qui ait du sens.
+            #
+            # Modèle SANS édition -> img2img (-i) : le modèle ne voit rien, il ne
+            # reçoit qu'un latent bruité. Il réinvente au lieu de prolonger. On le
+            # garde en repli, mais le résultat est médiocre par construction.
+            # ------------------------------------------------------------------
+            instr = op.instruction(p, prompt_txt)
+            mask_path = None
+            mf = None
+            if not d["edit"]:
+                # Masque : seulement si CE binaire sd-cli connaît l'option.
+                mf = sdcpp.mask_flag(settings.find_sd_cli())
+                if mf:
+                    mask_path = settings.TMP_DIR / "outpaint_mask.png"
+                    op.build_mask(p, feather=int(feather_v)).save(mask_path)
 
             q: "queue.Queue[str | None]" = queue.Queue()
             state: dict = {}
 
             def worker():
                 try:
-                    outs = gen_engine.generate(
-                        model_id=model_id, prompt=prompt_txt or "",
-                        negative="", steps=int(steps_v),
+                    kw = dict(
+                        model_id=model_id, negative="", steps=int(steps_v),
                         cfg_scale=d["cfg_scale"],
                         width=p["width"], height=p["height"], seed=s,
                         batch_count=1, sampler=d["sampler"],
                         schedule=d["schedule"], flow_shift=d["flow_shift"],
-                        init_image=init_path, strength=float(strength_v),
-                        mask_image=mask_path, log=q.put, save_prompt=False)
+                        log=q.put, save_prompt=False)
+                    if d["edit"]:
+                        # Édition : pilotée par le prompt, sans force ni init.
+                        kw.update(prompt=instr, ref_image=[canvas_path])
+                    else:
+                        kw.update(prompt=prompt_txt or "",
+                                  init_image=canvas_path,
+                                  strength=float(strength_v),
+                                  mask_image=mask_path)
+                    outs = gen_engine.generate(**kw)
                     state["outs"] = [str(x) for x in outs]
                 except Exception as exc:  # noqa: BLE001
                     state["err"] = str(exc)
@@ -208,11 +271,14 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
             threading.Thread(target=worker, daemon=True).start()
             logs = [f"Plan : {op.describe(p)}", f"Seed : {s}",
                     f"Remplissage : {fill_v or 'edge'}",
-                    (f"Masque moteur : oui ({mf})" if mf else
-                     "Masque moteur : non supporté par ce binaire — "
-                     "img2img + recollage"),
+                    (f"Mode : ÉDITION (-r + consigne) — le modèle voit l'image"
+                     if d["edit"] else
+                     "Mode : img2img (-i) — modèle sans édition, résultat "
+                     "incertain" + (f" · masque {mf}" if mf else "")),
                     f"Modèle : {model_id} · {d['sampler']} · "
                     f"cfg {d['cfg_scale']} · {int(steps_v)} pas"]
+            if d["edit"]:
+                logs.append(f"Consigne : {instr[:160]}…")
             yield t("⏳ Extension en cours…"), gr.update(), "\n".join(logs)
             while True:
                 line = q.get()
