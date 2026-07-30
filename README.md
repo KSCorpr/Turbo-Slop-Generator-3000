@@ -825,6 +825,19 @@ maintenance) — the fastest way to know what a slider actually does.
   `CUDA: True/False`; if False, fix NVIDIA drivers and reinstall the tool.
 - **Creative SDXL upscale OOM** → lower the scale or tile size (it auto-offloads
   under 12 GB, but a huge target can still exceed memory).
+- **`ConnectionResetError [WinError 10054]` in the console** → harmless, and
+  silenced since. It is a known Python bug on Windows (bpo-39010): when the
+  browser drops a connection (F5, tab closed, cancelled image load), asyncio's
+  Proactor loop calls `socket.shutdown()` on an already-dead socket and prints
+  `Exception in callback`. The request is already finished server-side. `app.py`
+  now intercepts it *and* completes the cleanup the raised exception used to
+  skip — the socket was actually leaking, which is why Python also logged
+  `unclosed transport`. Only connection errors are caught; anything else still
+  propagates.
+- **A Toolkit add-on fails at import (`DTensor`, `diffusers`, numpy…)** → a
+  shared package drifted. Run `maintenance.bat`: it names the offending package,
+  then reinstall that add-on. The SeedVR2 installer also ends with a smoke test
+  that catches this at install time.
 
 ---
 

@@ -53,8 +53,50 @@ def _disable_brotli() -> None:
         pass
 
 
+def _quiet_connection_reset() -> None:
+    """Windows : « ConnectionResetError [WinError 10054] » dans la boucle asyncio.
+
+    Quand le navigateur ferme brutalement une connexion (F5, onglet fermé,
+    chargement d'image annulé), la boucle Proactor de Windows appelle
+    `_call_connection_lost`, dont le bloc `finally` fait un
+    `socket.shutdown()` sur une socket déjà morte. Ça lève, asyncio l'imprime
+    en « Exception in callback », et ça inquiète pour rien : la requête est
+    finie côté serveur. Bug Python connu (bpo-39010).
+
+    On ne se contente PAS d'avaler l'exception : elle interrompt le `finally`
+    en plein milieu, donc `close()`, le détachement du serveur et le drapeau de
+    fin ne s'exécutent jamais — la socket fuirait. On termine donc le ménage
+    nous-mêmes. Seules les erreurs de connexion sont interceptées ; tout le
+    reste continue de remonter normalement.
+    """
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport as _T
+    except Exception:  # noqa: BLE001
+        return
+    orig = _T._call_connection_lost
+
+    def _call_connection_lost(self, exc):
+        try:
+            orig(self, exc)
+        except (ConnectionResetError, ConnectionAbortedError):
+            try:
+                if getattr(self, "_sock", None) is not None:
+                    self._sock.close()
+                self._sock = None
+                server = getattr(self, "_server", None)
+                if server is not None:
+                    server._detach()
+                    self._server = None
+                self._called_connection_lost = True
+            except Exception:  # noqa: BLE001
+                pass
+
+    _T._call_connection_lost = _call_connection_lost
+
+
 _patch_gradio_client()
 _disable_brotli()
+_quiet_connection_reset()
 
 from atelier import APP_NAME, __version__, hardware, i18n, net, settings
 from atelier.ui.convert_tab import build_convert_tab
