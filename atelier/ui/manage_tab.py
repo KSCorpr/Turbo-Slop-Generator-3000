@@ -541,6 +541,37 @@ def build_manage_tab():
                 "sous-process. Le VAE (~0,5 Go) est récupéré automatiquement au "
                 "premier agrandissement.")
 
+        with gr.Accordion("🔄 Mettre à jour l'app (copier-coller du ZIP)",
+                          open=False):
+            gr.Markdown(
+                "**Après CHAQUE mise à jour par copier-coller : lance "
+                "`maintenance.bat`.** Extraire un ZIP par-dessus *ajoute et "
+                "écrase, mais ne supprime jamais* : les fichiers retirés en "
+                "amont restent en orphelins, et un `__pycache__` périmé peut "
+                "faire tourner de l'ancien code.\n\n"
+                "**Ce que le ZIP remplace… et ce qu'il ne touche pas :**\n\n"
+                "| | Remplacé ? |\n| --- | --- |\n"
+                "| Code de l'app, catalogue de modèles, docs | ✅ oui |\n"
+                "| Moteur `bin/` | ❌ non — `update-engine.bat` seulement quand "
+                "une nouveauté de sd.cpp est nécessaire |\n"
+                "| Modèles, LoRA, sorties, préférences | ❌ non — c'est voulu |\n"
+                "| Add-ons du Toolkit (`tools_repo/`) | ❌ **non, et c'est le "
+                "piège** |\n\n"
+                "⚠️ **Le piège.** Certains add-ons ne sont pas que des poids : "
+                "**SeedVR2 applique des correctifs au code qu'il télécharge** "
+                "(config d'architecture, sélection du modèle, versions "
+                "épinglées). Quand une mise à jour change *la façon dont un "
+                "add-on s'installe*, mettre à jour l'app laisse l'add-on figé "
+                "dans son ancien état — et ça ne se voit qu'à l'usage suivant. "
+                "Dans ce cas : **reclique sur son bouton « Installer »**. Les "
+                "poids déjà téléchargés ne sont pas repris.\n\n"
+                "`maintenance.bat` vérifie ça pour toi et nomme précisément ce "
+                "qui est périmé — tu n'as pas à deviner.\n\n"
+                "**Résumé** : `maintenance.bat` à chaque fois ; "
+                "`update-engine.bat` seulement sur demande ; réinstaller un "
+                "add-on seulement si la maintenance ou un message d'erreur le "
+                "réclame.")
+
         with gr.Accordion("🌐 Réseau, partage & maintenance", open=False):
             gr.Markdown(
                 "**Endpoint Hugging Face** — miroir alternatif si HF est "

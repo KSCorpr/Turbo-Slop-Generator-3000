@@ -241,6 +241,60 @@ def check_deps() -> None:
     else:
         print(OK + "présentes.")
     check_diffusers()
+    check_addons_sync()
+
+
+def check_addons_sync() -> None:
+    """Add-ons dont l'installation applique des correctifs au code téléchargé.
+
+    « tools_repo/ » n'est PAS dans le dépôt : une mise à jour par copier-coller
+    remplace notre code mais ne retouche à rien dans les add-ons déjà installés.
+    Si on a modifié la façon dont un add-on s'installe, il reste donc figé dans
+    son ancien état — sans que rien ne le signale, jusqu'à l'erreur au premier
+    usage. On le détecte ici.
+    """
+    print("• Add-ons à ré-installer après mise à jour…")
+    base = ROOT / "tools_repo" / "seedvr2"
+    if not base.is_dir():
+        print(OK + "aucun add-on concerné (SeedVR2 non installé).")
+        return
+
+    repo = base / "repo"
+    todo: list[str] = []
+    cfg = repo / "configs_1_4b" / "main.yaml"
+    sel = repo / "src" / "core" / "model_configuration.py"
+
+    if not (repo / "inference_cli.py").is_file():
+        todo.append("code d'inférence absent")
+    if not cfg.is_file():
+        todo.append("config 1.4B absente")
+    elif "DÉRIVÉ AUTOMATIQUEMENT" not in cfg.read_text(encoding="utf-8",
+                                                       errors="replace"):
+        todo.append("config 1.4B figée (ancienne version) au lieu d'être "
+                    "dérivée du dépôt")
+    if sel.is_file() and "configs_1_4b" not in sel.read_text(encoding="utf-8",
+                                                             errors="replace"):
+        todo.append("sélection d'architecture non étendue au 1.4B")
+    models = base / "models" / "SEEDVR2"
+    weights = (list(models.glob("*.safetensors")) + list(models.glob("*.gguf"))
+               if models.is_dir() else [])
+    if not weights:
+        legacy = base / "models"
+        if legacy.is_dir() and (list(legacy.glob("*.safetensors"))
+                                + list(legacy.glob("*.gguf"))):
+            todo.append("poids restés dans l'ancien dossier (models/ au lieu "
+                        "de models/SEEDVR2/)")
+        else:
+            todo.append("poids absents")
+
+    if todo:
+        _warn("SeedVR2 n'est pas à jour :")
+        for t in todo:
+            _warn(f"    - {t}")
+        _warn("  Correctif : Toolkit → Restaurer (SeedVR2) → « Installer "
+              "SeedVR2 ». Les poids déjà présents ne sont pas retéléchargés.")
+    else:
+        print(OK + "SeedVR2 conforme à l'installeur actuel.")
 
 
 def check_diffusers() -> None:

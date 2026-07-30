@@ -96,6 +96,25 @@ everything compiles, the model catalog is valid, and the dependencies + `sd-cli`
 engine are present. It never touches `models/`, `loras/`, `outputs/`, `userdata/`,
 `python/` or `bin/`.
 
+**What a copy-paste update does and does not refresh**
+
+| | In the ZIP? | Refreshed by copy-paste |
+| --- | --- | --- |
+| App code, `config/models.yaml`, docs | yes | **yes** |
+| Engine binary (`bin/`) | no | no — run `update-engine.bat` only when a new sd.cpp feature is needed |
+| Models, LoRAs, outputs, prefs (`models/`, `loras/`, `outputs/`, `userdata/`) | no | no — kept, which is the point |
+| Toolkit add-ons (`tools_repo/`) | no | **no — and this one bites** |
+
+That last row matters. Some add-ons are not just downloaded weights: **SeedVR2
+patches the inference code it clones** (architecture config, model selection,
+pinned dependency versions). When a release changes *how an add-on installs*,
+updating the app leaves the installed add-on frozen in its old state, and you
+only find out at the next use. So: **after updating, if an add-on misbehaves,
+re-run its one-click installer** — weights already on disk are not re-downloaded.
+
+`maintenance` now checks this for you and names exactly what is stale, so you
+don't have to guess.
+
 ---
 
 ## Quick start
