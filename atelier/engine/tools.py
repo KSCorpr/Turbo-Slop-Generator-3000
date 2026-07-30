@@ -284,10 +284,10 @@ ENHANCE_STYLES = ("generic", "krea2", "mj")
 #  SeedVR2 — upscale de RESTAURATION en UN pas (image fixe, sans prompt)
 # --------------------------------------------------------------------------- #
 def seedvr2_is_installed() -> bool:
+    """Code d'inférence + au moins un modèle de DIFFUSION (le VAE seul ne
+    suffit pas : le CLI le télécharge tout seul dans le même dossier)."""
     return ((SEEDVR2_REPO_DIR / "inference_cli.py").is_file()
-            and SEEDVR2_MODEL_DIR.is_dir()
-            and bool(list(SEEDVR2_MODEL_DIR.glob("*.safetensors"))
-                     or list(SEEDVR2_MODEL_DIR.glob("*.gguf"))))
+            and bool(seedvr2_models()))
 
 
 def seedvr2_has_1_4b() -> bool:
@@ -303,17 +303,37 @@ def seedvr2_has_1_4b() -> bool:
         return False
 
 
+# Le VAE est téléchargé par le CLI dans LE MÊME dossier que les modèles de
+# diffusion (« ema_vae_fp16.safetensors »). Sans filtre il apparaissait dans la
+# liste des modèles — et en tête, par ordre alphabétique : c'est lui qui partait
+# en --dit_model, que le CLI refusait à juste titre.
+_SEEDVR2_NOT_DIT = ("vae",)
+
+
 def seedvr2_models() -> list[str]:
-    """Poids présents sur le disque.
+    """Modèles de DIFFUSION présents sur le disque.
 
     Le CLI amont accepte, en plus de son catalogue 3B/7B, tout fichier trouvé
     dans SON dossier de modèles — c'est ce qui rend le 1.4B utilisable sans
-    toucher à son registre. On ne liste donc QUE ce dossier-là : un fichier
-    ailleurs serait proposé dans l'UI puis refusé par le CLI."""
+    toucher à son registre. On ne liste donc QUE ce dossier-là (un fichier
+    ailleurs serait proposé puis refusé), et on en écarte le VAE, qui y cohabite.
+    """
     if not SEEDVR2_MODEL_DIR.is_dir():
         return []
+    # Pas de repli « à défaut, tout lister » : ça réintroduirait le VAE dans le
+    # menu. Une liste vide est la réponse honnête — il manque un modèle.
     return [p.name for p in sorted(SEEDVR2_MODEL_DIR.iterdir())
-            if p.suffix.lower() in (".safetensors", ".gguf")]
+            if p.suffix.lower() in (".safetensors", ".gguf")
+            and not any(k in p.name.lower() for k in _SEEDVR2_NOT_DIT)]
+
+
+def seedvr2_default_model() -> str | None:
+    """Modèle présélectionné : le 1.4B, celui que l'installeur met en place."""
+    ms = seedvr2_models()
+    if not ms:
+        return None
+    return next((m for m in ms
+                 if "1.4b" in m.lower() or "6l" in m.lower()), ms[0])
 
 
 def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
@@ -330,7 +350,11 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
     models = seedvr2_models()
     if not models:
         raise ToolError("Aucun poids SeedVR2 trouvé. Relancez l'installation.")
-    model = model or models[0]
+    model = model or seedvr2_default_model()
+    if any(k in (model or "").lower() for k in _SEEDVR2_NOT_DIT):
+        raise ToolError(
+            f"« {model} » est le VAE, pas un modèle de diffusion. Cliquez "
+            "« ↻ Rafraîchir » puis choisissez un modèle « seedvr2_… ».")
 
     settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")

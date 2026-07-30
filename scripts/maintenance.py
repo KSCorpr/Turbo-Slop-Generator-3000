@@ -275,13 +275,16 @@ def check_addons_sync() -> None:
     if sel.is_file() and "configs_1_4b" not in sel.read_text(encoding="utf-8",
                                                              errors="replace"):
         todo.append("sélection d'architecture non étendue au 1.4B")
-    models = base / "models" / "SEEDVR2"
-    weights = (list(models.glob("*.safetensors")) + list(models.glob("*.gguf"))
-               if models.is_dir() else [])
-    if not weights:
-        legacy = base / "models"
-        if legacy.is_dir() and (list(legacy.glob("*.safetensors"))
-                                + list(legacy.glob("*.gguf"))):
+    def _dits(d: Path) -> list:
+        """Modèles de diffusion : le VAE cohabite dans le même dossier et ne
+        compte pas — sinon un dossier ne contenant que lui passerait pour OK."""
+        if not d.is_dir():
+            return []
+        return [p for p in list(d.glob("*.safetensors")) + list(d.glob("*.gguf"))
+                if "vae" not in p.name.lower()]
+
+    if not _dits(base / "models" / "SEEDVR2"):
+        if _dits(base / "models"):
             todo.append("poids restés dans l'ancien dossier (models/ au lieu "
                         "de models/SEEDVR2/)")
         else:

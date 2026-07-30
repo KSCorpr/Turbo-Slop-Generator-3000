@@ -320,7 +320,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                                  "4 fois le côté court de votre image.")
                         v_model = gr.Dropdown(
                             tools.seedvr2_models(),
-                            value=(tools.seedvr2_models() or [None])[0],
+                            value=tools.seedvr2_default_model(),
                             label="Poids utilisés")
                         with gr.Accordion("Réglages avancés", open=False):
                             v_color = gr.Dropdown(
@@ -359,15 +359,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                 def _install_seedvr2():
                     for msg in tools.install_seedvr2_stream():
                         yield msg, gr.update()
-                    ms = tools.seedvr2_models()
-                    yield gr.update(), gr.update(choices=ms,
-                                                 value=(ms or [None])[0])
+                    yield gr.update(), gr.update(
+                        choices=tools.seedvr2_models(),
+                        value=tools.seedvr2_default_model())
 
                 v_inst.click(_install_seedvr2, outputs=[v_inst_log, v_model])
 
                 def _refresh_seedvr2():
-                    ms = tools.seedvr2_models()
-                    return gr.update(choices=ms, value=(ms or [None])[0])
+                    return gr.update(choices=tools.seedvr2_models(),
+                                     value=tools.seedvr2_default_model())
 
                 v_refresh.click(_refresh_seedvr2, outputs=[v_model])
 
