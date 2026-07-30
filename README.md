@@ -397,13 +397,21 @@ is the **target short-side resolution**.
 > (chosen to span Pascal→Ada): its `torch._library.infer_schema` cannot parse the
 > `X | None` annotations that diffusers ≥ 0.35 uses, so it raises on the very
 > first import. `maintenance` verifies the installed version and tells you which
-> add-on to reinstall if it drifted.
+> add-on to reinstall if it drifted. `opencv-python` is pinned `<5` for the same
+> reason: version 5 requires numpy ≥ 2, while the app pins numpy < 2 for the
+> widest torch/torchvision compatibility.
 
 The **1.4B** weights come from
 [`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a
 6-block distillation of the 7B teacher. Upstream only knows the 3B and 7B, so the
-installer adds a `configs_1_4b/main.yaml` (architecture supplied by the weights'
-author, cross-checked tensor by tensor) and extends one line in
+installer writes a `configs_1_4b/main.yaml` — **derived at install time from the
+repo's own `configs_7b/main.yaml`**, changing only `num_layers` / `mm_layers` to
+6 (the derived `block_type` / `window` / `window_method` fields are OmegaConf
+interpolations on `${.num_layers}`, so they follow by themselves). Deriving
+rather than shipping a frozen copy matters: a static config goes stale as
+upstream's `NaDiT` gains parameters, which surfaces as
+`NaDiT.__init__() missing 1 required positional argument`. It also extends one
+line in
 `src/core/model_configuration.py` that picks the config directory. That edit is
 **idempotent and verified**: if the upstream pattern ever changes, the installer
 refuses to patch, says so, and the official 3B/7B models keep working.

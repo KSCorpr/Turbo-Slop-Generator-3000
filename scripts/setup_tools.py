@@ -151,6 +151,16 @@ def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
 # --------------------------------------------------------------------------- #
 DIFFUSERS_PIN = "diffusers==0.33.1"
 
+# opencv-python 5.x EXIGE numpy >= 2. Or pin_numpy() fige numpy < 2 pour toute
+# l'app (compatibilité torch/torchvision la plus large). Sans borne, pip prenait
+# opencv 5, puis pin_numpy le redescendait à 1.26 : pip signalait alors un
+# conflit non résolu et opencv se retrouvait avec un numpy qu'il ne supporte pas.
+# opencv 4.x fonctionne avec numpy 1.x — c'est la combinaison cohérente ici.
+OPENCV_PIN = "opencv-python>=4.8,<5"
+
+# Paquets dont on IMPOSE la version, quoi qu'en disent les requirements amont.
+_PINS = {"diffusers": DIFFUSERS_PIN, "opencv-python": OPENCV_PIN}
+
 
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
@@ -294,12 +304,51 @@ _SEEDVR2_PATCH = ("('./configs_1_4b' if (\"1.4b\" in dit_model.lower() or "
                   "'./configs_7b' if \"7b\" in dit_model else './configs_3b')")
 
 
+def _seedvr2_write_1_4b_config(repo: Path) -> None:
+    """Écrit configs_1_4b/main.yaml en le DÉRIVANT de configs_7b du dépôt.
+
+    Le 1.4B est une tranche de 6 blocs du 7B : toutes les autres dimensions sont
+    celles du 7B. Partir du fichier LIVRÉ PAR LE DÉPÔT et n'y changer que la
+    profondeur garantit qu'on passe exactement les paramètres attendus par le
+    NaDiT installé — y compris ceux ajoutés en amont depuis. Une copie figée
+    prend du retard : c'est ainsi qu'il manquait « qk_rope », d'où
+    « NaDiT.__init__() missing 1 required positional argument ».
+
+    Les champs dérivés (block_type, window, window_method) sont des
+    interpolations OmegaConf sur ${.num_layers} : ils suivent tout seuls.
+    """
+    import re
+    dst_dir = repo / "configs_1_4b"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / "main.yaml"
+    src = repo / "configs_7b" / "main.yaml"
+
+    if src.is_file():
+        text = src.read_text(encoding="utf-8")
+        text, n1 = re.subn(r"(?m)^(\s*num_layers:\s*)\d+", r"\g<1>6", text)
+        text, n2 = re.subn(r"(?m)^(\s*mm_layers:\s*)\d+", r"\g<1>6", text)
+        if n1:
+            header = (
+                "# SeedVR2-1.4B — DÉRIVÉ AUTOMATIQUEMENT de configs_7b/main.yaml\n"
+                "# par scripts/setup_tools.py. Ne pas éditer à la main : le\n"
+                "# fichier est réécrit à chaque installation.\n"
+                "# Le 1.4B est une distillation de 6 blocs du 7B ; seules la\n"
+                "# profondeur (num_layers) et mm_layers changent.\n")
+            dst.write_text(header + text, encoding="utf-8")
+            print(f"[OK] Config 1.4B derivee du 7B du depot "
+                  f"(num_layers x{n1}, mm_layers x{n2} -> 6).")
+            return
+        print("[!] num_layers introuvable dans configs_7b/main.yaml.")
+    else:
+        print("[!] configs_7b/main.yaml introuvable.")
+    dst.write_text(SEEDVR2_CFG_1_4B, encoding="utf-8")
+    print("[!] Repli sur la config embarquee — elle peut etre EN RETARD sur le")
+    print("    code du depot (erreur typique : « NaDiT.__init__() missing ... »).")
+
+
 def _seedvr2_enable_1_4b(repo: Path) -> bool:
     """Ajoute la config 1.4B et enseigne au dépôt à la sélectionner."""
-    cfg = repo / "configs_1_4b"
-    cfg.mkdir(parents=True, exist_ok=True)
-    (cfg / "main.yaml").write_text(SEEDVR2_CFG_1_4B, encoding="utf-8")
-    print(f"[OK] Config 1.4B ecrite : {cfg / 'main.yaml'}")
+    _seedvr2_write_1_4b_config(repo)
 
     target = repo / "src" / "core" / "model_configuration.py"
     if not target.is_file():
@@ -377,13 +426,15 @@ def install_seedvr2():
             name = line.split(">=")[0].split("==")[0].split("<")[0].strip()
             if name.lower() in ("torch", "torchvision", "torchaudio"):
                 continue
-            # diffusers : l'amont demande « >=0.33.1 » SANS borne haute. Laisser
-            # pip prendre la derniere cassait tout — voir DIFFUSERS_PIN.
-            if name.lower() == "diffusers":
+            # Les requirements amont sont non bornés sur plusieurs paquets :
+            # pip prenait la dernière version, qui casse notre socle (torch 2.4
+            # + numpy < 2). On substitue nos versions — voir _PINS.
+            if name.lower() in _PINS:
                 continue
             reqs.append(line)
-    reqs.append(DIFFUSERS_PIN)
-    print(f"Installation des dependances SeedVR2 (dont {DIFFUSERS_PIN})…")
+    reqs.extend(_PINS.values())
+    print("Installation des dependances SeedVR2 (dont "
+          + ", ".join(_PINS.values()) + ")…")
     sh([sys.executable, "-m", "pip", "install", *reqs])
 
     # 3) poids du 1.4B, DANS le dossier que le CLI scanne (sinon --dit_model
