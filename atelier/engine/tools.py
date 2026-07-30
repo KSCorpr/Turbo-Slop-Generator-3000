@@ -28,7 +28,14 @@ UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safe
 # en sous-process (chemin officiellement documenté « sans ComfyUI »).
 SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
 SEEDVR2_REPO_DIR = SEEDVR2_DIR / "repo"
-SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models"
+# Sans ComfyUI, le CLI amont résout son dossier de modèles en RELATIF —
+# « ./models/SEEDVR2 » depuis le répertoire courant — et il bâtit la liste des
+# valeurs acceptées par --dit_model À PARTIR DE CE DOSSIER, au moment où argparse
+# se construit. Nos poids doivent donc y être, et le process doit tourner avec
+# SEEDVR2_DIR comme répertoire courant : c'est ce couple qui rend le 1.4B
+# sélectionnable.
+SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models" / "SEEDVR2"
+_SEEDVR2_LEGACY_MODEL_DIR = SEEDVR2_DIR / "models"   # emplacement des 1res installs
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -179,14 +186,16 @@ def _to_src(image: Image.Image | str | Path, prefix: str) -> Path:
 
 
 def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
-              err_msg: str, gpu_index: int | None = None) -> None:
+              err_msg: str, gpu_index: int | None = None,
+              cwd: Path | None = None) -> None:
     global _CANCELLED
     env = settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))
     _CANCELLED = False
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, cwd=str(settings.ROOT), env=env,
+                            text=True, bufsize=1,
+                            cwd=str(cwd or settings.ROOT), env=env,
                             encoding="utf-8", errors="replace")
     with _LOCK:
         _ACTIVE.add(proc)
@@ -298,13 +307,13 @@ def seedvr2_models() -> list[str]:
     """Poids présents sur le disque.
 
     Le CLI amont accepte, en plus de son catalogue 3B/7B, tout fichier trouvé
-    dans son dossier de modèles — c'est ce qui rend le 1.4B utilisable sans
-    toucher à son registre."""
+    dans SON dossier de modèles — c'est ce qui rend le 1.4B utilisable sans
+    toucher à son registre. On ne liste donc QUE ce dossier-là : un fichier
+    ailleurs serait proposé dans l'UI puis refusé par le CLI."""
     if not SEEDVR2_MODEL_DIR.is_dir():
         return []
-    out = [p.name for p in sorted(SEEDVR2_MODEL_DIR.iterdir())
-           if p.suffix.lower() in (".safetensors", ".gguf")]
-    return out
+    return [p.name for p in sorted(SEEDVR2_MODEL_DIR.iterdir())
+            if p.suffix.lower() in (".safetensors", ".gguf")]
 
 
 def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
@@ -346,12 +355,14 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
                 "--vae_encode_tiled", "--vae_encode_tile_size", str(int(tile_size))]
     # Le GPU est choisi via CUDA_VISIBLE_DEVICES (_run_tool) : on ne passe PAS
     # --cuda_device en plus, les deux se marcheraient dessus.
+    # cwd = SEEDVR2_DIR : le CLI résout « ./models/SEEDVR2 » depuis là, et c'est
+    # ce dossier qu'il scanne pour décider des valeurs acceptées par --dit_model.
     _run_tool(cmd, log,
               "L'agrandissement SeedVR2 a échoué (voir le journal). Si le "
               "journal montre une erreur à l'IMPORT (diffusers, torch), "
               "relancez « Installer SeedVR2 » : l'installation d'un autre "
               "add-on a pu changer la version de diffusers sous SeedVR2.",
-              gpu_index=_gen_gpu_index())
+              gpu_index=_gen_gpu_index(), cwd=SEEDVR2_DIR)
     return _collect(out_dir, "seedvr2", stamp)
 
 

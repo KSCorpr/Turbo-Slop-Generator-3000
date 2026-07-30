@@ -15,6 +15,8 @@ sans verrouiller de DLL). Lançable depuis l'interface ou en ligne :
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -318,11 +320,38 @@ def _seedvr2_enable_1_4b(repo: Path) -> bool:
     return True
 
 
+def _seedvr2_cache_dir(base: Path, repo: Path) -> Path:
+    """Dossier de modèles que le CLI amont va RÉELLEMENT scanner.
+
+    Sans ComfyUI il renvoie un chemin RELATIF (« ./models/SEEDVR2 »), résolu
+    depuis le repertoire courant — et c'est ce dossier, et lui seul, qui
+    alimente la liste des valeurs acceptées par --dit_model. On le demande au
+    depot lui-meme plutot que de le deviner : si l'amont renomme son dossier,
+    on suit automatiquement.
+    """
+    code = ("import sys;sys.path.insert(0, r'%s');"
+            "from src.utils.constants import get_base_cache_dir;"
+            "print(get_base_cache_dir())" % str(repo))
+    try:
+        r = subprocess.run([sys.executable, "-c", code], cwd=str(base),
+                           capture_output=True, text=True, timeout=120,
+                           encoding="utf-8", errors="replace")
+        line = (r.stdout or "").strip().splitlines()[-1].strip()
+        if line:
+            d = Path(line)
+            resolved = d if d.is_absolute() else (base / d)
+            print(f"[OK] Dossier de modeles du CLI : {resolved}")
+            return resolved.resolve()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[!] Detection du dossier de modeles impossible ({exc}).")
+    fallback = base / "models" / "SEEDVR2"
+    print(f"[!] Repli sur {fallback}")
+    return fallback
+
+
 def install_seedvr2():
     base = settings.ROOT / "tools_repo" / "seedvr2"
     repo = base / "repo"
-    models = base / "models"
-    models.mkdir(parents=True, exist_ok=True)
 
     ensure_torch_cuda()
 
@@ -357,7 +386,22 @@ def install_seedvr2():
     print(f"Installation des dependances SeedVR2 (dont {DIFFUSERS_PIN})…")
     sh([sys.executable, "-m", "pip", "install", *reqs])
 
-    # 3) poids du 1.4B (le VAE est recupere automatiquement au 1er lancement)
+    # 3) poids du 1.4B, DANS le dossier que le CLI scanne (sinon --dit_model
+    #    refuse le fichier : sa liste de choix est bâtie depuis ce dossier).
+    models = _seedvr2_cache_dir(base, repo)
+    models.mkdir(parents=True, exist_ok=True)
+
+    # Migration des installations precedentes : les poids etaient deposes un
+    # cran au-dessus. On DEPLACE au lieu de retelecharger 2,9 Go.
+    legacy = base / "models"
+    if legacy.resolve() != models.resolve() and legacy.is_dir():
+        for old in list(legacy.glob("*.safetensors")) + list(legacy.glob("*.gguf")):
+            dest = models / old.name
+            if dest.exists():
+                continue
+            print(f"Deplacement de {old.name} vers {models.name}/ …")
+            shutil.move(str(old), str(dest))
+
     print(f"\nTelechargement des poids 1.4B ({SEEDVR2_W_REPO})…")
     from huggingface_hub import hf_hub_download
     p = hf_hub_download(repo_id=SEEDVR2_W_REPO, filename=SEEDVR2_DIT,

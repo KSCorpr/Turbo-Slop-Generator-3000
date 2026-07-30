@@ -406,9 +406,17 @@ installer adds a `configs_1_4b/main.yaml` (architecture supplied by the weights'
 author, cross-checked tensor by tensor) and extends one line in
 `src/core/model_configuration.py` that picks the config directory. That edit is
 **idempotent and verified**: if the upstream pattern ever changes, the installer
-refuses to patch, says so, and the official 3B/7B models keep working. Any weight
-file dropped in the models folder is selectable, because upstream's
-`get_available_dit_models()` also discovers models on disk.
+refuses to patch, says so, and the official 3B/7B models keep working.
+
+A weight file is only selectable if it sits in **the exact folder upstream
+scans**. Without ComfyUI, `get_base_cache_dir()` returns the *relative* path
+`./models/SEEDVR2`, resolved against the **current working directory**, and
+`--dit_model`'s list of valid choices is built from that folder when argparse is
+constructed. So two things must line up: the weights live in
+`tools_repo/seedvr2/models/SEEDVR2/`, and the CLI is launched with
+`cwd=tools_repo/seedvr2`. The installer asks the cloned repo itself where that
+folder is rather than hard-coding it, and migrates weights from the older
+location instead of re-downloading 2.9 GB.
 
 The VAE (~0.5 GB) is fetched automatically on the first upscale.
 
