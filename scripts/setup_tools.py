@@ -76,11 +76,18 @@ DIFFUSERS_PIN = "diffusers==0.33.1"
 # borne d'opencv — pip la trouve.
 NUMPY_PIN = "numpy>=1.24,<2"
 
-# transformers < 5 : EXIGE par les quatre autres add-ons (profondeur, detourage,
-# SAM, ameliorateur de prompt). Sans cette borne, l'install de SeedVR2 montait
-# transformers en 5.x — et entrainait huggingface-hub en 1.x — cassant des
-# outils qui marchaient, sans le moindre avertissement.
-TRANSFORMERS_PIN = "transformers>=4.45,<5"
+# transformers : borne BASSE pour les quatre add-ons qui l'utilisent
+# (profondeur, detourage, SAM, ameliorateur), borne HAUTE dictee par torch.
+#
+# « <5 » ne suffisait pas : les 4.5x recents importent
+# « from torch.distributed.tensor import DTensor », or ce module PUBLIC n'existe
+# qu'a partir de torch 2.5 (en 2.4 c'est torch.distributed._tensor). Sur notre
+# torch 2.4.1 ca donne un ImportError en cascade des que diffusers touche a
+# transformers. On reste donc dans la generation contemporaine de torch 2.4 /
+# diffusers 0.33.
+# ⚠️ Cette borne est liee a _torch_setup : si torch passe un jour en >= 2.5
+# (carte Blackwell, ou abandon de Pascal), elle peut etre relevee.
+TRANSFORMERS_PIN = "transformers>=4.45,<4.50"
 
 # Paquets dont on IMPOSE la version, quoi qu'en disent les requirements amont.
 # Tous les add-ons partagent un seul Python : ce qui n'est pas borne ici finit
@@ -412,6 +419,41 @@ def _seedvr2_cache_dir(base: Path, repo: Path) -> Path:
     return fallback
 
 
+def _seedvr2_smoke_test() -> bool:
+    """Vérifie que torch + transformers + diffusers cohabitent VRAIMENT.
+
+    On rejoue la chaîne d'imports exacte qui plantait au premier usage
+    (diffusers -> loaders -> transformers -> torch.distributed), dans un
+    sous-process pour ne rien verrouiller. Mieux vaut échouer maintenant, avec
+    les numéros de version sous les yeux, que dans dix minutes au milieu d'un
+    agrandissement.
+    """
+    code = (
+        "import torch, transformers, diffusers;"
+        "from diffusers.models.autoencoders.vae import DecoderOutput;"
+        "import numpy;"
+        "print('    torch', torch.__version__, '| transformers',"
+        " transformers.__version__, '| diffusers', diffusers.__version__,"
+        " '| numpy', numpy.__version__)")
+    print("\nVerification de la pile Python (torch/transformers/diffusers)…")
+    try:
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                           text=True, timeout=900, encoding="utf-8",
+                           errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[!] Verification impossible ({exc}).")
+        return True                      # on ne bloque pas sur l'outil de test
+    if r.returncode == 0:
+        print(r.stdout.strip())
+        print("[OK] Pile coherente.")
+        return True
+    print("[X] La pile Python est incoherente :")
+    tail = (r.stderr or r.stdout or "").strip().splitlines()
+    for line in tail[-6:]:
+        print("    " + line)
+    return False
+
+
 def install_seedvr2():
     base = settings.ROOT / "tools_repo" / "seedvr2"
     repo = base / "repo"
@@ -477,6 +519,17 @@ def install_seedvr2():
     ok = _seedvr2_enable_1_4b(repo)
 
     pin_numpy()
+
+    # 5) TEST A BLANC de la pile. Les incompatibilites torch/transformers/
+    #    diffusers se manifestent a l'IMPORT, en cascade, avec des tracebacks
+    #    illisibles — et jusqu'ici seulement au premier agrandissement, soit
+    #    bien apres l'installation. On les provoque ici, tout de suite.
+    if not _seedvr2_smoke_test():
+        print("\n[X] L'installation est posee mais la pile Python n'est PAS")
+        print("    utilisable. Les versions ci-dessus sont incompatibles entre")
+        print("    elles ; relancez maintenance.bat, qui nomme le paquet fautif.")
+        return
+
     print("\n[OK] SeedVR2 installe (onglet Toolkit -> Restauration).")
     if ok:
         print("    Modele 1.4B pret. Le VAE (~0,5 Go) sera telecharge")

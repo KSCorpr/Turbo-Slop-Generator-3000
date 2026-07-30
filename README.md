@@ -416,7 +416,7 @@ is the **target short-side resolution**.
 > | --- | --- |
 > | `diffusers==0.33.1` | satisfies SeedVR2's `>=0.33.1` and predates `attention_dispatch.py`, whose `X \| None` annotations torch 2.4.1's `infer_schema` cannot parse |
 > | `numpy>=1.24,<2` | required by the torch 2.4.1 / torchvision 0.19 base |
-> | `transformers>=4.45,<5` | the depth, background-removal, SAM and prompt-enhancer tools all break on 5.x (which also drags in `huggingface-hub` 1.x) |
+> | `transformers>=4.45,<4.50` | lower bound for the four tools that use it; upper bound set by torch — recent 4.5x import `DTensor` from the *public* `torch.distributed.tensor`, which only exists from torch 2.5 (`<5` alone was not enough, and 5.x additionally drags in `huggingface-hub` 1.x) |
 >
 > The numpy pin is passed **inside** the same `pip install` rather than
 > re-applied afterwards. That lets pip's resolver pick an `opencv-python` build
@@ -424,6 +424,12 @@ is the **target short-side resolution**.
 > breaking its dependency — no need to guess where opencv started requiring
 > numpy ≥ 2. `maintenance` checks every pin against what is actually installed
 > and names the add-on to reinstall if one drifted.
+>
+> The SeedVR2 installer ends with a **smoke test** that replays the exact import
+> chain (`diffusers` → `loaders` → `transformers` → `torch.distributed`) in a
+> subprocess and prints the four version numbers. Version incompatibilities in
+> this stack surface only at import, as long unreadable tracebacks — this way
+> they surface during installation, not ten minutes into an upscale.
 
 The **1.4B** weights come from
 [`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a
