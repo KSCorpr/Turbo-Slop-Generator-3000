@@ -301,33 +301,72 @@ def check_addons_sync() -> None:
 
 
 def check_diffusers() -> None:
-    """Cohérence de diffusers entre les add-ons.
+    """Cohérence des paquets PARTAGÉS par les add-ons PyTorch.
 
-    Tous partagent le même Python : un add-on installé avec une contrainte plus
-    large peut écraser la version dont un autre a besoin, et la casse se voit
-    seulement au premier usage, sous forme d'un ValueError illisible à l'import.
+    Tous vivent dans le même Python : un add-on installé avec une contrainte
+    plus large écrase la version dont un autre a besoin, et la casse ne se voit
+    qu'au premier usage de l'autre — sous forme d'une erreur illisible à
+    l'import. On vérifie donc chaque paquet épinglé par l'installeur.
     """
-    print("• Version de diffusers (partagée par les add-ons PyTorch)…")
+    print("• Paquets partagés par les add-ons PyTorch…")
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
-        from setup_tools import DIFFUSERS_PIN
-        want = DIFFUSERS_PIN.split("==")[1]
+        from setup_tools import _PINS
     except Exception:  # noqa: BLE001
         print(OK + "non vérifiable (installeur absent).")
         return
-    try:
-        import importlib.metadata as md
-        got = md.version("diffusers")
-    except Exception:  # noqa: BLE001
-        print(OK + "diffusers non installé (aucun add-on PyTorch concerné).")
-        return
-    if got == want:
-        print(OK + f"{got} — conforme.")
-    else:
-        _warn(f"diffusers {got} installé, {want} attendu. Un add-on a pu "
-              "changer la version sous les autres.")
+
+    import importlib.metadata as md
+    checked = bad = 0
+    for name, spec in sorted(_PINS.items()):
+        try:
+            got = md.version(name)
+        except Exception:  # noqa: BLE001
+            continue                      # paquet absent = add-on non installé
+        checked += 1
+        if not _spec_ok(got, spec):
+            bad += 1
+            _warn(f"{name} {got} installé — attendu « {spec} ».")
+    if not checked:
+        print(OK + "aucun add-on PyTorch installé.")
+    elif bad:
+        _warn("  Un add-on a changé une version sous les autres.")
         _warn("  Correctif : relancez l'installation de l'add-on concerné "
-              "(Toolkit → Installer), qui repose la bonne version.")
+              "(Toolkit → Installer), qui repose les bonnes versions.")
+    else:
+        print(OK + f"{checked} paquet(s) conforme(s).")
+
+
+def _spec_ok(version: str, spec: str) -> bool:
+    """Version conforme à un spec pip simple (« ==x », « >=a,<b »).
+
+    Comparaison numérique par composants : « 1.26.4 » < « 2 » proprement, sans
+    dépendre de packaging (absent du Python embarqué minimal).
+    """
+    def key(v: str):
+        out = []
+        for part in v.split("."):
+            num = "".join(c for c in part if c.isdigit())
+            out.append(int(num) if num else 0)
+        return tuple(out)
+
+    if "==" in spec:
+        return version == spec.split("==")[-1].strip()
+    for clause in spec.split(","):
+        clause = clause.strip()
+        for op in (">=", "<=", "!=", "<", ">"):
+            if op in clause:
+                bound = clause.split(op, 1)[1].strip()
+                # retire un eventuel prefixe de nom de paquet
+                bound = bound.split()[0] if bound else bound
+                a, b = key(version), key(bound)
+                a, b = a + (0,) * (len(b) - len(a)), b + (0,) * (len(a) - len(b))
+                ok = {">=": a >= b, "<=": a <= b, "<": a < b,
+                      ">": a > b, "!=": a != b}[op]
+                if not ok:
+                    return False
+                break
+    return True
 
 
 def check_engine() -> None:

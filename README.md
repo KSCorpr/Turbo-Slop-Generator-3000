@@ -405,20 +405,25 @@ is the **target short-side resolution**.
 > diffusers, peft, rotary_embedding_torch…); **no apex, flash-attn or triton** —
 > those are optional accelerators and the code falls back to PyTorch SDPA.
 
-> **One diffusers version for every add-on.** All PyTorch tools share the same
-> embedded Python, so a tool installed with a looser constraint can silently
-> replace the version another one needs — and the breakage only shows up at the
-> next use, as an unreadable import-time `ValueError`. Both the SDXL upscale and
-> SeedVR2 therefore install the same pin, `DIFFUSERS_PIN` in
-> `scripts/setup_tools.py` (currently `diffusers==0.33.1`). It satisfies
-> SeedVR2's `>=0.33.1`, predates `attention_dispatch.py`, and comfortably covers
-> the SDXL img2img/ControlNet APIs. The cap matters because our torch is 2.4.1
-> (chosen to span Pascal→Ada): its `torch._library.infer_schema` cannot parse the
-> `X | None` annotations that diffusers ≥ 0.35 uses, so it raises on the very
-> first import. `maintenance` verifies the installed version and tells you which
-> add-on to reinstall if it drifted. `opencv-python` is pinned `<5` for the same
-> reason: version 5 requires numpy ≥ 2, while the app pins numpy < 2 for the
-> widest torch/torchvision compatibility.
+> **Shared pins across every add-on.** All PyTorch tools live in the *same*
+> embedded Python, so a tool installed with a looser constraint silently
+> replaces the version another one needs — and the breakage only surfaces at the
+> next use of the *other* tool, as an unreadable import-time error. Every
+> installer therefore applies one shared set, `_PINS` in
+> `scripts/setup_tools.py`:
+>
+> | Pin | Why |
+> | --- | --- |
+> | `diffusers==0.33.1` | satisfies SeedVR2's `>=0.33.1` and predates `attention_dispatch.py`, whose `X \| None` annotations torch 2.4.1's `infer_schema` cannot parse |
+> | `numpy>=1.24,<2` | required by the torch 2.4.1 / torchvision 0.19 base |
+> | `transformers>=4.45,<5` | the depth, background-removal, SAM and prompt-enhancer tools all break on 5.x (which also drags in `huggingface-hub` 1.x) |
+>
+> The numpy pin is passed **inside** the same `pip install` rather than
+> re-applied afterwards. That lets pip's resolver pick an `opencv-python` build
+> compatible with numpy 1.x by itself, instead of installing the newest and then
+> breaking its dependency — no need to guess where opencv started requiring
+> numpy ≥ 2. `maintenance` checks every pin against what is actually installed
+> and names the add-on to reinstall if one drifted.
 
 The **1.4B** weights come from
 [`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a

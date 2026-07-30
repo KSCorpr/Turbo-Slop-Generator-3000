@@ -49,11 +49,52 @@ VAE_FIX_REPO = "madebyollin/sdxl-vae-fp16-fix"
 CN_TILE_REPO = "xinsir/controlnet-tile-sdxl-1.0"
 
 
+# --------------------------------------------------------------------------- #
+#  Version de diffusers COMMUNE à tous les outils.
+#
+#  Tous les add-ons partagent le MÊME Python embarqué : deux outils qui exigent
+#  des versions incompatibles se écrasent mutuellement, et c'est le dernier
+#  installé qui gagne. Deux contraintes se croisent ici :
+#    - SeedVR2 exige diffusers >= 0.33.1 ;
+#    - notre torch est 2.4.1 (choisi pour couvrir Pascal -> Ada, cf.
+#      _torch_setup), et son torch._library.infer_schema ne sait PAS lire les
+#      annotations « X | None ». Or diffusers >= 0.35 en utilise dans
+#      attention_dispatch.py, importé en cascade au chargement du module
+#      transformers -> ValueError au tout premier import.
+#  0.33.1 satisfait SeedVR2, précède attention_dispatch, et couvre largement les
+#  API SDXL (img2img + ControlNet) utilisées par l'upscale créatif.
+#  ⚠️ Une seule valeur pour tout le monde : c'est ce qui garde l'environnement
+#  cohérent quel que soit l'ordre d'installation des outils.
+# --------------------------------------------------------------------------- #
+DIFFUSERS_PIN = "diffusers==0.33.1"
+
+# NumPy < 2 : impose par notre socle torch 2.4.1 / torchvision 0.19.
+# Le passer DANS la commande pip (au lieu de le re-figer apres coup avec
+# pin_numpy) change tout : le resolveur choisit alors lui-meme une version
+# d'opencv-python compatible avec numpy 1.x, au lieu qu'on installe la derniere
+# puis qu'on casse sa dependance en redescendant numpy. On ne devine plus la
+# borne d'opencv — pip la trouve.
+NUMPY_PIN = "numpy>=1.24,<2"
+
+# transformers < 5 : EXIGE par les quatre autres add-ons (profondeur, detourage,
+# SAM, ameliorateur de prompt). Sans cette borne, l'install de SeedVR2 montait
+# transformers en 5.x — et entrainait huggingface-hub en 1.x — cassant des
+# outils qui marchaient, sans le moindre avertissement.
+TRANSFORMERS_PIN = "transformers>=4.45,<5"
+
+# Paquets dont on IMPOSE la version, quoi qu'en disent les requirements amont.
+# Tous les add-ons partagent un seul Python : ce qui n'est pas borne ici finit
+# par etre decide par le dernier « pip install » lance.
+_PINS = {"diffusers": DIFFUSERS_PIN, "numpy": NUMPY_PIN,
+         "transformers": TRANSFORMERS_PIN}
+
+
 def install_depth():
     model_dir = settings.ROOT / "tools_repo" / "depth" / "model"
     ensure_torch_cuda()
     print("Installation de transformers…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5", "pillow"])
+    sh([sys.executable, "-m", "pip", "install",
+        TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nTéléchargement du modèle de profondeur ({DEPTH_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
@@ -65,8 +106,8 @@ def install_bg():
     model_dir = settings.ROOT / "tools_repo" / "bg" / "model"
     ensure_torch_cuda()
     print("Installation de transformers…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5",
-        "scikit-image", "pillow"])
+    sh([sys.executable, "-m", "pip", "install",
+        TRANSFORMERS_PIN, NUMPY_PIN, "scikit-image", "pillow"])
     print(f"\nTéléchargement du modèle de suppression d'arrière-plan ({BG_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
@@ -78,7 +119,8 @@ def install_sam():
     model_dir = settings.ROOT / "tools_repo" / "sam" / "model"
     ensure_torch_cuda()
     print("Installation de transformers…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5", "pillow"])
+    sh([sys.executable, "-m", "pip", "install",
+        TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nTéléchargement de Segment Anything ({SAM_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=SAM_REPO, local_dir=str(model_dir))
@@ -90,8 +132,8 @@ def install_enhance():
     model_dir = settings.ROOT / "tools_repo" / "enhance" / "model"
     ensure_torch_cuda()
     print("Installation de transformers + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", "transformers>=4.45,<5",
-        "accelerate", "safetensors"])
+    sh([sys.executable, "-m", "pip", "install",
+        TRANSFORMERS_PIN, NUMPY_PIN, "accelerate", "safetensors"])
     print(f"\nTéléchargement de l'améliorateur de prompt ({ENHANCE_REPO}, ~6 Go)…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=ENHANCE_REPO, local_dir=str(model_dir),
@@ -132,42 +174,14 @@ def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
                 raise
 
 
-# --------------------------------------------------------------------------- #
-#  Version de diffusers COMMUNE à tous les outils.
-#
-#  Tous les add-ons partagent le MÊME Python embarqué : deux outils qui exigent
-#  des versions incompatibles se écrasent mutuellement, et c'est le dernier
-#  installé qui gagne. Deux contraintes se croisent ici :
-#    - SeedVR2 exige diffusers >= 0.33.1 ;
-#    - notre torch est 2.4.1 (choisi pour couvrir Pascal -> Ada, cf.
-#      _torch_setup), et son torch._library.infer_schema ne sait PAS lire les
-#      annotations « X | None ». Or diffusers >= 0.35 en utilise dans
-#      attention_dispatch.py, importé en cascade au chargement du module
-#      transformers -> ValueError au tout premier import.
-#  0.33.1 satisfait SeedVR2, précède attention_dispatch, et couvre largement les
-#  API SDXL (img2img + ControlNet) utilisées par l'upscale créatif.
-#  ⚠️ Une seule valeur pour tout le monde : c'est ce qui garde l'environnement
-#  cohérent quel que soit l'ordre d'installation des outils.
-# --------------------------------------------------------------------------- #
-DIFFUSERS_PIN = "diffusers==0.33.1"
-
-# opencv-python 5.x EXIGE numpy >= 2. Or pin_numpy() fige numpy < 2 pour toute
-# l'app (compatibilité torch/torchvision la plus large). Sans borne, pip prenait
-# opencv 5, puis pin_numpy le redescendait à 1.26 : pip signalait alors un
-# conflit non résolu et opencv se retrouvait avec un numpy qu'il ne supporte pas.
-# opencv 4.x fonctionne avec numpy 1.x — c'est la combinaison cohérente ici.
-OPENCV_PIN = "opencv-python>=4.8,<5"
-
-# Paquets dont on IMPOSE la version, quoi qu'en disent les requirements amont.
-_PINS = {"diffusers": DIFFUSERS_PIN, "opencv-python": OPENCV_PIN}
 
 
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
     ensure_torch_cuda()
     print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", DIFFUSERS_PIN,
-        "transformers>=4.45,<5", "accelerate", "safetensors", "omegaconf", "pillow"])
+    sh([sys.executable, "-m", "pip", "install", *_PINS.values(),
+        "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
     # Dossier où déposer des checkpoints SDXL perso (sélectionnables dans l'UI).
     (base / "checkpoints").mkdir(parents=True, exist_ok=True)
