@@ -379,14 +379,49 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
                 "--vae_encode_tiled", "--vae_encode_tile_size", str(int(tile_size))]
     # Le GPU est choisi via CUDA_VISIBLE_DEVICES (_run_tool) : on ne passe PAS
     # --cuda_device en plus, les deux se marcheraient dessus.
+    # On écoute la sortie pour distinguer les deux familles d'échec : manque de
+    # VRAM (réglages à baisser) et incompatibilité de paquets (réinstallation).
+    # Sans ça, l'utilisateur reçoit le même message dans les deux cas.
+    seen = {"oom": False, "imp": False}
+    _OOM = ("outofmemoryerror", "allocation on device", "out of memory",
+            "cuda error: out of memory")
+    _IMP = ("importerror", "modulenotfounderror",
+            "failed to import", "cannot import name")
+
+    def _sniff(line: str) -> None:
+        low = (line or "").lower()
+        if any(k in low for k in _OOM):
+            seen["oom"] = True
+        if any(k in low for k in _IMP):
+            seen["imp"] = True
+        if log:
+            log(line)
+
     # cwd = SEEDVR2_DIR : le CLI résout « ./models/SEEDVR2 » depuis là, et c'est
     # ce dossier qu'il scanne pour décider des valeurs acceptées par --dit_model.
-    _run_tool(cmd, log,
-              "L'agrandissement SeedVR2 a échoué (voir le journal). Si le "
-              "journal montre une erreur à l'IMPORT (diffusers, torch), "
-              "relancez « Installer SeedVR2 » : l'installation d'un autre "
-              "add-on a pu changer la version de diffusers sous SeedVR2.",
-              gpu_index=_gen_gpu_index(), cwd=SEEDVR2_DIR)
+    try:
+        _run_tool(cmd, _sniff, "L'agrandissement SeedVR2 a échoué "
+                               "(voir le journal).",
+                  gpu_index=_gen_gpu_index(), cwd=SEEDVR2_DIR)
+    except ToolError:
+        if seen["oom"]:
+            raise ToolError(
+                "Mémoire GPU insuffisante pendant l'agrandissement.\n"
+                "Dans l'ordre, et sans rien réinstaller :\n"
+                f"  1. cochez « VAE par tuiles » (actuellement "
+                f"{'coché' if tiled else 'DÉCOCHÉ'}) ;\n"
+                f"  2. baissez « Côté court visé » — vous êtes à "
+                f"{int(resolution)} px ;\n"
+                "  3. descendez la taille de tuile à 256 ;\n"
+                "  4. fermez ce qui occupe la carte (une autre génération, "
+                "un jeu, un navigateur lourd).") from None
+        if seen["imp"]:
+            raise ToolError(
+                "SeedVR2 n'a pas pu démarrer : erreur à l'IMPORT (voir le "
+                "journal). Une version de paquet a changé sous lui. Lancez "
+                "maintenance.bat — il nomme le paquet — puis relancez "
+                "« Installer SeedVR2 ».") from None
+        raise
     return _collect(out_dir, "seedvr2", stamp)
 
 

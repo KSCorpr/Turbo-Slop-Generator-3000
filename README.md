@@ -390,9 +390,19 @@ plausible detail — skin, fabric, foliage, text — instead of smoothing like E
 or inventing like the creative upscale. Its sweet spot is **×2 to ×4**; quality
 degrades past that.
 
-Small and fast: **2.9 GB** of weights, **~4.6 GB VRAM peak** for a 512→2048.
-Fixed sampler settings (steps 1, cfg 1, euler), so the only control that matters
-is the **target short-side resolution**.
+Small and fast: **2.9 GB** of weights. Fixed sampler settings (steps 1, cfg 1,
+euler), so the only control that really matters is the **target short-side
+resolution**.
+
+> **VRAM.** The model card's "~4.6 GB peak" is for a 512→2048 job. What actually
+> drives memory is the *output* size: SeedVR2 resizes the input to the target
+> first, then the VAE encodes at that size — and its causal 3-D convolutions
+> replicate the frame along the temporal axis, which is what blows up. On
+> 11–12 GB, an untiled run OOMs around 1440 px. **VAE tiling is therefore on by
+> default** and the target defaults to 1080 px. If you still run out, lower the
+> target, then drop the tile size to 256. The tile slider is capped at 512 on
+> purpose: the VAE self-attends over the whole tile, so cost grows as O(n²) —
+> bigger tiles are both slower *and* heavier.
 
 > **How it is wired.** There is no pip package and no `diffusers` pipeline for
 > SeedVR2. The reference inference code is the

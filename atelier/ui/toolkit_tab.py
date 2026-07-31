@@ -314,10 +314,12 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                     with gr.Column(scale=3):
                         v_image = gr.Image(label="Image à restaurer", type="pil")
                         v_res = gr.Slider(
-                            512, 2560, value=1440, step=64,
+                            512, 2560, value=1080, step=64,
                             label="Côté court visé (px)",
                             info="Le rapport d'aspect est conservé. Visez 2 à "
-                                 "4 fois le côté court de votre image.")
+                                 "4 fois le côté court de votre image. Plus haut "
+                                 "= plus de VRAM : au-delà de ~1440 px sur "
+                                 "11–12 Go, gardez le VAE par tuiles activé.")
                         v_model = gr.Dropdown(
                             tools.seedvr2_models(),
                             value=tools.seedvr2_default_model(),
@@ -330,16 +332,19 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                                 info="Recale les couleurs sur l'original. "
                                      "« lab » convient presque toujours.")
                             v_tiled = gr.Checkbox(
-                                value=False, label="VAE par tuiles",
-                                info="À cocher seulement en cas de manque de "
-                                     "mémoire, sur une grande image.")
+                                value=True, label="VAE par tuiles (recommandé)",
+                                info="Découpe l'encodage et le décodage. Sur "
+                                     "11–12 Go, le décocher fait déborder la "
+                                     "VRAM dès ~1440 px. Ne le décochez que si "
+                                     "vous visez petit.")
                             v_tile = gr.Slider(
-                                256, 768, value=512, step=128,
+                                256, 512, value=512, step=128,
                                 label="Taille de tuile",
-                                info="Ne montez PAS au-dessus de 512 : le VAE "
-                                     "s'auto-attentionne sur la tuile entière, "
-                                     "le coût explose en O(n²). Descendez à 256 "
-                                     "si ça déborde encore.")
+                                info="512 par défaut. Le VAE s'auto-attentionne "
+                                     "sur la tuile entière : le coût explose en "
+                                     "O(n²), c'est pourquoi on ne monte pas "
+                                     "au-dessus. Descendez à 256 si ça déborde "
+                                     "encore.")
                             v_seed = gr.Number(value=42, precision=0,
                                                label="Seed")
                         with gr.Row():
