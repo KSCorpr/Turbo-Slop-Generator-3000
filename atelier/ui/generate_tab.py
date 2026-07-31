@@ -145,6 +145,20 @@ def build_generative_tab(model_id: str, title: str,
                                     placeholder="Décrivez l'image…")
                 negative = gr.Textbox(label="Prompt négatif", lines=1,
                                       visible=d.get("supports_negative", False))
+
+                # GÉNÉRER juste sous le prompt : c'est l'action principale, elle
+                # ne doit pas être au bout d'une colonne de réglages.
+                with gr.Row(elem_classes="go-row"):
+                    # Libellé court : le modèle est déjà écrit sur l'onglet.
+                    run = gr.Button("🎨 Générer", variant="primary", size="lg",
+                                    scale=4)
+                    stop = gr.Button("⏹️ Stop", variant="stop", scale=1,
+                                     min_width=90)
+                    clear_prompt = gr.Button("🗑️ Effacer", scale=1,
+                                             min_width=110)
+                status_md = gr.Markdown("")
+
+                # ----- ✨ Amélioration du prompt -----
                 with gr.Row():
                     enhance_btn = gr.Button("✨ Améliorer le prompt (IA)",
                                             size="sm", scale=3)
@@ -155,9 +169,17 @@ def build_generative_tab(model_id: str, title: str,
                         [(t("Léger"), "light"), (t("Moyen"), "medium"),
                          (t("Fort"), "strong")],
                         value="medium", label="Intensité", scale=2)
-                enh_msg = gr.Markdown("")
+                # Récapitulatif VIVANT : dit en clair ce que le bouton va faire,
+                # AVANT de cliquer. C'est ce qui manquait le plus : les curseurs
+                # Stylize/Chaos sont des nombres sans signification évidente.
+                enh_recap = gr.Markdown("", elem_classes="hint")
+                enh_msg = gr.Markdown("", elem_classes="feedback")
+                enh_undo = gr.Button("↩️ Rétablir le prompt d'origine",
+                                     size="sm", visible=False)
                 enh_props = gr.Radio([], label="Propositions — cliquez pour "
                                               "l'utiliser", visible=False)
+                # Prompt d'avant amélioration, pour pouvoir revenir en arrière.
+                prompt_before = gr.State("")
 
                 # ----- 🎨 Styles : les trois banques sous UN seul repli -----
                 # Trois mécanismes distincts mais un seul but (habiller le
@@ -234,28 +256,32 @@ def build_generative_tab(model_id: str, title: str,
                                   + ("" if _enh_ready else " & installation"),
                                   open=not _enh_ready):
                     gr.Markdown(
-                        "**Style** — *Détaillé* écrit un paragraphe descriptif ; "
-                        "***Midjourney*** écrit court et dense, l'esthétique "
-                        "d'abord.  \n"
-                        "**Paramètres Midjourney** utilisables directement dans "
-                        "le prompt : `--ar 16:9` (format à surface constante), "
-                        "`--stylize 500`, `--chaos 40`, `--no voitures`. Ils sont "
-                        "retirés du texte et appliqués aux réglages.")
+                        "La ligne grise sous les menus **résume en clair ce que "
+                        "le bouton va faire** — inutile de retenir ce que valent "
+                        "les chiffres ci-dessous, elle les traduit.\n\n"
+                        "💡 Tu peux aussi écrire les **paramètres Midjourney "
+                        "directement dans le prompt** : `--ar 16:9` (format, à "
+                        "surface constante), `--stylize 500`, `--chaos 40`, "
+                        "`--no voitures`. Ils sont retirés du texte, appliqués "
+                        "aux réglages, et **priment sur les curseurs**.")
                     with gr.Row():
                         enh_variants = gr.Radio(
                             [("1", 1), ("2", 2), ("4", 4)], value=4,
                             label="Propositions",
-                            info="Plusieurs prompts en un seul chargement du "
-                                 "modèle — vous choisissez.")
+                            info="Nombre de prompts proposés. Produits en un "
+                                 "seul chargement du modèle : 4 coûtent presque "
+                                 "le même temps qu'1.")
                         enh_stylize = gr.Slider(
                             0, 1000, value=250, step=50, label="Stylize",
                             interactive=False,
-                            info="Style « Midjourney » uniquement. Bas = "
-                                 "littéral ; haut = direction artistique forte.")
+                            info="Style « Midjourney » uniquement (grisé sinon). "
+                                 "0 = littéral · 1000 = direction artistique "
+                                 "maximale.")
                         enh_chaos = gr.Slider(
                             0, 100, value=25, step=5, label="Chaos",
-                            info="Écart entre les propositions. 0 = proches ; "
-                                 "100 = très différentes.")
+                            info="Écart entre les propositions. 0 = quasi "
+                                 "identiques · 100 = directions opposées. "
+                                 "Sans effet sur une seule proposition.")
 
                     with gr.Accordion("⬇️ Installation (1 clic)",
                                       open=not _enh_ready):
@@ -472,21 +498,17 @@ def build_generative_tab(model_id: str, title: str,
                                      precision=0)
                     batch = gr.Slider(1, 8, value=1, step=1, label="Images")
 
-                with gr.Row():
-                    run = gr.Button(t("✨ Générer ({title})").format(title=title),
-                                    variant="primary", size="lg", scale=3)
-                    stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
+                # (« Générer » / « Annuler » sont en haut, sous le prompt.)
 
             # ----- Sorties : aperçu temps réel (Image dédiée) + résultats (Gallery)
             # L'aperçu est une gr.Image SÉPARÉE (un seul <img> mis à jour sur
             # place) et non fusionné dans la galerie : mettre à jour une Gallery
             # à chaque frame reconstruit toute la grille et fait « clignoter ».
             with gr.Column(scale=4):
-                # Ligne de statut TEXTE (chargement N/M, étape k/n) : mise à jour
-                # « valeur seule », donc AUCUN overlay sur l'aperçu — c'est
-                # l'overlay de gr.Progress (la barre « étape 1/8 » par-dessus
-                # l'image) qui faisait clignoter l'aperçu entre deux pas.
-                status_md = gr.Markdown("")
+                # (La ligne de statut est sous le bouton Générer, à gauche : la
+                # progression se lit là où on vient de cliquer. Elle reste une
+                # mise à jour « valeur seule », donc AUCUN overlay sur l'aperçu —
+                # c'est l'overlay de gr.Progress qui le faisait clignoter.)
                 preview_img = gr.Image(
                     label="Aperçu temps réel", visible=False, height=560,
                     format="png", show_download_button=False,
@@ -678,14 +700,19 @@ def build_generative_tab(model_id: str, title: str,
                 w_up, h_up = gr.update(value=nw), gr.update(value=nh)
             neg_up = gr.update(value=mp["no"]) if mp.get("no") else gr.update()
 
-            note = mjparams.describe(mp)
-            msg = ""
-            if note:
-                msg = f"🎛️ Paramètres appliqués : {note}"
+            # Feedback : ce qui a été fait, en une ligne repérable.
+            bits = [t("Midjourney") if is_mj else t("Détaillé")]
             if len(props) > 1:
-                msg = (msg + "  \n" if msg else "") + t(
-                    "Choisissez une proposition ci-dessous (le prompt affiché "
-                    "est la première).")
+                bits.append(t("{n} propositions").format(n=len(props)))
+            if is_mj:
+                bits.append(f"stylize {int(sty)}")
+            msg = "✅ **" + t("Prompt amélioré") + "** — " + " · ".join(bits)
+            note = mjparams.describe(mp)
+            if note:
+                msg += "  \n🎛️ " + t("Paramètres lus dans le prompt :") + f" {note}"
+            if len(props) > 1:
+                msg += "  \n" + t("Cliquez une proposition ci-dessous pour "
+                                  "l'utiliser à la place.")
             # La 1re proposition part dans le champ ; les autres restent
             # cliquables. Libellés numérotés : un prompt long casse un Radio.
             choices = [(f"{i + 1}. {p[:110]}{'…' if len(p) > 110 else ''}", p)
@@ -693,13 +720,76 @@ def build_generative_tab(model_id: str, title: str,
             return (gr.update(value=props[0]),
                     gr.update(choices=choices, value=props[0],
                               visible=len(props) > 1),
-                    gr.update(value=msg), w_up, h_up, neg_up)
+                    gr.update(value=msg), w_up, h_up, neg_up,
+                    text or "", gr.update(visible=True))
 
         enhance_btn.click(
             _enhance,
             inputs=[prompt, enh_style, enh_level, enh_variants, enh_stylize,
                     enh_chaos],
-            outputs=[prompt, enh_props, enh_msg, width, height, negative])
+            outputs=[prompt, enh_props, enh_msg, width, height, negative,
+                     prompt_before, enh_undo])
+
+        # --- Récapitulatif VIVANT : ce que « Améliorer » va faire ---------
+        # Les curseurs Stylize/Chaos sont des nombres ; on les traduit en mots,
+        # sinon impossible de savoir ce qu'on règle sans lire la doc.
+        def _recap(style_choice, level, variants, stylize, chaos):
+            is_mj = style_choice == "mj"
+            n = int(variants or 1)
+            parts = [("**" + t("Midjourney") + "** — " +
+                      t("court, dense, esthétique d'abord")) if is_mj else
+                     ("**" + t("Détaillé") + "** — " +
+                      t("paragraphe descriptif complet"))]
+            parts.append({"light": t("retouche légère"),
+                          "medium": t("enrichissement équilibré"),
+                          "strong": t("expansion complète")}
+                         .get(level or "medium", ""))
+            parts.append(t("1 seule proposition") if n == 1 else
+                         t("{n} propositions au choix").format(n=n))
+            if is_mj:
+                s = int(stylize or 0)
+                parts.append("stylize %d — %s" % (s, (
+                    t("très littéral") if s <= 50 else
+                    t("peu d'effet de style") if s <= 250 else
+                    t("direction artistique marquée") if s <= 600 else
+                    t("licence artistique maximale"))))
+            if n > 1:
+                c = int(chaos or 0)
+                parts.append("chaos %d — %s" % (c, (
+                    t("propositions très proches") if c <= 15 else
+                    t("variations modérées") if c <= 50 else
+                    t("directions très différentes"))))
+            return "→ " + "  ·  ".join(p for p in parts if p)
+
+        _recap_in = [enh_style, enh_level, enh_variants, enh_stylize, enh_chaos]
+        for _c in _recap_in:
+            _c.change(_recap, inputs=_recap_in, outputs=[enh_recap])
+        # Valeur de départ : la ligne doit être remplie AVANT toute interaction,
+        # sinon on ne sait pas ce que fait le bouton tant qu'on n'a rien touché.
+        enh_recap.value = _recap(enh_style.value, enh_level.value,
+                                 enh_variants.value, enh_stylize.value,
+                                 enh_chaos.value)
+
+        # --- Rétablir le prompt d'avant amélioration ---
+        def _undo_enhance(before):
+            return (gr.update(value=before or ""),
+                    gr.update(choices=[], value=None, visible=False),
+                    gr.update(value="↩️ " + t("Prompt d'origine rétabli.")),
+                    gr.update(visible=False))
+
+        enh_undo.click(_undo_enhance, inputs=[prompt_before],
+                       outputs=[prompt, enh_props, enh_msg, enh_undo])
+
+        # --- Tout effacer (prompt + traces d'amélioration) ---
+        def _clear_all():
+            return (gr.update(value=""), gr.update(value=""),
+                    gr.update(choices=[], value=None, visible=False),
+                    gr.update(value=""), gr.update(visible=False), "")
+
+        clear_prompt.click(
+            _clear_all,
+            outputs=[prompt, negative, enh_props, enh_msg, enh_undo,
+                     prompt_before])
 
         # Cliquer une proposition la met dans le champ Prompt (.input : ne se
         # redéclenche pas quand l'améliorateur remplit le Radio lui-même).

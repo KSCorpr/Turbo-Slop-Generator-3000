@@ -67,6 +67,21 @@ CSS = f"""
 .log-box textarea {{ font-family: ui-monospace, monospace; font-size:.8rem;
                      resize: vertical; }}
 
+/* ---- Zone d'action principale : « Générer » doit sauter aux yeux ---- */
+.go-row button {{ font-weight: 700 !important; }}
+.go-row button.primary {{ font-size: 1.02rem !important;
+    box-shadow: 0 2px 8px {ACCENT}3d; letter-spacing:.2px; }}
+
+/* ---- Aides et retours : lisibles sans crier ---- */
+/* .hint = ce qui VA se passer (récapitulatif avant clic). */
+.hint p {{ margin:.25rem 0 !important; font-size:.82rem; color:#64748b;
+           line-height:1.45; }}
+/* .feedback = ce qui S'EST passé, encadré pour être repérable d'un coup d'œil. */
+.feedback:not(:empty) {{ border-left:3px solid {ACCENT};
+    background:{ACCENT}0f; border-radius:0 8px 8px 0;
+    padding:7px 11px; margin:6px 0; }}
+.feedback p {{ margin:.15rem 0 !important; font-size:.84rem; line-height:1.5; }}
+
 /* ---- Stabilité des dimensions (évite les sauts/collapse au resize) ---- */
 /* Images (upload/preview) : l'image s'inscrit en entier, sans collapse de
    largeur sur les ratios non carrés, et sans déborder verticalement. */
