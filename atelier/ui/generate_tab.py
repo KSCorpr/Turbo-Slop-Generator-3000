@@ -24,9 +24,11 @@ SAMPLERS = [
     ("LCM", "lcm"), ("DDIM Trailing", "ddim_trailing"), ("TCD", "tcd"),
     ("Res Multistep", "res_multistep"), ("Res 2S", "res_2s"), ("ER SDE", "er_sde"),
     ("Euler CFG++", "euler_cfg_pp"), ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
-    # Ajouté par sd.cpp après notre liste initiale. Réglage fin possible via
-    # --extra-sample-args « gamma=… » (non exposé ici).
+    # Ajoutés par sd.cpp après notre liste initiale. Réglage fin possible via
+    # --extra-sample-args (« gamma=… » pour euler_ge, « lms_divisions=… » pour
+    # lms, défaut 1000) — non exposé ici.
     ("Euler GE", "euler_ge"),
+    ("LMS (linear multi-step)", "lms"),
 ]
 # Schedulers (sigmas) supportés par sd.cpp.
 SCHEDULES = [
