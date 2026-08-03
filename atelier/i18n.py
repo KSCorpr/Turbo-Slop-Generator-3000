@@ -96,6 +96,26 @@ _EN: dict[str, str] = {
     "📚 Catalogue de modèles": "📚 Model Catalog",
     "🧰 Toolkit": "🧰 Toolkit",
     "🎬 Vidéo (LTX-2.3)": "🎬 Video (LTX-2.3)",
+    "{w}×{h} · {n} images à {fps} i/s · {s} s":
+        "{w}×{h} · {n} frames at {fps} fps · {s} s",
+    " · reprise ×2 → {w}×{h}": " · ×2 refine → {w}×{h}",
+    "Binaire `sd-cli` introuvable. Lancez `install.bat` (ou `python scripts/get_sdcpp.py`).":
+        "`sd-cli` binary not found. Run `install.bat` (or `python scripts/get_sdcpp.py`).",
+    "Votre `sd-cli` ne connaît pas le mode vidéo (`-M vid_gen`). Mettez le moteur à jour avec **update-engine.bat** : LTX-2.3 est supporté par stable-diffusion.cpp depuis mai 2026.":
+        "Your `sd-cli` does not know the video mode (`-M vid_gen`). Update the engine with **update-engine.bat**: LTX-2.3 has been supported by stable-diffusion.cpp since May 2026.",
+    "❌ **Moteur** — {why}": "❌ **Engine** — {why}",
+    "❌ Aucun modèle vidéo au catalogue.": "❌ No video model in the catalog.",
+    "⬇️ **« {name} » n'est pas installé** — il manque : {parts}.  \nTéléchargez-le depuis l'onglet **📚 Catalogue de modèles** (~25 Go, c'est long).":
+        "⬇️ **“{name}” is not installed** — missing: {parts}.  \nDownload it from the **📚 Model Catalog** tab (~25 GB, it takes a while).",
+    "✅ **« {name} » est prêt** ({up} upscaler latent ×2). Comptez plusieurs minutes par clip.":
+        "✅ **“{name}” is ready** ({up} the ×2 latent upscaler). Expect several minutes per clip.",
+    "avec": "with",
+    "sans": "without",
+    "modèle de diffusion": "diffusion model",
+    "VAE vidéo": "video VAE",
+    "VAE audio": "audio VAE",
+    "encodeur de prompt (Gemma-3-12B)": "prompt encoder (Gemma-3-12B)",
+    "connecteurs d'embeddings": "embeddings connectors",
     "⚙️ Réglages": "⚙️ Settings",
 
     # ---- generate_tab : statut / mode (dynamiques) ----
@@ -490,40 +510,69 @@ _EN: dict[str, str] = {
         "Install the creative SDXL upscale first (accordion above).",
 
     # ---- video_tab ----
-    "### Génération vidéo — LTX-2.3 (natif sd.cpp)\n"
-    "Texte→vidéo, image→vidéo, ou image **début→fin**.  \n"
-    "> ⚠️ Modèle **22B** + encodeur Gemma-3-12B : **TRÈS lourd**. Idéal "
-    "≥16 Go. Sur 11–12 Go : quant basse (Réglages → `Q3_K`/`Q2_K`) + "
-    "offload, et compte **plusieurs minutes** par clip. Commence petit "
-    "(640×360, 25 images).":
-        "### Video generation — LTX-2.3 (native sd.cpp)\n"
-        "Text→video, image→video, or **first→last** frame.  \n"
-        "> ⚠️ **22B** model + Gemma-3-12B encoder: **VERY heavy**. Ideal "
-        "≥16 GB. On 11–12 GB: low quant (Settings → `Q3_K`/`Q2_K`) + offload, "
-        "and expect **several minutes** per clip. Start small "
-        "(640×360, 25 frames).",
-    "⚙️ Installer LTX-2.3 (en 1 clic)": "⚙️ Install LTX-2.3 (1 click)",
-    "Télécharge la diffusion 22B GGUF + l'encodeur Gemma-3-12B + les "
-    "VAE vidéo/audio + les connecteurs (**plusieurs Go**, c'est long).":
-        "Downloads the 22B GGUF diffusion + Gemma-3-12B encoder + the "
-        "video/audio VAEs + connectors (**several GB**, it’s long).",
-    "⬇️ Installer LTX-2.3": "⬇️ Install LTX-2.3",
+    "### Génération vidéo — LTX-2.3, natif sd.cpp\n"
+    "**Texte → vidéo**, **image → vidéo** (anime une image fixe) ou "
+    "**début → fin** (deux images, le modèle fabrique l'entre-deux). "
+    "Le clip sort en `.webm` **avec sa bande-son** : LTX génère aussi "
+    "l'audio.\n\n"
+    "> ⚠️ **C'est lourd et c'est lent.** Diffusion 22 B + encodeur "
+    "Gemma-3-12B : ~25 Go à télécharger, et sur une carte 11-12 Go ça "
+    "ne tient que par décharge en RAM (32 Go minimum, 64 Go "
+    "confortable). Comptez **plusieurs minutes par clip** — ce n'est "
+    "pas un plantage. Commencez en **704×384 sur 2 secondes** avant de "
+    "monter quoi que ce soit.":
+        "### Video generation — LTX-2.3, native sd.cpp\n"
+        "**Text → video**, **image → video** (animates a still) or "
+        "**first → last** (two images, the model fills the in-between). "
+        "The clip is a `.webm` **with its soundtrack**: LTX generates audio "
+        "too.\n\n"
+        "> ⚠️ **This is heavy and slow.** 22 B diffusion + Gemma-3-12B "
+        "encoder: ~25 GB to download, and on an 11-12 GB card it only fits by "
+        "offloading to RAM (32 GB minimum, 64 GB comfortable). Expect "
+        "**several minutes per clip** — that is not a crash. Start at "
+        "**704×384 over 2 seconds** before raising anything.",
     "Mode": "Mode",
-    "Décrivez la scène / le mouvement…": "Describe the scene / motion…",
-    "Image (début)": "Image (start)",
+    "La version distillée (8 pas) est la seule raisonnable en 11-12 Go.":
+        "The distilled version (8 steps) is the only sensible one on 11-12 GB.",
+    "Décrivez la scène ET le mouvement : « a red fox walking through tall "
+    "grass, camera slowly pushing in »…":
+        "Describe the scene AND the motion: “a red fox walking through tall "
+        "grass, camera slowly pushing in”…",
+    "En anglais de préférence. Décrire le MOUVEMENT (caméra, sujet) compte "
+    "autant que le décor.":
+        "English preferred. Describing the MOTION (camera, subject) matters as "
+        "much as the setting.",
+    "Image de départ": "Starting image",
     "Image de fin": "End image",
     "Format": "Format",
-    "Images (≈ durée × fps)": "Frames (≈ duration × fps)",
+    "Durée (secondes)": "Duration (seconds)",
+    "Images/s": "Frames/s",
+    "🔍 Détail ×2 (upscaler latent LTX)": "🔍 Detail ×2 (LTX latent upscaler)",
+    "Passe de reprise à résolution doublée. Nettement plus net, mais nettement "
+    "plus long et plus gourmand : à garder pour la fin.":
+        "A refine pass at doubled resolution. Clearly sharper, but clearly "
+        "slower and hungrier: save it for last.",
+    "Étapes de la reprise ×2": "Steps for the ×2 refine pass",
+    "1.0 sur la version distillée : elle est entraînée pour ça.":
+        "1.0 on the distilled version: that is what it was trained for.",
     "🎬 Générer la vidéo": "🎬 Generate video",
     "Vidéo": "Video",
     "Saisissez un prompt.": "Enter a prompt.",
     "Fournissez l'image de départ.": "Provide the starting image.",
     "Fournissez l'image de fin.": "Provide the end image.",
-    "Paysage 16:9 — 1280×720": "Landscape 16:9 — 1280×720",
+    "⏳ Génération vidéo en cours — plusieurs minutes, c'est normal…":
+        "⏳ Generating video — several minutes, this is normal…",
+    "✅ Vidéo générée : {n}": "✅ Video generated: {n}",
+    "📝 Texte → vidéo": "📝 Text → video",
+    "🖼️ Image → vidéo": "🖼️ Image → video",
+    "🎞️ Début → fin": "🎞️ First → last",
+    "Paysage 16:9 — 1280×704 (lourd)": "Landscape 16:9 — 1280×704 (heavy)",
     "Paysage 16:9 — 960×544": "Landscape 16:9 — 960×544",
-    "Léger 16:9 — 640×360": "Light 16:9 — 640×360",
-    "Carré — 768×768": "Square — 768×768",
-    "Portrait 9:16 — 720×1280": "Portrait 9:16 — 720×1280",
+    "Paysage 16:9 — 704×384 (léger, à essayer en premier)":
+        "Landscape 16:9 — 704×384 (light, try this first)",
+    "Carré 1:1 — 768×768": "Square 1:1 — 768×768",
+    "Portrait 9:16 — 544×960": "Portrait 9:16 — 544×960",
+    "Portrait 9:16 — 384×704 (léger)": "Portrait 9:16 — 384×704 (light)",
 
     # ---- settings_tab ----
     "### Matériel & optimisations": "### Hardware & optimization",
@@ -662,11 +711,6 @@ _EN: dict[str, str] = {
     "✅ adapté à votre carte": "✅ suits your card",
     "⚠️ {min} Go conseillés (vous : {vram})":
         "⚠️ {min} GB recommended (you: {vram})",
-
-    # ---- video : modes ----
-    "Texte → vidéo": "Text → video",
-    "Image → vidéo": "Image → video",
-    "Début → fin": "First → last",
 
     # ---- app.py : bannière réseau local ----
     "{app} est accessible sur le réseau local !":

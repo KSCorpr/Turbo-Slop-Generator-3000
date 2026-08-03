@@ -13,7 +13,8 @@ A **local**, modern, lightweight image-generation studio for artists, built on
 CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, two upscalers, and a utility toolkit.
+editing, two upscalers, **video generation with sound (LTX-2.3)**, and a utility
+toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -34,6 +35,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
+| 🎬 **Video (LTX-2.3)** | text→video, image→video, first→last frame · **with generated soundtrack** · native sd.cpp `-M vid_gen`, no PyTorch |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
@@ -49,6 +51,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
+- [Video (LTX-2.3)](#video-ltx-23)
 - [Toolkit](#toolkit)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
@@ -589,6 +592,70 @@ sidecar recording model, seed and settings. Generation tabs have a
 
 ---
 
+## Video (LTX-2.3)
+
+The **🎬 Video** tab generates short clips **with a generated soundtrack**, from
+text or from images, using **LTX-2.3** (Lightricks) read natively by sd.cpp
+(`-M vid_gen`). No PyTorch, no ComfyUI — the same engine that generates images.
+
+> ⚠️ **This is by far the heaviest thing in the app.** A 22 B diffusion model
+> plus a Gemma-3-12B prompt encoder: **~25 GB to download**, and on an 11-12 GB
+> card it only fits because the weights live in RAM and stream to the GPU
+> (`--offload-to-cpu`). **32 GB of RAM minimum, 64 GB comfortable.** Expect
+> **several minutes per clip** — that is not a crash.
+
+**Three modes**
+
+| Mode | What you give it | What it does |
+| --- | --- | --- |
+| 📝 **Text → video** | a prompt | generates the clip from scratch |
+| 🖼️ **Image → video** | a prompt + one image | animates that still |
+| 🎞️ **First → last** | a prompt + two images | generates the in-between |
+
+**Two variants**, both in the Model Catalog. They share the Gemma encoder and
+the latent upscaler, so installing the second one does **not** re-download them:
+
+- **LTX-2.3 Distilled 22B** — 8 steps, CFG 1.0. **The one to take on 11-12 GB.**
+  Distilled at CFG 1.0, so like Flux.2 Klein it ignores the negative prompt, and
+  the field is hidden.
+- **LTX-2.3 Dev 22B** — ~20 steps at CFG 6.0, negative prompt active. Finer, but
+  roughly **2.5× slower** at equal settings.
+
+**Writing the prompt.** English works best, and **describing the motion matters
+as much as describing the scene** — both the subject's movement and the camera's
+(*"camera slowly pushing in"*, *"handheld, drifting left"*). A prompt that only
+describes a still image tends to produce a nearly still clip.
+
+**Format, duration and the grids that constrain them.** LTX only produces sizes
+that are **multiples of 32 px** and frame counts of the form **8k+1** (33, 41,
+49…). Ask for 720 px and sd.cpp integer-divides it down to 704 without telling
+you. So the tab offers only aligned formats, takes the duration **in seconds**,
+and prints — under the sliders, *before* you click — exactly what will come out:
+`→ 704×384 · 33 images à 24 i/s · 1.4 s`. That readout is the contract; there is
+no surprise after the fact.
+
+**🔍 Detail ×2** runs the official **LTX spatial latent upscaler** between a
+low-resolution pass and a refine pass, doubling the output. Sharper, but clearly
+slower and hungrier — leave it off until the clip is otherwise right. It is
+downloaded with the model as an optional component; if it is missing the box is
+simply ignored and the log says so.
+
+**Output.** A `.webm` in `outputs/` with **video and audio muxed together** (LTX
+generates the soundtrack; sd.cpp writes it into the same file), plus a `.txt`
+sidecar recording prompt, model, mode, size, steps, CFG and seed.
+
+**If the tab says the engine is too old.** Video needs an `sd-cli` that knows
+`-M vid_gen`. The tab **checks the installed binary** (it parses `sd-cli -h`
+rather than assuming) and tells you to run **`update-engine.bat`** if the option
+is absent. LTX-2.3 has been supported by stable-diffusion.cpp since May 2026.
+
+**Start small.** 704×384 over 2 seconds, distilled, no ×2 refine. Once that
+produces something you like, raise one thing at a time — resolution *or*
+duration *or* the refine pass. Raising all three at once on a 11-12 GB card is
+the reliable way to get an out-of-memory error after ten minutes of waiting.
+
+---
+
 ## Toolkit
 
 One-click installable utilities (models pulled from Hugging Face, run as
@@ -675,6 +742,22 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
+**LTX-2.3 22B — video** (family `ltx2`, `kind: video`, sd.cpp `-M vid_gen`)
+Two variants sharing their encoder and latent upscaler, so the second one is
+almost free to add:
+- diffusion — [`unsloth/LTX-2.3-GGUF`](https://huggingface.co/unsloth/LTX-2.3-GGUF) — `distilled-1.1/…` (8 steps, CFG 1.0) or `ltx-2.3-22b-dev-…` (~20 steps, CFG 6.0)
+- video VAE + **audio VAE** — same repo, `vae/…_video_vae.safetensors` and `vae/…_audio_vae.safetensors` (the audio VAE is what puts a soundtrack in the `.webm`)
+- embeddings connectors — same repo, `text_encoders/…_embeddings_connectors.safetensors` (via `--embeddings-connectors`)
+- prompt encoder — [`unsloth/gemma-3-12b-it-GGUF`](https://huggingface.co/unsloth/gemma-3-12b-it-GGUF) (`Q4_K_M`, via `--llm`, offloaded to RAM)
+- spatial latent upscaler (optional) — [`Lightricks/LTX-2.3`](https://huggingface.co/Lightricks/LTX-2.3) (`ltx-2.3-spatial-upscaler-x2-1.1.safetensors`), used by **🔍 Detail ×2**
+
+About **25 GB** on disk per variant-set (14 GB diffusion at Q4_K_M, 7.3 GB
+encoder, 1.8 GB VAEs, 2.3 GB connectors, 1 GB upscaler). The encoder quant is
+**pinned to Q4_K_M rather than following `{enc_quant}`**: on a 64 GB machine the
+ladder would fetch Q8_0, i.e. 12.5 GB for a *prompt* encoder, with no visible
+gain on the video — the sd.cpp docs use a ~7 GB Q4 as well. See
+[Video (LTX-2.3)](#video-ltx-23) for how to actually use it.
+
 **Boogu Image Edit Turbo 10B** (family `boogu`, instruction editing, Apache 2.0)
 - diffusion — [`realrebelai/Boogu-Image-Edit-Turbo_GGUFs`](https://huggingface.co/realrebelai/Boogu-Image-Edit-Turbo_GGUFs) (distilled, 4 steps, CFG 1.0)
 - text encoder — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (via `--llm`) + its `mmproj` vision projector (via `--llm_vision`, editing only)
@@ -732,10 +815,11 @@ atelier/
     sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, LoRA)
     generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale
     outpaint.py              # directional outpaint: canvas plan, mirror fill, composite-back
+    video.py                 # LTX-2.3 video pipeline (-M vid_gen): components, 32px/8k+1 grids
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
   ui/
     theme.py                 # light theme + CSS
-    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · settings_tab.py
+    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · video_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   _torch_setup.py            # shared PyTorch-CUDA install helpers

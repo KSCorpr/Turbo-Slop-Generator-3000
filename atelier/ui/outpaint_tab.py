@@ -39,7 +39,8 @@ PRESETS = [
 
 
 def _models() -> list:
-    return registry.load_base_models(settings.load_prefs())
+    # Modèles d'IMAGE seulement : LTX-2.3 (vidéo) n'a rien à faire ici.
+    return registry.image_models(settings.load_prefs())
 
 
 def _is_edit(m) -> bool:

@@ -201,6 +201,139 @@ base_models:
       - {name: "Qualité (8 pas)",       sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
     vram_min_gb: 10
 
+  # ==========================================================================
+  #  VIDÉO — LTX-2.3 (Lightricks), natif sd.cpp « -M vid_gen » (docs/ltx2.md)
+  # --------------------------------------------------------------------------
+  #  `kind: video` : ces modèles ne sortent PAS d'image. Ils sont exclus des
+  #  onglets de génération et d'outpaint, et n'apparaissent que dans l'onglet
+  #  « 🎬 Vidéo » et dans le Catalogue (pour le téléchargement).
+  #
+  #  ⚠️ ORDRE DE GRANDEUR. Diffusion 22 B (≈ 14 Go en Q4_K_M) + encodeur
+  #  Gemma-3-12B (7,3 Go) + 2 VAE + connecteurs : ~25 Go sur le disque et
+  #  autant en RAM. Sur 11-12 Go de VRAM ça tourne UNIQUEMENT grâce à
+  #  --offload-to-cpu (poids en RAM, couches envoyées au GPU au fil de l'eau) —
+  #  d'où la RAM 32 Go minimum, 64 Go confortable. Compter plusieurs minutes
+  #  par clip : c'est normal, ce n'est pas un blocage.
+  #
+  #  Deux variantes, mêmes fichiers d'encodeur (partagés, jamais téléchargés
+  #  deux fois) mais VAE/connecteurs distincts :
+  #   · Distilled 1.1 -> 8 pas, CFG 1.0. C'est CELLE À PRENDRE en 11-12 Go.
+  #   · Dev           -> ~20 pas, CFG 6.0, prompt négatif actif. Plus fin, mais
+  #                      environ 2,5× plus lent à réglages égaux.
+  # ==========================================================================
+  - id: ltx2-distilled
+    name: "LTX-2.3 Distilled 22B (vidéo)"
+    family: ltx2
+    kind: video
+    tags: [vidéo, audio, distillé, rapide, lourd]
+    description: >
+      **Génération vidéo AVEC bande-son**, en local, sans PyTorch : LTX-2.3 est
+      lu nativement par sd.cpp (`-M vid_gen`). Variante **distillée 1.1 : 8 pas,
+      CFG 1.0** — la seule raisonnable en dessous de 16 Go de VRAM. Trois modes :
+      **texte → vidéo**, **image → vidéo** (anime une image fixe) et
+      **début → fin** (deux images, le modèle fabrique l'entre-deux).
+      Encodeur de prompt **Gemma-3-12B** (déchargé en RAM) et **deux VAE**
+      (image + audio) : le `.webm` produit contient déjà le son.
+      ⚠️ **Très lourd** : ~25 Go de téléchargement, et plusieurs minutes par
+      clip sur une 11-12 Go. Commencez petit (704×384, 2 s) avant de monter.
+    sources:
+      diffusion:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "distilled-1.1/ltx-2.3-22b-distilled-1.1-{quant}.gguf"
+        quantizable: true
+      vae:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "vae/ltx-2.3-22b-distilled_video_vae.safetensors"
+      audio_vae:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "vae/ltx-2.3-22b-distilled_audio_vae.safetensors"
+      embeddings_connectors:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "text_encoders/ltx-2.3-22b-distilled_embeddings_connectors.safetensors"
+      text_encoder:
+        # Quant FIXE, volontairement. Le ladder {enc_quant} donnerait Q8_0 sur
+        # 64 Go de RAM, soit 12,5 Go pour un encodeur de PROMPT — 5 Go de plus
+        # sans gain visible sur la vidéo. La doc sd.cpp elle-même utilise un
+        # Q4 (~7,4 Go). On s'aligne dessus.
+        repo: unsloth/gemma-3-12b-it-GGUF
+        match: "gemma-3-12b-it-Q4_K_M.gguf"
+      spatial_upscaler:
+        # Upscaler LATENT ×2 officiel, inséré ENTRE la passe basse résolution et
+        # une passe de reprise (option « Détail ×2 » de l'onglet). Facultatif :
+        # son absence ne bloque que cette case à cocher.
+        repo: Lightricks/LTX-2.3
+        match: "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+        optional: true
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1280
+      height: 704
+      supports_negative: false   # distillé à CFG 1.0 : le négatif est ignoré
+      frames: 33
+      fps: 24
+    presets:
+      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
+      - {name: "Très rapide (6 pas)", sampler: euler, scheduler: auto, steps: 6,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",    sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 11
+
+  # --------------------------------------------------------------------------
+  - id: ltx2-dev
+    name: "LTX-2.3 Dev 22B (vidéo)"
+    family: ltx2
+    kind: video
+    tags: [vidéo, audio, qualité, lourd]
+    description: >
+      Version **non distillée** de LTX-2.3 : ~20 pas à **CFG 6.0**, avec
+      **prompt négatif actif**. Rendu plus fin et mieux tenu que la Distilled,
+      mais environ **2,5× plus lent** — sur une 11-12 Go, comptez le double de
+      patience. Mêmes trois modes (texte → vidéo, image → vidéo, début → fin) et
+      même bande-son générée.
+      Prenez-la si la Distilled vous convient déjà mais que vous voulez pousser
+      la qualité, ou si vous avez ≥ 16 Go de VRAM. L'encodeur Gemma-3-12B est
+      **partagé** avec la Distilled : si vous l'avez déjà, il n'est pas
+      re-téléchargé.
+    sources:
+      diffusion:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "ltx-2.3-22b-dev-{quant}.gguf"
+        quantizable: true
+      vae:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "vae/ltx-2.3-22b-dev_video_vae.safetensors"
+      audio_vae:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "vae/ltx-2.3-22b-dev_audio_vae.safetensors"
+      embeddings_connectors:
+        repo: unsloth/LTX-2.3-GGUF
+        match: "text_encoders/ltx-2.3-22b-dev_embeddings_connectors.safetensors"
+      text_encoder:
+        repo: unsloth/gemma-3-12b-it-GGUF
+        match: "gemma-3-12b-it-Q4_K_M.gguf"
+      spatial_upscaler:
+        repo: Lightricks/LTX-2.3
+        match: "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+        optional: true
+    defaults:
+      steps: 20
+      cfg_scale: 6.0
+      sampler: euler
+      scheduler: auto
+      width: 1280
+      height: 704
+      supports_negative: true
+      frames: 33
+      fps: 24
+      negative: "worst quality, low quality, blurry, distorted, artifacts"
+    presets:
+      - {name: "⚖️ Recommandé (20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 6.0}
+      - {name: "Rapide (14 pas)",        sampler: euler, scheduler: auto, steps: 14, cfg_scale: 6.0}
+      - {name: "Qualité (30 pas)",       sampler: euler, scheduler: auto, steps: 30, cfg_scale: 6.0}
+    vram_min_gb: 12
+
 # ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
 #  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.

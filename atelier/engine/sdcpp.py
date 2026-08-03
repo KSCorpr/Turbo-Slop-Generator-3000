@@ -126,6 +126,17 @@ def supported_options(sd_cli: Path | None) -> frozenset:
 _MASK_CANDIDATES = ("--mask-image", "--mask-img", "--mask")
 
 
+def supports_video(sd_cli: Path | None) -> bool:
+    """Ce binaire sait-il générer de la vidéo (« -M vid_gen », LTX-2.3) ?
+
+    Détecté au lieu d'être supposé : les binaires officiels récents l'ont, mais
+    un build plus ancien (ou maison, taillé pour l'image) ne l'a pas, et sd-cli
+    échouerait alors sur une option inconnue avec un message illisible. On teste
+    les deux options qui n'existent QUE pour la vidéo."""
+    opts = supported_options(sd_cli)
+    return "--video-frames" in opts and "--embeddings-connectors" in opts
+
+
 def mask_flag(sd_cli: Path | None) -> str | None:
     """Nom de l'option de masque supportée, ou None si le binaire n'en a pas.
 
@@ -247,6 +258,119 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         e = req.encoder_gpu_index
         cmd += ["--backend",
                 f"diffusion=cuda{g},vae=cuda{g},te=cuda{e}"]
+    cmd += ["-o", str(output), "-v"]
+    return cmd
+
+
+# --------------------------------------------------------------------------- #
+#  Vidéo — LTX-2.3 (sd.cpp « -M vid_gen », docs/ltx2.md)
+# --------------------------------------------------------------------------- #
+#  Contraintes du modèle, appliquées ICI plutôt que dans l'UI pour qu'aucun
+#  appelant ne puisse les contourner :
+#   · largeur/hauteur multiples de 32 — sd.cpp fait une division ENTIÈRE par le
+#     facteur du VAE, donc demander 720 px rend silencieusement 704 px ;
+#   · nombre d'images de la forme 8k+1 (33, 41, 49…) — sd.cpp réaligne tout seul,
+#     mais autant afficher à l'utilisateur ce qu'il va réellement obtenir.
+VAE_SCALE = 32
+FRAME_STEP = 8
+
+
+def snap_size(value: int) -> int:
+    """Arrondit une dimension au multiple de 32 le plus proche (minimum 32)."""
+    v = int(round(float(value) / VAE_SCALE)) * VAE_SCALE
+    return max(VAE_SCALE, v)
+
+
+def snap_frames(value: int) -> int:
+    """Arrondit un nombre d'images sur la grille 8k+1 (minimum 9)."""
+    n = max(9, int(value))
+    k = int(round((n - 1) / FRAME_STEP))
+    return max(9, k * FRAME_STEP + 1)
+
+
+@dataclass
+class VidRequest:
+    diffusion_model: Path
+    vae: Path                       # VAE vidéo
+    audio_vae: Path                 # VAE audio -> bande-son dans le .webm
+    text_encoder: Path              # --llm (Gemma-3-12B)
+    connectors: Path                # --embeddings-connectors (LTXAV)
+    prompt: str = ""
+    negative: str = ""
+    steps: int = 8
+    cfg_scale: float = 1.0
+    sampler: str = "euler"
+    schedule: str = ""
+    width: int = 1280
+    height: int = 704
+    frames: int = 33
+    fps: int = 24
+    seed: int = -1
+    # Conditionnement : image de départ (i2v) et image de fin (flf2v).
+    init_image: Path | None = None
+    end_image: Path | None = None
+    # Reprise haute résolution par upscaler LATENT ×2 (LTX spatial upscaler).
+    hires_upscaler: Path | None = None
+    hires_steps: int = 4
+    flags: dict[str, bool] = field(default_factory=dict)
+    gpu_index: int | None = None
+    encoder_gpu_index: int | None = None
+    auto_fit: bool = False
+    split_mode: str = ""
+
+
+def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
+    """Commande LTX-2.3 (« -M vid_gen »). La sortie doit être un .webm : c'est
+    le seul conteneur que sd.cpp sait muxer AVEC l'audio généré."""
+    _require(req.diffusion_model, req.vae, req.audio_vae, req.text_encoder,
+             req.connectors, req.init_image, req.end_image, req.hires_upscaler)
+
+    cmd: list[str] = [
+        str(sd_cli), "-M", "vid_gen",
+        "--diffusion-model", str(req.diffusion_model),
+        "--vae", str(req.vae),
+        "--audio-vae", str(req.audio_vae),
+        "--llm", str(req.text_encoder),
+        "--embeddings-connectors", str(req.connectors),
+        "-p", req.prompt,
+    ]
+    # Comme en image : à CFG 1.0 le modèle est distillé et ignore le négatif.
+    if req.negative and req.cfg_scale > 1.0:
+        cmd += ["-n", req.negative]
+    cmd += [
+        "--cfg-scale", f"{req.cfg_scale}",
+        "--steps", f"{req.steps}",
+        "--sampling-method", req.sampler,
+        "-W", f"{snap_size(req.width)}", "-H", f"{snap_size(req.height)}",
+        "--video-frames", f"{snap_frames(req.frames)}",
+        "--fps", f"{int(req.fps)}",
+        "-s", f"{req.seed}",
+    ]
+    if req.schedule:
+        cmd += ["--scheduler", req.schedule]
+    # Image de départ : « -i » en image → vidéo comme en début → fin (c'est la
+    # même option --init-img) ; « --end-img » n'a de sens qu'avec les deux.
+    if req.init_image:
+        cmd += ["-i", str(req.init_image)]
+        if req.end_image:
+            cmd += ["--end-img", str(req.end_image)]
+    if req.hires_upscaler:
+        # L'upscaler latent est désigné par son NOM sans extension, cherché dans
+        # le dossier passé à --hires-upscalers-dir (doc ltx2.md).
+        cmd += ["--hires",
+                "--hires-upscalers-dir", str(Path(req.hires_upscaler).parent),
+                "--hires-upscaler", Path(req.hires_upscaler).stem,
+                "--hires-steps", f"{int(req.hires_steps)}"]
+    cmd += _flag_args(req.flags)
+    if req.auto_fit:
+        cmd += ["--auto-fit"]
+        if req.split_mode:
+            cmd += ["--split-mode", req.split_mode]
+    elif (req.encoder_gpu_index is not None
+            and req.encoder_gpu_index != req.gpu_index):
+        g = req.gpu_index if req.gpu_index is not None else 0
+        cmd += ["--backend",
+                f"diffusion=cuda{g},vae=cuda{g},te=cuda{req.encoder_gpu_index}"]
     cmd += ["-o", str(output), "-v"]
     return cmd
 

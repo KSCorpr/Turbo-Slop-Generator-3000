@@ -37,7 +37,7 @@ sys.path.insert(0, str(ROOT))
 OBSOLETE = [
     "atelier/ui/creative_tab.py",          # ancien onglet Upscale (retiré)
     "scripts/tools/run_creative_upscale.py",  # ancien runner SDXL+ControlNet
-    "atelier/ui/video_tab.py",             # ancien onglet Vidéo LTX (retiré)
+    "atelier/mjparams.py",                 # ancien module Midjourney (retiré)
     # Backend ComfyUI + mode serveur (retirés : un seul moteur, sd-cli + aperçu).
     "atelier/engine/comfyui.py",
     "atelier/engine/sdserver.py",

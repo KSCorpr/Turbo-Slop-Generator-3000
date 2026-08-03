@@ -96,14 +96,36 @@ def items(prefs: dict | None = None) -> list[Item]:
         note="Réinstallable : onglet « Image → 3D »."))
 
     # --- Modèles du catalogue ---------------------------------------------
-    seen: set[Path] = set()
+    # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (les deux
+    # variantes de LTX-2.3, par exemple, partagent dépôt de poids, encodeur
+    # Gemma et upscaler). Un dossier n'est listé qu'une fois — sinon on
+    # compterait sa taille deux fois — mais l'élément porte alors le nom de
+    # TOUS les modèles concernés : ici, supprimer efface les deux, et il faut
+    # que ce soit écrit avant le clic, pas découvert après.
+    seen: dict[Path, int] = {}          # dossier -> index de l'élément porteur
+    shared_names: dict[int, list[str]] = {}
     for m in registry.load_base_models(prefs):
-        dirs = [d for d in _model_dirs_for(m) if d not in seen]
-        seen.update(dirs)
-        if dirs:
+        model_dirs = _model_dirs_for(m)
+        new = [d for d in model_dirs if d not in seen]
+        if new:
+            idx = len(out)
             out.append(Item(f"model_{m.id}", f"Modèle — {m.name}", "Modèles",
-                            dirs,
+                            new,
                             note="Re-téléchargeable : Catalogue de modèles."))
+            shared_names[idx] = [m.name]
+            for d in new:
+                seen[d] = idx
+        elif model_dirs:
+            # Entièrement contenu dans des dossiers déjà listés : on l'ajoute au
+            # nom de l'élément porteur au lieu de le faire disparaître.
+            idx = seen[model_dirs[0]]
+            shared_names[idx].append(m.name)
+    for idx, names in shared_names.items():
+        if len(names) > 1:
+            out[idx].label = "Modèles — " + " + ".join(names)
+            out[idx].note = ("⚠️ Dossiers PARTAGÉS par ces modèles : les "
+                             "supprimer les retire tous. "
+                             "Re-téléchargeables : Catalogue de modèles.")
 
     # --- Autres modèles ----------------------------------------------------
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Modèles",
