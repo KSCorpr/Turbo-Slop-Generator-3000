@@ -201,10 +201,24 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
             with gr.Tab("🔼 Agrandir (ESRGAN)", id="esrgan"):
                 gr.Markdown(
-                    "Agrandissement **simple** par réseau ESRGAN GGUF, natif "
+                    "Agrandissement **simple** par réseau ESRGAN, natif "
                     "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
                     "prompt. Le facteur (×2 ou ×4) dépend du modèle choisi ; "
-                    "« Répéter » ré-applique le modèle (×2 deux fois = ×4).")
+                    "« Répéter » ré-applique le modèle (×2 deux fois = ×4).\n\n"
+                    "🎨 **BD, illustration, dessin au trait** : prends un modèle "
+                    "marqué **dessin / anime**. Les modèles photo (Remacri, "
+                    "Nomos, UltraSharp…) sont entraînés sur des textures "
+                    "naturelles : sur un aplat ils inventent du grain, et sur un "
+                    "trait net ils posent un halo. C'est ça, l'« interpolation "
+                    "dégueulasse ».\n\n"
+                    "📥 **Ajouter tes propres modèles** : dépose un fichier "
+                    "`.pth`, `.safetensors` ou `.gguf` dans le dossier des "
+                    "upscalers, puis « ↻ Rafraîchir ». sd.cpp lit la plupart des "
+                    "`.pth` directement — tout le catalogue "
+                    "[OpenModelDB](https://openmodeldb.info) est donc "
+                    "utilisable ; filtre-le sur *anime* / *manga* / *cartoon*. "
+                    "Le GGUF charge plus vite et évite d'exécuter un pickle, "
+                    "mais il n'est pas obligatoire.")
 
                 with gr.Accordion("⬇️ Télécharger les upscalers (en 1 clic)",
                                   open=not registry.upscalers_ready()):
@@ -221,9 +235,12 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                     with gr.Column(scale=3):
                         u_image = gr.Image(label="Image à agrandir", type="pil")
                         u_model = gr.Dropdown(
-                            registry.list_upscalers(),
-                            value=(registry.list_upscalers() or [None])[0],
-                            label="Modèle d'upscale (×2 / ×4 selon le nom)")
+                            registry.upscaler_choices(),
+                            value=registry.default_upscaler(),
+                            label="Modèle d'upscale (×2 / ×4 selon le nom)",
+                            info="🎨 = entraîné pour le DESSIN (trait net, "
+                                 "aplats propres) · 📷 = photo. Sur une planche "
+                                 "de BD, un modèle photo bave et pose des halos.")
                         u_repeats = gr.Radio([("×1 (natif)", 1), ("Répéter ×2", 2)],
                                              value=1, label="Répétition")
                         with gr.Row():
@@ -244,14 +261,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                         lines.append(msg)
                         yield "\n".join(lines), gr.update()
                     yield ("\n".join(lines),
-                           gr.update(choices=registry.list_upscalers(),
-                                     value=(registry.list_upscalers() or [None])[0]))
+                           gr.update(choices=registry.upscaler_choices(),
+                                     value=registry.default_upscaler()))
 
                 u_inst.click(_install_upscalers, outputs=[u_inst_log, u_model])
 
                 def _refresh_upscalers():
-                    ups = registry.list_upscalers()
-                    return gr.update(choices=ups, value=(ups or [None])[0])
+                    return gr.update(choices=registry.upscaler_choices(),
+                                     value=registry.default_upscaler())
 
                 u_refresh.click(_refresh_upscalers, outputs=[u_model])
 

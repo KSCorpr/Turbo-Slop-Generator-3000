@@ -134,12 +134,53 @@ def upscalers_dir() -> Path:
     return settings.model_repo_dir(upscaler_config().get("repo", "upscalers"))
 
 
+# Extensions d'upscaler acceptées. sd.cpp charge « la plupart des .pth
+# directement » (README de wbruna/upscalers-sdcpp-gguf) : se limiter au GGUF
+# nous coupait de tout le catalogue OpenModelDB — en particulier des modèles
+# dédiés au dessin au trait, BD et manga, qui n'existent souvent qu'en .pth.
+# Le GGUF reste préférable (chargement plus rapide, pas de pickle à exécuter).
+UPSCALER_EXT = (".gguf", ".pth", ".safetensors")
+
+# Mots-clés de nom de fichier trahissant un modèle entraîné pour le DESSIN.
+# L'ESRGAN générique (photo) lisse les aplats et pose des halos sur les traits ;
+# ces modèles-là préservent les contours nets.
+_DRAWING_HINTS = ("anime", "manga", "cartoon", "toon", "comic", "animation",
+                  "line", "illust", "digimanga", "yandere", "ani_")
+
+
 def list_upscalers() -> list[str]:
-    """Noms des fichiers d'upscaler ESRGAN déjà téléchargés (triés)."""
+    """Noms des fichiers d'upscaler déjà présents (triés)."""
     d = upscalers_dir()
     if not d.exists():
         return []
-    return sorted(p.name for p in d.glob("*.gguf"))
+    return sorted(p.name for p in d.iterdir()
+                  if p.suffix.lower() in UPSCALER_EXT)
+
+
+def is_drawing_upscaler(name: str) -> bool:
+    low = (name or "").lower()
+    return any(k in low for k in _DRAWING_HINTS)
+
+
+def upscaler_choices() -> list[tuple[str, str]]:
+    """(libellé, nom de fichier) — modèles DESSIN d'abord, et étiquetés.
+
+    Le tri alphabétique brut mettait « 2x-ESRGAN » (photo, générique) en tête :
+    sur une planche de BD c'est le pire choix possible, et rien ne l'indiquait.
+    """
+    names = list_upscalers()
+    draw = [n for n in names if is_drawing_upscaler(n)]
+    photo = [n for n in names if n not in draw]
+    return ([(f"🎨 {n}  — dessin / anime", n) for n in draw]
+            + [(f"📷 {n}  — photo / général", n) for n in photo])
+
+
+def default_upscaler() -> str | None:
+    """Présélection : un modèle dessin s'il y en a un, sinon le premier."""
+    names = list_upscalers()
+    if not names:
+        return None
+    return next((n for n in names if is_drawing_upscaler(n)), names[0])
 
 
 def upscaler_path(name: str) -> Path | None:

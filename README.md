@@ -383,6 +383,23 @@ no prompt**. One-click downloads **all** models from
 model (×2/×4 depending on its name); **Repeat ×2** chains two passes (a ×2 model
 twice = ×4). Best for a clean, faithful enlargement.
 
+**Line art, comics and illustration.** The model matters more than the settings.
+Photo-trained models (Remacri, Nomos, UltraSharp…) learned natural texture: on a
+flat colour area they hallucinate grain, and along a clean ink line they ring.
+The dropdown therefore tags each model — 🎨 **drawing / anime** vs 📷 **photo** —
+lists the drawing ones first and preselects one, instead of defaulting to
+whatever sorted first alphabetically.
+
+**Bring your own models.** sd.cpp loads most `.pth` files directly, so the picker
+accepts `.gguf`, `.pth` and `.safetensors`: drop a file in the upscalers folder,
+hit **↻ Refresh**, and it appears. That opens the whole
+[OpenModelDB](https://openmodeldb.info) catalog — filter on *anime* / *manga* /
+*cartoon* for line art. GGUF still loads faster and avoids executing a pickle, and
+you can convert one yourself with
+`sd-cli --mode convert --model x.pth --output x.gguf`. Note that sd.cpp only
+implements the **ESRGAN (RRDBNet)** architecture for image upscaling, so newer
+SPAN / DAT / Compact models will not load.
+
 ### 🎯 Restoration (SeedVR2 1.4B)
 
 **One diffusion step, no prompt, no text encoder.** SeedVR2 reconstructs
