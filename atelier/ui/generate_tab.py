@@ -639,7 +639,10 @@ def build_generative_tab(model_id: str, title: str,
         # champ système vidé) — le texte appliqué ne « survit » plus à la
         # suppression de son preset.
         def _delete_style(name):
-            styles.delete_style(name)
+            try:
+                styles.delete_style(name)
+            except ValueError as exc:      # préréglage livré : on explique
+                raise gr.Error(str(exc))
             return (gr.update(choices=_style_choices(), value=_NONE_STYLE),
                     gr.update(value=""))
 

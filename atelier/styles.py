@@ -15,6 +15,12 @@ from typing import Dict, List, Tuple
 from . import settings
 
 STYLES_FILE = settings.USERDATA_DIR / "style_presets.json"
+# Préréglages LIVRÉS avec l'app (lecture seule). Ils apparaissent dans le menu
+# à côté de ceux de l'utilisateur, mais vivent dans config/ : ils survivent donc
+# aux mises à jour et ne polluent pas userdata/. Enregistrer un style sous le
+# même nom crée une surcharge personnelle qui prend le dessus ; la supprimer
+# rétablit la version livrée.
+BUNDLED_STYLES_FILE = settings.CONFIG_DIR / "style_presets.json"
 
 # Banques de styles Krea (cumulables), fournies avec l'app :
 #  • PHOTO : styles photographiques (qualité, lumière, objectif, pellicule…),
@@ -43,15 +49,34 @@ def _write(data: Dict[str, str]) -> None:
                            encoding="utf-8")
 
 
+def _load_bundled() -> Dict[str, str]:
+    if BUNDLED_STYLES_FILE.is_file():
+        try:
+            data = json.loads(BUNDLED_STYLES_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def is_bundled(name: str | None) -> bool:
+    return bool(name) and name in _load_bundled()
+
+
 def list_styles() -> list[str]:
-    """Noms des styles enregistrés (triés)."""
-    return sorted(_load().keys(), key=str.lower)
+    """Noms des styles disponibles : livrés avec l'app + enregistrés (triés)."""
+    return sorted(set(_load_bundled()) | set(_load()), key=str.lower)
 
 
 def get_style(name: str | None) -> str:
+    """Texte du style. Une version personnelle prime sur celle livrée."""
     if not name:
         return ""
-    return _load().get(name, "")
+    user = _load()
+    if name in user:
+        return user[name]
+    return _load_bundled().get(name, "")
 
 
 def save_style(name: str, text: str) -> str:
@@ -68,12 +93,24 @@ def save_style(name: str, text: str) -> str:
 
 
 def delete_style(name: str | None) -> None:
+    """Supprime un style personnel.
+
+    Sur un préréglage LIVRÉ, il n'y a rien à supprimer dans userdata/ : on
+    retire seulement l'éventuelle surcharge personnelle (ce qui rétablit la
+    version d'origine), et on le dit au lieu de laisser croire à un échec.
+    """
     if not name:
         return
     data = _load()
-    if name in data:
+    had_override = name in data
+    if had_override:
         del data[name]
         _write(data)
+    if is_bundled(name):
+        raise ValueError(
+            f"« {name} » est livré avec l'app : il ne peut pas être supprimé."
+            + (" Votre version personnelle a été retirée, le préréglage "
+               "d'origine est rétabli." if had_override else ""))
 
 
 # --------------------------------------------------------------------------

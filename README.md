@@ -139,7 +139,14 @@ Every generation tab exposes the same controls.
 - **Negative prompt** — shown only for models that support it (CFG > 1). Distilled
   models run at CFG 1.0 and ignore it.
 - **System / style prefix** (accordion) — a prefix prepended to every prompt. Save
-  reusable styles to a dropdown (persisted in `userdata/`).
+  reusable styles to a dropdown (persisted in `userdata/`). Styles are **global**:
+  saved once, available in every generation tab. A few are **bundled** with the
+  app in `config/style_presets.json` — they survive updates and cannot be
+  deleted, but saving a style under the same name creates your own version, which
+  takes precedence; deleting that restores the original. Bundled today:
+  **📷 France provinciale 1995-2005 (amateur)**, a transcription of a
+  "mundane amateur snapshot, provincial France, always overcast, no
+  post-processing" brief.
 - **📷 Krea 2 photo styles** (accordion) — a bundled bank of **139 stackable
   photographic styles** (quality, lighting, lens, film stock, mood…), grouped by
   category in a **multi-select** dropdown. Your prompt subject is inserted into
