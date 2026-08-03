@@ -210,6 +210,9 @@ def main():
                     help="0-1000 : licence artistique (style mj)")
     ap.add_argument("--chaos", type=int, default=0,
                     help="0-100 : diversité entre les propositions")
+    ap.add_argument("--style-constraint", default="",
+                    help="préfixe de style déjà appliqué à la génération : le "
+                         "prompt produit doit rester compatible avec lui")
     args = ap.parse_args()
 
     import torch
@@ -234,6 +237,23 @@ def main():
         max_new = min(max_new, 200)
         if args.stylize >= 0:
             system += "\n\n" + _stylize_text(args.stylize)
+
+    # Style imposé par l'utilisateur (préréglage actif). Sans cette contrainte,
+    # l'améliorateur ajoute SES propres descripteurs d'appareil, d'objectif, de
+    # lumière et de traitement — qui contredisent frontalement un style du type
+    # « compact bas de gamme, temps couvert, aucune retouche ». Le préfixe étant
+    # ajouté à la génération, il ne faut pas non plus le répéter ici.
+    constraint = (args.style_constraint or "").strip()
+    if constraint:
+        system += (
+            "\n\nFIXED STYLE — NON-NEGOTIABLE. The generated image already gets "
+            f"this style prefix prepended:\n\"{constraint}\"\n"
+            "Your prompt MUST stay consistent with it. Describe the subject, "
+            "its action and its setting. Do NOT add camera, lens, film, "
+            "lighting, weather, era or post-processing descriptors that "
+            "contradict that style, and do NOT restate the style prefix — it is "
+            "already applied. If the user's idea conflicts with the style, keep "
+            "the user's subject and let the style win on everything else.")
 
     n = max(1, min(8, int(args.variants)))
     if n > 1:

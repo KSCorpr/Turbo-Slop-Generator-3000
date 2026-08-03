@@ -428,6 +428,7 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
 def enhance_prompt_variants(prompt: str, style: str = "generic",
                             level: str = "medium", variants: int = 1,
                             stylize: int = -1, chaos: int = 0,
+                            style_constraint: str = "",
                             log: Callable[[str], None] | None = None) -> list[str]:
     """Améliore un prompt brut via un petit LLM instruct (transformers).
 
@@ -454,6 +455,9 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
            "--chaos", str(max(0, min(100, int(chaos or 0))))]
     if stylize is not None and int(stylize) >= 0:
         cmd += ["--stylize", str(max(0, min(1000, int(stylize))))]
+    # Préréglage de style actif : le LLM doit écrire AVEC lui, pas contre lui.
+    if (style_constraint or "").strip():
+        cmd += ["--style-constraint", style_constraint.strip()]
     # Améliorateur = TEXTE → GPU secondaire dédié au texte (ex. 1080 Ti).
     _run_tool(cmd, log, "L'amélioration du prompt a échoué (voir le journal).",
               gpu_index=_text_gpu_index())

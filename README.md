@@ -135,7 +135,13 @@ Every generation tab exposes the same controls.
 ### Prompt & system style
 - **Prompt** — your description. For **edit models** (Flux.2 Klein) describe the
   *modification* to apply to the reference image.
-- **✨ Enhance prompt (AI)** — see [Prompt enhancer](#prompt-enhancer-ai).
+- **✨ Enhance prompt (AI)** — see [Prompt enhancer](#prompt-enhancer-ai). Note
+  that a **style preset translates nothing** — it is a prefix glued in front of
+  your text, so writing in French leaves you with French plus an English header.
+  The enhancer is what translates and shapes the prompt, and it is **given the
+  active preset as a constraint**: it describes the subject without adding
+  camera, lens, lighting or processing wording that would contradict the style.
+  Pick the preset first, then enhance.
 - **Negative prompt** — shown only for models that support it (CFG > 1). Distilled
   models run at CFG 1.0 and ignore it.
 - **System / style prefix** (accordion) — a prefix prepended to every prompt. Save

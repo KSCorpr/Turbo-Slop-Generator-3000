@@ -678,7 +678,8 @@ def build_generative_tab(model_id: str, title: str,
         # « Midjourney » (mj) est un choix explicite qui prime sur le modèle.
         _enh_auto = "krea2" if family == "krea2" else "generic"
 
-        def _enhance(text, style_choice, level, variants, stylize, chaos):
+        def _enhance(sys_prompt, text, style_choice, level, variants, stylize,
+                     chaos):
             # Paramètres façon Midjourney tapés dans le prompt : on les sort du
             # texte AVANT d'appeler le LLM, et on les applique aux réglages.
             clean, mp = mjparams.parse(text or "")
@@ -693,7 +694,8 @@ def build_generative_tab(model_id: str, title: str,
                 props = tools.enhance_prompt_variants(
                     clean, style=style, level=level or "medium",
                     variants=int(variants or 1), stylize=int(sty),
-                    chaos=int(cha))
+                    chaos=int(cha),
+                    style_constraint=(sys_prompt or "").strip())
             except tools.ToolError as exc:
                 raise gr.Error(str(exc))
             except Exception as exc:  # noqa: BLE001
@@ -714,6 +716,8 @@ def build_generative_tab(model_id: str, title: str,
                 bits.append(t("{n} propositions").format(n=len(props)))
             if is_mj:
                 bits.append(f"stylize {int(sty)}")
+            if (sys_prompt or "").strip():
+                bits.append(t("style actif respecté"))
             msg = "✅ **" + t("Prompt amélioré") + "** — " + " · ".join(bits)
             note = mjparams.describe(mp)
             if note:
@@ -733,8 +737,8 @@ def build_generative_tab(model_id: str, title: str,
 
         enhance_btn.click(
             _enhance,
-            inputs=[prompt, enh_style, enh_level, enh_variants, enh_stylize,
-                    enh_chaos],
+            inputs=[system_prompt, prompt, enh_style, enh_level, enh_variants,
+                    enh_stylize, enh_chaos],
             outputs=[prompt, enh_props, enh_msg, width, height, negative,
                      prompt_before, enh_undo])
 
