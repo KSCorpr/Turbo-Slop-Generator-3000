@@ -147,13 +147,12 @@ def clean_tmp() -> None:
 
 def _expected_model_dirs() -> set[str]:
     """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
-    tous les composants des modèles + PiD + upscalers."""
+    tous les composants des modèles + upscalers."""
     from atelier import registry, settings
     prefs = settings.load_prefs()
     repos: set[str] = set()
     for m in registry.load_base_models(prefs):
         repos.update(c.repo for c in m.components)
-    repos.update(c.repo for c in registry.pid_components())
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)

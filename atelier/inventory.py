@@ -106,14 +106,6 @@ def items(prefs: dict | None = None) -> list[Item]:
                             note="Re-téléchargeable : Catalogue de modèles."))
 
     # --- Autres modèles ----------------------------------------------------
-    pid_dirs: list[Path] = []
-    for comp in registry.pid_components():
-        d = settings.model_repo_dir(comp.repo)
-        if d not in pid_dirs and d not in seen:
-            pid_dirs.append(d)
-    if pid_dirs:
-        out.append(Item("pid", "PiD — décodeur/upscaler ×4 (NVIDIA)", "Modèles",
-                        pid_dirs, note="Réinstallable : onglet de génération."))
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Modèles",
                     [registry.upscalers_dir()],
                     note="Réinstallable : Toolkit → Agrandir."))

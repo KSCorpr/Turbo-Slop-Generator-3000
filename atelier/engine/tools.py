@@ -277,7 +277,7 @@ def sam_segment(image, x: int, y: int,
     return _collect(out_dir, "sam", stamp), (overlay if overlay.exists() else None)
 
 
-ENHANCE_STYLES = ("generic", "krea2", "mj")
+ENHANCE_STYLES = ("generic", "krea2")
 
 
 # --------------------------------------------------------------------------- #
@@ -427,17 +427,15 @@ def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
 
 def enhance_prompt_variants(prompt: str, style: str = "generic",
                             level: str = "medium", variants: int = 1,
-                            stylize: int = -1, chaos: int = 0,
                             style_constraint: str = "",
                             log: Callable[[str], None] | None = None) -> list[str]:
     """Améliore un prompt brut via un petit LLM instruct (transformers).
 
-    `style` choisit le system prompt : "krea2" (guide Krea), "mj" (style maison
-    Midjourney : court, esthétique, phrases juxtaposées) ou "generic" (Flux/SD).
-    `variants` demande plusieurs PROPOSITIONS en un seul chargement du modèle
-    (façon Midjourney) ; `stylize` (0–1000) et `chaos` (0–100) reprennent la
-    sémantique de Midjourney. S'exécute en sous-process (chargé puis déchargé :
-    aucun conflit VRAM avec sd.cpp)."""
+    `style` choisit le system prompt : "krea2" (guide Krea) ou "generic".
+    `variants` demande plusieurs PROPOSITIONS en un seul chargement du modèle.
+    `style_constraint` transmet le préréglage de style actif, pour que le LLM
+    écrive AVEC lui. S'exécute en sous-process (chargé puis déchargé : aucun
+    conflit VRAM avec sd.cpp)."""
     if not enhance_is_installed():
         raise ToolError("L'améliorateur de prompt n'est pas installé "
                         "(accordéon « ✨ Améliorer » de l'onglet de génération).")
@@ -451,10 +449,7 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
            "--prompt", prompt, "--output", str(out_file),
            "--style", style if style in ENHANCE_STYLES else "generic",
            "--level", level if level in ("light", "medium", "strong") else "medium",
-           "--variants", str(max(1, min(8, int(variants or 1)))),
-           "--chaos", str(max(0, min(100, int(chaos or 0))))]
-    if stylize is not None and int(stylize) >= 0:
-        cmd += ["--stylize", str(max(0, min(1000, int(stylize))))]
+           "--variants", str(max(1, min(8, int(variants or 1))))]
     # Préréglage de style actif : le LLM doit écrire AVEC lui, pas contre lui.
     if (style_constraint or "").strip():
         cmd += ["--style-constraint", style_constraint.strip()]

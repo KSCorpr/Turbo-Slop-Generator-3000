@@ -8,7 +8,7 @@ import re
 
 import gradio as gr
 
-from .. import downloader, i18n, mjparams, registry, settings, styles
+from .. import downloader, i18n, registry, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -167,16 +167,13 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Row():
                     enhance_btn = gr.Button("✨ Améliorer le prompt (IA)",
                                             size="sm", scale=3)
-                    enh_style = gr.Dropdown(
-                        [(t("Détaillé"), "auto"), (t("Midjourney"), "mj")],
-                        value="auto", label="Style", scale=2)
                     enh_level = gr.Dropdown(
                         [(t("Léger"), "light"), (t("Moyen"), "medium"),
                          (t("Fort"), "strong")],
                         value="medium", label="Intensité", scale=2)
                 # Récapitulatif VIVANT : dit en clair ce que le bouton va faire,
-                # AVANT de cliquer. C'est ce qui manquait le plus : les curseurs
-                # Stylize/Chaos sont des nombres sans signification évidente.
+                # AVANT de cliquer. Sans ça on règle des menus sans savoir ce
+                # qu'ils changent concrètement sur le prompt.
                 enh_recap = gr.Markdown("", elem_classes="hint")
                 enh_msg = gr.Markdown("", elem_classes="feedback")
                 enh_undo = gr.Button("↩️ Rétablir le prompt d'origine",
@@ -220,9 +217,22 @@ def build_generative_tab(model_id: str, title: str,
                                 label="Nom du préréglage à enregistrer", scale=2,
                                 placeholder="ex. : Aquarelle pastel")
                         with gr.Row():
+                            # NE PAS APPLIQUER ≠ SUPPRIMER. Le bouton rouge
+                            # efface le préréglage du disque ; c'est rarement ce
+                            # qu'on veut, donc l'action courante — juste ne plus
+                            # l'appliquer — a son propre bouton, en premier.
+                            style_off = gr.Button("✖️ Ne plus appliquer",
+                                                  size="sm")
                             style_save = gr.Button("💾 Enregistrer", size="sm")
-                            style_del = gr.Button("🗑️ Supprimer", size="sm")
                             style_refresh = gr.Button("↻ Rafraîchir", size="sm")
+                        with gr.Row():
+                            style_del = gr.Button(
+                                "🗑️ Supprimer ce préréglage (définitif)",
+                                size="sm", variant="stop")
+                        style_msg = gr.Markdown("", elem_classes="feedback")
+                        # Suppression en DEUX temps : le 1er clic arme, le 2e
+                        # confirme. Un clic distrait ne détruit plus rien.
+                        style_armed = gr.State(None)
 
                     # Banque photo (© ghleg, MIT) : le sujet du prompt est
                     # inséré dans chaque style coché ; les négatifs des styles ne
@@ -261,14 +271,8 @@ def build_generative_tab(model_id: str, title: str,
                                   + ("" if _enh_ready else " & installation"),
                                   open=not _enh_ready):
                     gr.Markdown(
-                        "La ligne grise sous les menus **résume en clair ce que "
-                        "le bouton va faire** — inutile de retenir ce que valent "
-                        "les chiffres ci-dessous, elle les traduit.\n\n"
-                        "💡 Tu peux aussi écrire les **paramètres Midjourney "
-                        "directement dans le prompt** : `--ar 16:9` (format, à "
-                        "surface constante), `--stylize 500`, `--chaos 40`, "
-                        "`--no voitures`. Ils sont retirés du texte, appliqués "
-                        "aux réglages, et **priment sur les curseurs**.")
+                        "La ligne grise sous les menus **résume en clair ce "
+                        "que le bouton va faire**.")
                     with gr.Row():
                         enh_variants = gr.Radio(
                             [("1", 1), ("2", 2), ("4", 4)], value=4,
@@ -276,17 +280,6 @@ def build_generative_tab(model_id: str, title: str,
                             info="Nombre de prompts proposés. Produits en un "
                                  "seul chargement du modèle : 4 coûtent presque "
                                  "le même temps qu'1.")
-                        enh_stylize = gr.Slider(
-                            0, 1000, value=250, step=50, label="Stylize",
-                            interactive=False,
-                            info="Style « Midjourney » uniquement (grisé sinon). "
-                                 "0 = littéral · 1000 = direction artistique "
-                                 "maximale.")
-                        enh_chaos = gr.Slider(
-                            0, 100, value=25, step=5, label="Chaos",
-                            info="Écart entre les propositions. 0 = quasi "
-                                 "identiques · 100 = directions opposées. "
-                                 "Sans effet sur une seule proposition.")
 
                     with gr.Accordion("⬇️ Installation (1 clic)",
                                       open=not _enh_ready):
@@ -406,39 +399,6 @@ def build_generative_tab(model_id: str, title: str,
                                                  "?modelVersionId=3067151")
                         civitai_btn = gr.Button("⬇️ Importer", scale=1)
                     civitai_msg = gr.Markdown("")
-
-                with gr.Accordion("🚀 Sortie haute résolution (PiD ×4)",
-                                  open=False):
-                    gr.Markdown(
-                        "Décode la sortie via le **décodeur pixel-diffusion "
-                        "NVIDIA (PiD, variante Flux.2)** : agrandit **×4 par "
-                        "diffusion pixel** (→ 2048 px, 4 pas). Aligné sur le "
-                        "backbone **Flux.2** + son VAE (cohérent avec ta "
-                        "génération Flux.2 Klein → moins d'artefacts). Coché, "
-                        "l'image sort directement en haute résolution.  \n"
-                        "⚠️ Poids officiels **NSCLv1 (non commercial)**. "
-                        "Ratio **×4 fixe** (l'image est ramenée à ~512 px avant "
-                        "décodage).")
-                    pid_hires = gr.Checkbox(
-                        value=False,
-                        label="Décoder la sortie en haute résolution (PiD ×4)")
-                    with gr.Accordion("⚙️ Installer PiD (1 clic)",
-                                      open=not registry.pid_ready()):
-                        gr.Markdown("Via sd.cpp (pas de PyTorch). Décodeur PiD + "
-                                    "encodeur Gemma-2-2B + VAE FLUX.1 (~5 Go).")
-                        pid_install_log = gr.Textbox(
-                            label="Journal d'installation", lines=6,
-                            autoscroll=True, elem_classes="log-box")
-                        pid_install_btn = gr.Button("⬇️ Installer PiD")
-
-                        def _install_pid():
-                            lines: list[str] = []
-                            for msg in downloader.download_pid(log=lines.append):
-                                lines.append(msg)
-                                yield "\n".join(lines)
-
-                        pid_install_btn.click(_install_pid,
-                                              outputs=[pid_install_log])
 
                 with gr.Accordion("📂 Fichiers locaux (modèle perso)", open=False):
                     gr.Markdown(t(
@@ -638,16 +598,46 @@ def build_generative_tab(model_id: str, title: str,
         # Supprimer : retire le style enregistré ET réinitialise (« Aucun » +
         # champ système vidé) — le texte appliqué ne « survit » plus à la
         # suppression de son preset.
-        def _delete_style(name):
+        def _style_off():
+            """Retire le style de la GÉNÉRATION. Ne touche à rien sur le disque."""
+            return (gr.update(value=_NONE_STYLE), gr.update(value=""),
+                    gr.update(value="✖️ " + t("Style retiré de la génération. "
+                                              "Le préréglage est conservé.")),
+                    None)
+
+        style_off.click(_style_off,
+                        outputs=[style_pick, system_prompt, style_msg,
+                                 style_armed])
+
+        def _delete_style(name, armed):
+            if not name or name == _NONE_STYLE:
+                return (gr.update(), gr.update(),
+                        gr.update(value="⚠️ " + t("Choisissez d'abord un "
+                                                  "préréglage à supprimer.")),
+                        None)
+            if armed != name:
+                # 1er clic : on arme et on prévient, sans rien détruire.
+                return (gr.update(), gr.update(),
+                        gr.update(value="⚠️ **" + t("Supprimer définitivement "
+                                                    "« {n} » ?").format(n=name)
+                                  + "** " + t("Recliquez pour confirmer. Pour "
+                                              "seulement ne plus l'appliquer, "
+                                              "utilisez « ✖️ Ne plus "
+                                              "appliquer ».")),
+                        name)
             try:
                 styles.delete_style(name)
             except ValueError as exc:      # préréglage livré : on explique
-                raise gr.Error(str(exc))
+                return (gr.update(choices=_style_choices(), value=_NONE_STYLE),
+                        gr.update(value=""), gr.update(value=f"ℹ️ {exc}"), None)
             return (gr.update(choices=_style_choices(), value=_NONE_STYLE),
-                    gr.update(value=""))
+                    gr.update(value=""),
+                    gr.update(value="🗑️ " + t("« {n} » supprimé.").format(n=name)),
+                    None)
 
-        style_del.click(_delete_style, inputs=[style_pick],
-                        outputs=[style_pick, system_prompt])
+        style_del.click(_delete_style, inputs=[style_pick, style_armed],
+                        outputs=[style_pick, system_prompt, style_msg,
+                                 style_armed])
 
         def _refresh_styles():
             return gr.update(choices=_style_choices())
@@ -675,53 +665,30 @@ def build_generative_tab(model_id: str, title: str,
 
         # --- Améliorateur de prompt (LLM) ---
         # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
-        # « Midjourney » (mj) est un choix explicite qui prime sur le modèle.
         _enh_auto = "krea2" if family == "krea2" else "generic"
 
-        def _enhance(sys_prompt, text, style_choice, level, variants, stylize,
-                     chaos):
-            # Paramètres façon Midjourney tapés dans le prompt : on les sort du
-            # texte AVANT d'appeler le LLM, et on les applique aux réglages.
-            clean, mp = mjparams.parse(text or "")
-            if not clean.strip():
+        def _enhance(sys_prompt, text, level, variants):
+            if not (text or "").strip():
                 raise gr.Error(t("Saisissez d'abord un prompt à améliorer."))
-            is_mj = style_choice == "mj"
-            style = "mj" if is_mj else _enh_auto
-            # --stylize / --chaos écrits dans le prompt priment sur les curseurs.
-            sty = mp.get("stylize", stylize if is_mj else -1)
-            cha = mp.get("chaos", chaos)
             try:
                 props = tools.enhance_prompt_variants(
-                    clean, style=style, level=level or "medium",
-                    variants=int(variants or 1), stylize=int(sty),
-                    chaos=int(cha),
+                    text.strip(), style=_enh_auto, level=level or "medium",
+                    variants=int(variants or 1),
                     style_constraint=(sys_prompt or "").strip())
             except tools.ToolError as exc:
                 raise gr.Error(str(exc))
             except Exception as exc:  # noqa: BLE001
                 raise gr.Error(f"Échec de l'amélioration : {exc}")
 
-            # Format demandé (--ar) : on garde la surface native du modèle.
-            w_up, h_up = gr.update(), gr.update()
-            if mp.get("ar"):
-                nw, nh = mjparams.aspect_size(
-                    mp["ar"], int(d.get("width", 1024)),
-                    int(d.get("height", 1024)))
-                w_up, h_up = gr.update(value=nw), gr.update(value=nh)
-            neg_up = gr.update(value=mp["no"]) if mp.get("no") else gr.update()
-
             # Feedback : ce qui a été fait, en une ligne repérable.
-            bits = [t("Midjourney") if is_mj else t("Détaillé")]
+            bits = []
             if len(props) > 1:
                 bits.append(t("{n} propositions").format(n=len(props)))
-            if is_mj:
-                bits.append(f"stylize {int(sty)}")
             if (sys_prompt or "").strip():
                 bits.append(t("style actif respecté"))
-            msg = "✅ **" + t("Prompt amélioré") + "** — " + " · ".join(bits)
-            note = mjparams.describe(mp)
-            if note:
-                msg += "  \n🎛️ " + t("Paramètres lus dans le prompt :") + f" {note}"
+            msg = "✅ **" + t("Prompt amélioré") + "**"
+            if bits:
+                msg += " — " + " · ".join(bits)
             if len(props) > 1:
                 msg += "  \n" + t("Cliquez une proposition ci-dessous pour "
                                   "l'utiliser à la place.")
@@ -732,55 +699,30 @@ def build_generative_tab(model_id: str, title: str,
             return (gr.update(value=props[0]),
                     gr.update(choices=choices, value=props[0],
                               visible=len(props) > 1),
-                    gr.update(value=msg), w_up, h_up, neg_up,
-                    text or "", gr.update(visible=True))
+                    gr.update(value=msg), text or "", gr.update(visible=True))
 
         enhance_btn.click(
             _enhance,
-            inputs=[system_prompt, prompt, enh_style, enh_level, enh_variants,
-                    enh_stylize, enh_chaos],
-            outputs=[prompt, enh_props, enh_msg, width, height, negative,
-                     prompt_before, enh_undo])
+            inputs=[system_prompt, prompt, enh_level, enh_variants],
+            outputs=[prompt, enh_props, enh_msg, prompt_before, enh_undo])
 
         # --- Récapitulatif VIVANT : ce que « Améliorer » va faire ---------
-        # Les curseurs Stylize/Chaos sont des nombres ; on les traduit en mots,
-        # sinon impossible de savoir ce qu'on règle sans lire la doc.
-        def _recap(style_choice, level, variants, stylize, chaos):
-            is_mj = style_choice == "mj"
+        # On traduit les réglages en une phrase lisible, sinon impossible de
+        # savoir ce qu'on règle sans lire la doc.
+        def _recap(level, variants):
             n = int(variants or 1)
-            parts = [("**" + t("Midjourney") + "** — " +
-                      t("court, dense, esthétique d'abord")) if is_mj else
-                     ("**" + t("Détaillé") + "** — " +
-                      t("paragraphe descriptif complet"))]
-            parts.append({"light": t("retouche légère"),
-                          "medium": t("enrichissement équilibré"),
-                          "strong": t("expansion complète")}
-                         .get(level or "medium", ""))
+            parts = [{"light": t("retouche légère"),
+                      "medium": t("enrichissement équilibré"),
+                      "strong": t("expansion complète")}.get(level or "medium", "")]
             parts.append(t("1 seule proposition") if n == 1 else
                          t("{n} propositions au choix").format(n=n))
-            if is_mj:
-                s = int(stylize or 0)
-                parts.append("stylize %d — %s" % (s, (
-                    t("très littéral") if s <= 50 else
-                    t("peu d'effet de style") if s <= 250 else
-                    t("direction artistique marquée") if s <= 600 else
-                    t("licence artistique maximale"))))
-            if n > 1:
-                c = int(chaos or 0)
-                parts.append("chaos %d — %s" % (c, (
-                    t("propositions très proches") if c <= 15 else
-                    t("variations modérées") if c <= 50 else
-                    t("directions très différentes"))))
             return "→ " + "  ·  ".join(p for p in parts if p)
 
-        _recap_in = [enh_style, enh_level, enh_variants, enh_stylize, enh_chaos]
+        _recap_in = [enh_level, enh_variants]
         for _c in _recap_in:
             _c.change(_recap, inputs=_recap_in, outputs=[enh_recap])
-        # Valeur de départ : la ligne doit être remplie AVANT toute interaction,
-        # sinon on ne sait pas ce que fait le bouton tant qu'on n'a rien touché.
-        enh_recap.value = _recap(enh_style.value, enh_level.value,
-                                 enh_variants.value, enh_stylize.value,
-                                 enh_chaos.value)
+        # Valeur de départ : la ligne doit être remplie AVANT toute interaction.
+        enh_recap.value = _recap(enh_level.value, enh_variants.value)
 
         # --- Rétablir le prompt d'avant amélioration ---
         def _undo_enhance(before):
@@ -808,10 +750,6 @@ def build_generative_tab(model_id: str, title: str,
         enh_props.input(lambda p: gr.update(value=p) if p else gr.update(),
                         inputs=[enh_props], outputs=[prompt])
 
-        # « Stylize » n'a de sens que dans le style Midjourney (Chaos, lui, joue
-        # sur la diversité des propositions dans les deux styles).
-        enh_style.change(lambda s: gr.update(interactive=s == "mj"),
-                         inputs=[enh_style], outputs=[enh_stylize])
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ
@@ -848,7 +786,7 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc, pid_hires):
+                        custom_diff, custom_vae, custom_enc):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
             # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
@@ -856,17 +794,6 @@ def build_generative_tab(model_id: str, title: str,
             import queue
             import threading
             import time
-
-            # Paramètres façon Midjourney tapés dans le prompt (--ar, --no…) :
-            # ils sont retirés du texte et appliqués ici aussi, pour que la
-            # syntaxe marche même sans passer par l'améliorateur.
-            prompt, _mp = mjparams.parse(prompt or "")
-            if _mp.get("ar"):
-                width, height = mjparams.aspect_size(
-                    _mp["ar"], int(d.get("width", 1024)),
-                    int(d.get("height", 1024)))
-            if _mp.get("no") and not (negative or "").strip():
-                negative = _mp["no"]
 
             if not (prompt or "").strip():
                 raise gr.Error(t("Saisissez un prompt (décrivez l'image, ou la "
@@ -1068,32 +995,6 @@ def build_generative_tab(model_id: str, title: str,
                 return
             paths = state.get("outs", [])
 
-            # Décodeur de sortie PiD (optionnel) : chaque image générée est
-            # décodée/agrandie ×4 par diffusion pixel → sortie haute résolution
-            # directe. Repli sur l'image de base en cas d'absence/erreur.
-            if pid_hires and paths:
-                if not registry.pid_ready():
-                    logs.append("\n⚠️ PiD non installé — sortie normale conservée "
-                                "(dépliez « Installer PiD » pour l'obtenir).")
-                else:
-                    hi: list[str] = []
-                    for i, p in enumerate(paths):
-                        logs.append(f"\n🚀 Décodage PiD ×4 — image "
-                                    f"{i + 1}/{len(paths)}…")
-                        yield (t("🚀 Décodage PiD ×4 — image {i}/{n}…").format(
-                                   i=i + 1, n=len(paths)),
-                               gr.update(), gr.update(),
-                               "\n".join(logs[-400:]), gr.update(), gr.update())
-                        try:
-                            out = gen_engine.pid_decode(p, prompt=full_prompt,
-                                                        log=logs.append)
-                            hi.append(str(out))
-                        except Exception as exc:  # noqa: BLE001
-                            logs.append(f"[ERREUR PiD] {exc} — image de base "
-                                        "conservée.")
-                            hi.append(p)
-                    paths = hi
-
             seeds = [base_seed + i for i in range(len(paths))]
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
             # Fin : on masque l'aperçu et on RÉAFFICHE la galerie avec les résultats
@@ -1110,7 +1011,7 @@ def build_generative_tab(model_id: str, title: str,
                     ref_image2, ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc, pid_hires],
+                    custom_diff, custom_vae, custom_enc],
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )

@@ -149,7 +149,10 @@ Every generation tab exposes the same controls.
   saved once, available in every generation tab. A few are **bundled** with the
   app in `config/style_presets.json` — they survive updates and cannot be
   deleted, but saving a style under the same name creates your own version, which
-  takes precedence; deleting that restores the original. Bundled today:
+  takes precedence; deleting that restores the original. Two separate buttons,
+  so nothing is lost by accident: **✖️ Stop applying** only detaches the style
+  from the next generations and keeps the preset, while **🗑️ Delete this preset
+  (permanent)** erases it and asks for a second click to confirm. Bundled today:
   **📷 France provinciale 1995-2005 (amateur)**, a transcription of a
   "mundane amateur snapshot, provincial France, always overcast, no
   post-processing" brief.
@@ -242,24 +245,6 @@ its aspect.
   (depth, background removal, SAM, ESRGAN or creative upscale).
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
-
-### High-resolution output (PiD)
-**🚀 High-resolution output (PiD ×4)** in the generation panel decodes each
-result through NVIDIA's **Pixel Diffusion Decoder** ([PiD](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/pid.md)):
-a 4-step pixel-space diffusion decode that enlarges **×4** (→ 2048 px). Tick it
-and every generated image comes out directly in high resolution — no separate
-upscaler step. This uses the **Flux.2 PiD** checkpoint (`--vae-format flux2`),
-matching the Flux.2 backbone + VAE of the generation, which cuts artifacts versus
-the flux1 variant; it **reuses the Flux.2 VAE already downloaded** for generation.
-Note sd.cpp exposes PiD as a re-encode pipeline (RGB → VAE latent → PiD decode),
-which is its intended mode here, so it adds one encode round-trip rather than
-tapping the generation latent directly. First use downloads the PiD weights
-(decoder + Gemma-2-2B encoder, one click; the Flux.2 VAE is shared). The output
-is 2048 px (the checkpoint is trained for a fixed ×4 from 512 px — other ratios
-produce artifacts). Official weights are under the **NSCLv1 non-commercial**
-license.
-
----
 
 ## Hardware & optimization
 
@@ -627,45 +612,17 @@ system prompt **detects intent from keywords** (medium/style/subject/mood) and
 keeps the output medium-coherent; a **strength** selector (Light / Medium / Strong)
 controls how far it expands. Krea 2 uses a Krea-specific system prompt.
 
-#### Midjourney mode
+**Several proposals at once.** Pick 1, 2 or 4 under **🎨 Enhancement options**;
+they are produced in a *single* model load (`num_return_sequences`), so four cost
+barely more than one. They appear under the prompt field and clicking one puts it
+in the prompt. A grey line under the menus states in plain words what the button
+will do before you press it.
 
-The **Style** selector next to the button switches between two house styles:
-
-- **Detailed** (default) — a full descriptive paragraph. Krea 2 automatically
-  uses the official Krea system prompt here; other models use the generic one.
-- **Midjourney** — the Midjourney house style: short and dense, comma-separated
-  visual phrases instead of sentences, aesthetics first, ordered *subject →
-  setting → lighting → mood → palette → medium → camera*. Target 20–45 words,
-  one medium only, and keyword spam (`8k`, `masterpiece`, `trending on
-  artstation`) is explicitly banned — evocative, not stuffed.
-
-Also Midjourney-like: **several proposals at once**. Pick 1, 2 or 4 in
-**🎨 Enhancement options**; they're generated in a *single* model load
-(`num_return_sequences`), listed under the prompt field, and clicking one puts it
-in the prompt. Two sliders shape them:
-
-| Slider | Effect |
-| --- | --- |
-| **Stylize** (0–1000, Midjourney style only) | artistic licence: low = literal and documentary; high = bold art direction, dramatic lighting, stylized palette |
-| **Chaos** (0–100) | spread between proposals — raises sampling temperature (0.70 → 1.30) so directions diverge |
-
-**Midjourney parameters typed in the prompt** work too, in both the enhancer and
-plain generation (`atelier/mjparams.py`):
-
-| Written in the prompt | Effect |
-| --- | --- |
-| `--ar 16:9` / `--aspect 3:2` | sets width/height **at constant area** — same native pixel count as the model, only the shape changes |
-| `--stylize 500` / `--s 500` | overrides the Stylize slider |
-| `--chaos 40` / `--c 40` | overrides the Chaos slider |
-| `--no cars, people` | fills the negative prompt |
-| `--v`, `--q`, `--niji`, `--tile`, `--weird`, `--seed`… | Midjourney-only, no equivalent here: stripped from the prompt and reported |
-
-They're removed from the text before it reaches the model, and what was applied
-is echoed under the button. An unknown or malformed parameter is deliberately
-left in the prompt rather than silently dropped.
+**The active style preset is passed in as a constraint**, so the LLM writes *with*
+it rather than against it — no camera, lens, lighting or processing wording that
+would contradict the style, and no restating of the prefix itself.
 
 ---
-
 
 ## Sharing on your LAN
 
@@ -797,7 +754,6 @@ into four categories:
 | Category | What's in it |
 |---|---|
 | **Engines** | `sd-cli` (stable-diffusion.cpp) and the trellis.cpp 3D binary |
-| **Models** | catalog models (Flux.2, Krea 2), PiD, ESRGAN upscalers, trellis 3D GGUFs (~10 GB) |
 | **Toolkit add-ons** | depth, background removal, SAM, prompt enhancer, creative SDXL upscale |
 | **Your data** ⚠️ | LoRAs, custom models, generated images/3D, temp files |
 

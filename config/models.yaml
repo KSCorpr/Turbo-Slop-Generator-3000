@@ -202,40 +202,6 @@ base_models:
     vram_min_gb: 10
 
 # ============================================================================
-#  PiD — décodeur pixel-diffusion NVIDIA, natif sd.cpp (doc : docs/pid.md).
-#  Décode/agrandit ×4 (entraîné 512 -> 2048, 4 pas) via -r + --vae-format flux2.
-#  ⚠️ Poids officiels sous licence NSCLv1 (non commerciale).
-#  ⚠️ PiD 1.5 (1024 -> 4096) est SUPPORTÉ par sd.cpp ≥ master-782 mais HORS DE
-#  PORTÉE des cartes 11-12 Go : buffer de calcul mesuré à 14,2 Go en 4096² +
-#  « CUDA error: invalid configuration argument » (limites de kernel) sur
-#  2080 Ti. Il faudrait ~16 Go+ de VRAM. À réévaluer si sd.cpp ajoute un
-#  découpage/tiling du calcul PiD, ou sur une carte plus grosse :
-#  match "*pid_1.5_flux2_1024_to_4096_4step_bf16*" + target 4096.
-# ============================================================================
-pid:
-  # Variante Flux.2 : cohérente avec la génération Flux.2 Klein (backbone + VAE
-  # Flux.2), ce qui réduit les artefacts par rapport au PiD flux1. Réutilise le
-  # VAE Flux.2 DÉJÀ téléchargé pour la génération (aucun re-téléchargement du VAE).
-  name: "PiD — décodeur/upscaler pixel-diffusion Flux.2 (NVIDIA)"
-  target: 2048          # côté long visé (modèle v1 : 512 -> 2048)
-  factor: 4             # ratio fixe du modèle (512 -> 2048 = ×4)
-  steps: 4
-  vae_format: flux2     # backbone Flux.2 -> VAE au format flux2
-  sources:
-    diffusion:
-      repo: Comfy-Org/PixelDiT
-      # v1 bf16 — le seul qui tienne sur 11-12 Go (voir note 1.5 ci-dessus).
-      match: "pid_flux2_512_to_2048_4step_bf16*.safetensors"
-    text_encoder:
-      repo: Comfy-Org/PixelDiT
-      match: "gemma_2_2b_it*.safetensors"
-    vae:
-      # Le VAE Flux.2 de la génération (déjà présent si tu génères en Flux.2 Klein).
-      repo: Comfy-Org/flux2-klein-9B
-      match: "split_files/vae/flux2-vae.safetensors"
-
-
-# ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
 #  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.
 #  Source : huggingface.co/wbruna/upscalers-sdcpp-gguf
