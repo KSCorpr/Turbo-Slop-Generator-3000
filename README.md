@@ -500,11 +500,22 @@ Controls:
   **VAE** choice: external fp16-fix (recommended, avoids black images) or the
   checkpoint's **built-in VAE**.
 - **Pre-upscale** — base enlargement before the SDXL tile refine: **Lanczos**
-  (default) or any installed **ESRGAN** model (sharper, real detail).
-- **Prompt presets** — a dropdown of ready-made prompts (Sharp & faithful / Add
-  detail / Realistic skin / Nature / Architecture / Illustration / Maximum detail
-  / Soft & clean) that fills the prompt **and** sets a matching creativity level.
+  (default) or any installed **ESRGAN** model (sharper, real detail). The number
+  of ESRGAN passes is **computed from the target**: a ×2 model asked for a ×4
+  result runs twice, because landing *below* the target would force the runner to
+  finish in Lanczos — reintroducing exactly the blur the ESRGAN was there to
+  avoid. Overshooting is harmless (the following downscale is sharp), so passes
+  are only capped by an 8192 px ceiling on the intermediate image; when that
+  ceiling stops it short, the log says so instead of quietly going soft.
+- **Presets** — a dropdown that sets **the whole recipe**, not just a prompt:
+  prompt, negative prompt, creativity, CFG, steps, structure locking and
+  pre-upscaler. A line under the menu states what it just applied. See
+  [Upscaling illustrations](#upscaling-illustrations-without-interpolation)
+  below.
 - **Creativity (denoise)** — 0.15 faithful → 0.75 inventive.
+- **Negative prompt** — what SDXL is forbidden to add. The default is
+  photo-oriented; on drawings it is what keeps grain and photo texture off the
+  flat color areas.
 - **🔒 ControlNet Tile** (optional) — conditions each tile on the source so you can
   push creativity higher **without drifting** from the original structure (the
   Magnific trick). Toggle + a *ControlNet fidelity* slider appear once it's
@@ -518,6 +529,34 @@ Controls:
 
 > Use the right tool: **ESRGAN** is fast/faithful/deterministic; **SDXL creative**
 > is slower but adds invented detail.
+
+#### Upscaling illustrations without interpolation
+
+A photo-oriented upscale does three specific things to a drawing, and all three
+have to be fixed together — which is why this is a preset and not a prompt:
+
+1. **the base interpolates.** Lanczos does not add information, it averages
+   pixels: linework goes soft and flat fills go mushy. Only an ESRGAN *trained on
+   drawings* actually enlarges line art;
+2. **the default negative prompt does not defend flat areas**, so SDXL happily
+   lays photo grain and material texture over them;
+3. **denoise around 0.40 redraws the linework**, which then wobbles — lines stop
+   being the same lines.
+
+The **🖍️ Illustration / comics — crisp linework, no interpolation** preset sets:
+a **drawing ESRGAN** as the base (auto-picked from what you have installed,
+preferring `RealESRGAN_x4plus_anime_6B`), a negative prompt aimed at
+photorealism/grain/halos, **denoise 0.18**, **CFG 4.0**, and **ControlNet Tile at
+0.85** so the structure is locked. At that point SDXL is no longer redrawing
+anything — it only cleans up what the ESRGAN produced.
+
+If you have **no drawing upscaler installed**, the preset says so explicitly and
+warns that the base will stay on Lanczos: download the upscaler pack from the
+**🔼 Upscale** tab first, otherwise the preset cannot do its main job.
+
+For painted or brushwork illustration, **🎨 Painted illustration / concept art**
+is the looser variant (denoise 0.35, ControlNet 0.7) — it keeps some material,
+which is the point there.
 
 ---
 

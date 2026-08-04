@@ -4,6 +4,7 @@ statut de téléchargement, et recommandations selon le matériel.
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -172,6 +173,40 @@ def upscaler_choices() -> list[tuple[str, str]]:
     photo = [n for n in names if n not in draw]
     return ([(f"🎨 {n}  — dessin / anime", n) for n in draw]
             + [(f"📷 {n}  — photo / général", n) for n in photo])
+
+
+# Modèles de dessin préférés, du meilleur au moins bon, pour le pré-agrandissement
+# de l'upscale créatif. RealESRGAN anime 6B est la référence du domaine et il est
+# en ×4 (donc utilisable jusqu'à ×4 sans repasser par une interpolation).
+_DRAWING_PREFERRED = ("realesrgan_x4plus_anime_6b", "smbss_2x_rrdb_animation")
+
+
+def drawing_upscaler() -> str | None:
+    """Meilleur upscaler DESSIN installé, ou None s'il n'y en a aucun.
+
+    Sert au préréglage « illustration » : sur du trait, un ESRGAN entraîné pour
+    la photo lisse les aplats et pose des halos, et Lanczos interpole. Seul un
+    modèle dessin agrandit proprement."""
+    names = list_upscalers()
+    for want in _DRAWING_PREFERRED:
+        for n in names:
+            if Path(n).stem.lower() == want:
+                return n
+    return next((n for n in names if is_drawing_upscaler(n)), None)
+
+
+# Facteur natif d'un upscaler, lu dans son nom de fichier (« 4x_… », « …_x4plus »,
+# « 2xPSNR »…). Utilisé pour savoir combien de passes appliquer avant d'atteindre
+# la cible : sortir EN DESSOUS de la cible oblige à ré-agrandir en Lanczos, ce
+# qui réintroduit exactement le flou qu'on cherchait à éviter.
+_FACTOR_RE = re.compile(r"(?<![0-9a-z])([2348])\s*x(?![0-9])|(?<![0-9])x\s*([2348])(?![0-9])")
+
+
+def upscaler_factor(name: str, default: int = 4) -> int:
+    m = _FACTOR_RE.search(Path(name or "").stem.lower())
+    if not m:
+        return default
+    return int(m.group(1) or m.group(2))
 
 
 def default_upscaler() -> str | None:

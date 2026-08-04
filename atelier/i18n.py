@@ -489,14 +489,39 @@ _EN: dict[str, str] = {
     "Pré-agrandissement (base avant SDXL)":
         "Pre-upscale (base before SDXL)",
     "Lanczos (par défaut)": "Lanczos (default)",
-    "Préréglage de prompt (remplit le prompt + ajuste la créativité)":
-        "Prompt preset (fills the prompt + sets creativity)",
+    "Préréglage (règle prompt, négatif, créativité, CFG et structure)":
+        "Preset (sets prompt, negative, creativity, CFG and structure)",
+    "Prompt négatif (vide = défaut orienté photo)":
+        "Negative prompt (empty = photo-oriented default)",
+    "photorealistic, film grain, noise…": "photorealistic, film grain, noise…",
+    "Ce qu'on interdit à SDXL d'ajouter. Sur du dessin, c'est ce qui empêche "
+    "le grain et la matière photo de se poser sur les aplats.":
+        "What SDXL is forbidden to add. On drawings, this is what keeps grain "
+        "and photo texture off the flat color areas.",
+    "pré-agrandissement **{m}** (dessin) au lieu de Lanczos":
+        "pre-upscale **{m}** (drawing) instead of Lanczos",
+    "⚠️ aucun upscaler **dessin** installé — la base restera en Lanczos "
+    "(traits plus mous). Téléchargez les upscalers dans l'onglet "
+    "« 🔼 Agrandir ».":
+        "⚠️ no **drawing** upscaler installed — the base stays on Lanczos "
+        "(softer linework). Download the upscalers from the "
+        "“🔼 Upscale” tab.",
+    "⚠️ ControlNet Tile pas installé : la structure ne sera pas verrouillée.":
+        "⚠️ ControlNet Tile not installed: structure will not be locked.",
+    "structure verrouillée par ControlNet Tile ({v})":
+        "structure locked by ControlNet Tile ({v})",
+    "créativité {d} · CFG {c} · {s} pas":
+        "creativity {d} · CFG {c} · {s} steps",
+    "négatif adapté": "matching negative",
     "🔍 Net & fidèle (aucun ajout)": "🔍 Sharp & faithful (no additions)",
     "✨ Ajouter du détail": "✨ Add detail",
     "🧴 Peau réaliste (portrait)": "🧴 Realistic skin (portrait)",
     "🌿 Nature / paysage": "🌿 Nature / landscape",
     "🏙️ Architecture / produit": "🏙️ Architecture / product",
-    "🎨 Illustration / peinture": "🎨 Illustration / painting",
+    "🖍️ Illustration / BD — trait net, sans interpolation":
+        "🖍️ Illustration / comics — crisp linework, no interpolation",
+    "🎨 Illustration peinte / concept art":
+        "🎨 Painted illustration / concept art",
     "🚀 Détail maximum (créatif)": "🚀 Maximum detail (creative)",
     "🪶 Doux & propre (anti-grain)": "🪶 Soft & clean (anti-grain)",
     "Créativité (débruitage — ↑ = détail inventé)":

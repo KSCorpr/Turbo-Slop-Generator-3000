@@ -480,6 +480,7 @@ def enhance_prompt(prompt: str, style: str = "generic", level: str = "medium",
 
 
 def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
+                     negative: str = "",
                      denoise: float = 0.35, steps: int = 24, cfg: float = 6.0,
                      tile: int = 1024, overlap: int = 128,
                      use_controlnet: bool = False, cn_scale: float = 0.6,
@@ -507,13 +508,39 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     th = max(8, int(round(oh * scale / 8)) * 8)
 
     # Pré-agrandissement ESRGAN optionnel (sd.cpp) : base plus nette que Lanczos.
+    #
+    # Le nombre de passes est calculé, pas laissé à 1 : un modèle ×2 utilisé une
+    # seule fois pour une cible ×4 sort SOUS la cible, et le runner doit alors
+    # ré-agrandir en Lanczos — soit exactement l'interpolation floue qu'on
+    # voulait éviter en prenant un ESRGAN. Dépasser la cible, en revanche, est
+    # sans danger : la réduction qui suit est nette (suréchantillonnage).
     inp = src
     if esrgan_model:
+        from .. import registry
         from . import generate as gen_engine
+        factor = registry.upscaler_factor(esrgan_model)
+        # On ajoute une passe tant qu'on est sous la cible ET que le résultat
+        # intermédiaire reste sous le plafond de 8192 px du runner. Sans ce
+        # second garde-fou, un ×4 visé en ×8 partirait à ×16, soit une image
+        # intermédiaire de plusieurs centaines de mégapixels.
+        repeats = 1
+        while (factor ** repeats < float(scale) and repeats < 3
+               and max(ow, oh) * factor ** (repeats + 1) <= 8192):
+            repeats += 1
+        reached = factor ** repeats
         try:
             if log:
-                log(f"Pré-agrandissement ESRGAN « {esrgan_model} »…")
-            inp = gen_engine.upscale_image(src, esrgan_model, repeats=1, log=log)
+                log(f"Pré-agrandissement ESRGAN « {esrgan_model} » (×{factor}"
+                    + (f", {repeats} passes → ×{reached}" if repeats > 1
+                       else "") + ")…")
+                if reached < float(scale):
+                    # Honnêteté : au-delà, c'est le runner qui complète en
+                    # Lanczos, donc le rendu sera plus mou que promis.
+                    log(f"[usdu] ×{reached} < cible ×{scale:g} : le reste sera "
+                        "complété en Lanczos (rendu plus doux). Visez un "
+                        "facteur plus bas pour un trait parfaitement net.")
+            inp = gen_engine.upscale_image(src, esrgan_model, repeats=repeats,
+                                           log=log)
         except Exception as exc:  # noqa: BLE001
             if log:
                 log(f"[usdu] ESRGAN échoué ({exc}) → repli Lanczos.")
@@ -531,6 +558,10 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
            "--steps", str(int(steps)), "--cfg", str(float(cfg)),
            "--tile", str(int(tile)), "--overlap", str(int(overlap)),
            "--prompt", prompt or ""]
+    # Négatif : vide = le défaut PHOTO du runner. Le préréglage dessin en
+    # fournit un autre (anti-grain, anti-photoréalisme sur les aplats).
+    if negative:
+        cmd += ["--negative", negative]
     # VAE : externe fp16-fix (défaut) sauf si on veut celle intégrée au checkpoint.
     if not integrated_vae and (UPSCALE_DIR / "vae").is_dir():
         cmd += ["--vae", str(UPSCALE_DIR / "vae")]

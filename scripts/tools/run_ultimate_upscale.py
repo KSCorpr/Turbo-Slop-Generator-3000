@@ -53,6 +53,10 @@ def main():
     ap.add_argument("--tile", type=int, default=1024)
     ap.add_argument("--overlap", type=int, default=128)
     ap.add_argument("--prompt", default="")
+    # Le négatif par défaut est orienté PHOTO. Sur du dessin il faut le
+    # remplacer (« photorealistic, film grain, texture on flat colors… »),
+    # sinon SDXL pose du grain et de la matière sur les aplats.
+    ap.add_argument("--negative", default="")
     ap.add_argument("--preview-path", default="")
     ap.add_argument("--low-vram", action="store_true")
     ap.add_argument("--max-size", type=int, default=8192)
@@ -149,7 +153,8 @@ def main():
 
     prompt = args.prompt or ("highly detailed, sharp focus, intricate fine "
                              "textures, photorealistic, high quality")
-    negative = "blurry, jpeg artifacts, lowres, oversharpened, deformed"
+    negative = args.negative or ("blurry, jpeg artifacts, lowres, "
+                                 "oversharpened, deformed")
 
     tile = _round8(max(512, args.tile))
     overlap = max(32, min(args.overlap, tile // 2))

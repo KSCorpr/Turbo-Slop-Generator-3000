@@ -8,34 +8,75 @@ from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
 
-# Préréglages de prompt pour l'upscale créatif : (nom, prompt court SDXL, créativité).
-# La créativité (débruitage) est calée sur l'intention : faible = fidèle, fort = inventif.
+# Préréglages de l'upscale créatif.
+#
+# Un préréglage ne se réduit PAS à « un prompt + une créativité » : sur du
+# dessin, ce qui décide de la propreté du résultat est ailleurs — le
+# pré-agrandissement (Lanczos interpole, un ESRGAN dessin non), le négatif (le
+# défaut est orienté photo et fait poser du grain sur les aplats), le CFG et le
+# verrouillage de structure. D'où un dictionnaire d'options par préréglage, dont
+# tous les champs sont facultatifs.
+#
+# Champs : prompt · negative · denoise · cfg · steps · controlnet · cn_scale ·
+#          esrgan ("drawing" = choisir automatiquement un modèle dessin installé)
 UPSCALE_PRESETS = [
-    ("🔍 Net & fidèle (aucun ajout)",
-     "sharp focus, clean precise detail, faithful to the original, "
-     "no added elements, high fidelity", 0.20),
-    ("✨ Ajouter du détail",
-     "highly detailed, intricate fine textures, crisp micro-detail, "
-     "enhanced clarity, sharp focus", 0.40),
-    ("🧴 Peau réaliste (portrait)",
-     "highly detailed realistic skin with fine pores, natural complexion, "
-     "sharp eyes and individual hair strands, true-to-life photographic detail",
-     0.35),
-    ("🌿 Nature / paysage",
-     "crisp natural textures, detailed foliage and rock, fine vegetation, "
-     "clear sharp landscape detail", 0.40),
-    ("🏙️ Architecture / produit",
-     "clean sharp edges, precise material textures, accurate reflections, "
-     "crisp surface detail", 0.30),
-    ("🎨 Illustration / peinture",
-     "crisp clean linework and brushwork, refined shapes, vivid consistent "
-     "colors, sharp stylized detail", 0.40),
-    ("🚀 Détail maximum (créatif)",
-     "ultra detailed, hyper-detailed intricate surfaces, rich fine texture "
-     "everywhere, razor sharp", 0.55),
-    ("🪶 Doux & propre (anti-grain)",
-     "clean smooth surfaces, gently denoised, soft natural detail, "
-     "no artifacts, no grain", 0.25),
+    {"name": "🔍 Net & fidèle (aucun ajout)",
+     "prompt": "sharp focus, clean precise detail, faithful to the original, "
+               "no added elements, high fidelity",
+     "denoise": 0.20},
+    {"name": "✨ Ajouter du détail",
+     "prompt": "highly detailed, intricate fine textures, crisp micro-detail, "
+               "enhanced clarity, sharp focus",
+     "denoise": 0.40},
+    {"name": "🧴 Peau réaliste (portrait)",
+     "prompt": "highly detailed realistic skin with fine pores, natural "
+               "complexion, sharp eyes and individual hair strands, "
+               "true-to-life photographic detail",
+     "denoise": 0.35},
+    {"name": "🌿 Nature / paysage",
+     "prompt": "crisp natural textures, detailed foliage and rock, fine "
+               "vegetation, clear sharp landscape detail",
+     "denoise": 0.40},
+    {"name": "🏙️ Architecture / produit",
+     "prompt": "clean sharp edges, precise material textures, accurate "
+               "reflections, crisp surface detail",
+     "denoise": 0.30},
+
+    # ---- Dessin : le préréglage qui traite VRAIMENT le problème -------------
+    # Sur une illustration, un upscale « photo » fait trois dégâts :
+    #  1. la base Lanczos interpole -> traits mous, aplats baveux ;
+    #  2. le négatif par défaut ne défend pas les aplats -> SDXL y pose du grain
+    #     et de la matière « photo » ;
+    #  3. un débruitage à 0,40 redessine le trait, qui se met à onduler.
+    # On corrige les trois : ESRGAN dessin en base (agrandissement réel, pas une
+    # interpolation), négatif anti-photo/anti-grain, débruitage bas et structure
+    # verrouillée par ControlNet — SDXL ne fait plus que nettoyer.
+    {"name": "🖍️ Illustration / BD — trait net, sans interpolation",
+     "prompt": "clean crisp linework, flat solid color areas, smooth even "
+               "fills, sharp precise edges, clean vector-like illustration, "
+               "no texture on flat colors",
+     "negative": "photorealistic, photo texture, film grain, noise, gradient "
+                 "banding, jpeg artifacts, blurry soft edges, halo, ringing, "
+                 "oversharpened, painterly brush texture on flat areas, "
+                 "3d render, deformed lines",
+     "denoise": 0.18, "cfg": 4.0, "steps": 20,
+     "controlnet": True, "cn_scale": 0.85, "esrgan": "drawing"},
+    {"name": "🎨 Illustration peinte / concept art",
+     "prompt": "crisp clean brushwork, refined shapes, vivid consistent "
+               "colors, sharp stylized detail",
+     "negative": "photorealistic, film grain, noise, jpeg artifacts, "
+                 "blurry, oversharpened, halo",
+     "denoise": 0.35, "cfg": 5.0,
+     "controlnet": True, "cn_scale": 0.7, "esrgan": "drawing"},
+
+    {"name": "🚀 Détail maximum (créatif)",
+     "prompt": "ultra detailed, hyper-detailed intricate surfaces, rich fine "
+               "texture everywhere, razor sharp",
+     "denoise": 0.55},
+    {"name": "🪶 Doux & propre (anti-grain)",
+     "prompt": "clean smooth surfaces, gently denoised, soft natural detail, "
+               "no artifacts, no grain",
+     "denoise": 0.25},
 ]
 
 
@@ -455,16 +496,25 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                             value="", label="Pré-agrandissement (base avant SDXL)")
                         c_refresh = gr.Button("↻ Rafraîchir les modèles", size="sm")
                         c_preset = gr.Dropdown(
-                            choices=[(t(n), n) for (n, _p, _d) in UPSCALE_PRESETS],
+                            choices=[(t(p["name"]), p["name"])
+                                     for p in UPSCALE_PRESETS],
                             value=None,
-                            label="Préréglage de prompt (remplit le prompt + "
-                                  "ajuste la créativité)")
+                            label="Préréglage (règle prompt, négatif, "
+                                  "créativité, CFG et structure)")
+                        c_preset_msg = gr.Markdown("", elem_classes="feedback")
                         c_prompt = gr.Textbox(
                             label="Prompt (optionnel — guide le détail, COURT : "
                                   "~77 tokens max SDXL ; inutile de recopier le "
                                   "prompt de génération)", lines=2,
                             placeholder="highly detailed skin texture, sharp "
                                         "focus, photorealistic")
+                        c_negative = gr.Textbox(
+                            label="Prompt négatif (vide = défaut orienté photo)",
+                            lines=2,
+                            placeholder="photorealistic, film grain, noise…",
+                            info="Ce qu'on interdit à SDXL d'ajouter. Sur du "
+                                 "dessin, c'est ce qui empêche le grain et la "
+                                 "matière photo de se poser sur les aplats.")
                         c_scale = gr.Slider(
                             1.5, 8.0, value=2.0, step=0.5,
                             label="Facteur d'agrandissement",
@@ -508,13 +558,70 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                                            autoscroll=True, elem_classes="log-box")
 
                 def _apply_preset(name):
-                    for n, p, d in UPSCALE_PRESETS:
-                        if n == name:
-                            return gr.update(value=p), gr.update(value=d)
-                    return gr.update(), gr.update()
+                    """Applique TOUT le préréglage et dit ce qu'il a changé.
 
-                c_preset.change(_apply_preset, inputs=[c_preset],
-                                outputs=[c_prompt, c_denoise])
+                    Un préréglage qui règle six choses en silence est
+                    indéfendable : on affiche donc, en clair, ce qui vient
+                    d'être posé — et notamment quel modèle de pré-agrandissement
+                    a été choisi, puisque c'est lui qui fait le gros du travail
+                    sur du dessin."""
+                    pre = next((p for p in UPSCALE_PRESETS
+                                if p["name"] == name), None)
+                    if pre is None:
+                        return ((gr.update(),) * 8) + (gr.update(value=""),)
+
+                    done: list[str] = []
+                    esrgan_up = gr.update()
+                    want = pre.get("esrgan")
+                    if want == "drawing":
+                        model = registry.drawing_upscaler()
+                        if model:
+                            esrgan_up = gr.update(value=model)
+                            done.append(t("pré-agrandissement **{m}** (dessin) "
+                                          "au lieu de Lanczos").format(m=model))
+                        else:
+                            done.append(t("⚠️ aucun upscaler **dessin** "
+                                          "installé — la base restera en "
+                                          "Lanczos (traits plus mous). "
+                                          "Téléchargez les upscalers dans "
+                                          "l'onglet « 🔼 Agrandir »."))
+                    elif want:
+                        esrgan_up = gr.update(value=want)
+
+                    cn = pre.get("controlnet")
+                    cn_up = gr.update()
+                    if cn is not None:
+                        # ControlNet ne peut être coché que s'il est téléchargé.
+                        cn = bool(cn) and tools.upscale_cn_is_installed()
+                        cn_up = gr.update(value=cn)
+                        if pre.get("controlnet") and not cn:
+                            done.append(t("⚠️ ControlNet Tile pas installé : la "
+                                          "structure ne sera pas verrouillée."))
+                        elif cn:
+                            done.append(t("structure verrouillée par ControlNet "
+                                          "Tile ({v})").format(
+                                v=pre.get("cn_scale", 0.6)))
+
+                    done.append(t("créativité {d} · CFG {c} · {s} pas").format(
+                        d=pre.get("denoise", 0.35), c=pre.get("cfg", 6.0),
+                        s=pre.get("steps", 24)))
+                    if pre.get("negative"):
+                        done.append(t("négatif adapté"))
+
+                    return (gr.update(value=pre.get("prompt", "")),
+                            gr.update(value=pre.get("negative", "")),
+                            gr.update(value=pre.get("denoise", 0.35)),
+                            gr.update(value=pre.get("cfg", 6.0)),
+                            gr.update(value=pre.get("steps", 24)),
+                            cn_up,
+                            gr.update(value=pre.get("cn_scale", 0.6)),
+                            esrgan_up,
+                            gr.update(value="✅ " + " · ".join(done)))
+
+                c_preset.change(
+                    _apply_preset, inputs=[c_preset],
+                    outputs=[c_prompt, c_negative, c_denoise, c_cfg, c_steps,
+                             c_controlnet, c_cnscale, c_esrgan, c_preset_msg])
 
                 def _refresh_models():
                     ck = tools.list_upscale_checkpoints()
@@ -526,9 +633,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
                 c_refresh.click(_refresh_models, outputs=[c_model, c_esrgan])
 
-                def do_creative(img, prompt, scale, denoise, steps, cfg, tile,
-                                controlnet, cn_scale, model, vae_integrated,
-                                esrgan, progress=gr.Progress()):
+                def do_creative(img, prompt, negative, scale, denoise, steps,
+                                cfg, tile, controlnet, cn_scale, model,
+                                vae_integrated, esrgan,
+                                progress=gr.Progress()):
                     import queue
                     import threading
                     import time
@@ -558,6 +666,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                         try:
                             out = tools.ultimate_upscale(
                                 img, scale=float(scale), prompt=prompt or "",
+                                negative=negative or "",
                                 denoise=float(denoise), steps=int(steps),
                                 cfg=float(cfg), tile=int(tile),
                                 use_controlnet=bool(controlnet),
@@ -629,8 +738,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
                 c_evt = c_run.click(
                     do_creative,
-                    inputs=[c_image, c_prompt, c_scale, c_denoise, c_steps,
-                            c_cfg, c_tile, c_controlnet, c_cnscale,
+                    inputs=[c_image, c_prompt, c_negative, c_scale, c_denoise,
+                            c_steps, c_cfg, c_tile, c_controlnet, c_cnscale,
                             c_model, c_vae, c_esrgan],
                     outputs=[c_result, c_log])
                 c_stop.click(lambda: tools.cancel(), outputs=None, cancels=[c_evt])
