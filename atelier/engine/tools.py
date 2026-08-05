@@ -24,18 +24,6 @@ SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
-# SeedVR2 : code d'inférence cloné + poids. On appelle son « inference_cli.py »
-# en sous-process (chemin officiellement documenté « sans ComfyUI »).
-SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
-SEEDVR2_REPO_DIR = SEEDVR2_DIR / "repo"
-# Sans ComfyUI, le CLI amont résout son dossier de modèles en RELATIF —
-# « ./models/SEEDVR2 » depuis le répertoire courant — et il bâtit la liste des
-# valeurs acceptées par --dit_model À PARTIR DE CE DOSSIER, au moment où argparse
-# se construit. Nos poids doivent donc y être, et le process doit tourner avec
-# SEEDVR2_DIR comme répertoire courant : c'est ce couple qui rend le 1.4B
-# sélectionnable.
-SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models" / "SEEDVR2"
-_SEEDVR2_LEGACY_MODEL_DIR = SEEDVR2_DIR / "models"   # emplacement des 1res installs
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -147,10 +135,6 @@ def install_sam_stream():
 
 def install_enhance_stream():
     yield from _install_stream("enhance")
-
-
-def install_seedvr2_stream():
-    yield from _install_stream("seedvr2")
 
 
 def install_upscale_stream():
@@ -281,150 +265,8 @@ ENHANCE_STYLES = ("generic", "krea2")
 
 
 # --------------------------------------------------------------------------- #
-#  SeedVR2 — upscale de RESTAURATION en UN pas (image fixe, sans prompt)
+#  Améliorateur de prompt (petit LLM instruct)
 # --------------------------------------------------------------------------- #
-def seedvr2_is_installed() -> bool:
-    """Code d'inférence + au moins un modèle de DIFFUSION (le VAE seul ne
-    suffit pas : le CLI le télécharge tout seul dans le même dossier)."""
-    return ((SEEDVR2_REPO_DIR / "inference_cli.py").is_file()
-            and bool(seedvr2_models()))
-
-
-def seedvr2_has_1_4b() -> bool:
-    """Le 1.4B n'est sélectionnable que si la config d'architecture a bien été
-    posée ET la sélection étendue en amont (cf. setup_tools._seedvr2_enable_1_4b)."""
-    cfg = SEEDVR2_REPO_DIR / "configs_1_4b" / "main.yaml"
-    sel = SEEDVR2_REPO_DIR / "src" / "core" / "model_configuration.py"
-    if not (cfg.is_file() and sel.is_file()):
-        return False
-    try:
-        return "configs_1_4b" in sel.read_text(encoding="utf-8")
-    except OSError:
-        return False
-
-
-# Le VAE est téléchargé par le CLI dans LE MÊME dossier que les modèles de
-# diffusion (« ema_vae_fp16.safetensors »). Sans filtre il apparaissait dans la
-# liste des modèles — et en tête, par ordre alphabétique : c'est lui qui partait
-# en --dit_model, que le CLI refusait à juste titre.
-_SEEDVR2_NOT_DIT = ("vae",)
-
-
-def seedvr2_models() -> list[str]:
-    """Modèles de DIFFUSION présents sur le disque.
-
-    Le CLI amont accepte, en plus de son catalogue 3B/7B, tout fichier trouvé
-    dans SON dossier de modèles — c'est ce qui rend le 1.4B utilisable sans
-    toucher à son registre. On ne liste donc QUE ce dossier-là (un fichier
-    ailleurs serait proposé puis refusé), et on en écarte le VAE, qui y cohabite.
-    """
-    if not SEEDVR2_MODEL_DIR.is_dir():
-        return []
-    # Pas de repli « à défaut, tout lister » : ça réintroduirait le VAE dans le
-    # menu. Une liste vide est la réponse honnête — il manque un modèle.
-    return [p.name for p in sorted(SEEDVR2_MODEL_DIR.iterdir())
-            if p.suffix.lower() in (".safetensors", ".gguf")
-            and not any(k in p.name.lower() for k in _SEEDVR2_NOT_DIT)]
-
-
-def seedvr2_default_model() -> str | None:
-    """Modèle présélectionné : le 1.4B, celui que l'installeur met en place."""
-    ms = seedvr2_models()
-    if not ms:
-        return None
-    return next((m for m in ms
-                 if "1.4b" in m.lower() or "6l" in m.lower()), ms[0])
-
-
-def seedvr2_upscale(image, resolution: int = 1440, model: str | None = None,
-                    seed: int = 42, color_correction: str = "lab",
-                    tiled: bool = False, tile_size: int = 512,
-                    log: Callable[[str], None] | None = None) -> Path:
-    """Restaure/agrandit une image fixe (1 pas de diffusion, aucun prompt).
-
-    `resolution` = côté COURT visé en pixels (sémantique du CLI amont) ; le
-    rapport d'aspect est conservé. Recommandé : ×2 à ×4 de l'original."""
-    if not seedvr2_is_installed():
-        raise ToolError("SeedVR2 n'est pas installé "
-                        "(bouton « Installer » de l'onglet Restauration).")
-    models = seedvr2_models()
-    if not models:
-        raise ToolError("Aucun poids SeedVR2 trouvé. Relancez l'installation.")
-    model = model or seedvr2_default_model()
-    if any(k in (model or "").lower() for k in _SEEDVR2_NOT_DIT):
-        raise ToolError(
-            f"« {model} » est le VAE, pas un modèle de diffusion. Cliquez "
-            "« ↻ Rafraîchir » puis choisissez un modèle « seedvr2_… ».")
-
-    settings.ensure_dirs()
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    src = _to_src(image, "seedvr2_src")
-    out_dir = settings.TMP_DIR / f"seedvr2_{stamp}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    cmd = [sys.executable, str(SEEDVR2_REPO_DIR / "inference_cli.py"), str(src),
-           "--output", str(out_dir / "seedvr2.png"),
-           "--output_format", "png",
-           "--dit_model", model,
-           "--model_dir", str(SEEDVR2_MODEL_DIR),
-           "--resolution", str(int(resolution)),
-           "--seed", str(int(seed)),
-           "--color_correction", color_correction or "lab",
-           "--batch_size", "1"]
-    if tiled:
-        # Le VAE s'auto-attentionne sur toute la tuile : le coût est en O(n²)
-        # sur (tuile/8)². 512 est le réglage sûr ; monter dessus n'apporte rien
-        # et fait exploser la mémoire. Descendre à 256 si ça déborde encore.
-        cmd += ["--vae_decode_tiled", "--vae_decode_tile_size", str(int(tile_size)),
-                "--vae_encode_tiled", "--vae_encode_tile_size", str(int(tile_size))]
-    # Le GPU est choisi via CUDA_VISIBLE_DEVICES (_run_tool) : on ne passe PAS
-    # --cuda_device en plus, les deux se marcheraient dessus.
-    # On écoute la sortie pour distinguer les deux familles d'échec : manque de
-    # VRAM (réglages à baisser) et incompatibilité de paquets (réinstallation).
-    # Sans ça, l'utilisateur reçoit le même message dans les deux cas.
-    seen = {"oom": False, "imp": False}
-    _OOM = ("outofmemoryerror", "allocation on device", "out of memory",
-            "cuda error: out of memory")
-    _IMP = ("importerror", "modulenotfounderror",
-            "failed to import", "cannot import name")
-
-    def _sniff(line: str) -> None:
-        low = (line or "").lower()
-        if any(k in low for k in _OOM):
-            seen["oom"] = True
-        if any(k in low for k in _IMP):
-            seen["imp"] = True
-        if log:
-            log(line)
-
-    # cwd = SEEDVR2_DIR : le CLI résout « ./models/SEEDVR2 » depuis là, et c'est
-    # ce dossier qu'il scanne pour décider des valeurs acceptées par --dit_model.
-    try:
-        _run_tool(cmd, _sniff, "L'agrandissement SeedVR2 a échoué "
-                               "(voir le journal).",
-                  gpu_index=_gen_gpu_index(), cwd=SEEDVR2_DIR)
-    except ToolError:
-        if seen["oom"]:
-            raise ToolError(
-                "Mémoire GPU insuffisante pendant l'agrandissement.\n"
-                "Dans l'ordre, et sans rien réinstaller :\n"
-                f"  1. cochez « VAE par tuiles » (actuellement "
-                f"{'coché' if tiled else 'DÉCOCHÉ'}) ;\n"
-                f"  2. baissez « Côté court visé » — vous êtes à "
-                f"{int(resolution)} px ;\n"
-                "  3. descendez la taille de tuile à 256 ;\n"
-                "  4. fermez ce qui occupe la carte (une autre génération, "
-                "un jeu, un navigateur lourd).") from None
-        if seen["imp"]:
-            raise ToolError(
-                "SeedVR2 n'a pas pu démarrer : erreur à l'IMPORT (voir le "
-                "journal). Une version de paquet a changé sous lui. Lancez "
-                "maintenance.bat — il nomme le paquet — puis relancez "
-                "« Installer SeedVR2 ».") from None
-        raise
-    return _collect(out_dir, "seedvr2", stamp)
-
-
 def enhance_prompt_variants(prompt: str, style: str = "generic",
                             level: str = "medium", variants: int = 1,
                             style_constraint: str = "",

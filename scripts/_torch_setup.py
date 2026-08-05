@@ -6,6 +6,7 @@ Conçu pour le Python embarqué (Windows) : choisit la build CUDA selon le GPU,
 """
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,10 @@ CU128 = "https://download.pytorch.org/whl/cu128"
 def sh(cmd: list[str]):
     print("$", " ".join(cmd), flush=True)
     subprocess.check_call(cmd)
+
+
+def is_macos() -> bool:
+    return platform.system() == "Darwin"
 
 
 def _gpu_arch() -> str:
@@ -41,6 +46,13 @@ def _torch_install_args():
     - Turing/Ampere/Ada/Pascal : cu121 + torch 2.4.1 (supporte sm_61→sm_89,
       et satisfait transformers récent qui exige torch >= 2.4).
     """
+    if is_macos():
+        # Sur Mac, l'accélération passe par MPS (Metal), inclus dans les roues
+        # PyTorch standard : pas d'index CUDA, et pas d'épinglage 2.4.1 — cette
+        # version-là existe pour couvrir les vieilles cartes NVIDIA, contrainte
+        # qui n'a aucun sens ici.
+        print("macOS -> PyTorch standard (accélération Metal/MPS).")
+        return ["torch", "torchvision"]
     arch = _gpu_arch()
     if arch == "blackwell":
         print("GPU Blackwell détecté -> PyTorch CUDA 12.8 (récent).")
@@ -49,20 +61,27 @@ def _torch_install_args():
     return ["torch==2.4.1", "torchvision==0.19.1", "--index-url", CU121]
 
 
-def _torch_cuda_ok() -> bool:
-    """CUDA dispo ET torch >= 2.4 (requis par transformers récent). Testé dans un
-    SOUS-PROCESS (sans charger torch ici, sinon ses DLL — tbb/mkl — seraient
-    verrouillées et la réinstall échouerait)."""
-    try:
-        r = subprocess.run(
-            [sys.executable, "-c",
-             "import torch,sys;"
+def _torch_gpu_ok() -> bool:
+    """Accélération GPU disponible ET torch >= 2.4 (exigé par transformers).
+
+    « GPU » veut dire CUDA sur PC et MPS sur Mac : c'est le même besoin (ne pas
+    tomber sur CPU sans le dire), avec deux back-ends. Testé dans un SOUS-PROCESS
+    pour ne pas charger torch ici — ses DLL (tbb/mkl) seraient verrouillées et la
+    réinstallation échouerait."""
+    probe = ("import torch,sys;"
              "v=tuple(int(x) for x in torch.__version__.split('+')[0].split('.')[:2]);"
-             "sys.exit(0 if torch.cuda.is_available() and v>=(2,4) else 3)"],
-            timeout=240)
+             "ok=torch.backends.mps.is_available() if sys.platform=='darwin' "
+             "else torch.cuda.is_available();"
+             "sys.exit(0 if ok and v>=(2,4) else 3)")
+    try:
+        r = subprocess.run([sys.executable, "-c", probe], timeout=240)
         return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
+
+
+# Ancien nom, conservé pour les appels existants.
+_torch_cuda_ok = _torch_gpu_ok
 
 
 def _clean_broken_dists():
@@ -82,18 +101,23 @@ def ensure_torch_cuda():
     puis on réinstalle la build CUDA ; les libs annexes (tbb/mkl/numpy) restent.
     """
     _clean_broken_dists()
-    if _torch_cuda_ok():
-        print("PyTorch CUDA déjà opérationnel.")
+    backend = "Metal (MPS)" if is_macos() else "CUDA"
+    if _torch_gpu_ok():
+        print(f"PyTorch {backend} déjà opérationnel.")
         return
-    print("Mise en place de PyTorch CUDA (build GPU, volumineux)…")
+    print(f"Mise en place de PyTorch {backend} (volumineux)…")
     subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
                      "torch", "torchvision"])
     sh([sys.executable, "-m", "pip", "install", "--no-cache-dir",
         *_torch_install_args()])
     # Vérification finale : si torch ne voit toujours pas le GPU, on le DIT fort
     # (sinon les outils tourneraient sur CPU = extrêmement lent, sans prévenir).
-    if _torch_cuda_ok():
-        print("✅ PyTorch CUDA opérationnel.")
+    if _torch_gpu_ok():
+        print(f"✅ PyTorch {backend} opérationnel.")
+    elif is_macos():
+        print("⚠️  ATTENTION : PyTorch ne voit pas Metal (MPS indisponible). "
+              "Les outils tourneraient sur CPU (très lent). Vérifiez que vous "
+              "êtes bien sur un Mac Apple Silicon avec macOS 12.3 ou plus.")
     else:
         print("⚠️  ATTENTION : PyTorch ne voit PAS le GPU (CUDA indisponible). "
               "Les outils tourneraient sur CPU (très lent). Vérifiez vos pilotes "

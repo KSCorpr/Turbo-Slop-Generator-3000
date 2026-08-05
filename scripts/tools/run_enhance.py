@@ -17,6 +17,10 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+# Choix du back-end de calcul (CUDA / Metal-MPS / CPU), partagé par les runners.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _device import label, pick_device, pick_dtype  # noqa: E402
+
 # Cœur commun : détection d'intention à partir des mots-clés, puis expansion
 # cohérente avec le médium détecté. Partagé par les deux system prompts.
 _CORE = (
@@ -164,9 +168,9 @@ def main():
     except ImportError:
         sys.exit("transformers manquant. Réinstallez l'outil (« ✨ Améliorer »).")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    print(f"[enhance] chargement du modèle sur {device}…", flush=True)
+    device = pick_device(torch)
+    dtype = pick_dtype(torch, device)
+    print(f"[enhance] chargement du modèle sur {label(device)}…", flush=True)
     tok = AutoTokenizer.from_pretrained(args.model_dir)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_dir, torch_dtype=dtype).to(device).eval()

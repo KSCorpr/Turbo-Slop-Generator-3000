@@ -56,15 +56,6 @@ class BaseModel:
     defaults: dict[str, Any]
     vram_min_gb: float
     presets: list[dict] = None  # type: ignore[assignment]
-    # « image » (défaut) ou « video ». Un modèle vidéo ne sort pas d'image : il
-    # n'a rien à faire dans les onglets de génération ni dans l'outpaint, mais
-    # il DOIT rester dans le Catalogue (pour le téléchargement) et dans
-    # l'inventaire disque. D'où un champ plutôt qu'une liste en dur.
-    kind: str = "image"
-
-    @property
-    def is_video(self) -> bool:
-        return self.kind == "video"
 
 
 def _catalog() -> dict[str, Any]:
@@ -81,14 +72,10 @@ def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
     return q_diff, q_enc
 
 
-def load_base_models(prefs: dict[str, Any],
-                     kind: str | None = None) -> list[BaseModel]:
-    """Modèles du catalogue. `kind` filtre « image » ou « video » ; None = tous."""
+def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
     q_diff, q_enc = effective_quants(prefs)
     out: list[BaseModel] = []
     for m in _catalog().get("base_models", []):
-        if kind is not None and (m.get("kind") or "image") != kind:
-            continue
         comps: list[Component] = []
         for role, spec in (m.get("sources") or {}).items():
             template = spec["match"]
@@ -106,23 +93,12 @@ def load_base_models(prefs: dict[str, Any],
             components=comps, defaults=m.get("defaults", {}),
             vram_min_gb=float(m.get("vram_min_gb", 0)),
             presets=m.get("presets", []),
-            kind=(m.get("kind") or "image"),
         ))
     return out
 
 
 def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
     return next((m for m in load_base_models(prefs) if m.id == model_id), None)
-
-
-def image_models(prefs: dict[str, Any]) -> list[BaseModel]:
-    """Modèles produisant une IMAGE (génération, outpaint, édition)."""
-    return load_base_models(prefs, kind="image")
-
-
-def video_models(prefs: dict[str, Any]) -> list[BaseModel]:
-    """Modèles produisant une VIDÉO (onglet « 🎬 Vidéo »)."""
-    return load_base_models(prefs, kind="video")
 
 
 

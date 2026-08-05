@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Atelier - Installation portable Linux (cartes RTX)
-#  venv local ./venv + dependances + moteur stable-diffusion.cpp (CUDA).
-#  Les modeles se telechargent a la demande depuis l'onglet Bibliotheque.
+#  Turbo Slop Generator 3000 — installation (Linux et macOS)
+#
+#  venv local ./venv + dependances + moteur stable-diffusion.cpp.
+#  Le moteur telecharge depend de la machine :
+#    - Linux  : build CUDA (cartes NVIDIA) ;
+#    - macOS  : build Apple Silicon (Metal). Il n'existe pas de build Intel.
+#  Les modeles se telechargent a la demande depuis l'onglet Catalogue.
 # ============================================================================
 set -e
 cd "$(dirname "$0")"
 
 PY="${PYTHON:-python3}"
 VENV="./venv"
+OS="$(uname -s)"
+ARCH="$(uname -m)"
 
 echo "============================================================"
-echo "  Atelier - installation portable"
+echo "  Turbo Slop Generator 3000 - installation"
+echo "  Systeme : $OS ($ARCH)"
 echo "============================================================"
+
+if [ "$OS" = "Darwin" ] && [ "$ARCH" != "arm64" ]; then
+    echo
+    echo "ATTENTION : Mac Intel detecte."
+    echo "  stable-diffusion.cpp ne publie que des builds Apple Silicon."
+    echo "  L'installation va continuer, mais le moteur devra etre compile"
+    echo "  a la main, ou l'app tournera sur CPU (tres lent)."
+    echo
+fi
 
 if [ ! -d "$VENV" ]; then
     echo "[1/4] Creation de l'environnement virtuel..."
@@ -32,8 +48,11 @@ pip install -r requirements.txt $PIP_NET || pip install -r requirements.txt $PIP
 pip show transformers >/dev/null 2>&1 && pip install "transformers>=4.45,<5" $PIP_NET || true
 pip show diffusers >/dev/null 2>&1 && pip install "diffusers>=0.30,<0.32" $PIP_NET || true
 
-echo "[3/4] Telechargement du moteur stable-diffusion.cpp (CUDA)..."
-python scripts/get_sdcpp.py --variant cuda
+# Variante du moteur : deduite du systeme par get_sdcpp lui-meme (metal sur
+# macOS, cuda ailleurs). On ne la force pas ici pour n'avoir qu'un seul endroit
+# ou cette regle est ecrite.
+echo "[3/4] Telechargement du moteur stable-diffusion.cpp..."
+python scripts/get_sdcpp.py
 
 echo "[4/4] Dossiers utilisateur..."
 mkdir -p models loras outputs tmp userdata
@@ -41,5 +60,11 @@ mkdir -p models loras outputs tmp userdata
 echo
 echo "============================================================"
 echo "  Termine. Lancez ./run.sh pour demarrer."
-echo "  Les modeles se telechargent dans l'onglet Bibliotheque."
+echo "  Les modeles se telechargent dans l'onglet Catalogue."
+if [ "$OS" = "Darwin" ]; then
+    echo
+    echo "  macOS : le calcul passe par Metal. La memoire est UNIFIEE,"
+    echo "  donc la 'VRAM' affichee correspond a la part de RAM que le"
+    echo "  GPU peut adresser (~75%)."
+fi
 echo "============================================================"

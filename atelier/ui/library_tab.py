@@ -93,4 +93,4 @@ def build_library_tab():
 
         gr.Markdown(
             "---\n*Les outils (profondeur, détourage, SAM, améliorateur de "
-            "prompt) et la vidéo (LTX-2.3) sont dans leurs onglets dédiés.*")
+            "prompt, agrandissement) sont dans l'onglet Toolkit.*")

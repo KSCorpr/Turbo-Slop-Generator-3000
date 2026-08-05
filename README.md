@@ -1,7 +1,7 @@
 # 🟢 Turbo Slop Generator 3000
 
 > **Adaptatif au matériel.** Par défaut l'app utilise la **meilleure carte
-> NVIDIA détectée** et s'y adapte (quant de diffusion selon la VRAM, encodeur
+> NVIDIA détectée** (ou le **GPU Apple Silicon** sur Mac) et s'y adapte (quant de diffusion selon la VRAM, encodeur
 > déchargé dans la RAM, flash-attention, offload, VAE tiling). Deux options
 > avancées dans **Réglages** : les **presets par génération de carte** (GTX 10xx
 > → RTX 50xx, en 1 clic) et le **multi-GPU** (choix du GPU de génération, split
@@ -13,8 +13,7 @@ A **local**, modern, lightweight image-generation studio for artists, built on
 CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, two upscalers, **video generation with sound (LTX-2.3, MiniMax-H3)**,
-and a utility toolkit.
+editing, two upscalers, and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -35,7 +34,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
-| 🎬 **Video** | **LTX-2.3** and **MiniMax-H3** · text→video, image→video, first→last frame, reference-conditioned · **with generated soundtrack** · native sd.cpp `-M vid_gen`, no PyTorch |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
@@ -51,7 +49,6 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
-- [Video](#video)
 - [Toolkit](#toolkit)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
@@ -70,12 +67,39 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 install.bat      ::  portable Python + dependencies + GGUF engine (CUDA)
 run.bat          ::  launch the UI at http://127.0.0.1:7860
 ```
+Windows and Linux use the **CUDA** build; macOS uses the **Metal** one. The
+engine variant is derived from the platform, so no flag to remember.
 
-### Linux
+### Linux (NVIDIA)
 ```bash
 ./install.sh
 ./run.sh
 ```
+
+### macOS (Apple Silicon)
+```bash
+./install.sh
+./run.sh
+```
+The same script; it detects the platform and fetches the **Metal** build of
+stable-diffusion.cpp instead of the CUDA one. What differs on a Mac:
+
+- **Unified memory, not VRAM.** The GPU addresses the same memory as the CPU, so
+  the app reports "~75% of RAM addressable by the GPU" rather than inventing a
+  VRAM figure. **RAM offload is switched off** — offloading to a memory the GPU
+  is already using saves nothing and only adds copies.
+- **The encoder budget is tighter than on PC.** On a PC the text encoder is
+  offloaded to system RAM and competes with nothing; here it shares one pool with
+  the diffusion model, so the encoder quantization is picked from what's left
+  rather than from total RAM.
+- **Toolkit add-ons run on MPS** (Metal) via PyTorch, with
+  `PYTORCH_ENABLE_MPS_FALLBACK` set so an operator MPS lacks drops to CPU instead
+  of killing the run.
+- **🧊 Image → 3D is unavailable.** trellis.cpp ships a Windows-CUDA binary only —
+  no Apple Silicon build, no Metal path. The tab says so instead of offering an
+  installer that would find nothing. Everything else works.
+- **16 GB is the realistic floor**, 24 GB+ comfortable. Intel Macs are not
+  supported: upstream publishes no Intel build.
 
 > The install does **not** download any models. You fetch them on demand from the
 > **Model Catalog** tab (like a media library). Everything stays inside the
@@ -94,10 +118,26 @@ deletes** the ones removed upstream — they linger as orphans, and stale
 ```bat
 maintenance.bat      ::  Windows   (./maintenance.sh on Linux/Mac)
 ```
-It deletes obsolete files, purges `__pycache__` and `tmp/`, then verifies that
-everything compiles, the model catalog is valid, and the dependencies + `sd-cli`
-engine are present. It never touches `models/`, `loras/`, `outputs/`, `userdata/`,
-`python/` or `bin/`.
+It deletes the **code** of removed features, purges `__pycache__` and `tmp/`,
+then verifies that everything compiles, the model catalog is valid, and the
+dependencies + `sd-cli` engine are present. It never touches `models/custom/`,
+`loras/`, `outputs/`, `userdata/`, `python/` or `bin/`.
+
+**Data left behind by removed features is measured, not deleted.** When a feature
+goes away it leaves gigabytes on disk — downloaded weights, cloned repos, model
+folders no longer in the catalog. Erasing those silently is not the script's call,
+so it reports each one with its size and a single recoverable total:
+
+```bat
+maintenance.bat --purge      ::  actually deletes them (./maintenance.sh --purge)
+```
+
+Three things are checked, and none of them relies on a hand-kept list of files:
+orphan **add-ons** in `tools_repo/` are whatever no longer matches an add-on in
+the code, orphan **models** are whatever the catalog no longer references, and
+removed features declare their own leftovers in `REMOVED_FEATURES` at the top of
+`scripts/maintenance.py` — adding an entry there is the only step needed when
+something is dropped.
 
 **What a copy-paste update does and does not refresh**
 
@@ -108,15 +148,15 @@ engine are present. It never touches `models/`, `loras/`, `outputs/`, `userdata/
 | Models, LoRAs, outputs, prefs (`models/`, `loras/`, `outputs/`, `userdata/`) | no | no — kept, which is the point |
 | Toolkit add-ons (`tools_repo/`) | no | **no — and this one bites** |
 
-That last row matters. Some add-ons are not just downloaded weights: **SeedVR2
-patches the inference code it clones** (architecture config, model selection,
-pinned dependency versions). When a release changes *how an add-on installs*,
-updating the app leaves the installed add-on frozen in its old state, and you
-only find out at the next use. So: **after updating, if an add-on misbehaves,
-re-run its one-click installer** — weights already on disk are not re-downloaded.
+That last row matters. An add-on is not just a folder of weights: its installer
+also pins Python package versions **shared with every other add-on**. When a
+release changes *how an add-on installs*, updating the app leaves the installed
+add-on frozen in its old state, and you only find out at the next use. So:
+**after updating, if an add-on misbehaves, re-run its one-click installer** —
+weights already on disk are not re-downloaded.
 
-`maintenance` now checks this for you and names exactly what is stale, so you
-don't have to guess.
+`maintenance` reports leftovers from removed features and tells you exactly how
+much disk they hold, so you don't have to guess.
 
 ---
 
@@ -374,7 +414,7 @@ shown at the top. Engine logs and progress hints stay in French.
 ## Upscaling
 
 Three complementary upscalers live under **Toolkit**, in increasing order of
-invention: ESRGAN interpolates, SeedVR2 restores, SDXL hallucinates.
+invention: ESRGAN interpolates, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
 Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
@@ -400,91 +440,6 @@ you can convert one yourself with
 `sd-cli --mode convert --model x.pth --output x.gguf`. Note that sd.cpp only
 implements the **ESRGAN (RRDBNet)** architecture for image upscaling, so newer
 SPAN / DAT / Compact models will not load.
-
-### 🎯 Restoration (SeedVR2 1.4B)
-
-**One diffusion step, no prompt, no text encoder.** SeedVR2 reconstructs
-plausible detail — skin, fabric, foliage, text — instead of smoothing like ESRGAN
-or inventing like the creative upscale. Its sweet spot is **×2 to ×4**; quality
-degrades past that.
-
-Small and fast: **2.9 GB** of weights. Fixed sampler settings (steps 1, cfg 1,
-euler), so the only control that really matters is the **target short-side
-resolution**.
-
-> **VRAM.** The model card's "~4.6 GB peak" is for a 512→2048 job. What actually
-> drives memory is the *output* size: SeedVR2 resizes the input to the target
-> first, then the VAE encodes at that size — and its causal 3-D convolutions
-> replicate the frame along the temporal axis, which is what blows up. On
-> 11–12 GB, an untiled run OOMs around 1440 px. **VAE tiling is therefore on by
-> default** and the target defaults to 1080 px. If you still run out, lower the
-> target, then drop the tile size to 256. The tile slider is capped at 512 on
-> purpose: the VAE self-attends over the whole tile, so cost grows as O(n²) —
-> bigger tiles are both slower *and* heavier.
-
-> **How it is wired.** There is no pip package and no `diffusers` pipeline for
-> SeedVR2. The reference inference code is the
-> [numz repository](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler),
-> which ships as a ComfyUI node **but provides an `inference_cli.py` explicitly
-> documented as usable without ComfyUI**. The installer clones that repo and we
-> call its CLI as a subprocess — **ComfyUI is never installed or run**, and we do
-> not copy hundreds of lines of model architecture that would then need
-> maintaining. Dependencies are ordinary pip packages (einops, omegaconf,
-> diffusers, peft, rotary_embedding_torch…); **no apex, flash-attn or triton** —
-> those are optional accelerators and the code falls back to PyTorch SDPA.
-
-> **Shared pins across every add-on.** All PyTorch tools live in the *same*
-> embedded Python, so a tool installed with a looser constraint silently
-> replaces the version another one needs — and the breakage only surfaces at the
-> next use of the *other* tool, as an unreadable import-time error. Every
-> installer therefore applies one shared set, `_PINS` in
-> `scripts/setup_tools.py`:
->
-> | Pin | Why |
-> | --- | --- |
-> | `diffusers==0.33.1` | satisfies SeedVR2's `>=0.33.1` and predates `attention_dispatch.py`, whose `X \| None` annotations torch 2.4.1's `infer_schema` cannot parse |
-> | `numpy>=1.24,<2` | required by the torch 2.4.1 / torchvision 0.19 base |
-> | `transformers>=4.45,<4.50` | lower bound for the four tools that use it; upper bound set by torch — recent 4.5x import `DTensor` from the *public* `torch.distributed.tensor`, which only exists from torch 2.5 (`<5` alone was not enough, and 5.x additionally drags in `huggingface-hub` 1.x) |
->
-> The numpy pin is passed **inside** the same `pip install` rather than
-> re-applied afterwards. That lets pip's resolver pick an `opencv-python` build
-> compatible with numpy 1.x by itself, instead of installing the newest and then
-> breaking its dependency — no need to guess where opencv started requiring
-> numpy ≥ 2. `maintenance` checks every pin against what is actually installed
-> and names the add-on to reinstall if one drifted.
->
-> The SeedVR2 installer ends with a **smoke test** that replays the exact import
-> chain (`diffusers` → `loaders` → `transformers` → `torch.distributed`) in a
-> subprocess and prints the four version numbers. Version incompatibilities in
-> this stack surface only at import, as long unreadable tracebacks — this way
-> they surface during installation, not ten minutes into an upscale.
-
-The **1.4B** weights come from
-[`lvladikov/SeedVR2-1.4B`](https://huggingface.co/lvladikov/SeedVR2-1.4B) — a
-6-block distillation of the 7B teacher. Upstream only knows the 3B and 7B, so the
-installer writes a `configs_1_4b/main.yaml` — **derived at install time from the
-repo's own `configs_7b/main.yaml`**, changing only `num_layers` / `mm_layers` to
-6 (the derived `block_type` / `window` / `window_method` fields are OmegaConf
-interpolations on `${.num_layers}`, so they follow by themselves). Deriving
-rather than shipping a frozen copy matters: a static config goes stale as
-upstream's `NaDiT` gains parameters, which surfaces as
-`NaDiT.__init__() missing 1 required positional argument`. It also extends one
-line in
-`src/core/model_configuration.py` that picks the config directory. That edit is
-**idempotent and verified**: if the upstream pattern ever changes, the installer
-refuses to patch, says so, and the official 3B/7B models keep working.
-
-A weight file is only selectable if it sits in **the exact folder upstream
-scans**. Without ComfyUI, `get_base_cache_dir()` returns the *relative* path
-`./models/SEEDVR2`, resolved against the **current working directory**, and
-`--dit_model`'s list of valid choices is built from that folder when argparse is
-constructed. So two things must line up: the weights live in
-`tools_repo/seedvr2/models/SEEDVR2/`, and the CLI is launched with
-`cwd=tools_repo/seedvr2`. The installer asks the cloned repo itself where that
-folder is rather than hard-coding it, and migrates weights from the older
-location instead of re-downloading 2.9 GB.
-
-The VAE (~0.5 GB) is fetched automatically on the first upscale.
 
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
@@ -565,7 +520,7 @@ which is the point there.
 The **🖼️ Outpaint** tab extends an image **left, right, up, down — or all
 around**, Midjourney-style.
 
-> **Use it with an *edit* model** — Flux.2 Klein or Boogu Edit. This is not a
+> **Use it with an *edit* model** — Flux.2 Klein. This is not a
 > preference, it is what makes the feature work at all.
 
 **Why the model has to be an edit model.** An edit model receives the enlarged
@@ -631,103 +586,6 @@ sidecar recording model, seed and settings. Generation tabs have a
 
 ---
 
-## Video
-
-The **🎬 Video** tab generates short clips **with a generated soundtrack**, from
-text or from images, read natively by sd.cpp (`-M vid_gen`). No PyTorch, no
-ComfyUI — the same engine that generates images.
-
-> ⚠️ **This is by far the heaviest thing in the app.** The weights live in RAM
-> and stream to the GPU (`--offload-to-cpu`), which is the only reason a 22 B+
-> model runs on an 11-12 GB card. Budget **32 GB of RAM for LTX-2.3 and 48-64 GB
-> for MiniMax-H3**, and expect **several minutes per clip** — that is not a
-> crash.
-
-**Two families**, and the tab reconfigures itself around whichever you pick —
-available modes, frame-count steps, frame rate and the ×2 refine pass all differ:
-
-| | **LTX-2.3** (Lightricks) | **MiniMax-H3** |
-| --- | --- | --- |
-| Download | ~25 GB | ~35 GB |
-| Prompt encoder | Gemma-3-12B (7.3 GB) | **Qwen3-VL-32B** (18.2 GB) |
-| Audio | yes | yes, **stereo**, generated in the *same* diffusion pass |
-| Frame counts | 8k+1 (33, 41, 49…) | 17k+5 (5, 22, 39, 56…) |
-| Frame rate | free | **24 fps, forced** by the model |
-| ×2 latent refine | yes | no |
-| Reference conditioning | no | yes (Ref2VA variant) |
-
-**Modes** — which ones appear depends on the model, because the constraint is
-the model's, not the interface's:
-
-| Mode | What you give it | What it does |
-| --- | --- | --- |
-| 📝 **Text → video** | a prompt | generates the clip from scratch |
-| 🖼️ **Image → video** | a prompt + one image | animates that still |
-| 🎞️ **First → last** | a prompt + two images | generates the in-between |
-| 🎭 **Reference** | a prompt + 1-2 reference images | keeps that character/object across the shot (**MiniMax-H3 Ref2VA only**) |
-
-**The four catalog entries**
-
-- **LTX-2.3 Distilled 22B** — 8 steps, CFG 1.0. **The one to start with on
-  11-12 GB.** Distilled at CFG 1.0, so like Flux.2 Klein it ignores the negative
-  prompt and the field is hidden.
-- **LTX-2.3 Dev 22B** — ~20 steps at CFG 6.0, negative prompt active. Finer, but
-  roughly **2.5× slower** at equal settings.
-- **MiniMax-H3 FL2VA** — text→video, image→video, first→last. Video and
-  **stereo sound** come out of one packed diffusion transformer, so the audio is
-  synchronised by construction rather than bolted on afterwards.
-- **MiniMax-H3 Ref2VA** — reference-conditioned instead: give it images of a
-  character and ask for it to stay the same. In exchange it accepts **neither a
-  first nor a last frame** — a model constraint, which is why the tab hides
-  those inputs rather than letting you fail into it. Name the reference from
-  inside the prompt (*"use the cat from &lt;Picture 1&gt;, keep its appearance
-  consistent"*), otherwise the model sees the image but has no instruction
-  attached to it.
-
-Within each family the encoder and VAEs are **shared**, so the second variant is
-a much smaller download than the first.
-
-> **The engine must be recent enough.** MiniMax-H3 landed in stable-diffusion.cpp
-> well after LTX-2.3, so an `sd-cli` that happily runs LTX can still be unable to
-> load MiniMax. The tab checks the **actual binary** for the options each model
-> needs and tells you to run `update-engine.bat` **before** you download tens of
-> gigabytes of weights.
-
-**Writing the prompt.** English works best, and **describing the motion matters
-as much as describing the scene** — both the subject's movement and the camera's
-(*"camera slowly pushing in"*, *"handheld, drifting left"*). A prompt that only
-describes a still image tends to produce a nearly still clip.
-
-**Format, duration and the grids that constrain them.** LTX only produces sizes
-that are **multiples of 32 px** and frame counts of the form **8k+1** (33, 41,
-49…). Ask for 720 px and sd.cpp integer-divides it down to 704 without telling
-you. So the tab offers only aligned formats, takes the duration **in seconds**,
-and prints — under the sliders, *before* you click — exactly what will come out:
-`→ 704×384 · 33 images à 24 i/s · 1.4 s`. That readout is the contract; there is
-no surprise after the fact.
-
-**🔍 Detail ×2** runs the official **LTX spatial latent upscaler** between a
-low-resolution pass and a refine pass, doubling the output. Sharper, but clearly
-slower and hungrier — leave it off until the clip is otherwise right. It is
-downloaded with the model as an optional component; if it is missing the box is
-simply ignored and the log says so.
-
-**Output.** A `.webm` in `outputs/` with **video and audio muxed together** (LTX
-generates the soundtrack; sd.cpp writes it into the same file), plus a `.txt`
-sidecar recording prompt, model, mode, size, steps, CFG and seed.
-
-**If the tab says the engine is too old.** Video needs an `sd-cli` that knows
-`-M vid_gen`. The tab **checks the installed binary** (it parses `sd-cli -h`
-rather than assuming) and tells you to run **`update-engine.bat`** if the option
-is absent. LTX-2.3 has been supported by stable-diffusion.cpp since May 2026.
-
-**Start small.** 704×384 over 2 seconds, distilled, no ×2 refine. Once that
-produces something you like, raise one thing at a time — resolution *or*
-duration *or* the refine pass. Raising all three at once on a 11-12 GB card is
-the reliable way to get an out-of-memory error after ten minutes of waiting.
-
----
-
 ## Toolkit
 
 One-click installable utilities (models pulled from Hugging Face, run as
@@ -738,7 +596,7 @@ subprocesses so torch DLLs never lock the UI process):
   license).
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
-- **Upscale (ESRGAN)**, **Restore (SeedVR2)** and **Creative upscale (SDXL)** —
+- **Upscale (ESRGAN)** and **Creative upscale (SDXL)** —
   see [Upscaling](#upscaling).
 
 ### Prompt enhancer (AI)
@@ -814,68 +672,6 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
-**LTX-2.3 22B — video** (family `ltx2`, `kind: video`, sd.cpp `-M vid_gen`)
-Two variants sharing their encoder and latent upscaler, so the second one is
-almost free to add:
-- diffusion — [`unsloth/LTX-2.3-GGUF`](https://huggingface.co/unsloth/LTX-2.3-GGUF) — `distilled-1.1/…` (8 steps, CFG 1.0) or `ltx-2.3-22b-dev-…` (~20 steps, CFG 6.0)
-- video VAE + **audio VAE** — same repo, `vae/…_video_vae.safetensors` and `vae/…_audio_vae.safetensors` (the audio VAE is what puts a soundtrack in the `.webm`)
-- embeddings connectors — same repo, `text_encoders/…_embeddings_connectors.safetensors` (via `--embeddings-connectors`)
-- prompt encoder — [`unsloth/gemma-3-12b-it-GGUF`](https://huggingface.co/unsloth/gemma-3-12b-it-GGUF) (`Q4_K_M`, via `--llm`, offloaded to RAM)
-- spatial latent upscaler (optional) — [`Lightricks/LTX-2.3`](https://huggingface.co/Lightricks/LTX-2.3) (`ltx-2.3-spatial-upscaler-x2-1.1.safetensors`), used by **🔍 Detail ×2**
-
-About **25 GB** on disk per variant-set (14 GB diffusion at Q4_K_M, 7.3 GB
-encoder, 1.8 GB VAEs, 2.3 GB connectors, 1 GB upscaler). The encoder quant is
-**pinned to Q4_K_M rather than following `{enc_quant}`**: on a 64 GB machine the
-ladder would fetch Q8_0, i.e. 12.5 GB for a *prompt* encoder, with no visible
-gain on the video — the sd.cpp docs use a ~7 GB Q4 as well. See
-[Video](#video) for how to actually use it.
-
-**MiniMax-H3 22B — video + stereo audio** (family `minimax_h3`, `kind: video`)
-Two DiT variants, sharing encoder and VAEs:
-- diffusion — [`leejet/MiniMax-H3-GGUF`](https://huggingface.co/leejet/MiniMax-H3-GGUF) — `minimax_h3_fl2va_pruned-…` (first/last-frame) or `minimax_h3_ref2va_pruned-…` (reference-conditioned). The **pruned** weights are used: 11.4 GB at Q4_K_M against 18.8 GB for the full DiT, which is the difference between usable and not on a 11-12 GB card
-- prompt encoder — same repo, `qwen3vl_32b_minimax_h3-…` — **Qwen3-VL-32B** truncated to 50 language layers, vision tower **included in the GGUF** (so no separate `--llm_vision` to pass). 18.2 GB at Q4_K_M; the repo only publishes Q4_K_M and Q2_K_M, so the ladder lands on Q4_K_M and you can drop to **Q2_K_M (13.1 GB)** by forcing the encoder quantization in Settings if RAM is tight
-- video VAE + **audio VAE** — [`Comfy-Org/MiniMax-H3`](https://huggingface.co/Comfy-Org/MiniMax-H3) (`vae/minimax_h3_video_vae_fp16` 5.2 GB, `vae/minimax_h3_audio_vae_fp32` 0.6 GB)
-
-About **35 GB** per variant-set, essentially all of it resident in RAM during
-generation — hence the 48 GB RAM floor. The 5.2 GB video VAE is the VRAM peak,
-which is why VAE tiling is forced on. The documented invocation also pins
-`--rng cpu`, which the catalog carries as a per-model field rather than a global
-setting.
-
-**Boogu Image Edit Turbo 10B** (family `boogu`, instruction editing, Apache 2.0)
-- diffusion — [`realrebelai/Boogu-Image-Edit-Turbo_GGUFs`](https://huggingface.co/realrebelai/Boogu-Image-Edit-Turbo_GGUFs) (distilled, 4 steps, CFG 1.0)
-- text encoder — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (via `--llm`) + its `mmproj` vision projector (via `--llm_vision`, editing only)
-- VAE — [`Comfy-Org/Boogu-Image`](https://huggingface.co/Comfy-Org/Boogu-Image) (`vae/flux1_vae_bf16.safetensors`, 168 MB — the Flux.1 VAE, from an ungated mirror rather than the license-gated `FLUX.1-dev`)
-
-This is the one model here built for **instruction editing** — *"remove the car"*,
-*"make the background a beach"* — rather than text-to-image. Distilled, so it
-keeps the 4-step / CFG 1.0 speed profile of Flux.2 Klein. About **17 GB** on disk
-(7.4 GB diffusion at Q4_1, or 8.6 GB at Q5_1 on a 12 GB card; 8.7 GB encoder
-offloaded to RAM; 0.75 GB vision projector; 0.17 GB VAE).
-
-> **⚠️ These weights predate the 2026-07-08 hotfix — a deliberate choice.** That
-> hotfix addressed *"severe image quality degradation and poor performance on
-> removal and other editing tasks"* (revisions `hotfix-1k-20260708` /
-> `hotfix-1k5-20260708`), but **no GGUF of the fixed revision has been published**
-> — both Edit-Turbo GGUF repos predate it (realrebelai 07-01, chfm 07-06), and
-> the only hotfix-derived community upload is `mxfp8`, which sd.cpp cannot load
-> (checked 2026-07-29). The 4-step speed was worth the trade here.
->
-> **If object removal disappoints, two ways out.** Both reuse the same encoder,
-> mmproj and VAE — only the DiT changes:
-> 1. the **non-Turbo Edit**, never flagged as defective: grab a
->    `boogu-edit-dit-*.gguf` from
->    [`realrebelai/Boogu-Image-Edit_GGUFs`](https://huggingface.co/realrebelai/Boogu-Image-Edit_GGUFs)
->    and point **📂 Local files → diffusion** at it in the same tab (then set
->    25–50 steps at CFG 2–5, per the official Model Zoo);
-> 2. the **fixed bf16 weights** on `Comfy-Org/Boogu-Image`
->    (`boogu_image_edit_turbo_hotfix_1k_20260708_bf16.safetensors`, 20.6 GB),
->    quantized locally from the **🔧 Convert to GGUF** tab.
-
-Two more things to know: CFG 1.0 means the **negative prompt is ignored** (the
-field stays hidden, as on Flux.2 Klein and Krea 2), and the sd.cpp docs show only
-a **single** `-r` reference image for Boogu where Flux.2 takes three — slots 2–3
-remain usable but undocumented.
 
 **Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
 
@@ -899,15 +695,15 @@ atelier/
     sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, LoRA)
     generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale
     outpaint.py              # directional outpaint: canvas plan, mirror fill, composite-back
-    video.py                 # LTX-2.3 video pipeline (-M vid_gen): components, 32px/8k+1 grids
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
   ui/
     theme.py                 # light theme + CSS
-    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · video_tab.py · settings_tab.py
+    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   _torch_setup.py            # shared PyTorch-CUDA install helpers
   setup_tools.py             # installs PyTorch tools (depth, bg, sam, enhance, upscale)
+  tools/_device.py           # CUDA / Metal-MPS / CPU picker shared by the runners
   tools/run_*.py             # inference runners (subprocess: depth, rembg, sam, enhance, usdu)
 ```
 
@@ -999,9 +795,9 @@ maintenance) — the fastest way to know what a slider actually does.
   `unclosed transport`. Only connection errors are caught; anything else still
   propagates.
 - **A Toolkit add-on fails at import (`DTensor`, `diffusers`, numpy…)** → a
-  shared package drifted. Run `maintenance.bat`: it names the offending package,
-  then reinstall that add-on. The SeedVR2 installer also ends with a smoke test
-  that catches this at install time.
+  shared package drifted. All add-ons share one Python, so the last installer to
+  run decides the versions. Run `maintenance.bat`: it names the offending
+  package, then reinstall that add-on.
 
 ---
 

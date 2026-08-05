@@ -2,7 +2,7 @@
 à droite, en haut, en bas — ou tout autour.
 
 CE QUI DÉTERMINE LA QUALITÉ, avant tout réglage : le modèle doit VOIR l'image.
-Un modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) reçoit la toile en référence
+Un modèle d'ÉDITION (Flux.2 Klein) reçoit la toile en référence
 (-r) : son conditionnement image lui donne le contenu de la scène, et une
 consigne d'extension (`instruction()`) lui dit quoi en faire. Un modèle de
 text-to-image ordinaire n'a, lui, qu'un latent bruité en img2img : il ne sait

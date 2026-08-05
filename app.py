@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo / Boogu Edit Turbo, GGUF) · Catalogue de
-modèles · Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Vidéo (LTX-2.3) ·
-Image → 3D · Réglages.
+Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Catalogue de modèles ·
+Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · Réglages.
 """
 from __future__ import annotations
 
@@ -109,7 +108,6 @@ from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.toolkit_tab import build_toolkit_tab
-from atelier.ui.video_tab import build_video_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
 def _head_for(mode: str) -> str:
@@ -139,7 +137,7 @@ def build_app() -> gr.Blocks:
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
             f"<div class='sub'>{_subtitle} · "
-            f"Flux.2 Klein 9B · Krea 2 Turbo · Boogu Edit Turbo · "
+            f"Flux.2 Klein 9B · Krea 2 Turbo · "
             f"v{__version__}</div></div>")
 
         # Premier démarrage : choix de la langue (bilingue, persisté).
@@ -164,9 +162,12 @@ def build_app() -> gr.Blocks:
             gr.Markdown("> ⚠️ **Binaire `sd-cli` introuvable.** Lancez "
                         "`install.bat` / `install.sh`, ou "
                         "`python scripts/get_sdcpp.py`.")
+        # Sur Mac Apple Silicon, detect_gpus() renvoie le GPU intégré : pas
+        # d'avertissement, il n'y a rien à installer. L'alerte ne vise que les
+        # PC où un GPU NVIDIA est attendu mais absent (pilotes manquants).
         if not gpus:
-            gr.Markdown("> ⚠️ **Aucun GPU NVIDIA détecté** (mode CPU très lent). "
-                        "Vérifiez vos pilotes / `nvidia-smi`.")
+            gr.Markdown("> ⚠️ **Aucun GPU détecté** (mode CPU très lent). "
+                        "Sur PC, vérifiez vos pilotes NVIDIA / `nvidia-smi`.")
 
         # Image en attente d'envoi vers le Toolkit : (chemin, destination).
         pending_toolkit = gr.State(None)
@@ -183,14 +184,9 @@ def build_app() -> gr.Blocks:
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)
-            build_generative_tab("boogu-edit-turbo", "🖌️ Boogu Edit Turbo 10B",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d,
-                                 pending_outpaint=pending_outpaint)
             build_library_tab()
             build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
             build_outpaint_tab(pending_outpaint=pending_outpaint, tabs=tabs)
-            build_video_tab()
             build_threed_tab(pending_3d=pending_3d, tabs=tabs)
             build_convert_tab()
             build_manage_tab()

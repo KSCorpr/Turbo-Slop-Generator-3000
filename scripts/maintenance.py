@@ -2,21 +2,27 @@
 """Maintenance après mise à jour par copier-coller.
 
 Copier-coller le dépôt par-dessus l'ancien AJOUTE et REMPLACE les fichiers, mais
-n'efface JAMAIS ceux supprimés en amont : ils restent en orphelins et peuvent
-casser/embrouiller l'app. Ce script :
-  • supprime les fichiers de code devenus OBSOLÈTES (liste ci-dessous) ;
-  • purge tous les __pycache__ (.pyc périmés d'anciens modules) ;
-  • vide le dossier tmp/ (fichiers de travail) ;
-  • REPÈRE les dossiers de MODÈLES orphelins (plus référencés par le catalogue —
-    ex. un encodeur remplacé, un modèle retiré) et l'espace récupérable ;
+n'efface JAMAIS ceux supprimés en amont. Ce script rattrape ça :
+
+  • supprime le CODE des fonctions retirées (table REMOVED_FEATURES) ;
+  • CHIFFRE les DONNÉES qu'elles ont laissées (poids, dépôts clonés) sans les
+    supprimer — plusieurs gigaoctets ne s'effacent pas sans prévenir ;
+  • repère les ADD-ONS orphelins de tools_repo/ (dossiers ne correspondant à
+    aucun add-on du code actuel) et les MODÈLES orphelins de models/ (plus
+    référencés par le catalogue) ;
+  • purge les __pycache__ (.pyc d'anciens modules) et le dossier tmp/ ;
   • vérifie que tout compile, que le catalogue YAML est valide, que les
     dépendances et le binaire sd-cli sont présents.
 
-Par défaut il NE SUPPRIME PAS de modèles (il les liste seulement). Pour libérer
-l'espace :  python scripts/maintenance.py --prune-models  (ou maintenance.bat
---prune-models). Ne touche jamais à models/custom/, loras/, outputs/, userdata/,
-python/, bin/.
-Lancer :  maintenance.bat  (Windows)  ·  ./maintenance.sh  (Linux/Mac)
+Par défaut il ne supprime AUCUNE donnée : il affiche l'espace récupérable et la
+commande pour le libérer.
+
+    maintenance.bat                 # vérifie et nettoie le code seulement
+    maintenance.bat --purge         # + supprime les données des fonctions
+                                    #   retirées et les orphelins
+    (./maintenance.sh sur Linux/Mac)
+
+Ne touche jamais à models/custom/, loras/, outputs/, userdata/, python/, bin/.
 """
 from __future__ import annotations
 
@@ -32,31 +38,44 @@ except Exception:  # noqa: BLE001
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# Fichiers retirés du projet au fil des versions : à effacer s'ils traînent.
-# (À compléter ici quand un fichier source est supprimé en amont.)
-OBSOLETE = [
-    "atelier/ui/creative_tab.py",          # ancien onglet Upscale (retiré)
-    "scripts/tools/run_creative_upscale.py",  # ancien runner SDXL+ControlNet
-    "atelier/mjparams.py",                 # ancien module Midjourney (retiré)
-    # Backend ComfyUI + mode serveur (retirés : un seul moteur, sd-cli + aperçu).
-    "atelier/engine/comfyui.py",
-    "atelier/engine/sdserver.py",
-    "scripts/get_comfyui.py",
-    "config/comfyui_workflows/flux2.json",
-    "config/comfyui_workflows/krea2.json",
-    "config/comfyui_workflows/krea2int8.json",
-    "config/comfyui_workflows/krea2convrot.json",
+# --------------------------------------------------------------------------- #
+#  FONCTIONS RETIRÉES DU PROJET
+#
+#  Une mise à jour par copier-coller ajoute et écrase, mais n'efface JAMAIS. Une
+#  fonction retirée laisse donc deux traces bien différentes :
+#    · son CODE, qui nous appartient -> on le supprime sans rien demander ;
+#    · ses DONNÉES (poids téléchargés, dépôts clonés), qui pèsent parfois des
+#      gigaoctets -> on les CHIFFRE et on les signale, mais on ne supprime
+#      qu'avec « --purge », parce que l'utilisateur peut vouloir les récupérer
+#      ailleurs avant.
+#
+#  Ajouter une entrée ici est la SEULE chose à faire quand on retire une
+#  fonction : le nettoyage, le calcul de taille et le message suivent.
+# --------------------------------------------------------------------------- #
+REMOVED_FEATURES = [
+    {"name": "Onglet Upscale (ancienne version)",
+     "files": ["atelier/ui/creative_tab.py",
+               "scripts/tools/run_creative_upscale.py"],
+     "dirs": []},
+    {"name": "Module Midjourney",
+     "files": ["atelier/mjparams.py"], "dirs": []},
+    {"name": "Backend ComfyUI et mode serveur",
+     "files": ["atelier/engine/comfyui.py", "atelier/engine/sdserver.py",
+               "scripts/get_comfyui.py",
+               "config/comfyui_workflows/flux2.json",
+               "config/comfyui_workflows/krea2.json",
+               "config/comfyui_workflows/krea2int8.json",
+               "config/comfyui_workflows/krea2convrot.json"],
+     "dirs": ["config/comfyui_workflows", "comfyui"]},
+    {"name": "Génération vidéo (LTX-2.3, MiniMax-H3)",
+     "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
+     "dirs": []},
+    {"name": "Restauration SeedVR2",
+     "files": [], "dirs": ["tools_repo/seedvr2"]},
 ]
 
-# Dossiers devenus obsolètes : supprimés s'ils sont VIDES après le nettoyage
-# ci-dessus ; signalés (avec leur taille) s'ils contiennent encore des données
-# volumineuses à la charge de l'utilisateur (ex. l'installation ComfyUI).
-OBSOLETE_DIRS = ["config/comfyui_workflows"]
-LEFTOVER_HEAVY = ["comfyui"]   # installation ComfyUI (retirée) : ~4–6 Go
-
 # Dossiers de données à NE JAMAIS toucher.
-PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git",
-             "comfyui"}
+PROTECTED = {"python", "bin", "models", "loras", "outputs", "userdata", ".git"}
 
 OK, WARN, ERR, INFO = "  [OK] ", "  [!] ", "  [X] ", "  [i] "
 _problems = 0
@@ -87,35 +106,120 @@ def _human(n: float) -> str:
     return f"{n:.1f} To"
 
 
-def remove_obsolete() -> None:
-    print("• Fichiers obsolètes…")
-    found = False
-    for rel in OBSOLETE:
-        p = ROOT / rel
-        if p.exists():
-            try:
-                p.unlink()
-                print(OK + f"supprimé : {rel}")
-                found = True
-            except OSError as exc:
-                _warn(f"impossible de supprimer {rel} : {exc}")
-    for rel in OBSOLETE_DIRS:
-        p = ROOT / rel
-        if p.is_dir():
-            try:
-                p.rmdir()   # seulement s'il est vide
-                print(OK + f"dossier vide supprimé : {rel}")
-                found = True
-            except OSError:
-                pass
-    for rel in LEFTOVER_HEAVY:
-        p = ROOT / rel
-        if p.is_dir():
-            print(INFO + f"le dossier {rel}/ ({_human(_dir_size(p))}) date d'une "
-                  "ancienne version (backend ComfyUI, retiré) — vous pouvez le "
-                  "supprimer pour libérer l'espace.")
-    if not found:
-        print(OK + "aucun fichier obsolète (propre).")
+def clean_removed_features(purge: bool) -> int:
+    """Nettoie ce que les fonctions retirées ont laissé derrière elles.
+
+    Le CODE part sans discussion (c'est le nôtre, et le garder fait tourner de
+    l'ancien code par accident). Les DONNÉES sont d'abord CHIFFRÉES et
+    signalées : supprimer plusieurs gigaoctets de poids sans prévenir n'est pas
+    à nous de le décider. Renvoie l'espace récupérable restant, en octets.
+    """
+    print("• Fonctions retirées (code + données laissées derrière)…")
+    touched = False
+    recoverable = 0
+    for feat in REMOVED_FEATURES:
+        gone: list[str] = []
+        for rel in feat["files"]:
+            f = ROOT / rel
+            if f.exists():
+                try:
+                    f.unlink()
+                    gone.append(rel)
+                except OSError as exc:
+                    _warn(f"impossible de supprimer {rel} : {exc}")
+        if gone:
+            touched = True
+            print(OK + f"{feat['name']} : {len(gone)} fichier(s) de code "
+                  "supprimé(s).")
+        for rel in feat["dirs"]:
+            d = ROOT / rel
+            if not d.is_dir():
+                continue
+            size = _dir_size(d)
+            if size == 0:
+                # Dossier vide : aucune donnée en jeu, on peut l'enlever.
+                try:
+                    shutil.rmtree(d)
+                    print(OK + f"{feat['name']} : dossier vide {rel}/ supprimé.")
+                    touched = True
+                except OSError:
+                    pass
+                continue
+            if purge:
+                shutil.rmtree(d, ignore_errors=True)
+                if d.exists():
+                    _warn(f"suppression partielle : {rel}/")
+                else:
+                    print(OK + f"{feat['name']} : {rel}/ supprimé "
+                          f"({_human(size)} libérés).")
+                    touched = True
+            else:
+                recoverable += size
+                print(INFO + f"{feat['name']} : {rel}/ occupe encore "
+                      f"{_human(size)}.")
+    if not touched and recoverable == 0:
+        print(OK + "rien à nettoyer (propre).")
+    return recoverable
+
+
+def _known_addon_dirs() -> set[str]:
+    """Add-ons LÉGITIMES, déduits du code plutôt que recopiés à la main.
+
+    Ainsi, retirer un add-on de tools.py suffit à ce que son dossier devienne
+    automatiquement un orphelin signalé ici — il n'y a pas de seconde liste à
+    penser à mettre à jour."""
+    from atelier.engine import tools
+    dirs = (tools.DEPTH_MODEL_DIR, tools.BG_MODEL_DIR, tools.SAM_MODEL_DIR,
+            tools.ENHANCE_MODEL_DIR, tools.UPSCALE_DIR)
+    out = set()
+    for d in dirs:
+        try:
+            out.add(d.relative_to(tools.TOOLS_DIR).parts[0])
+        except ValueError:
+            pass
+    return out
+
+
+def report_orphan_addons(purge: bool) -> int:
+    """Dossiers de tools_repo/ ne correspondant à aucun add-on du code actuel."""
+    print("• Add-ons orphelins (tools_repo/)…")
+    try:
+        from atelier.engine import tools
+        base, known = tools.TOOLS_DIR, _known_addon_dirs()
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"analyse impossible : {exc}")
+        return 0
+    if not base.is_dir():
+        print(OK + "aucun add-on installé.")
+        return 0
+    # Les dossiers déjà nommés dans REMOVED_FEATURES sont traités plus haut :
+    # les recompter ici gonflerait le total d'espace récupérable.
+    declared = {Path(rel).name for f in REMOVED_FEATURES for rel in f["dirs"]}
+    orphans = [d for d in sorted(base.iterdir())
+               if d.is_dir() and d.name not in known and d.name not in declared]
+    if not orphans:
+        print(OK + "aucun add-on orphelin (propre).")
+        return 0
+    total = 0
+    for d in orphans:
+        size = _dir_size(d)
+        total += size
+        print(f"    - {d.name}  ({_human(size)})")
+    if purge:
+        freed = 0
+        for d in orphans:
+            sz = _dir_size(d)
+            shutil.rmtree(d, ignore_errors=True)
+            if not d.exists():
+                freed += sz
+                print(OK + f"supprimé : {d.name}")
+            else:
+                _warn(f"suppression partielle : {d.name}")
+        print(OK + f"{_human(freed)} libérés.")
+        return 0
+    print(INFO + f"{len(orphans)} add-on(s) d'une version précédente = "
+          f"{_human(total)} récupérables.")
+    return total
 
 
 def clean_pycache() -> None:
@@ -159,7 +263,7 @@ def _expected_model_dirs() -> set[str]:
     return {settings.model_repo_dir(r).name for r in repos if r}
 
 
-def report_orphan_models(prune: bool) -> None:
+def report_orphan_models(prune: bool) -> int:
     print("• Modèles orphelins (dossiers plus référencés par le catalogue)…")
     try:
         from atelier import settings
@@ -167,22 +271,20 @@ def report_orphan_models(prune: bool) -> None:
         expected = _expected_model_dirs()
     except Exception as exc:  # noqa: BLE001
         _warn(f"analyse impossible : {exc}")
-        return
+        return 0
     if not models_dir.is_dir():
         print(OK + "aucun dossier models/.")
-        return
+        return 0
     orphans = [d for d in sorted(models_dir.iterdir())
                if d.is_dir() and d.name != "custom" and d.name not in expected]
     if not orphans:
         print(OK + "aucun modèle orphelin (propre).")
-        return
+        return 0
     total = 0
     for d in orphans:
         size = _dir_size(d)
         total += size
         print(f"    - {d.name}  ({_human(size)})")
-    print(INFO + f"{len(orphans)} dossier(s) orphelin(s) = "
-          f"{_human(total)} récupérables.")
     if prune:
         freed = 0
         for d in orphans:
@@ -194,9 +296,10 @@ def report_orphan_models(prune: bool) -> None:
             else:
                 _warn(f"suppression partielle : {d.name}")
         print(OK + f"{_human(freed)} libérés.")
-    else:
-        print("    → pour libérer l'espace : "
-              "python scripts/maintenance.py --prune-models")
+        return 0
+    print(INFO + f"{len(orphans)} dossier(s) orphelin(s) = "
+          f"{_human(total)} récupérables.")
+    return total
 
 
 def compile_check() -> None:
@@ -240,63 +343,6 @@ def check_deps() -> None:
     else:
         print(OK + "présentes.")
     check_diffusers()
-    check_addons_sync()
-
-
-def check_addons_sync() -> None:
-    """Add-ons dont l'installation applique des correctifs au code téléchargé.
-
-    « tools_repo/ » n'est PAS dans le dépôt : une mise à jour par copier-coller
-    remplace notre code mais ne retouche à rien dans les add-ons déjà installés.
-    Si on a modifié la façon dont un add-on s'installe, il reste donc figé dans
-    son ancien état — sans que rien ne le signale, jusqu'à l'erreur au premier
-    usage. On le détecte ici.
-    """
-    print("• Add-ons à ré-installer après mise à jour…")
-    base = ROOT / "tools_repo" / "seedvr2"
-    if not base.is_dir():
-        print(OK + "aucun add-on concerné (SeedVR2 non installé).")
-        return
-
-    repo = base / "repo"
-    todo: list[str] = []
-    cfg = repo / "configs_1_4b" / "main.yaml"
-    sel = repo / "src" / "core" / "model_configuration.py"
-
-    if not (repo / "inference_cli.py").is_file():
-        todo.append("code d'inférence absent")
-    if not cfg.is_file():
-        todo.append("config 1.4B absente")
-    elif "DÉRIVÉ AUTOMATIQUEMENT" not in cfg.read_text(encoding="utf-8",
-                                                       errors="replace"):
-        todo.append("config 1.4B figée (ancienne version) au lieu d'être "
-                    "dérivée du dépôt")
-    if sel.is_file() and "configs_1_4b" not in sel.read_text(encoding="utf-8",
-                                                             errors="replace"):
-        todo.append("sélection d'architecture non étendue au 1.4B")
-    def _dits(d: Path) -> list:
-        """Modèles de diffusion : le VAE cohabite dans le même dossier et ne
-        compte pas — sinon un dossier ne contenant que lui passerait pour OK."""
-        if not d.is_dir():
-            return []
-        return [p for p in list(d.glob("*.safetensors")) + list(d.glob("*.gguf"))
-                if "vae" not in p.name.lower()]
-
-    if not _dits(base / "models" / "SEEDVR2"):
-        if _dits(base / "models"):
-            todo.append("poids restés dans l'ancien dossier (models/ au lieu "
-                        "de models/SEEDVR2/)")
-        else:
-            todo.append("poids absents")
-
-    if todo:
-        _warn("SeedVR2 n'est pas à jour :")
-        for t in todo:
-            _warn(f"    - {t}")
-        _warn("  Correctif : Toolkit → Restaurer (SeedVR2) → « Installer "
-              "SeedVR2 ». Les poids déjà présents ne sont pas retéléchargés.")
-    else:
-        print(OK + "SeedVR2 conforme à l'installeur actuel.")
 
 
 def check_diffusers() -> None:
@@ -379,26 +425,43 @@ def check_engine() -> None:
     if sd:
         print(OK + f"trouvé : {sd}")
     else:
-        _warn("binaire sd-cli introuvable → install.bat, ou "
-              "python scripts/get_sdcpp.py --variant cuda")
+        # Pas de « --variant cuda » en dur : sur Mac ce serait un mauvais
+        # conseil (il n'existe que des builds Metal). get_sdcpp déduit seul.
+        _warn("binaire sd-cli introuvable → install.bat / ./install.sh, ou "
+              "python scripts/get_sdcpp.py")
 
 
 def main() -> int:
-    prune = "--prune-models" in sys.argv
+    # « --purge » supprime TOUT ce qui reste des fonctions retirées : dossiers
+    # d'add-ons, modèles orphelins, données laissées derrière. « --prune-models »
+    # est conservé comme alias historique (il ne visait que les modèles).
+    purge = "--purge" in sys.argv
+    prune_models = purge or "--prune-models" in sys.argv
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
-    if prune:
-        print("  (--prune-models : suppression des modèles orphelins activée)")
+    if purge:
+        print("  (--purge : suppression des restes des fonctions retirées)")
+    elif prune_models:
+        print("  (--prune-models : suppression des modèles orphelins)")
     print("=" * 60)
-    remove_obsolete()
+    recoverable = clean_removed_features(purge)
     clean_pycache()
     clean_tmp()
     check_catalog()
-    report_orphan_models(prune)
+    recoverable += report_orphan_addons(purge)
+    recoverable += report_orphan_models(prune_models)
     compile_check()
     check_deps()
     check_engine()
     print("-" * 60)
+    if recoverable > 0:
+        # Un chiffre global, puis la commande exacte : c'est tout ce qu'il faut
+        # pour décider, sans avoir à additionner les lignes soi-même.
+        print(f"💾 {_human(recoverable)} récupérables (restes de fonctions "
+              "retirées).")
+        print("   Pour libérer :  maintenance.bat --purge"
+              "   (./maintenance.sh --purge sur Linux/Mac)")
+        print("-" * 60)
     if _problems == 0:
         print("✅ Tout est propre et vérifié. Vous pouvez lancer run.bat.")
     else:

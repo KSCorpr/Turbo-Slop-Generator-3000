@@ -174,6 +174,15 @@ def _is_archive(n: str) -> bool:
     return n.endswith((".zip", ".tar.gz", ".tgz"))
 
 
+def default_variant() -> str:
+    """Variante adaptée à la machine, sans avoir à la nommer.
+
+    macOS ne propose que des builds Apple Silicon (Metal) : demander « cuda »
+    n'y a aucun sens et ne donnerait aucun résultat. Ailleurs, CUDA reste le
+    défaut historique."""
+    return "metal" if platform.system() == "Darwin" else "cuda"
+
+
 def _score_main(name: str, variant: str) -> int:
     """Note l'archive PRINCIPALE (qui contient sd-cli). Exclut le cudart."""
     n = name.lower()
@@ -183,6 +192,17 @@ def _score_main(name: str, variant: str) -> int:
     if toks and not any(t in n for t in toks):
         return -1000
     score = 10
+    if variant == "metal":
+        # Les archives macOS sont nommées « …-bin-Darwin-macOS-<ver>-arm64.zip ».
+        # Il n'existe pas de build Intel : on écarte explicitement x86_64 pour
+        # ne pas télécharger une archive inutilisable si elle apparaissait.
+        if "arm64" in n or "aarch64" in n:
+            score += 10
+        if "x86_64" in n or "x64" in n:
+            score -= 20
+        if any(x in n for x in ("cuda", "rocm", "vulkan")):
+            score -= 20
+        return score
     if variant == "cuda":
         if "cuda12" in n or "cu12" in n:
             score += 10
@@ -329,6 +349,28 @@ def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
     return data
 
 
+def _restore_exec_bits() -> None:
+    """Rend le binaire exécutable après extraction (macOS / Linux).
+
+    `zipfile.extractall` ne restitue PAS les permissions Unix : le sd-cli sorti
+    d'un .zip arrive en 0644 et se solde par « Permission denied » au premier
+    lancement. Les archives Windows n'en ont pas besoin, mais l'appel est sans
+    effet là-bas."""
+    if platform.system() == "Windows":
+        return
+    import stat
+    for name in ("sd-cli", "sd"):
+        for p in BIN_DIR.rglob(name):
+            if not p.is_file():
+                continue
+            try:
+                mode = p.stat().st_mode
+                p.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                print(f"     + exécutable : {p.name}", flush=True)
+            except OSError:
+                pass
+
+
 def _extract(blob: bytes, name: str) -> None:
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     if name.endswith(".zip"):
@@ -337,6 +379,7 @@ def _extract(blob: bytes, name: str) -> None:
     else:
         with tarfile.open(fileobj=io.BytesIO(blob)) as t:
             t.extractall(BIN_DIR)
+    _restore_exec_bits()
 
 
 def _purge_old_binaries() -> None:
@@ -396,7 +439,10 @@ def _install_from_ours(args) -> None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", choices=["cuda", "cpu"], default="cuda")
+    ap.add_argument("--variant", choices=["cuda", "cpu", "metal"],
+                    default=None,
+                    help="cuda (Windows/Linux NVIDIA) · metal (macOS Apple "
+                         "Silicon) · cpu. Par défaut : selon la machine.")
     ap.add_argument("--source", choices=["official", "ours"], default="official",
                     help="official = releases leejet/stable-diffusion.cpp ; "
                          "ours = build maison CI du projet (archis 75;86)")
@@ -410,6 +456,9 @@ def main():
     ap.add_argument("--allow-ipv6", action="store_true",
                     help="ne pas forcer l'IPv4 (par défaut on force l'IPv4)")
     args = ap.parse_args()
+    if args.variant is None:
+        args.variant = default_variant()
+        print(f"Variante retenue pour cette machine : {args.variant}")
 
     if not args.allow_ipv6:
         _force_ipv4()

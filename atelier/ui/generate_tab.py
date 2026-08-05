@@ -493,7 +493,6 @@ def build_generative_tab(model_id: str, title: str,
                      (t("✂️ Sans arrière-plan"), "bg"),
                      (t("🪄 Détourer un objet (SAM)"), "sam"),
                      (t("🔼 Agrandir (ESRGAN)"), "esrgan"),
-                     (t("🎯 Restaurer (SeedVR2)"), "seedvr2"),
                      (t("✨ Upscale créatif (SDXL)"), "creative")],
                     value=None, label="📤 Envoyer la sélection vers le Toolkit",
                     visible=pending_toolkit is not None)

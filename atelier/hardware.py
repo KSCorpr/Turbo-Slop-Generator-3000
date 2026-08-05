@@ -22,8 +22,13 @@ class Gpu:
     index: int
     name: str
     vram_gb: float
-    arch: str          # pascal | turing | ampere | ada | blackwell | unknown
+    # pascal | turing | ampere | ada | blackwell | apple | unknown
+    arch: str
     tensor_cores: bool
+
+    @property
+    def is_apple(self) -> bool:
+        return self.arch == "apple"
 
 
 def _arch_from_name(name: str) -> tuple[str, bool]:
@@ -57,8 +62,43 @@ def _arch_from_name(name: str) -> tuple[str, bool]:
     return "unknown", True
 
 
+# Part de la mémoire unifiée qu'un Mac Apple Silicon laisse au GPU. macOS
+# n'expose pas de « VRAM » : le GPU adresse la même mémoire que le CPU, et le
+# plafond de travail conseillé tourne autour de 75 % du total. On garde cette
+# fraction plutôt que d'annoncer la RAM entière, sinon le profil automatique
+# choisirait des quantifications qui font swapper la machine.
+_APPLE_GPU_SHARE = 0.75
+
+
+@lru_cache(maxsize=1)
+def _apple_gpu() -> "Gpu | None":
+    """GPU intégré d'un Mac Apple Silicon, vu comme un GPU normal.
+
+    Le reste de l'app raisonne en « une carte, tant de VRAM » : plutôt que de
+    semer des cas particuliers partout, on présente la mémoire unifiée sous la
+    même forme. `arch = "apple"` suffit ensuite à décider ce qui a du sens
+    (pas d'offload : il n'y a qu'une seule mémoire)."""
+    import platform
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return None
+    name = "Apple Silicon"
+    try:
+        out = subprocess.check_output(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            text=True, stderr=subprocess.DEVNULL, timeout=10).strip()
+        if out:
+            name = out          # ex. « Apple M3 Pro »
+    except (OSError, subprocess.SubprocessError):
+        pass
+    ram = detect_ram_gb()
+    return Gpu(0, name, round(ram * _APPLE_GPU_SHARE, 1), "apple", True)
+
+
 @lru_cache(maxsize=1)
 def detect_gpus() -> tuple[Gpu, ...]:
+    apple = _apple_gpu()
+    if apple is not None:
+        return (apple,)
     try:
         out = subprocess.check_output(
             ["nvidia-smi",
@@ -106,6 +146,11 @@ def detect_ram_gb() -> float:
             ms.dwLength = ctypes.sizeof(_MS)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
             return round(ms.ullTotalPhys / (1024 ** 3), 1)
+        if platform.system() == "Darwin":
+            # macOS n'a pas /proc : sysctl donne la mémoire physique en octets.
+            out = subprocess.check_output(["sysctl", "-n", "hw.memsize"],
+                                          text=True, timeout=10).strip()
+            return round(int(out) / (1024 ** 3), 1)
         # Linux / autres POSIX
         with open("/proc/meminfo", encoding="utf-8") as fh:
             for line in fh:
@@ -259,6 +304,31 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
     quant = _quant_for_vram(vram)
     enc_quant = _enc_quant_for_ram(ram)
 
+    # Mac Apple Silicon : mémoire UNIFIÉE. « Décharger en RAM » n'y veut rien
+    # dire — c'est la même mémoire que celle du GPU, donc l'offload n'économise
+    # rien et ne fait qu'ajouter des copies. On le désactive, et on garde le
+    # VAE tiling qui, lui, réduit vraiment le pic. Flash-attention est laissé de
+    # côté : le chemin Metal de sd.cpp ne l'utilise pas comme les kernels CUDA.
+    if gpu.is_apple:
+        # L'échelle de l'encodeur suppose une RAM SÉPARÉE de la VRAM : sur PC
+        # l'encodeur est déchargé côté système et ne dispute rien au modèle de
+        # diffusion. Ici les deux tirent sur la même réserve, donc appliquer la
+        # règle PC telle quelle ferait swapper la machine. On budgète l'encodeur
+        # sur ce qui reste une fois la diffusion logée, soit environ la moitié.
+        enc_quant = _enc_quant_for_ram(vram * 0.5)
+        profile = Profile(
+            gpu=gpu, ram_gb=ram, quant=quant, enc_quant=enc_quant,
+            diffusion_fa=False, offload_to_cpu=False, vae_tiling=True,
+            clip_on_cpu=False, vae_on_cpu=False, notes=notes,
+        )
+        notes.append(t("{name} — mémoire unifiée {ram} Go, dont ~{vram} Go "
+                       "utilisables par le GPU -> diffusion en {quant}.").format(
+            name=gpu.name, ram=f"{ram:.0f}", vram=f"{vram:.0f}", quant=quant))
+        notes.append(t("Mémoire unifiée : la décharge en RAM est désactivée "
+                       "(elle n'économise rien ici) et le calcul passe par "
+                       "Metal."))
+        return profile
+
     # Flash attention : à partir de Turing (RTX 20xx). Désactivé sur Pascal.
     fa = gpu.arch in ("turing", "ampere", "ada", "blackwell")
     if gpu.arch == "pascal":
@@ -295,6 +365,16 @@ def summary_text() -> str:
     if not gpus:
         return t("⚠️ Aucun GPU NVIDIA détecté · RAM {ram} Go").format(
             ram=f"{ram:.0f}")
+    if gpus[0].is_apple:
+        # Une seule mémoire : parler de « VRAM » induirait en erreur, on dit
+        # explicitement que c'est la part de la mémoire unifiée.
+        g = gpus[0]
+        return "\n".join([
+            t("Mémoire unifiée : **{ram} Go**").format(ram=f"{ram:.0f}"), "",
+            t("**GPU détecté :**"),
+            f"- {g.name} · Metal · "
+            + t("~{vram} Go adressables par le GPU").format(
+                vram=f"{g.vram_gb:.0f}")])
     lines = [t("RAM système : **{ram} Go**").format(ram=f"{ram:.0f}"), "",
              t("**GPU détectés :**")]
     for g in gpus:

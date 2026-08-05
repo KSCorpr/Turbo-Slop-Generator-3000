@@ -3,7 +3,7 @@ en bas — ou tout autour — façon Midjourney.
 
 Deux chemins, selon le modèle choisi (voir engine/outpaint.py) :
 
-* modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) — la toile agrandie part en
+* modèle d'ÉDITION (Flux.2 Klein) — la toile agrandie part en
   RÉFÉRENCE (-r) avec une consigne d'extension générée automatiquement. Le
   modèle voit la scène et la prolonge. C'est le seul mode qui donne un résultat
   cohérent ;
@@ -39,12 +39,11 @@ PRESETS = [
 
 
 def _models() -> list:
-    # Modèles d'IMAGE seulement : LTX-2.3 (vidéo) n'a rien à faire ici.
-    return registry.image_models(settings.load_prefs())
+    return registry.load_base_models(settings.load_prefs())
 
 
 def _is_edit(m) -> bool:
-    """Modèle d'ÉDITION natif (Flux.2, Boogu Edit) : il « voit » l'image qu'on
+    """Modèle d'ÉDITION natif (Flux.2 Klein) : il « voit » l'image qu'on
     lui passe en référence grâce à son encodeur vision. C'est la seule famille
     capable de prolonger une scène de façon sensée."""
     return (m.defaults.get("edit") if m else None) in (True, "full")
@@ -88,7 +87,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
             "### Étendre une image (outpaint)\n"
             "Agrandit la toile dans les directions choisies et laisse le modèle "
             "**prolonger la scène**, façon Midjourney.\n\n"
-            "**À utiliser avec un modèle d'ÉDITION** (Flux.2 Klein, Boogu Edit). "
+            "**À utiliser avec un modèle d'ÉDITION** (Flux.2 Klein). "
             "Lui seul *regarde* l'image, via son encodeur vision : il sait ce "
             "qu'il prolonge. La toile agrandie lui est passée en **référence** "
             "avec une **consigne d'extension écrite automatiquement** — c'est "
@@ -188,7 +187,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
                 note = ("⚠️ **Modèle sans édition** — repli img2img : il ne voit "
                         "pas l'image, il reçoit un latent bruité et **réinvente** "
                         "au lieu de prolonger. Résultat souvent incohérent. "
-                        "Préférez Flux.2 Klein ou Boogu Edit.")
+                        "Préférez Flux.2 Klein.")
             return (gr.update(value=dd["steps"]),
                     gr.update(interactive=not dd["edit"]),
                     gr.update(value="neutral" if dd["edit"] else "edge"),
@@ -223,7 +222,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
             # ------------------------------------------------------------------
             # DEUX CHEMINS RADICALEMENT DIFFÉRENTS.
             #
-            # Modèle d'ÉDITION (Flux.2 Klein, Boogu Edit) -> la toile part en
+            # Modèle d'ÉDITION (Flux.2 Klein) -> la toile part en
             # RÉFÉRENCE (-r) avec une consigne d'extension explicite. Le modèle
             # REGARDE l'image via son encodeur vision : il sait ce qu'il prolonge.
             # C'est la seule façon d'obtenir une extension qui ait du sens.

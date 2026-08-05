@@ -96,12 +96,11 @@ def items(prefs: dict | None = None) -> list[Item]:
         note="Réinstallable : onglet « Image → 3D »."))
 
     # --- Modèles du catalogue ---------------------------------------------
-    # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (les deux
-    # variantes de LTX-2.3, par exemple, partagent dépôt de poids, encodeur
-    # Gemma et upscaler). Un dossier n'est listé qu'une fois — sinon on
-    # compterait sa taille deux fois — mais l'élément porte alors le nom de
-    # TOUS les modèles concernés : ici, supprimer efface les deux, et il faut
-    # que ce soit écrit avant le clic, pas découvert après.
+    # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (variantes
+    # d'une même famille partageant encodeur ou VAE). Un dossier n'est listé
+    # qu'une fois — sinon on compterait sa taille deux fois — mais l'élément
+    # porte alors le nom de TOUS les modèles concernés : supprimer les efface
+    # tous, et il faut que ce soit écrit avant le clic, pas découvert après.
     seen: dict[Path, int] = {}          # dossier -> index de l'élément porteur
     shared_names: dict[int, list[str]] = {}
     for m in registry.load_base_models(prefs):
@@ -147,9 +146,6 @@ def items(prefs: dict | None = None) -> list[Item]:
              [tools.ENHANCE_MODEL_DIR], note="Réinstallable en 1 clic."),
         Item("tool_upscale", "Toolkit — Upscale créatif SDXL", "Add-ons Toolkit",
              [tools.UPSCALE_DIR], note="Inclut ControlNet et checkpoints perso."),
-        Item("tool_seedvr2", "Toolkit — Restauration SeedVR2", "Add-ons Toolkit",
-             [tools.SEEDVR2_DIR],
-             note="Code d'inférence + poids 1.4B. Réinstallable en 1 clic."),
     ]
 
     # --- Données utilisateur (prudence) -----------------------------------

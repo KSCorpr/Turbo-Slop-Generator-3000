@@ -18,6 +18,10 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+# Choix du back-end de calcul (CUDA / Metal-MPS / CPU), partagé par les runners.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _device import label, pick_device, pick_dtype  # noqa: E402
+
 
 def _round8(v: int) -> int:
     return max(8, int(round(v / 8)) * 8)
@@ -86,11 +90,13 @@ def main():
     except ImportError:
         sys.exit("diffusers manquant. Réinstallez l'upscale SDXL (onglet Toolkit).")
 
-    if not torch.cuda.is_available():
-        print("⚠️  CUDA indisponible : l'upscale SDXL tournerait sur CPU (très "
-              "lent). Vérifiez les pilotes NVIDIA.", flush=True)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
+    device = pick_device(torch)
+    dtype = pick_dtype(torch, device)
+    if device == "cpu":
+        print("⚠️  Aucun GPU disponible : l'upscale SDXL tournerait sur CPU "
+              "(très lent). Vérifiez les pilotes NVIDIA, ou côté Mac que MPS "
+              "est bien actif.", flush=True)
+    print(f"[usdu] calcul sur {label(device)}.", flush=True)
 
     # VAE : externe (fp16-fix) si fournie, sinon celle intégrée au checkpoint.
     load_kw = dict(torch_dtype=dtype, add_watermarker=False)
@@ -108,13 +114,14 @@ def main():
                                    StableDiffusionXLControlNetImg2ImgPipeline)
         except ImportError:
             sys.exit("diffusers trop ancien pour ControlNet. Réinstallez l'upscale.")
-        print(f"[usdu] chargement SDXL + ControlNet Tile sur {device}…", flush=True)
+        print(f"[usdu] chargement SDXL + ControlNet Tile sur {label(device)}…",
+              flush=True)
         load_kw["controlnet"] = ControlNetModel.from_pretrained(
             args.controlnet, torch_dtype=dtype)
         pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_single_file(
             args.base_model, **load_kw)
     else:
-        print(f"[usdu] chargement SDXL sur {device}…", flush=True)
+        print(f"[usdu] chargement SDXL sur {label(device)}…", flush=True)
         pipe = StableDiffusionXLImg2ImgPipeline.from_single_file(
             args.base_model, **load_kw)
     pipe.set_progress_bar_config(disable=True)
@@ -122,8 +129,10 @@ def main():
         print("[usdu] VRAM serrée → offload CPU du modèle (plus lent mais tient).",
               flush=True)
         pipe.enable_model_cpu_offload()
-    elif device == "cuda":
-        pipe.to("cuda")
+    elif device != "cpu":
+        # MPS compris : sans ce .to(), le pipeline resterait sur CPU côté Mac
+        # et l'upscale prendrait des heures sans que rien ne l'indique.
+        pipe.to(device)
     try:
         pipe.enable_attention_slicing()
         # Le VAE tiling découpe le décodage spatialement et laisse une GRILLE

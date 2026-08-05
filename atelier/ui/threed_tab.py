@@ -6,6 +6,7 @@ One-shot : le process se termine et libère la VRAM (stratégie low-VRAM). Le mo
 """
 from __future__ import annotations
 
+import platform
 import queue
 import subprocess
 import sys
@@ -81,6 +82,20 @@ def _gpu_choices() -> list[tuple[str, int]]:
 def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
     with gr.Tab("🧊 Image → 3D", id=tab_id):
         ready = trellis.is_ready()
+        # trellis.cpp n'est publié qu'en binaire Windows CUDA. Sur Mac (et sur
+        # une machine sans NVIDIA), mieux vaut le dire tout de suite que laisser
+        # cliquer sur un installeur qui ne trouvera rien.
+        if platform.system() == "Darwin":
+            gr.Markdown(
+                "### Image → modèle 3D (GLB)\n"
+                "> ⛔ **Indisponible sur macOS.** trellis.cpp n'est publié qu'en "
+                "**binaire Windows CUDA** : il n'existe ni build Apple Silicon "
+                "ni chemin Metal. Ce n'est pas un réglage à trouver, c'est le "
+                "moteur qui n'existe pas pour cette plateforme.\n\n"
+                "Tout le reste de l'application fonctionne : génération, "
+                "outpaint, Toolkit et agrandissement passent par "
+                "stable-diffusion.cpp, qui a bien une build Metal.")
+            return
         gr.Markdown(
             "### Image → modèle 3D (GLB)\n"
             "Transforme une image en **maillage 3D texturé** (GLB) via "

@@ -16,6 +16,10 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+# Choix du back-end de calcul (CUDA / Metal-MPS / CPU), partagé par les runners.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _device import label, pick_device, pick_dtype  # noqa: E402
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -32,8 +36,8 @@ def main():
     except ImportError:
         sys.exit("transformers manquant. Réinstallez l'outil depuis le Toolkit.")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[rembg] chargement du modèle sur {device}…", flush=True)
+    device = pick_device(torch)
+    print(f"[rembg] chargement du modèle sur {label(device)}…", flush=True)
     model = AutoModelForImageSegmentation.from_pretrained(
         args.model_dir, trust_remote_code=True)
     model.to(device).eval()

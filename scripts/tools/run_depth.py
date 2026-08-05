@@ -16,6 +16,10 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+# Choix du back-end de calcul (CUDA / Metal-MPS / CPU), partagé par les runners.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _device import label, pick_device, pick_dtype  # noqa: E402
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -31,9 +35,11 @@ def main():
     except ImportError:
         sys.exit("transformers manquant. Réinstallez l'outil depuis le Toolkit.")
 
-    device = 0 if torch.cuda.is_available() else -1
-    print(f"[depth] chargement du modèle sur "
-          f"{'cuda' if device == 0 else 'cpu'}…", flush=True)
+    dev = pick_device(torch)
+    # transformers.pipeline veut un index CUDA, -1 pour le CPU, ou une chaîne
+    # de device pour le reste : « mps » ne se code pas en entier.
+    device = 0 if dev == "cuda" else (-1 if dev == "cpu" else dev)
+    print(f"[depth] chargement du modèle sur {label(dev)}…", flush=True)
     pipe = pipeline("depth-estimation", model=args.model_dir, device=device)
 
     img = Image.open(args.input).convert("RGB")
