@@ -13,7 +13,7 @@ A **local**, modern, lightweight image-generation studio for artists, built on
 CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, two upscalers, and a utility toolkit.
+editing, three upscalers, and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -33,7 +33,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
+| 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN · SeedVR2 · creative SDXL upscale |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
@@ -450,7 +450,7 @@ shown at the top. Engine logs and progress hints stay in French.
 ## Upscaling
 
 Three complementary upscalers live under **Toolkit**, in increasing order of
-invention: ESRGAN interpolates, SDXL hallucinates.
+invention: ESRGAN enlarges, SeedVR2 restores, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
 Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
@@ -476,6 +476,20 @@ you can convert one yourself with
 `sd-cli --mode convert --model x.pth --output x.gguf`. Note that sd.cpp only
 implements the **ESRGAN (RRDBNet)** architecture for image upscaling, so newer
 SPAN / DAT / Compact models will not load.
+
+### 🌱 Restore (SeedVR2 3B)
+Diffusion restoration/upscale using the standalone
+[`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
+engine, pinned to a known commit and installed in an isolated Python 3.12
+environment. It restores natural detail more convincingly than ESRGAN while
+staying closer to the source than the creative SDXL mode. The Q8 and Q4 GGUF
+weights download automatically on first use.
+
+The dedicated **RTX 3060 12 GB + GTX 1080 Ti** preset keeps computation on the
+RTX 3060 and uses the GTX 1080 Ti as an offload device. This is deliberate on a
+PCIe x4 secondary slot: it avoids continuously splitting matrix operations
+between mismatched GPUs. Start with **Q8, 2048 px, 16 swapped blocks, 1024 px
+VAE tiles**. If memory runs out, try 24 then 32 blocks, or switch to Q4.
 
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
@@ -518,8 +532,9 @@ Controls:
 - **Steps / tile**, **CFG**, **tile size** (640–1280).
 - On < 12 GB VRAM, the model is automatically CPU-offloaded to avoid OOM.
 
-> Use the right tool: **ESRGAN** is fast/faithful/deterministic; **SDXL creative**
-> is slower but adds invented detail.
+> Use the right tool: **ESRGAN** is fast and deterministic; **SeedVR2** restores
+> plausible detail with limited drift; **SDXL creative** is slower and explicitly
+> invents detail.
 
 #### Upscaling illustrations without interpolation
 
@@ -632,7 +647,7 @@ subprocesses so torch DLLs never lock the UI process):
   license).
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
-- **Upscale (ESRGAN)** and **Creative upscale (SDXL)** —
+- **Upscale (ESRGAN)**, **Restore (SeedVR2)** and **Creative upscale (SDXL)** —
   see [Upscaling](#upscaling).
 
 ### Prompt enhancer (AI)
@@ -709,7 +724,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
 
-**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
+**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), [`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) (SeedVR2), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
 (encoders/VAEs used by another model) are preserved.
@@ -880,6 +895,9 @@ authors. Please read and respect each model's own license on its page.
   **Real-ESRGAN** (Xintao Wang et al., Tencent ARC) and community models
   (UltraSharp, foolhardy Remacri, Nomos, LSDIR, NickelbackFS, StarSample…). Credit
   to each upstream author; see the repo for individual sources/licenses.
+- **SeedVR2 3B** standalone integration by
+  [numz](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler), using the
+  upstream Q8/Q4 GGUF models and low-VRAM block swapping.
 - **Creative upscale (Ultimate SD Upscale style):** **SDXL** by
   [Stability AI](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0);
   fp16-fix VAE by [Ollin Boer Bohan / madebyollin](https://huggingface.co/madebyollin/sdxl-vae-fp16-fix);

@@ -358,6 +358,56 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
     return profile
 
 
+def rtx3060_1080ti_combo() -> tuple[Gpu, Gpu] | None:
+    """Détecte le duo ciblé par le preset : RTX 3060 12 Go + GTX 1080 Ti.
+
+    Renvoie toujours ``(gpu_generation, gpu_secondaire)``. On vérifie aussi la
+    VRAM pour ne pas confondre la 3060 12 Go avec une 3060 Ti 8 Go : les deux
+    noms sont proches, mais le profil mémoire n'est pas interchangeable.
+    """
+    gpus = detect_gpus()
+    rtx = next((g for g in gpus
+                if re.search(r"RTX\s*3060(?!\s*TI)", g.name.upper())
+                and g.vram_gb >= 11.5), None)
+    pascal = next((g for g in gpus
+                   if re.search(r"GTX\s*1080\s*TI", g.name.upper())
+                   and g.vram_gb >= 10.0), None)
+    return (rtx, pascal) if rtx is not None and pascal is not None else None
+
+
+def rtx3060_1080ti_prefs() -> dict:
+    """Préférences sûres et mesurables pour le duo 3060 12 Go / 1080 Ti.
+
+    Ampere exécute diffusion + VAE (tensor cores, Flash Attention) ; Pascal
+    reçoit l'encodeur et le LLM de prompt. Pas d'auto-fit/row split : la seconde
+    carte est souvent sur un port PCIe x4, donc les échanges à chaque matmul
+    peuvent coûter plus qu'ils ne rapportent.
+    """
+    combo = rtx3060_1080ti_combo()
+    if combo is None:
+        raise ValueError("Le duo RTX 3060 12 Go + GTX 1080 Ti n'est pas détecté.")
+    main, secondary = combo
+    return {
+        "auto_optimize": False,
+        "gpu_index": main.index,
+        "text_gpu_index": secondary.index,
+        "encoder_gpu_index": secondary.index,
+        "auto_fit": False,
+        "split_mode": "layer",
+        "quant": "Q5_K_M",
+        "enc_quant": "Q8_0",
+        "cache_mode": "",
+        "cache_option": "",
+        "flags": {
+            "diffusion_fa": True,
+            "offload_to_cpu": True,
+            "vae_tiling": True,
+            "clip_on_cpu": False,
+            "vae_on_cpu": False,
+        },
+    }
+
+
 def summary_text() -> str:
     """Petit résumé lisible du matériel détecté (pour l'UI)."""
     gpus = detect_gpus()

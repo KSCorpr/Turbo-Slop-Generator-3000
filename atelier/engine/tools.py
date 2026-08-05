@@ -24,6 +24,9 @@ SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
+SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
+SEEDVR2_SOURCE_DIR = SEEDVR2_DIR / "source"
+SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models"
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -87,6 +90,16 @@ def upscale_cn_is_installed() -> bool:
     return cn.is_dir() and any(cn.glob("*.safetensors"))
 
 
+def _seedvr2_python() -> Path:
+    return SEEDVR2_DIR / ("venv/Scripts/python.exe" if sys.platform == "win32"
+                          else "venv/bin/python")
+
+
+def seedvr2_is_installed() -> bool:
+    return (_seedvr2_python().is_file()
+            and (SEEDVR2_SOURCE_DIR / "inference_cli.py").is_file())
+
+
 def list_upscale_checkpoints() -> list[tuple[str, str]]:
     """Checkpoints SDXL disponibles pour l'upscale créatif : (libellé, chemin).
     Le modèle de base + tout .safetensors déposé dans tools_repo/upscale/checkpoints/."""
@@ -141,6 +154,26 @@ def install_upscale_stream():
     yield from _install_stream("upscale")
 
 
+def install_seedvr2_stream():
+    """Installe SeedVR2 dans son Python 3.12 isolé."""
+    setup = settings.ROOT / "scripts" / "setup_seedvr2.py"
+    cmd = [sys.executable, str(setup)]
+    buf: list[str] = [f"$ {' '.join(cmd)}", ""]
+    yield "\n".join(buf)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, cwd=str(settings.ROOT),
+                            env=settings.child_env(), encoding="utf-8",
+                            errors="replace")
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        buf.append(line.rstrip("\n"))
+        yield "\n".join(buf[-500:])
+    code = proc.wait()
+    buf += ["", "✅ Installation SeedVR2 terminée." if code == 0
+            else f"❌ Échec SeedVR2 (code {code}). Voir le journal."]
+    yield "\n".join(buf[-500:])
+
+
 def _gen_gpu_index() -> int | None:
     """GPU de GÉNÉRATION d'images (Flux/Krea, upscale SDXL, depth/bg/SAM).
     Jamais le GPU secondaire dédié au texte."""
@@ -171,15 +204,15 @@ def _to_src(image: Image.Image | str | Path, prefix: str) -> Path:
 
 def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
               err_msg: str, gpu_index: int | None = None,
-              cwd: Path | None = None) -> None:
+              cwd: Path | None = None, env: dict | None = None) -> None:
     global _CANCELLED
-    env = settings.child_env(gpu_index)
+    run_env = env if env is not None else settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))
     _CANCELLED = False
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1,
-                            cwd=str(cwd or settings.ROOT), env=env,
+                            cwd=str(cwd or settings.ROOT), env=run_env,
                             encoding="utf-8", errors="replace")
     with _LOCK:
         _ACTIVE.add(proc)
@@ -420,3 +453,79 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     _run_tool(cmd, log, "L'upscale créatif SDXL a échoué (voir le journal).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "usdu", stamp)
+
+
+def seedvr2_upscale(image, resolution: int = 2048,
+                    model: str = "seedvr2_ema_3b-Q8_0.gguf",
+                    blocks_to_swap: int = 16, tile: int = 1024,
+                    overlap: int = 128, offload: str = "secondary",
+                    color_correction: str = "wavelet",
+                    log: Callable[[str], None] | None = None) -> Path:
+    """Restauration/upscale SeedVR2 pour image unique.
+
+    Le calcul reste sur le GPU principal. Avec ``secondary``, CUDA remappe les
+    cartes en ``[principal, secondaire]`` : SeedVR2 calcule sur cuda:0 et stocke
+    ses blocs/VAE sur cuda:1, sans lancer son mode multi-GPU vidéo.
+    """
+    if not seedvr2_is_installed():
+        raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
+    allowed = {"seedvr2_ema_3b-Q8_0.gguf", "seedvr2_ema_3b-Q4_K_M.gguf"}
+    if model not in allowed:
+        raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
+    if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
+        color_correction = "wavelet"
+
+    src = _to_src(image, "seedvr2")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    output = settings.OUTPUT_DIR / f"seedvr2-{stamp}.png"
+    py = _seedvr2_python()
+    cli = SEEDVR2_SOURCE_DIR / "inference_cli.py"
+    SEEDVR2_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    prefs = settings.load_prefs()
+    main_gpu = _gen_gpu_index()
+    secondary = prefs.get("encoder_gpu_index")
+    if secondary is None or secondary == main_gpu:
+        candidate = prefs.get("text_gpu_index")
+        secondary = candidate if candidate != main_gpu else None
+
+    run_env = settings.child_env()
+    offload_device = "cpu"
+    if offload == "secondary" and main_gpu is not None and secondary is not None:
+        # cuda:0 = GPU principal, cuda:1 = GPU secondaire dans le sous-process.
+        run_env["CUDA_VISIBLE_DEVICES"] = f"{main_gpu},{secondary}"
+        run_env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        offload_device = "1"
+        if log:
+            log(f"SeedVR2 : calcul GPU #{main_gpu}, offload GPU #{secondary}.")
+    elif main_gpu is not None:
+        run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
+        offload_device = "none" if offload == "none" else "cpu"
+    blocks = max(0, min(32, int(blocks_to_swap)))
+    if offload_device == "none":
+        blocks = 0
+
+    cmd = [
+        str(py), str(cli), str(src), "--output", str(output),
+        "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
+        "--dit_model", model, "--resolution", str(max(512, int(resolution))),
+        "--max_resolution", str(max(512, int(resolution))), "--batch_size", "1",
+        "--color_correction", color_correction,
+        "--dit_offload_device", offload_device,
+        "--vae_offload_device", offload_device,
+        "--tensor_offload_device", offload_device,
+        "--blocks_to_swap", str(blocks),
+        "--vae_encode_tiled", "--vae_decode_tiled",
+        "--vae_encode_tile_size", str(max(512, int(tile))),
+        "--vae_decode_tile_size", str(max(512, int(tile))),
+        "--vae_encode_tile_overlap", str(max(64, int(overlap))),
+        "--vae_decode_tile_overlap", str(max(64, int(overlap))),
+        "--attention_mode", "sdpa", "--debug",
+    ]
+    if blocks:
+        cmd.append("--swap_io_components")
+    _run_tool(cmd, log, "SeedVR2 a échoué (voir le journal).",
+              cwd=SEEDVR2_SOURCE_DIR, env=run_env)
+    if not output.is_file() or output.stat().st_size == 0:
+        raise ToolError("SeedVR2 n'a produit aucune image.")
+    return output

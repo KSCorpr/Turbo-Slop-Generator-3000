@@ -70,8 +70,6 @@ REMOVED_FEATURES = [
     {"name": "Génération vidéo (LTX-2.3, MiniMax-H3)",
      "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
      "dirs": []},
-    {"name": "Restauration SeedVR2",
-     "files": [], "dirs": ["tools_repo/seedvr2"]},
 ]
 
 # Dossiers de données à NE JAMAIS toucher.
@@ -170,7 +168,7 @@ def _known_addon_dirs() -> set[str]:
     penser à mettre à jour."""
     from atelier.engine import tools
     dirs = (tools.DEPTH_MODEL_DIR, tools.BG_MODEL_DIR, tools.SAM_MODEL_DIR,
-            tools.ENHANCE_MODEL_DIR, tools.UPSCALE_DIR)
+            tools.ENHANCE_MODEL_DIR, tools.UPSCALE_DIR, tools.SEEDVR2_DIR)
     out = set()
     for d in dirs:
         try:

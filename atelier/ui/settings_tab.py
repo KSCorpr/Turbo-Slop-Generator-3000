@@ -120,6 +120,8 @@ def build_settings_tab():
         # ------------------------------------------------------------------ #
         #  Multi-GPU : UN seul choix (mutuellement exclusif) + carte texte
         # ------------------------------------------------------------------ #
+        combo_btn = None
+        combo_msg = None
         if multi_gpu:
             with gr.Accordion("🧮 Multi-GPU (2 cartes détectées)", open=False):
                 gr.Markdown(
@@ -142,6 +144,15 @@ def build_settings_tab():
                     choices=[(t("Auto (même que génération)"), None)]
                             + _gpu_choices(),
                     value=prefs.get("text_gpu_index"))
+                combo = hardware.rtx3060_1080ti_combo()
+                if combo:
+                    combo_btn = gr.Button(
+                        "⚡ Appliquer le profil RTX 3060 12 Go + GTX 1080 Ti",
+                        variant="primary")
+                    combo_msg = gr.Markdown(
+                        "La RTX 3060 calcule diffusion/VAE ; la GTX 1080 Ti "
+                        "prend l'encodeur et l'améliorateur de prompt. "
+                        "Auto-fit et row split restent désactivés.")
         else:
             gpu_strategy = gr.State(_gpu_strategy(prefs))
             tools_gpu = gr.State(prefs.get("text_gpu_index"))
@@ -284,3 +295,34 @@ def build_settings_tab():
                        vae_cpu, profile_md, saved]
         for key, btn in gen_btns.items():
             btn.click(_apply_generation(key), inputs=[gpu], outputs=gen_outputs)
+
+        if combo_btn is not None:
+            def _apply_combo():
+                p = settings.load_prefs()
+                preset = hardware.rtx3060_1080ti_prefs()
+                p.update({k: v for k, v in preset.items() if k != "flags"})
+                p["flags"] = preset["flags"]
+                settings.save_prefs(p)
+                fl = preset["flags"]
+                return (
+                    gr.update(value=False),
+                    gr.update(value=preset["gpu_index"]),
+                    gr.update(value=preset["text_gpu_index"]),
+                    gr.update(value="encoder"),
+                    gr.update(value=preset["quant"]),
+                    gr.update(value=preset["enc_quant"]),
+                    gr.update(value=fl["diffusion_fa"]),
+                    gr.update(value=fl["offload_to_cpu"]),
+                    gr.update(value=fl["vae_tiling"]),
+                    gr.update(value=fl["clip_on_cpu"]),
+                    gr.update(value=fl["vae_on_cpu"]),
+                    gr.update(value=""), gr.update(value=""),
+                    gr.update(value=_profile_md()),
+                    "✅ Profil double GPU appliqué et enregistré."
+                )
+
+            combo_btn.click(
+                _apply_combo,
+                outputs=[auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant,
+                         fa, offload, tiling, clip_cpu, vae_cpu, cache_mode,
+                         cache_opt, profile_md, combo_msg])

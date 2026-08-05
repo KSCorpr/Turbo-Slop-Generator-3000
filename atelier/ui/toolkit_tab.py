@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings
+from .. import downloader, hardware, registry, settings
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -337,6 +337,115 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                 u_stop.click(lambda: gen_engine.cancel(), outputs=None,
                              cancels=[u_evt])
 
+            # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
+            with gr.Tab("🌱 Restaurer (SeedVR2)", id="seedvr2"):
+                gr.Markdown(
+                    "Restauration diffusion **SeedVR2 3B** : récupère des détails "
+                    "plus naturels qu'ESRGAN tout en restant plus fidèle que "
+                    "l'upscale créatif SDXL. Le calcul reste sur la RTX 3060 ; "
+                    "la GTX 1080 Ti peut servir de réserve pour les poids.")
+                _installer_block(
+                    "SeedVR2",
+                    "Installation isolée (Python 3.12 + PyTorch CUDA) : elle ne "
+                    "modifie pas les dépendances de l'application. Les poids "
+                    "Q8/Q4 sont téléchargés au premier upscale.",
+                    tools.install_seedvr2_stream, tools.seedvr2_is_installed())
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        seed_image = gr.Image(label="Image à restaurer", type="pil")
+                        seed_model = gr.Radio(
+                            [("Q8 — qualité recommandée (RTX 3060 12 Go)",
+                              "seedvr2_ema_3b-Q8_0.gguf"),
+                             ("Q4 — plus léger (repli mémoire)",
+                              "seedvr2_ema_3b-Q4_K_M.gguf")],
+                            value="seedvr2_ema_3b-Q8_0.gguf", label="Modèle")
+                        seed_res = gr.Slider(
+                            1024, 4096, value=2048, step=64,
+                            label="Résolution cible (petit côté)",
+                            info="Commencez à 2048 px ; 4K est nettement plus long.")
+                        seed_offload = gr.Radio(
+                            [("GTX 1080 Ti (recommandé pour ce PC)", "secondary"),
+                             ("RAM système (plus compatible)", "cpu"),
+                             ("Aucun offload (plus rapide, risque OOM)", "none")],
+                            value=("secondary" if hardware.rtx3060_1080ti_combo()
+                                   else "cpu"), label="Réserve des poids")
+                        seed_blocks = gr.Slider(
+                            0, 32, value=16, step=1, label="Blocs à décharger",
+                            info="16 recommandé avec 12 Go ; 24 puis 32 si OOM.")
+                        with gr.Row():
+                            seed_tile = gr.Slider(512, 1280, value=1024, step=64,
+                                                  label="Tuile VAE")
+                            seed_overlap = gr.Slider(64, 256, value=128, step=32,
+                                                     label="Recouvrement")
+                        seed_color = gr.Dropdown(
+                            [("Wavelet — naturel (recommandé)", "wavelet"),
+                             ("LAB — couleurs très fidèles", "lab"),
+                             ("Wavelet adaptatif", "wavelet_adaptive"),
+                             ("Aucune correction", "none")],
+                            value="wavelet", label="Correction des couleurs")
+                        with gr.Row():
+                            seed_run = gr.Button("🌱 Restaurer", variant="primary",
+                                                 size="lg", scale=2)
+                            seed_stop = gr.Button("⏹️ Annuler", variant="stop",
+                                                  size="sm")
+                    with gr.Column(scale=4):
+                        seed_result = gr.Image(
+                            label="Résultat SeedVR2", height=520, format="png",
+                            show_download_button=True)
+                        seed_log = gr.Textbox(label="Journal", lines=14,
+                                              autoscroll=True,
+                                              elem_classes="log-box")
+
+                def do_seedvr2(img, resolution, model, blocks, tile, overlap,
+                               offload, color, progress=gr.Progress()):
+                    import queue
+                    import threading
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    if not tools.seedvr2_is_installed():
+                        raise gr.Error(t("Installez d'abord SeedVR2."))
+                    q: "queue.Queue[str | None]" = queue.Queue()
+                    state: dict = {}
+
+                    def worker():
+                        try:
+                            state["out"] = tools.seedvr2_upscale(
+                                img, resolution=int(resolution), model=model,
+                                blocks_to_swap=int(blocks), tile=int(tile),
+                                overlap=int(overlap), offload=offload,
+                                color_correction=color, log=q.put)
+                        except Exception as exc:  # noqa: BLE001
+                            state["err"] = str(exc)
+                        finally:
+                            q.put(None)
+
+                    threading.Thread(target=worker, daemon=True).start()
+                    logs: list[str] = []
+                    progress(0.05, desc="Chargement de SeedVR2…")
+                    while True:
+                        line = q.get()
+                        if line is None:
+                            break
+                        logs.append(line)
+                        yield gr.update(), "\n".join(logs[-500:])
+                    if "err" in state:
+                        logs.append(f"\n[ERREUR] {state['err']}")
+                        yield gr.update(), "\n".join(logs[-500:])
+                        return
+                    progress(1.0, desc="Terminé")
+                    out = state.get("out")
+                    logs.append(f"\n✅ Image restaurée : {out}")
+                    yield str(out), "\n".join(logs[-500:])
+
+                seed_evt = seed_run.click(
+                    do_seedvr2,
+                    inputs=[seed_image, seed_res, seed_model, seed_blocks,
+                            seed_tile, seed_overlap, seed_offload, seed_color],
+                    outputs=[seed_result, seed_log])
+                seed_stop.click(lambda: tools.cancel(), outputs=None,
+                                cancels=[seed_evt])
+
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("✨ Upscale créatif (SDXL)", id="creative"):
                 gr.Markdown(
@@ -622,7 +731,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:
-            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
+            _keys = ["depth", "bg", "sam", "esrgan", "seedvr2", "creative"]
 
             def _consume(pend):
                 if not pend:
@@ -635,4 +744,4 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
 
             tabs.select(_consume, inputs=[pending_toolkit],
                         outputs=[sub_tabs, d_image, b_image, s_image, u_image,
-                                 c_image, pending_toolkit])
+                                 seed_image, c_image, pending_toolkit])
