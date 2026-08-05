@@ -106,6 +106,12 @@ _EN: dict[str, str] = {
         "`sd-cli` binary not found. Run `install.bat` (or `python scripts/get_sdcpp.py`).",
     "modèle de diffusion": "diffusion model",
     "⚙️ Réglages": "⚙️ Settings",
+    "⬆️ Mettre à jour le binaire (sans les modèles)":
+        "⬆️ Update the binary (models untouched)",
+    "⏳ Téléchargement du binaire trellis le plus récent…":
+        "⏳ Downloading the latest trellis binary…",
+    "⏹️ Arrêt du serveur résident (il verrouille le binaire)…":
+        "⏹️ Stopping the resident server (it locks the binary)…",
 
     # ---- generate_tab : statut / mode (dynamiques) ----
     "édition d'image": "image editing",

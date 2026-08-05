@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Callable
 
@@ -163,6 +164,81 @@ def _wait_health(port: int, proc: subprocess.Popen, deadline: float) -> bool:
 # serveur, sinon les nouveaux réglages seraient silencieusement ignorés.
 # « log » = journal de la génération EN COURS : le lecteur de sortie y écrit
 # dynamiquement, sinon les logs resteraient attachés à la 1re génération.
+# --------------------------------------------------------------------------- #
+#  Diagnostic des morts subites du serveur
+#
+#  Quand trellis plante en pleine génération (erreur CUDA, assert GGML), la
+#  requête HTTP en cours est coupée net et « requests » remonte un banal
+#  ConnectionResetError. C'est le SYMPTÔME : la cause est passée dans la sortie
+#  du serveur quelques lignes plus haut. On la retient au vol pour pouvoir la
+#  rejouer à l'utilisateur au lieu de lui montrer une erreur de socket.
+# --------------------------------------------------------------------------- #
+_FATAL_MARKERS = ("CUDA error", "no kernel image", "out of memory",
+                  "GGML_ASSERT", "cudaMalloc", "device kernel image",
+                  "invalid device function", "insufficient")
+_CRASH: "deque[str]" = deque(maxlen=25)
+
+# Capacité de calcul CUDA par architecture, pour nommer précisément ce qui
+# manque dans le binaire (« sm_75 ») plutôt que de rester vague.
+_SM_BY_ARCH = {"pascal": "sm_61", "turing": "sm_75", "ampere": "sm_86",
+               "ada": "sm_89", "blackwell": "sm_120"}
+
+
+def _note_if_fatal(line: str) -> None:
+    if any(m.lower() in line.lower() for m in _FATAL_MARKERS):
+        _CRASH.append(line.strip())
+
+
+def _gpu_hint(gpu_index: "int | None") -> str:
+    """« RTX 2080 Ti (turing, sm_75) » — pour un message qui parle DE SA carte."""
+    try:
+        from .. import hardware
+        gpus = hardware.detect_gpus()
+    except Exception:  # noqa: BLE001
+        return ""
+    g = next((x for x in gpus if x.index == gpu_index), None) if \
+        gpu_index is not None else (max(gpus, key=lambda x: x.vram_gb)
+                                    if gpus else None)
+    if g is None:
+        return ""
+    sm = _SM_BY_ARCH.get(g.arch)
+    return f"{g.name} ({g.arch}{', ' + sm if sm else ''})"
+
+
+def _diagnose_crash(gpu_index: "int | None" = None) -> str:
+    """Message actionnable à partir de ce que le serveur a craché avant de mourir."""
+    lines = list(_CRASH)
+    joined = " ".join(lines).lower()
+    card = _gpu_hint(gpu_index)
+    who = f" sur **{card}**" if card else ""
+    if "no kernel image" in joined or "invalid device function" in joined:
+        return (
+            f"❌ **Le moteur trellis n'a pas de code machine pour votre carte**{who}.\n\n"
+            "« no kernel image is available » veut dire exactement ça : le "
+            "binaire a été compilé pour d'autres architectures GPU que la "
+            "vôtre. Ce n'est pas un manque de VRAM et aucun réglage n'y "
+            "changera quoi que ce soit.\n\n"
+            "**À faire, dans cet ordre :**\n"
+            "1. **Mettre à jour le binaire trellis** (bouton « ⬆️ Mettre à jour "
+            "le binaire » de l'onglet). L'installeur NE remplace PAS un binaire "
+            "déjà présent : si le vôtre date, il peut précéder l'ajout de votre "
+            "architecture. Les ~10 Go de modèles ne sont pas retéléchargés.\n"
+            "2. Si l'erreur persiste après mise à jour, c'est que la release "
+            "amont ne couvre pas votre carte : à signaler sur "
+            "`github.com/pwilkin/trellis.cpp`.")
+    if "out of memory" in joined or "cudamalloc" in joined:
+        return ("❌ **Mémoire GPU insuffisante** — le serveur trellis a été tué "
+                "pendant le calcul.\n\nBaissez la résolution (512), fermez les "
+                "autres applications 3D/IA, et vérifiez qu'aucun serveur "
+                "résident ne retient déjà la VRAM.")
+    if lines:
+        return ("❌ **Le serveur trellis s'est arrêté pendant la génération.**\n\n"
+                "Dernières lignes avant l'arrêt :\n```\n"
+                + "\n".join(lines[-6:]) + "\n```")
+    return ("❌ **Le serveur trellis s'est arrêté pendant la génération** sans "
+            "message exploitable. Voir le journal complet ci-dessous.")
+
+
 _RESIDENT: dict = {"proc": None, "port": None, "res": None, "sig": None,
                    "log": None}
 _RES_LOCK = threading.Lock()
@@ -301,8 +377,9 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                 _RESIDENT["log"] = _log      # journal de CETTE génération
             _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
                  "pas de rechargement des modèles.")
+            _CRASH.clear()
             _post_generate(image_path, out_path, res, seed, bg_removal,
-                           use_port, _log)
+                           use_port, _log, gpu_index)
             _sidecar(out_path, {**params, "seed": info.get("seed", seed)})
             return out_path
         _log("🔄 Réglages de lancement modifiés (résolution/décimation/atlas/"
@@ -319,6 +396,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     env = None
 
     _log("$ " + " ".join(cmd))
+    _CRASH.clear()          # diagnostic propre à CE démarrage
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         bufsize=1, cwd=str(settings.ROOT), env=env,
@@ -334,6 +412,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
             # dans le journal COURANT, pas celui (mort) de la 1re génération.
             sink = _RESIDENT.get("log") if _RESIDENT.get("proc") is proc else None
             (sink or _log)(s)
+            _note_if_fatal(s)
             if state["port"] is None:
                 m = re.search(r"https?://[^\s:]+:(\d{2,5})", s) \
                     or re.search(r"(?:listen|port)\D{0,12}(\d{4,5})", s, re.I)
@@ -359,6 +438,9 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
         if state["port"]:
             use_port = state["port"]
         if not _wait_health(use_port, proc, deadline):
+            if _CRASH:
+                # Il a parlé avant de mourir : autant le citer.
+                raise sdcpp.EngineError(_diagnose_crash(gpu_index))
             raise sdcpp.EngineError(
                 f"Le serveur trellis n'a pas répondu sur le port {use_port} "
                 "(voir le journal : port différent, VRAM insuffisante, ou "
@@ -366,7 +448,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
         _log(f"✅ Serveur prêt (port {use_port}) — envoi de l'image…")
         _post_generate(image_path, out_path, res, seed, bg_removal, use_port,
-                       _log)
+                       _log, gpu_index)
     finally:
         if resident:
             # Mode résident : on GARDE le serveur en vie pour la suite. On
@@ -419,14 +501,21 @@ def _sidecar(out_path: Path, params: dict) -> None:
 
 def _post_generate(image_path: Path, out_path: Path, res: int,
                    seed: int | None, bg_removal: str, port: int,
-                   _log: Callable[[str], None]) -> Path:
+                   _log: Callable[[str], None],
+                   gpu_index: "int | None" = None) -> Path:
     """POST /generate (multipart) → écrit les octets GLB reçus."""
     data = {"resolution": str(int(res)), "bg_removal": bg_removal or "birefnet"}
     if seed is not None:
         data["seed"] = str(int(seed))
-    with open(image_path, "rb") as fh:
-        r = requests.post(f"http://127.0.0.1:{port}/generate",
-                          files={"image": fh}, data=data, timeout=3600)
+    try:
+        with open(image_path, "rb") as fh:
+            r = requests.post(f"http://127.0.0.1:{port}/generate",
+                              files={"image": fh}, data=data, timeout=3600)
+    except requests.exceptions.RequestException as exc:
+        # Connexion coupée = le serveur est mort en cours de route. L'erreur
+        # de socket ne dit rien d'utile ; la vraie cause a été capturée dans
+        # sa sortie standard juste avant.
+        raise sdcpp.EngineError(_diagnose_crash(gpu_index)) from exc
     if not r.ok:
         raise sdcpp.EngineError(
             f"trellis /generate a échoué (HTTP {r.status_code}) : "

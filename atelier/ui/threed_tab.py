@@ -138,13 +138,23 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
             inst_log = gr.Textbox(label="Journal d'installation", lines=8,
                                   autoscroll=True, elem_classes="log-box")
             inst_btn = gr.Button("⬇️ Installer trellis.cpp (binaire + modèles)")
+            gr.Markdown(
+                "⬆️ **Mettre à jour le binaire** — l'installation ci-dessus "
+                "**ne remplace pas** un binaire déjà présent : une fois "
+                "trellis installé, il reste tel quel indéfiniment. À utiliser "
+                "si votre carte n'est pas reconnue (« no kernel image ») ou "
+                "pour profiter des correctifs amont. Ne retélécharge **pas** "
+                "les ~10 Go de modèles.",
+                elem_classes="hint")
+            upd_btn = gr.Button("⬆️ Mettre à jour le binaire (sans les modèles)",
+                                size="sm")
 
-            def _install(inst_var):
-                cmd = [sys.executable, str(settings.ROOT / "scripts"
-                                           / "get_trellis.py"),
-                       "--variant", str(inst_var or "f16")]
+            def _run_installer(args: list[str], first_msg: str):
+                """Lance get_trellis.py en streamant son journal."""
+                cmd = [sys.executable,
+                       str(settings.ROOT / "scripts" / "get_trellis.py")] + args
                 logs: list[str] = []
-                yield t("⏳ Installation en cours (binaire + ~10 Go de modèles)…")
+                yield first_msg
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, cwd=str(settings.ROOT),
@@ -159,8 +169,26 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
                             else "\n⚠️ Installation incomplète — voir ci-dessus.")
                 yield "\n".join(logs[-400:])
 
+            def _install(inst_var):
+                yield from _run_installer(
+                    ["--variant", str(inst_var or "f16")],
+                    t("⏳ Installation en cours (binaire + ~10 Go de modèles)…"))
+
+            def _update_binary():
+                # Le serveur résident VERROUILLE l'exécutable sous Windows :
+                # sans cet arrêt, l'extraction échouerait sur un « accès refusé »
+                # difficile à relier à sa cause.
+                if trellis.resident_is_running():
+                    yield t("⏹️ Arrêt du serveur résident (il verrouille le "
+                            "binaire)…")
+                    trellis.resident_stop()
+                yield from _run_installer(
+                    ["--binary", "--force"],
+                    t("⏳ Téléchargement du binaire trellis le plus récent…"))
+
             inst_evt = inst_btn.click(_install, inputs=[inst_variant],
                                       outputs=[inst_log])
+            upd_btn.click(_update_binary, outputs=[inst_log])
 
         # ---- Génération ----
         with gr.Row():

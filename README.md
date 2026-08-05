@@ -830,6 +830,17 @@ maintenance) — the fastest way to know what a slider actually does.
   skip — the socket was actually leaking, which is why Python also logged
   `unclosed transport`. Only connection errors are caught; anything else still
   propagates.
+- **Image → 3D: `CUDA error: no kernel image is available for execution on the
+  device`** → the trellis binary contains no machine code for your GPU's
+  architecture. It is not a VRAM problem and no setting changes it. The catch:
+  the trellis installer **skips the download when a binary is already there**,
+  so an engine installed months ago stays frozen forever. Use **⬆️ Update the
+  binary** in the 3D tab (models are not re-downloaded). If it still fails after
+  updating, the upstream release genuinely does not cover your card — report it
+  at `github.com/pwilkin/trellis.cpp`. The app now surfaces this diagnosis
+  itself: when the trellis server dies mid-generation the HTTP connection is cut
+  and `requests` raises a bare `ConnectionResetError`, which says nothing — the
+  real cause is captured from the server's output and reported instead.
 - **A Toolkit add-on fails at import (`DTensor`, `diffusers`, numpy…)** → a
   shared package drifted. All add-ons share one Python, so the last installer to
   run decides the versions. Run `maintenance.bat`: it names the offending
