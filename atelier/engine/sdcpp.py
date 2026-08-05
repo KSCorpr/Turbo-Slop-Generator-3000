@@ -138,15 +138,35 @@ def mask_flag(sd_cli: Path | None) -> str | None:
     return next((c for c in _MASK_CANDIDATES if c in opts), None)
 
 
-def _flag_args(flags: Mapping[str, bool]) -> list[str]:
+# Options qui n'existent que sur les binaires récents. On ne les envoie que si
+# CE binaire les connaît : sinon sd-cli s'arrête sur un argument inconnu, et
+# l'utilisateur récolte une erreur illisible au lieu d'une image.
+_OPTIONAL_FLAGS = ("--diffusion-conv-direct", "--vae-conv-direct")
+
+
+def _flag_args(flags: Mapping[str, bool],
+               sd_cli: Path | None = None) -> list[str]:
     mapping = {
         "diffusion_fa": "--diffusion-fa",
         "offload_to_cpu": "--offload-to-cpu",
         "vae_tiling": "--vae-tiling",
         "clip_on_cpu": "--clip-on-cpu",
         "vae_on_cpu": "--vae-on-cpu",
+        # Convolution directe : évite le gros tampon intermédiaire d'im2col.
+        "conv_direct_diffusion": "--diffusion-conv-direct",
+        "conv_direct_vae": "--vae-conv-direct",
     }
-    return [opt for key, opt in mapping.items() if flags.get(key)]
+    wanted = [opt for key, opt in mapping.items() if flags.get(key)]
+    risky = [o for o in wanted if o in _OPTIONAL_FLAGS]
+    if risky:
+        known = supported_options(sd_cli)
+        if known:
+            wanted = [o for o in wanted
+                      if o not in _OPTIONAL_FLAGS or o in known]
+        else:
+            # Binaire non interrogeable : on s'abstient plutôt que de parier.
+            wanted = [o for o in wanted if o not in _OPTIONAL_FLAGS]
+    return wanted
 
 
 def _require(*paths: Path | None) -> None:
@@ -233,7 +253,7 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
-    cmd += _flag_args(req.flags)
+    cmd += _flag_args(req.flags, sd_cli)
     # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
     # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
     # principal, encodeur (te) sur l'autre. Ordre CUDA par bus PCI forcé via env.

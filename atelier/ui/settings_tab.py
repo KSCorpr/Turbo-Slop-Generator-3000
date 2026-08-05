@@ -149,11 +149,12 @@ def build_settings_tab():
         # ------------------------------------------------------------------ #
         #  Accélération par cache (avancé)
         # ------------------------------------------------------------------ #
-        with gr.Accordion("⚡ Accélération par cache (avancé)", open=False):
+        with gr.Accordion("⚡ Accélération (avancé)", open=False):
             gr.Markdown(
-                "Réutilise des calculs entre les pas (`caching.md`). Utile "
-                "surtout > ~10 pas ; sur les modèles distillés (4–8 pas) gain "
-                "faible + artefacts possibles. Laisser désactivé en général.")
+                "**Cache entre les pas** (`caching.md`) — réutilise des calculs "
+                "d'un pas à l'autre. Utile surtout > ~10 pas ; sur les modèles "
+                "distillés (4–8 pas) le gain est faible et des artefacts sont "
+                "possibles. Laisser désactivé en général.")
             with gr.Row():
                 cache_mode = gr.Dropdown(
                     [(t("Désactivé (recommandé)"), ""),
@@ -165,6 +166,28 @@ def build_settings_tab():
                 cache_opt = gr.Textbox(
                     value=prefs.get("cache_option", ""),
                     label="Option (vide = défauts)", placeholder="ex. threshold=0.2")
+
+            gr.Markdown(
+                "---\n"
+                "**Convolution directe** — remplace l'algorithme de convolution "
+                "(im2col) par un calcul direct. im2col déplie l'image en une "
+                "grande matrice avant de multiplier : c'est rapide, mais ce "
+                "tampon intermédiaire pèse lourd. En direct, il disparaît.\n\n"
+                "👉 Ce qu'on peut promettre : **moins de mémoire**. La vitesse, "
+                "elle, dépend de la forme des tenseurs — parfois mieux, parfois "
+                "moins bien. **À essayer et à chronométrer**, pas à cocher les "
+                "yeux fermés. Utile surtout si vous frôlez la saturation "
+                "mémoire.\n\n"
+                "*Options récentes de sd.cpp : si votre moteur ne les connaît "
+                "pas, elles sont simplement ignorées (aucun risque de plantage). "
+                "`update-engine.bat` pour l'avoir.*")
+            with gr.Row():
+                conv_diff = gr.Checkbox(
+                    value=bool(prefs.get("conv_direct_diffusion")),
+                    label="Convolution directe — modèle de diffusion")
+                conv_vae = gr.Checkbox(
+                    value=bool(prefs.get("conv_direct_vae")),
+                    label="Convolution directe — VAE")
 
         # ------------------------------------------------------------------ #
         #  Réseau & comptes
@@ -182,7 +205,7 @@ def build_settings_tab():
 
         def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
                     offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
-                    hf_ep, civitai_tok):
+                    conv_diff, conv_vae, hf_ep, civitai_tok):
             p = settings.load_prefs()
             # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
             for stale in ("engine", "use_sd_server", "sd_server_port",
@@ -200,6 +223,9 @@ def build_settings_tab():
             p["encoder_gpu_index"] = other if gpu_strategy == "encoder" else None
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
+            # Hors de « flags » : voir settings.DEFAULT_PREFS.
+            p["conv_direct_diffusion"] = bool(conv_diff)
+            p["conv_direct_vae"] = bool(conv_vae)
             p["quant"] = None if quant == "auto" else quant
             p["enc_quant"] = None if enc_quant == "auto" else enc_quant
             p["flags"] = {
@@ -215,7 +241,8 @@ def build_settings_tab():
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
                            enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
-                           cache_mode, cache_opt, hf_ep, civitai_tok],
+                           cache_mode, cache_opt, conv_diff, conv_vae,
+                           hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---

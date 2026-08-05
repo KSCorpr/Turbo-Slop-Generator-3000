@@ -60,6 +60,12 @@ def _resolved_flags(prefs: dict) -> tuple[dict[str, bool], int | None]:
     else:
         flags = dict(prefs.get("flags", {}))
         gpu_index = prefs.get("gpu_index")
+    # Convolution directe : réglage DÉLIBÉRÉ de l'utilisateur, pas une
+    # déduction matérielle. On l'ajoute après coup pour qu'il survive aussi
+    # bien au profil automatique qu'aux presets « 1 clic », qui remplacent le
+    # dictionnaire de flags en entier.
+    flags["conv_direct_diffusion"] = bool(prefs.get("conv_direct_diffusion"))
+    flags["conv_direct_vae"] = bool(prefs.get("conv_direct_vae"))
     return flags, gpu_index
 
 

@@ -569,6 +569,10 @@ _EN: dict[str, str] = {
         "`caching.md`). Pays off mostly above ~10 steps — on distilled models "
         "(4–8 steps) the gain is small and artifacts are possible. Requires a "
         "recent engine (`update-engine.bat`).",
+    "⚡ Accélération (avancé)": "⚡ Acceleration (advanced)",
+    "Convolution directe — modèle de diffusion":
+        "Direct convolution — diffusion model",
+    "Convolution directe — VAE": "Direct convolution — VAE",
     "Désactivé (recommandé)": "Disabled (recommended)",
     "Mode de cache (Flux/Krea = DiT)": "Cache mode (Flux/Krea = DiT)",
     "Option de cache (vide = défauts)": "Cache option (empty = defaults)",

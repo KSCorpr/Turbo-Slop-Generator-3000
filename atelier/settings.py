@@ -81,6 +81,13 @@ DEFAULT_PREFS: dict[str, Any] = {
         "clip_on_cpu": False,
         "vae_on_cpu": False,
     },
+    # Convolution DIRECTE au lieu d'im2col (sd.cpp --diffusion-conv-direct /
+    # --vae-conv-direct). Volontairement HORS du dictionnaire « flags » : ce
+    # n'est pas une déduction matérielle, c'est un compromis à essayer, et le
+    # mettre dans flags le ferait écraser par le profil auto et par les presets
+    # « 1 clic ». Détecté sur le binaire : ignoré s'il ne connaît pas l'option.
+    "conv_direct_diffusion": False,
+    "conv_direct_vae": False,
     "hf_endpoint": "https://huggingface.co",
     "civitai_token": "",        # jeton Civitai (optionnel, pour les LoRA protégés)
     # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.

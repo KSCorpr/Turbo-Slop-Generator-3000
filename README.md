@@ -360,6 +360,34 @@ diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-st
 distilled models the gain is small and artifacts are possible, hence **off by
 default**. Requires a recent engine (`update-engine.bat`).
 
+### Direct convolution (memory)
+
+**⚡ Acceleration (advanced)** also exposes `--diffusion-conv-direct` and
+`--vae-conv-direct`. They swap the convolution algorithm: instead of **im2col**
+— which unfolds the image into a large matrix before multiplying — the
+convolution is computed directly. im2col is fast, but that intermediate buffer
+is big; computing directly removes it.
+
+What can honestly be promised: **less memory**. Speed depends on tensor shapes —
+sometimes better, sometimes worse. **Measure it**, don't tick it on principle.
+The clear case for turning it on is when you are close to running out of memory.
+
+Both are recent sd.cpp options: the app **checks the installed binary** and
+simply omits them if it doesn't know them, so an older engine cannot break on an
+unknown argument. `update-engine.bat` to get them.
+
+> **What about SageAttention or Triton?** They cannot be added, and it is not a
+> matter of build flags. Both live in the **PyTorch** ecosystem: Triton is a
+> kernel compiler driven from Python and JIT-compiled at runtime, and
+> SageAttention is a pip package whose CUDA/Triton kernels hook into PyTorch's
+> attention. stable-diffusion.cpp is C/C++ on GGML — no Python, no PyTorch, no
+> runtime that could host a Triton kernel, and therefore no hook point. Getting
+> quantized attention here would mean **reimplementing it as a ggml CUDA
+> kernel** upstream, not flipping an option. What sd.cpp already has on that
+> front is flash attention (`--diffusion-fa`, compiled in by default via
+> `GGML_CUDA_FA`), plus GGUF quantization and the step caches above — which is
+> where the actual speedups live.
+
 ### One engine, warm reloads
 Generation always runs through **one-shot `sd-cli`** — the single engine mode.
 It gives the **live step preview**, and reload speed is handled by the OS: after
@@ -388,6 +416,14 @@ Why self-build: **day-0** access to new sd.cpp features, arch-tuned binaries,
 the ability to **pin a known-good commit** (workflow input `sd_ref`), or to
 apply engine **patches** when needed. Everything heavy happens in CI — your
 machine only ever downloads a ready binary.
+
+The workflow also exposes **`GGML_CUDA_FORCE_MMQ`** as an opt-in input (off by
+default): it replaces cuBLAS with ggml's mmq kernels for quantized matmuls. The
+effect depends on architecture and quantization — it can help or hurt. It is
+there **to be measured on your own cards**, not enabled on principle. Everything
+else worth setting at build time is already set: CUDA architectures targeted at
+your GPUs, and flash-attention kernels (`GGML_CUDA_FA`) which ggml compiles by
+default.
 
 ### Updating the engines
 
