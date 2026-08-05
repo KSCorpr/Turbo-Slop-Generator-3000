@@ -22,20 +22,44 @@ from . import sdcpp
 from .generate import _component, _resolved_flags
 from .sdcpp import VidRequest
 
-MODES = ("t2v", "i2v", "flf2v")
-
-# Composants indispensables. L'upscaler spatial est facultatif (case « Détail
-# ×2 » de l'onglet) et n'est donc pas dans cette liste.
-REQUIRED_ROLES = ("diffusion", "vae", "audio_vae", "text_encoder",
-                  "embeddings_connectors")
+MODES = ("t2v", "i2v", "flf2v", "ref")
 
 _ROLE_LABELS = {
     "diffusion": "modèle de diffusion",
     "vae": "VAE vidéo",
     "audio_vae": "VAE audio",
-    "text_encoder": "encodeur de prompt (Gemma-3-12B)",
+    "text_encoder": "encodeur de prompt",
     "embeddings_connectors": "connecteurs d'embeddings",
 }
+
+
+def is_reference_model(model: registry.BaseModel) -> bool:
+    """Modèle piloté par IMAGES DE RÉFÉRENCE (MiniMax-H3 Ref2VA).
+
+    Ces modèles-là ne gèrent ni image de départ ni image de fin : c'est une
+    contrainte du modèle, pas un choix d'interface."""
+    return bool(model.defaults.get("reference"))
+
+
+def modes_for(model: registry.BaseModel | None) -> tuple[str, ...]:
+    """Modes réellement possibles avec CE modèle."""
+    if model is None:
+        return ("t2v",)
+    if is_reference_model(model):
+        return ("t2v", "ref")
+    return ("t2v", "i2v", "flf2v")
+
+
+def grid(model: registry.BaseModel | None) -> dict:
+    """Contraintes de forme du modèle (alignement, paliers d'images, fps)."""
+    d = model.defaults if model else {}
+    return {
+        "size_align": int(d.get("size_align", sdcpp.VAE_SCALE)),
+        "frame_step": int(d.get("frame_step", sdcpp.FRAME_STEP)),
+        "frame_base": int(d.get("frame_base", sdcpp.FRAME_BASE)),
+        "fps": int(d.get("fps", 24) or 24),
+        "fps_fixed": bool(d.get("fps_fixed")),
+    }
 
 
 def cancel() -> str:
@@ -47,8 +71,13 @@ def available_models(prefs: dict | None = None) -> list[registry.BaseModel]:
     return registry.video_models(prefs or settings.load_prefs())
 
 
-def engine_ready() -> tuple[bool, str]:
-    """(le moteur peut-il faire de la vidéo, message d'explication)."""
+def engine_ready(model: registry.BaseModel | None = None) -> tuple[bool, str]:
+    """(le moteur peut-il générer cette vidéo, message d'explication).
+
+    Deux niveaux : le binaire sait-il faire de la vidéo du tout, puis connaît-il
+    les options propres à CE modèle. Un sd-cli de juin sait faire du LTX mais
+    ignore MiniMax-H3 : sans ce second contrôle, l'utilisateur téléchargerait
+    35 Go avant de découvrir que son moteur ne peut pas les charger."""
     from ..i18n import t
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
@@ -57,19 +86,28 @@ def engine_ready() -> tuple[bool, str]:
     if not sdcpp.supports_video(sd_cli):
         return False, t("Votre `sd-cli` ne connaît pas le mode vidéo "
                         "(`-M vid_gen`). Mettez le moteur à jour avec "
-                        "**update-engine.bat** : LTX-2.3 est supporté par "
-                        "stable-diffusion.cpp depuis mai 2026.")
+                        "**update-engine.bat**.")
+    if model is not None:
+        absent = sdcpp.missing_options(
+            sd_cli, list(model.defaults.get("engine_options") or []))
+        if absent:
+            return False, t("Votre `sd-cli` est trop ancien pour « {name} » "
+                            "(option {opt} inconnue). Mettez le moteur à jour "
+                            "avec **update-engine.bat** — inutile de "
+                            "télécharger les poids avant.").format(
+                name=model.name, opt="`" + "`, `".join(absent) + "`")
     return True, ""
 
 
 def missing_parts(model: registry.BaseModel) -> list[str]:
-    """Libellés lisibles des composants encore absents du disque."""
+    """Libellés lisibles des composants requis encore absents du disque.
+
+    On s'appuie sur ce que le modèle DÉCLARE (composants non facultatifs) au
+    lieu d'une liste figée : LTX a des connecteurs d'embeddings, MiniMax-H3
+    n'en a pas."""
     from ..i18n import t
-    out = []
-    for role in REQUIRED_ROLES:
-        if _component(model, role) is None:
-            out.append(t(_ROLE_LABELS.get(role, role)))
-    return out
+    return [t(_ROLE_LABELS.get(c.role, c.role))
+            for c in registry.missing_components(model)]
 
 
 def spatial_upscaler(model: registry.BaseModel) -> Path | None:
@@ -77,18 +115,22 @@ def spatial_upscaler(model: registry.BaseModel) -> Path | None:
     return _component(model, "spatial_upscaler")
 
 
-def plan(width: int, height: int, frames: int, fps: int) -> dict:
-    """Ce qui sera RÉELLEMENT généré, après alignement sur les grilles du modèle.
+def plan(width: int, height: int, frames: int, fps: int,
+         model: registry.BaseModel | None = None) -> dict:
+    """Ce qui sera RÉELLEMENT généré, après alignement sur la grille du modèle.
 
     L'utilisateur demande « 720p, 2 secondes » ; le modèle, lui, ne sait produire
-    que des multiples de 32 px et des paquets de 8 images + 1. Autant le calculer
+    que des multiples de 32 px et des paquets d'images (8k+1 pour LTX-2.3,
+    17k+5 pour MiniMax-H3), et certains imposent leur cadence. Autant le calculer
     et l'afficher avant de lancer plusieurs minutes de génération."""
-    w = sdcpp.snap_size(width)
-    h = sdcpp.snap_size(height)
-    n = sdcpp.snap_frames(frames)
-    f = max(1, int(fps))
+    g = grid(model)
+    w = sdcpp.snap_size(width, g["size_align"])
+    h = sdcpp.snap_size(height, g["size_align"])
+    n = sdcpp.snap_frames(frames, g["frame_step"], g["frame_base"])
+    f = g["fps"] if g["fps_fixed"] else max(1, int(fps))
     return {"width": w, "height": h, "frames": n, "fps": f,
             "seconds": n / f,
+            "fps_forced": g["fps_fixed"] and int(fps or f) != f,
             "snapped": (w != int(width) or h != int(height)
                         or n != int(frames))}
 
@@ -107,6 +149,7 @@ def generate_video(
     mode: str = "t2v",
     init_image: Path | None = None,
     end_image: Path | None = None,
+    ref_images: "list[Path] | None" = None,
     width: int = 1280,
     height: int = 704,
     frames: int = 33,
@@ -123,15 +166,24 @@ def generate_video(
     if mode not in MODES:
         raise sdcpp.EngineError(f"Mode vidéo inconnu : {mode}")
 
-    ok, why = engine_ready()
-    if not ok:
-        raise sdcpp.EngineError(why)
-    sd_cli = settings.find_sd_cli()
-
     prefs = settings.load_prefs()
     model = registry.get_base_model(model_id, prefs)
     if model is None or not model.is_video:
         raise sdcpp.EngineError(f"Modèle vidéo inconnu : {model_id}")
+
+    ok, why = engine_ready(model)
+    if not ok:
+        raise sdcpp.EngineError(why)
+    sd_cli = settings.find_sd_cli()
+
+    if mode not in modes_for(model):
+        raise sdcpp.EngineError(
+            f"« {model.name} » ne gère pas ce mode. "
+            + ("Ce modèle fonctionne par images de RÉFÉRENCE : il n'accepte ni "
+               "image de départ ni image de fin."
+               if is_reference_model(model) else
+               "Ce modèle n'accepte pas d'images de référence — utilisez la "
+               "variante Ref2VA pour ça."))
 
     absent = missing_parts(model)
     if absent:
@@ -140,18 +192,29 @@ def generate_video(
             f"{', '.join(absent)}.\nTéléchargez-le depuis l'onglet "
             "« 📚 Catalogue de modèles ».")
 
-    # Le conditionnement par image n'a de sens que dans les modes qui en ont un.
+    # Le conditionnement n'a de sens que dans le mode qui l'utilise — et les
+    # deux familles s'excluent : références OU image de départ/fin, jamais les
+    # deux (contrainte MiniMax-H3 Ref2VA).
+    ref_images = [Path(r) for r in (ref_images or []) if r]
     if mode == "t2v":
         init_image = end_image = None
+        ref_images = []
     elif mode == "i2v":
         end_image = None
+        ref_images = []
         if init_image is None:
             raise sdcpp.EngineError("Mode image → vidéo : fournissez l'image "
                                     "de départ.")
-    else:  # flf2v
+    elif mode == "flf2v":
+        ref_images = []
         if init_image is None or end_image is None:
             raise sdcpp.EngineError("Mode début → fin : fournissez les deux "
                                     "images (départ et fin).")
+    else:  # ref
+        init_image = end_image = None
+        if not ref_images:
+            raise sdcpp.EngineError("Mode référence : fournissez au moins une "
+                                    "image de référence.")
 
     d = model.defaults
     flags, gpu_index = _resolved_flags(prefs)
@@ -175,12 +238,14 @@ def generate_video(
         log("⚠️ Upscaler spatial LTX absent : « Détail ×2 » ignoré. "
             "Re-téléchargez le modèle pour l'obtenir.")
 
+    g = grid(model)
     req = VidRequest(
         diffusion_model=_component(model, "diffusion"),
         vae=_component(model, "vae"),
         audio_vae=_component(model, "audio_vae"),
         text_encoder=_component(model, "text_encoder"),
         connectors=_component(model, "embeddings_connectors"),
+        llm_vision=_component(model, "text_encoder_vision"),
         prompt=prompt or "",
         negative=negative if negative is not None else d.get("negative", ""),
         steps=int(steps if steps is not None else d.get("steps", 8)),
@@ -190,8 +255,14 @@ def generate_video(
         schedule="" if d.get("scheduler") in (None, "", "auto")
                  else d["scheduler"],
         width=int(width), height=int(height),
-        frames=int(frames), fps=int(fps), seed=int(seed),
-        init_image=init_image, end_image=end_image,
+        frames=int(frames),
+        # Certains modèles imposent leur cadence (MiniMax-H3 : 24 i/s) et
+        # écrasent toute autre valeur ; autant l'envoyer juste du premier coup.
+        fps=(g["fps"] if g["fps_fixed"] else int(fps)),
+        seed=int(seed),
+        init_image=init_image, end_image=end_image, ref_images=ref_images,
+        size_align=g["size_align"], frame_step=g["frame_step"],
+        frame_base=g["frame_base"], rng=(model.defaults.get("rng") or ""),
         hires_upscaler=up, hires_steps=int(hires_steps),
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
@@ -222,12 +293,14 @@ def generate_video(
 def _sidecar(path: Path, req: VidRequest, model: registry.BaseModel,
              mode: str, hires: bool) -> None:
     """Journal .txt à côté du clip, comme pour les images et les GLB."""
-    p = plan(req.width, req.height, req.frames, req.fps)
+    p = plan(req.width, req.height, req.frames, req.fps, model)
     lines = [
         req.prompt or "",
         f"Negative prompt: {req.negative}" if req.negative else "",
         f"Modèle: {model.name} ({model.id})",
         f"Mode: {mode}",
+        (f"Références: {', '.join(Path(r).name for r in req.ref_images)}"
+         if req.ref_images else ""),
         f"Vidéo: {describe(p)}",
         f"Steps: {req.steps}, CFG: {req.cfg_scale}, Sampler: {req.sampler}, "
         f"Seed: {req.seed}",

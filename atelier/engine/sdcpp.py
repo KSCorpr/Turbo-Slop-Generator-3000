@@ -127,14 +127,26 @@ _MASK_CANDIDATES = ("--mask-image", "--mask-img", "--mask")
 
 
 def supports_video(sd_cli: Path | None) -> bool:
-    """Ce binaire sait-il générer de la vidéo (« -M vid_gen », LTX-2.3) ?
+    """Ce binaire sait-il générer de la vidéo (« -M vid_gen ») ?
 
     Détecté au lieu d'être supposé : les binaires officiels récents l'ont, mais
     un build plus ancien (ou maison, taillé pour l'image) ne l'a pas, et sd-cli
-    échouerait alors sur une option inconnue avec un message illisible. On teste
-    les deux options qui n'existent QUE pour la vidéo."""
+    échouerait alors sur une option inconnue avec un message illisible."""
+    return "--video-frames" in supported_options(sd_cli)
+
+
+def missing_options(sd_cli: Path | None, wanted: "list[str]") -> list[str]:
+    """Parmi `wanted`, les options que CE binaire ne connaît pas.
+
+    Chaque famille de modèles vidéo arrive avec ses propres options (LTX a
+    « --embeddings-connectors », MiniMax-H3 « --ref-video »…), et un même
+    binaire peut connaître l'une sans l'autre selon sa date. Le catalogue
+    déclare donc ce dont chaque modèle a besoin, et on le vérifie ici plutôt
+    que de deviner à partir d'un numéro de version."""
     opts = supported_options(sd_cli)
-    return "--video-frames" in opts and "--embeddings-connectors" in opts
+    if not opts:
+        return list(wanted or [])
+    return [o for o in (wanted or []) if o not in opts]
 
 
 def mask_flag(sd_cli: Path | None) -> str | None:
@@ -266,26 +278,37 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
 #  Vidéo — LTX-2.3 (sd.cpp « -M vid_gen », docs/ltx2.md)
 # --------------------------------------------------------------------------- #
 #  Contraintes du modèle, appliquées ICI plutôt que dans l'UI pour qu'aucun
-#  appelant ne puisse les contourner :
-#   · largeur/hauteur multiples de 32 — sd.cpp fait une division ENTIÈRE par le
-#     facteur du VAE, donc demander 720 px rend silencieusement 704 px ;
-#   · nombre d'images de la forme 8k+1 (33, 41, 49…) — sd.cpp réaligne tout seul,
-#     mais autant afficher à l'utilisateur ce qu'il va réellement obtenir.
+#  appelant ne puisse les contourner. Elles DIFFÈRENT d'une famille à l'autre —
+#  LTX-2.3 veut des paquets de 8 images + 1, MiniMax-H3 des paquets de 17 + 5 —
+#  donc elles sont paramétrées, pas codées en dur :
+#   · largeur/hauteur alignées sur 32 px. sd.cpp divise ENTIÈREMENT par le
+#     facteur du VAE : demander 720 px rend silencieusement 704 px ;
+#   · nombre d'images sur la grille « step·k + base ». sd.cpp réaligne tout seul,
+#     mais autant afficher à l'utilisateur ce qu'il obtiendra vraiment.
 VAE_SCALE = 32
-FRAME_STEP = 8
+FRAME_STEP = 8      # LTX-2.3 : 8k+1
+FRAME_BASE = 1
 
 
-def snap_size(value: int) -> int:
-    """Arrondit une dimension au multiple de 32 le plus proche (minimum 32)."""
-    v = int(round(float(value) / VAE_SCALE)) * VAE_SCALE
-    return max(VAE_SCALE, v)
+def snap_size(value: int, align: int = VAE_SCALE) -> int:
+    """Aligne une dimension VERS LE HAUT sur `align` (minimum `align`).
+
+    Vers le haut, et non au plus proche : c'est ce que documente MiniMax-H3, et
+    ça ne perd jamais de contenu. Sur des formats déjà alignés (ceux proposés
+    par l'onglet), les deux reviennent au même."""
+    align = max(1, int(align))
+    v = -(-int(value) // align) * align
+    return max(align, v)
 
 
-def snap_frames(value: int) -> int:
-    """Arrondit un nombre d'images sur la grille 8k+1 (minimum 9)."""
-    n = max(9, int(value))
-    k = int(round((n - 1) / FRAME_STEP))
-    return max(9, k * FRAME_STEP + 1)
+def snap_frames(value: int, step: int = FRAME_STEP,
+                base: int = FRAME_BASE) -> int:
+    """Aligne un nombre d'images VERS LE HAUT sur la grille « step·k + base »."""
+    step = max(1, int(step))
+    base = max(1, int(base))
+    n = max(base, int(value))
+    k = -(-(n - base) // step)
+    return k * step + base
 
 
 @dataclass
@@ -293,8 +316,11 @@ class VidRequest:
     diffusion_model: Path
     vae: Path                       # VAE vidéo
     audio_vae: Path                 # VAE audio -> bande-son dans le .webm
-    text_encoder: Path              # --llm (Gemma-3-12B)
-    connectors: Path                # --embeddings-connectors (LTXAV)
+    text_encoder: Path              # --llm (Gemma-3-12B ou Qwen3-VL-32B)
+    # --embeddings-connectors : propre à LTXAV. MiniMax-H3 n'en a pas, d'où
+    # l'option facultative plutôt qu'un champ obligatoire.
+    connectors: Path | None = None
+    llm_vision: Path | None = None  # tour vision séparée, si le dépôt la sépare
     prompt: str = ""
     negative: str = ""
     steps: int = 8
@@ -309,6 +335,16 @@ class VidRequest:
     # Conditionnement : image de départ (i2v) et image de fin (flf2v).
     init_image: Path | None = None
     end_image: Path | None = None
+    # Images de RÉFÉRENCE (-r) : MiniMax-H3 Ref2VA, pour garder un personnage
+    # d'un plan à l'autre. Exclusif avec init/end (contrainte du modèle).
+    ref_images: list[Path] = field(default_factory=list)
+    # Grille du modèle (voir snap_size / snap_frames).
+    size_align: int = VAE_SCALE
+    frame_step: int = FRAME_STEP
+    frame_base: int = FRAME_BASE
+    # Générateur aléatoire imposé par le modèle ("cpu" pour MiniMax-H3). Vide =
+    # défaut du moteur.
+    rng: str = ""
     # Reprise haute résolution par upscaler LATENT ×2 (LTX spatial upscaler).
     hires_upscaler: Path | None = None
     hires_steps: int = 4
@@ -323,7 +359,8 @@ def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
     """Commande LTX-2.3 (« -M vid_gen »). La sortie doit être un .webm : c'est
     le seul conteneur que sd.cpp sait muxer AVEC l'audio généré."""
     _require(req.diffusion_model, req.vae, req.audio_vae, req.text_encoder,
-             req.connectors, req.init_image, req.end_image, req.hires_upscaler)
+             req.connectors, req.llm_vision, req.init_image, req.end_image,
+             req.hires_upscaler, *req.ref_images)
 
     cmd: list[str] = [
         str(sd_cli), "-M", "vid_gen",
@@ -331,9 +368,12 @@ def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
         "--vae", str(req.vae),
         "--audio-vae", str(req.audio_vae),
         "--llm", str(req.text_encoder),
-        "--embeddings-connectors", str(req.connectors),
-        "-p", req.prompt,
     ]
+    if req.connectors:
+        cmd += ["--embeddings-connectors", str(req.connectors)]
+    if req.llm_vision:
+        cmd += ["--llm_vision", str(req.llm_vision)]
+    cmd += ["-p", req.prompt]
     # Comme en image : à CFG 1.0 le modèle est distillé et ignore le négatif.
     if req.negative and req.cfg_scale > 1.0:
         cmd += ["-n", req.negative]
@@ -341,16 +381,25 @@ def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
         "--cfg-scale", f"{req.cfg_scale}",
         "--steps", f"{req.steps}",
         "--sampling-method", req.sampler,
-        "-W", f"{snap_size(req.width)}", "-H", f"{snap_size(req.height)}",
-        "--video-frames", f"{snap_frames(req.frames)}",
+        "-W", f"{snap_size(req.width, req.size_align)}",
+        "-H", f"{snap_size(req.height, req.size_align)}",
+        "--video-frames",
+        f"{snap_frames(req.frames, req.frame_step, req.frame_base)}",
         "--fps", f"{int(req.fps)}",
         "-s", f"{req.seed}",
     ]
     if req.schedule:
         cmd += ["--scheduler", req.schedule]
+    if req.rng:
+        cmd += ["--rng", req.rng]
     # Image de départ : « -i » en image → vidéo comme en début → fin (c'est la
     # même option --init-img) ; « --end-img » n'a de sens qu'avec les deux.
-    if req.init_image:
+    # Les images de RÉFÉRENCE sont un chemin exclusif (contrainte MiniMax-H3 :
+    # Ref2VA ne se combine ni avec --init-img ni avec --end-img).
+    if req.ref_images:
+        for r in req.ref_images:
+            cmd += ["-r", str(r)]
+    elif req.init_image:
         cmd += ["-i", str(req.init_image)]
         if req.end_image:
             cmd += ["--end-img", str(req.end_image)]

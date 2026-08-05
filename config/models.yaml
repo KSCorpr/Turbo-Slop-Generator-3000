@@ -274,6 +274,15 @@ base_models:
       supports_negative: false   # distillé à CFG 1.0 : le négatif est ignoré
       frames: 33
       fps: 24
+      # Grille du modèle : images de la forme 8k+1, dimensions alignées sur 32.
+      frame_step: 8
+      frame_base: 1
+      size_align: 32
+      # Option qui n'existe QUE pour LTXAV : sert à vérifier que le binaire
+      # installé sait charger ce modèle (voir sdcpp.missing_options).
+      # Volume total à télécharger, affiché dans l'onglet.
+      download_gb: 25
+      engine_options: ["--embeddings-connectors"]
     presets:
       - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
       - {name: "Très rapide (6 pas)", sampler: euler, scheduler: auto, steps: 6,  cfg_scale: 1.0}
@@ -327,12 +336,159 @@ base_models:
       supports_negative: true
       frames: 33
       fps: 24
+      frame_step: 8
+      frame_base: 1
+      size_align: 32
+      # Volume total à télécharger, affiché dans l'onglet.
+      download_gb: 25
+      engine_options: ["--embeddings-connectors"]
       negative: "worst quality, low quality, blurry, distorted, artifacts"
     presets:
       - {name: "⚖️ Recommandé (20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 6.0}
       - {name: "Rapide (14 pas)",        sampler: euler, scheduler: auto, steps: 14, cfg_scale: 6.0}
       - {name: "Qualité (30 pas)",       sampler: euler, scheduler: auto, steps: 30, cfg_scale: 6.0}
     vram_min_gb: 12
+
+  # ==========================================================================
+  #  VIDÉO — MiniMax-H3 (doc sd.cpp : minimax_h3.md)
+  # --------------------------------------------------------------------------
+  #  Génère vidéo ET son STÉRÉO dans un même transformeur de diffusion « packé ».
+  #  Deux variantes de DiT, incompatibles entre elles côté conditionnement :
+  #    · FL2VA  -> texte→vidéo, image→vidéo, début→fin (les 3 modes habituels) ;
+  #    · Ref2VA -> conditionnement par IMAGES DE RÉFÉRENCE (« garde ce
+  #      personnage »), et il ne se combine PAS avec image de départ/fin.
+  #  On prend les poids « pruned » : 11,4 Go contre 18,8 Go pour le DiT complet,
+  #  seule version raisonnable ici.
+  #
+  #  ⚠️ PLUS LOURD QUE LTX-2.3, ET NETTEMENT. L'encodeur de prompt est un
+  #  Qwen3-VL-32B (tronqué à 50 couches) : 18,2 Go à lui seul en Q4_K_M, contre
+  #  7,3 Go pour le Gemma de LTX. Total ≈ 35 Go par variante, et TOUT réside en
+  #  RAM pendant la génération (--offload-to-cpu) : compter 48 Go de RAM au
+  #  minimum, 64 Go pour être tranquille. Le VAE vidéo (5,2 Go) est le pic VRAM,
+  #  d'où le VAE tiling forcé.
+  #
+  #  Contraintes de forme (doc) : dimensions alignées VERS LE HAUT sur 32 px,
+  #  images sur la grille 17k+5 (5, 22, 39, 56…), et 24 i/s IMPOSÉ — toute autre
+  #  valeur est écrasée par le moteur, donc l'onglet verrouille le réglage.
+  # ==========================================================================
+  - id: minimax-h3-fl2va
+    name: "MiniMax-H3 FL2VA (vidéo + son stéréo)"
+    family: minimax_h3
+    kind: video
+    tags: [vidéo, audio, stéréo, qualité, très lourd]
+    description: >
+      **Vidéo et bande-son stéréo générées ensemble** par un seul transformeur
+      (l'audio n'est pas rajouté après coup : il est produit dans la même passe
+      de diffusion, donc synchronisé avec l'image). Variante **FL2VA** : les
+      trois modes habituels — **texte → vidéo**, **image → vidéo** et
+      **début → fin**.
+      ⚠️ **Nettement plus lourd que LTX-2.3** : l'encodeur de prompt est un
+      **Qwen3-VL-32B** (18,2 Go), le DiT « pruned » 11,4 Go, le VAE vidéo
+      5,2 Go — soit **~35 Go** à télécharger, et autant en RAM pendant la
+      génération. **48 Go de RAM minimum, 64 Go conseillés.** Sur une carte
+      11-12 Go ça tourne par décharge RAM, mais c'est long : commencez en
+      **864×480 sur 5 images** pour vérifier que ça passe avant d'allonger.
+      ℹ️ 24 i/s imposé par le modèle, et durées par paliers (5, 22, 39, 56…
+      images).
+    sources:
+      diffusion:
+        repo: leejet/MiniMax-H3-GGUF
+        match: "minimax_h3_fl2va_pruned-{quant}.gguf"
+        quantizable: true
+      text_encoder:
+        # Qwen3-VL-32B tronqué à 50 couches, tour vision INCLUSE dans le GGUF
+        # (pas de mmproj séparé dans ce dépôt -> pas de --llm_vision à passer).
+        # Le dépôt ne publie que Q4_K_M et Q2_K_M : le ladder retombe sur
+        # Q4_K_M partout, et Q2_K reste accessible en forçant la quant encodeur
+        # dans les Réglages (13,1 Go au lieu de 18,2).
+        repo: leejet/MiniMax-H3-GGUF
+        match: "qwen3vl_32b_minimax_h3-{enc_quant}.gguf"
+        quantizable: true
+      vae:
+        repo: Comfy-Org/MiniMax-H3
+        match: "vae/minimax_h3_video_vae_fp16.safetensors"
+      audio_vae:
+        repo: Comfy-Org/MiniMax-H3
+        match: "vae/minimax_h3_audio_vae_fp32.safetensors"
+    defaults:
+      steps: 20
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 864
+      height: 480
+      supports_negative: false   # CFG 1.0 dans toute la doc
+      frames: 56
+      fps: 24
+      fps_fixed: true            # le moteur écrase toute autre valeur
+      frame_step: 17             # grille 17k+5
+      frame_base: 5
+      size_align: 32
+      rng: cpu                   # invocation documentée
+      # Volume total à télécharger, affiché dans l'onglet.
+      download_gb: 35
+      engine_options: ["--ref-video"]   # marqueur du support MiniMax-H3
+    presets:
+      - {name: "⚖️ Recommandé (20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 1.0}
+      - {name: "Rapide (12 pas)",        sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - {name: "Qualité (30 pas)",       sampler: euler, scheduler: auto, steps: 30, cfg_scale: 1.0}
+    vram_min_gb: 11
+
+  # --------------------------------------------------------------------------
+  - id: minimax-h3-ref2va
+    name: "MiniMax-H3 Ref2VA (référence · personnage constant)"
+    family: minimax_h3
+    kind: video
+    tags: [vidéo, audio, référence, personnage, très lourd]
+    description: >
+      Même modèle, variante **Ref2VA** : au lieu d'une image de départ, on lui
+      donne des **images de référence** et on lui demande de garder ce
+      personnage / cet objet d'un plan à l'autre. C'est ce que FL2VA ne sait pas
+      faire — et l'inverse est vrai aussi : **Ref2VA ne gère ni image de départ
+      ni image de fin**, c'est une contrainte du modèle, pas de l'interface.
+      Désignez la référence dans le prompt (« use the cat from &lt;Picture 1&gt;
+      … keep its appearance consistent »).
+      L'encodeur Qwen3-VL-32B et les deux VAE sont **partagés avec la variante
+      FL2VA** : si vous l'avez déjà, seuls 11,4 Go de DiT sont à télécharger.
+    sources:
+      diffusion:
+        repo: leejet/MiniMax-H3-GGUF
+        match: "minimax_h3_ref2va_pruned-{quant}.gguf"
+        quantizable: true
+      text_encoder:
+        repo: leejet/MiniMax-H3-GGUF
+        match: "qwen3vl_32b_minimax_h3-{enc_quant}.gguf"
+        quantizable: true
+      vae:
+        repo: Comfy-Org/MiniMax-H3
+        match: "vae/minimax_h3_video_vae_fp16.safetensors"
+      audio_vae:
+        repo: Comfy-Org/MiniMax-H3
+        match: "vae/minimax_h3_audio_vae_fp32.safetensors"
+    defaults:
+      steps: 20
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 864
+      height: 480
+      supports_negative: false
+      frames: 56
+      fps: 24
+      fps_fixed: true
+      frame_step: 17
+      frame_base: 5
+      size_align: 32
+      rng: cpu
+      reference: true            # -> mode « référence » dans l'onglet Vidéo
+      # Volume total à télécharger, affiché dans l'onglet.
+      download_gb: 35
+      engine_options: ["--ref-video"]
+    presets:
+      - {name: "⚖️ Recommandé (20 pas)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 1.0}
+      - {name: "Rapide (12 pas)",        sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - {name: "Qualité (30 pas)",       sampler: euler, scheduler: auto, steps: 30, cfg_scale: 1.0}
+    vram_min_gb: 11
 
 # ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)

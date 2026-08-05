@@ -13,8 +13,8 @@ A **local**, modern, lightweight image-generation studio for artists, built on
 CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, two upscalers, **video generation with sound (LTX-2.3)**, and a utility
-toolkit.
+editing, two upscalers, **video generation with sound (LTX-2.3, MiniMax-H3)**,
+and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -35,7 +35,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN upscale · creative SDXL upscale |
-| 🎬 **Video (LTX-2.3)** | text→video, image→video, first→last frame · **with generated soundtrack** · native sd.cpp `-M vid_gen`, no PyTorch |
+| 🎬 **Video** | **LTX-2.3** and **MiniMax-H3** · text→video, image→video, first→last frame, reference-conditioned · **with generated soundtrack** · native sd.cpp `-M vid_gen`, no PyTorch |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
@@ -51,7 +51,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
-- [Video (LTX-2.3)](#video-ltx-23)
+- [Video](#video)
 - [Toolkit](#toolkit)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
@@ -631,34 +631,67 @@ sidecar recording model, seed and settings. Generation tabs have a
 
 ---
 
-## Video (LTX-2.3)
+## Video
 
 The **🎬 Video** tab generates short clips **with a generated soundtrack**, from
-text or from images, using **LTX-2.3** (Lightricks) read natively by sd.cpp
-(`-M vid_gen`). No PyTorch, no ComfyUI — the same engine that generates images.
+text or from images, read natively by sd.cpp (`-M vid_gen`). No PyTorch, no
+ComfyUI — the same engine that generates images.
 
-> ⚠️ **This is by far the heaviest thing in the app.** A 22 B diffusion model
-> plus a Gemma-3-12B prompt encoder: **~25 GB to download**, and on an 11-12 GB
-> card it only fits because the weights live in RAM and stream to the GPU
-> (`--offload-to-cpu`). **32 GB of RAM minimum, 64 GB comfortable.** Expect
-> **several minutes per clip** — that is not a crash.
+> ⚠️ **This is by far the heaviest thing in the app.** The weights live in RAM
+> and stream to the GPU (`--offload-to-cpu`), which is the only reason a 22 B+
+> model runs on an 11-12 GB card. Budget **32 GB of RAM for LTX-2.3 and 48-64 GB
+> for MiniMax-H3**, and expect **several minutes per clip** — that is not a
+> crash.
 
-**Three modes**
+**Two families**, and the tab reconfigures itself around whichever you pick —
+available modes, frame-count steps, frame rate and the ×2 refine pass all differ:
+
+| | **LTX-2.3** (Lightricks) | **MiniMax-H3** |
+| --- | --- | --- |
+| Download | ~25 GB | ~35 GB |
+| Prompt encoder | Gemma-3-12B (7.3 GB) | **Qwen3-VL-32B** (18.2 GB) |
+| Audio | yes | yes, **stereo**, generated in the *same* diffusion pass |
+| Frame counts | 8k+1 (33, 41, 49…) | 17k+5 (5, 22, 39, 56…) |
+| Frame rate | free | **24 fps, forced** by the model |
+| ×2 latent refine | yes | no |
+| Reference conditioning | no | yes (Ref2VA variant) |
+
+**Modes** — which ones appear depends on the model, because the constraint is
+the model's, not the interface's:
 
 | Mode | What you give it | What it does |
 | --- | --- | --- |
 | 📝 **Text → video** | a prompt | generates the clip from scratch |
 | 🖼️ **Image → video** | a prompt + one image | animates that still |
 | 🎞️ **First → last** | a prompt + two images | generates the in-between |
+| 🎭 **Reference** | a prompt + 1-2 reference images | keeps that character/object across the shot (**MiniMax-H3 Ref2VA only**) |
 
-**Two variants**, both in the Model Catalog. They share the Gemma encoder and
-the latent upscaler, so installing the second one does **not** re-download them:
+**The four catalog entries**
 
-- **LTX-2.3 Distilled 22B** — 8 steps, CFG 1.0. **The one to take on 11-12 GB.**
-  Distilled at CFG 1.0, so like Flux.2 Klein it ignores the negative prompt, and
-  the field is hidden.
+- **LTX-2.3 Distilled 22B** — 8 steps, CFG 1.0. **The one to start with on
+  11-12 GB.** Distilled at CFG 1.0, so like Flux.2 Klein it ignores the negative
+  prompt and the field is hidden.
 - **LTX-2.3 Dev 22B** — ~20 steps at CFG 6.0, negative prompt active. Finer, but
   roughly **2.5× slower** at equal settings.
+- **MiniMax-H3 FL2VA** — text→video, image→video, first→last. Video and
+  **stereo sound** come out of one packed diffusion transformer, so the audio is
+  synchronised by construction rather than bolted on afterwards.
+- **MiniMax-H3 Ref2VA** — reference-conditioned instead: give it images of a
+  character and ask for it to stay the same. In exchange it accepts **neither a
+  first nor a last frame** — a model constraint, which is why the tab hides
+  those inputs rather than letting you fail into it. Name the reference from
+  inside the prompt (*"use the cat from &lt;Picture 1&gt;, keep its appearance
+  consistent"*), otherwise the model sees the image but has no instruction
+  attached to it.
+
+Within each family the encoder and VAEs are **shared**, so the second variant is
+a much smaller download than the first.
+
+> **The engine must be recent enough.** MiniMax-H3 landed in stable-diffusion.cpp
+> well after LTX-2.3, so an `sd-cli` that happily runs LTX can still be unable to
+> load MiniMax. The tab checks the **actual binary** for the options each model
+> needs and tells you to run `update-engine.bat` **before** you download tens of
+> gigabytes of weights.
 
 **Writing the prompt.** English works best, and **describing the motion matters
 as much as describing the scene** — both the subject's movement and the camera's
@@ -795,7 +828,19 @@ encoder, 1.8 GB VAEs, 2.3 GB connectors, 1 GB upscaler). The encoder quant is
 **pinned to Q4_K_M rather than following `{enc_quant}`**: on a 64 GB machine the
 ladder would fetch Q8_0, i.e. 12.5 GB for a *prompt* encoder, with no visible
 gain on the video — the sd.cpp docs use a ~7 GB Q4 as well. See
-[Video (LTX-2.3)](#video-ltx-23) for how to actually use it.
+[Video](#video) for how to actually use it.
+
+**MiniMax-H3 22B — video + stereo audio** (family `minimax_h3`, `kind: video`)
+Two DiT variants, sharing encoder and VAEs:
+- diffusion — [`leejet/MiniMax-H3-GGUF`](https://huggingface.co/leejet/MiniMax-H3-GGUF) — `minimax_h3_fl2va_pruned-…` (first/last-frame) or `minimax_h3_ref2va_pruned-…` (reference-conditioned). The **pruned** weights are used: 11.4 GB at Q4_K_M against 18.8 GB for the full DiT, which is the difference between usable and not on a 11-12 GB card
+- prompt encoder — same repo, `qwen3vl_32b_minimax_h3-…` — **Qwen3-VL-32B** truncated to 50 language layers, vision tower **included in the GGUF** (so no separate `--llm_vision` to pass). 18.2 GB at Q4_K_M; the repo only publishes Q4_K_M and Q2_K_M, so the ladder lands on Q4_K_M and you can drop to **Q2_K_M (13.1 GB)** by forcing the encoder quantization in Settings if RAM is tight
+- video VAE + **audio VAE** — [`Comfy-Org/MiniMax-H3`](https://huggingface.co/Comfy-Org/MiniMax-H3) (`vae/minimax_h3_video_vae_fp16` 5.2 GB, `vae/minimax_h3_audio_vae_fp32` 0.6 GB)
+
+About **35 GB** per variant-set, essentially all of it resident in RAM during
+generation — hence the 48 GB RAM floor. The 5.2 GB video VAE is the VRAM peak,
+which is why VAE tiling is forced on. The documented invocation also pins
+`--rng cpu`, which the catalog carries as a per-model field rather than a global
+setting.
 
 **Boogu Image Edit Turbo 10B** (family `boogu`, instruction editing, Apache 2.0)
 - diffusion — [`realrebelai/Boogu-Image-Edit-Turbo_GGUFs`](https://huggingface.co/realrebelai/Boogu-Image-Edit-Turbo_GGUFs) (distilled, 4 steps, CFG 1.0)

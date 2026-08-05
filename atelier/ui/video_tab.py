@@ -1,13 +1,19 @@
-"""Onglet « 🎬 Vidéo » : LTX-2.3 (Lightricks) via stable-diffusion.cpp
-(« -M vid_gen »). Texte → vidéo, image → vidéo, et début → fin.
+"""Onglet « 🎬 Vidéo » : génération de clips via stable-diffusion.cpp
+(« -M vid_gen »), avec bande-son produite par le modèle lui-même.
 
-Le clip sort en .webm avec sa **bande-son** : LTX génère l'image ET l'audio, et
-sd.cpp les muxe dans le même fichier.
+Deux familles, aux contraintes DIFFÉRENTES — d'où une interface qui s'adapte au
+modèle choisi plutôt que d'imposer les règles d'un seul :
 
-⚠️ C'est de très loin le plus lourd de l'application : diffusion 22 B + encodeur
-Gemma-3-12B. Sur 11-12 Go de VRAM ça tourne uniquement par décharge en RAM, à
-plusieurs minutes le clip. L'onglet dit franchement à quoi s'attendre plutôt que
-de laisser croire à un bouton magique.
+* **LTX-2.3** (Lightricks) — texte → vidéo, image → vidéo, début → fin.
+  Images par paquets de 8+1, cadence libre, upscaler latent ×2 disponible ;
+* **MiniMax-H3** — vidéo et son **stéréo** dans la même passe de diffusion.
+  Images par paquets de 17+5, **24 i/s imposé**. La variante Ref2VA travaille
+  par images de RÉFÉRENCE (garder un personnage) et, en contrepartie, n'accepte
+  ni image de départ ni image de fin.
+
+⚠️ C'est de très loin le plus lourd de l'application. Sur 11-12 Go de VRAM ça ne
+tourne que par décharge en RAM, à plusieurs minutes le clip. L'onglet dit
+franchement à quoi s'attendre plutôt que de laisser croire à un bouton magique.
 """
 from __future__ import annotations
 
@@ -28,6 +34,7 @@ from ..i18n import t
 FORMATS = [
     ("Paysage 16:9 — 1280×704 (lourd)", (1280, 704)),
     ("Paysage 16:9 — 960×544", (960, 544)),
+    ("Paysage 16:9 — 864×480 (recommandé MiniMax-H3)", (864, 480)),
     ("Paysage 16:9 — 704×384 (léger, à essayer en premier)", (704, 384)),
     ("Carré 1:1 — 768×768", (768, 768)),
     ("Portrait 9:16 — 544×960", (544, 960)),
@@ -41,7 +48,9 @@ MODES = [
     ("📝 Texte → vidéo", "t2v"),
     ("🖼️ Image → vidéo", "i2v"),
     ("🎞️ Début → fin", "flf2v"),
+    ("🎭 Référence (garder le personnage)", "ref"),
 ]
+_MODE_LABEL = {v: k for k, v in MODES}
 
 
 # Les libellés de menu sont traduits, PAS les valeurs : la traduction d'après
@@ -51,8 +60,14 @@ def _format_choices() -> list[tuple[str, str]]:
     return [(t(lbl), f"{w}x{h}") for lbl, (w, h) in FORMATS]
 
 
-def _mode_choices() -> list[tuple[str, str]]:
-    return [(t(lbl), val) for lbl, val in MODES]
+def _mode_choices(model_id: str | None = None) -> list[tuple[str, str]]:
+    """Modes possibles avec CE modèle. Les variantes « référence » ne gèrent
+    pas l'image de départ/fin, et inversement : plutôt que de laisser choisir
+    un mode qui échouera, on n'affiche que ce qui marche."""
+    m = registry.get_base_model(model_id, settings.load_prefs()) \
+        if model_id else None
+    allowed = vid.modes_for(m) if m else tuple(v for _, v in MODES)
+    return [(t(lbl), val) for lbl, val in MODES if val in allowed]
 
 
 def _size(fmt_value: str) -> tuple[int, int]:
@@ -64,17 +79,22 @@ def _size(fmt_value: str) -> tuple[int, int]:
         return FORMATS[2][1]
 
 
-def _recap_text(fmt_value, dur, fps_v, hires_on) -> str:
-    """Ce qui sera RÉELLEMENT produit, une fois aligné sur les grilles du modèle.
+def _recap_text(model_id, fmt_value, dur, fps_v, hires_on) -> str:
+    """Ce qui sera RÉELLEMENT produit, une fois aligné sur la grille du modèle.
 
-    La demande (« 2 secondes en 720p ») ne correspond presque jamais à ce que
-    LTX sait faire : 32 px de grille et des paquets de 8 images + 1. On l'affiche
+    La demande (« 2 secondes en 720p ») ne correspond presque jamais à ce que le
+    modèle sait faire, et les règles changent d'une famille à l'autre : 8k+1
+    images pour LTX-2.3, 17k+5 et 24 i/s imposés pour MiniMax-H3. On l'affiche
     AVANT de lancer plusieurs minutes de calcul plutôt que de le laisser
     découvrir après coup."""
+    m = registry.get_base_model(model_id, settings.load_prefs()) \
+        if model_id else None
     w, h = _size(fmt_value)
     f = int(fps_v or _DEFAULT_FPS)
-    p = vid.plan(w, h, round(float(dur or _DEFAULT_DURATION) * f), f)
+    p = vid.plan(w, h, round(float(dur or _DEFAULT_DURATION) * f), f, m)
     txt = f"→ {vid.describe(p)}"
+    if p.get("fps_forced"):
+        txt += t(" · cadence imposée par le modèle")
     if hires_on:
         txt += t(" · reprise ×2 → {w}×{h}").format(w=p["width"] * 2,
                                                    h=p["height"] * 2)
@@ -107,38 +127,48 @@ def _defaults(model_id: str | None) -> dict:
 
 def _state_note(model_id: str | None) -> str:
     """Ce qui manque pour pouvoir générer : moteur, puis poids."""
-    ok, why = vid.engine_ready()
-    if not ok:
-        return t("❌ **Moteur** — {why}").format(why=why)
     m = registry.get_base_model(model_id, settings.load_prefs()) \
         if model_id else None
     if m is None:
         return t("❌ Aucun modèle vidéo au catalogue.")
+    # Le moteur est vérifié POUR CE MODÈLE : un sd-cli qui sait faire du LTX
+    # peut très bien ignorer MiniMax-H3, et mieux vaut le dire avant les 35 Go.
+    ok, why = vid.engine_ready(m)
+    if not ok:
+        return t("❌ **Moteur** — {why}").format(why=why)
     absent = vid.missing_parts(m)
     if absent:
         return t("⬇️ **« {name} » n'est pas installé** — il manque : "
                  "{parts}.  \nTéléchargez-le depuis l'onglet "
-                 "**📚 Catalogue de modèles** (~25 Go, c'est long)."
-                 ).format(name=m.name, parts=", ".join(absent))
-    return t("✅ **« {name} » est prêt** ({up} upscaler latent ×2). "
-             "Comptez plusieurs minutes par clip.").format(
-        name=m.name, up=t("avec") if vid.spatial_upscaler(m) else t("sans"))
+                 "**📚 Catalogue de modèles** (~{gb} Go, c'est long)."
+                 ).format(name=m.name, parts=", ".join(absent),
+                          gb=int(m.defaults.get("download_gb", 25)))
+    if vid.spatial_upscaler(m):
+        return t("✅ **« {name} » est prêt** (avec upscaler latent ×2). "
+                 "Comptez plusieurs minutes par clip.").format(name=m.name)
+    return t("✅ **« {name} » est prêt.** Comptez plusieurs minutes par "
+             "clip.").format(name=m.name)
 
 
 def build_video_tab(tab_id="video"):
-    with gr.Tab("🎬 Vidéo (LTX-2.3)", id=tab_id):
+    with gr.Tab("🎬 Vidéo", id=tab_id):
         gr.Markdown(
-            "### Génération vidéo — LTX-2.3, natif sd.cpp\n"
-            "**Texte → vidéo**, **image → vidéo** (anime une image fixe) ou "
-            "**début → fin** (deux images, le modèle fabrique l'entre-deux). "
-            "Le clip sort en `.webm` **avec sa bande-son** : LTX génère aussi "
-            "l'audio.\n\n"
-            "> ⚠️ **C'est lourd et c'est lent.** Diffusion 22 B + encodeur "
-            "Gemma-3-12B : ~25 Go à télécharger, et sur une carte 11-12 Go ça "
-            "ne tient que par décharge en RAM (32 Go minimum, 64 Go "
-            "confortable). Comptez **plusieurs minutes par clip** — ce n'est "
-            "pas un plantage. Commencez en **704×384 sur 2 secondes** avant de "
-            "monter quoi que ce soit.")
+            "### Génération vidéo — natif sd.cpp\n"
+            "**Texte → vidéo**, **image → vidéo** (anime une image fixe), "
+            "**début → fin** (deux images, le modèle fabrique l'entre-deux) et, "
+            "sur MiniMax-H3 Ref2VA, **référence** (garder le même personnage). "
+            "Le clip sort en `.webm` **avec sa bande-son** : le modèle génère "
+            "aussi l'audio.\n\n"
+            "**Deux familles**, et l'interface s'adapte à celle que vous "
+            "choisissez : **LTX-2.3** (25 Go, upscaler latent ×2, cadence "
+            "libre) et **MiniMax-H3** (35 Go, son **stéréo** produit dans la "
+            "même passe, 24 i/s imposé, durées par paliers).\n\n"
+            "> ⚠️ **C'est lourd et c'est lent.** Sur une carte 11-12 Go ça ne "
+            "tient que par décharge en RAM : **32 Go de RAM pour LTX-2.3, "
+            "48 à 64 Go pour MiniMax-H3** dont l'encodeur de prompt est un "
+            "Qwen3-VL-32B. Comptez **plusieurs minutes par clip** — ce n'est "
+            "pas un plantage. Commencez petit (**704×384 sur 2 secondes**) "
+            "avant de monter quoi que ce soit.")
 
         _choices, _first = _model_choices()
         state_md = gr.Markdown(_state_note(_first), elem_classes="feedback")
@@ -164,6 +194,12 @@ def build_video_tab(tab_id="video"):
                     end_image = gr.Image(label="Image de fin", type="pil",
                                          visible=False)
                 with gr.Row():
+                    ref1 = gr.Image(label="Référence 1", type="pil",
+                                    visible=False)
+                    ref2 = gr.Image(label="Référence 2 (optionnel)",
+                                    type="pil", visible=False)
+                ref_hint = gr.Markdown("", elem_classes="hint", visible=False)
+                with gr.Row():
                     run = gr.Button("🎬 Générer la vidéo", variant="primary",
                                     scale=3)
                     stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
@@ -177,7 +213,7 @@ def build_video_tab(tab_id="video"):
                     fps = gr.Dropdown([16, 24, 30], value=_DEFAULT_FPS,
                                       label="Images/s")
                 plan_md = gr.Markdown(
-                    _recap_text(_DEFAULT_FORMAT, _DEFAULT_DURATION,
+                    _recap_text(_first, _DEFAULT_FORMAT, _DEFAULT_DURATION,
                                 _DEFAULT_FPS, False),
                     elem_classes="hint")
 
@@ -208,31 +244,63 @@ def build_video_tab(tab_id="video"):
 
         # Récapitulatif VIVANT (cf. _recap_text) : mis à jour à chaque réglage.
         for comp in (fmt, duration, fps, hires):
-            comp.change(_recap_text, inputs=[fmt, duration, fps, hires],
+            comp.change(_recap_text,
+                        inputs=[model, fmt, duration, fps, hires],
                         outputs=[plan_md])
 
         # Le modèle choisi décide des étapes, du CFG et de l'existence même du
         # prompt négatif (ignoré à CFG 1.0 sur les modèles distillés).
-        def _on_model(mid):
+        def _on_model(mid, fmt_v, dur_v, fps_v, hires_v):
+            """Le modèle décide de presque tout : modes disponibles, pas, CFG,
+            existence du négatif, et cadence (imposée sur MiniMax-H3)."""
             d = _defaults(mid)
+            m = d["model"]
+            g = vid.grid(m)
+            choices = _mode_choices(mid)
+            allowed = [v for _, v in choices]
+            new_mode = "t2v" if "t2v" in allowed else allowed[0]
+            fps_up = (gr.update(value=g["fps"], interactive=False)
+                      if g["fps_fixed"] else gr.update(interactive=True))
             return (gr.update(value=d["steps"]),
                     gr.update(value=d["cfg_scale"]),
                     gr.update(visible=d["supports_negative"],
                               value=d["negative"]),
-                    gr.update(value=_state_note(mid)))
+                    gr.update(choices=choices, value=new_mode),
+                    fps_up,
+                    gr.update(value=_state_note(mid)),
+                    gr.update(value=_recap_text(
+                        mid, fmt_v, dur_v,
+                        g["fps"] if g["fps_fixed"] else fps_v, hires_v)),
+                    # Le mode repart sur « texte → vidéo » : on referme les
+                    # images, sinon on garderait affichés des champs que le
+                    # nouveau modèle n'accepte pas.
+                    gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False))
 
-        model.change(_on_model, inputs=[model],
-                     outputs=[steps, cfg_s, negative, state_md])
+        model.change(_on_model, inputs=[model, fmt, duration, fps, hires],
+                     outputs=[steps, cfg_s, negative, mode, fps, state_md,
+                              plan_md, init_image, end_image, ref1, ref2,
+                              ref_hint])
 
         def _on_mode(m):
+            ref = (m == "ref")
             return (gr.update(visible=(m in ("i2v", "flf2v"))),
-                    gr.update(visible=(m == "flf2v")))
+                    gr.update(visible=(m == "flf2v")),
+                    gr.update(visible=ref),
+                    gr.update(visible=ref),
+                    gr.update(visible=ref, value=t(
+                        "Désignez la référence dans le prompt, en anglais — "
+                        "par exemple « use the cat from &lt;Picture 1&gt;, keep "
+                        "its appearance and identity consistent ». Sans ça le "
+                        "modèle voit l'image mais ne sait pas quoi en faire.")))
 
-        mode.change(_on_mode, inputs=[mode], outputs=[init_image, end_image])
+        mode.change(_on_mode, inputs=[mode],
+                    outputs=[init_image, end_image, ref1, ref2, ref_hint])
 
         def do_video(model_id, mode_v, prompt_v, negative_v, img_a, img_b,
-                     fmt_value, dur, fps_v, steps_v, cfg_v, hires_v,
-                     hires_steps_v, seed_v):
+                     ref_a, ref_b, fmt_value, dur, fps_v, steps_v, cfg_v,
+                     hires_v, hires_steps_v, seed_v):
             if not model_id:
                 raise gr.Error(t("Choisissez un modèle."))
             if not (prompt_v or "").strip():
@@ -241,20 +309,32 @@ def build_video_tab(tab_id="video"):
                 raise gr.Error(t("Fournissez l'image de départ."))
             if mode_v == "flf2v" and img_b is None:
                 raise gr.Error(t("Fournissez l'image de fin."))
+            if mode_v == "ref" and ref_a is None and ref_b is None:
+                raise gr.Error(t("Fournissez au moins une image de référence."))
 
             settings.ensure_dirs()
+            m = registry.get_base_model(model_id, settings.load_prefs())
             w, h = _size(fmt_value)
             fps_i = int(fps_v or _DEFAULT_FPS)
             p = vid.plan(w, h,
-                         round(float(dur or _DEFAULT_DURATION) * fps_i), fps_i)
+                         round(float(dur or _DEFAULT_DURATION) * fps_i), fps_i,
+                         m)
 
             ip = ep = None
+            refs: list = []
             if mode_v in ("i2v", "flf2v") and img_a is not None:
-                ip = settings.TMP_DIR / "ltx_start.png"
+                ip = settings.TMP_DIR / "vid_start.png"
                 img_a.convert("RGB").save(ip)
             if mode_v == "flf2v" and img_b is not None:
-                ep = settings.TMP_DIR / "ltx_end.png"
+                ep = settings.TMP_DIR / "vid_end.png"
                 img_b.convert("RGB").save(ep)
+            if mode_v == "ref":
+                for i, im in enumerate((ref_a, ref_b), start=1):
+                    if im is None:
+                        continue
+                    rp = settings.TMP_DIR / f"vid_ref{i}.png"
+                    im.convert("RGB").save(rp)
+                    refs.append(rp)
 
             try:
                 s = int(seed_v)
@@ -271,7 +351,7 @@ def build_video_tab(tab_id="video"):
                     state["out"] = vid.generate_video(
                         model_id=model_id, prompt=prompt_v,
                         negative=negative_v or "", mode=mode_v,
-                        init_image=ip, end_image=ep,
+                        init_image=ip, end_image=ep, ref_images=refs,
                         width=p["width"], height=p["height"],
                         frames=p["frames"], fps=p["fps"],
                         steps=int(steps_v), cfg_scale=float(cfg_v), seed=s,
@@ -283,13 +363,14 @@ def build_video_tab(tab_id="video"):
                     q.put(None)
 
             threading.Thread(target=worker, daemon=True).start()
-            mode_label = dict((v, k) for k, v in MODES).get(mode_v, mode_v)
-            logs = [f"Mode : {mode_label}",
+            logs = [f"Mode : {t(_MODE_LABEL.get(mode_v, mode_v))}",
                     f"Modèle : {model_id}",
                     f"Vidéo : {vid.describe(p)}",
                     f"Seed : {s}",
                     f"{int(steps_v)} pas · CFG {float(cfg_v)}"
                     + (" · reprise ×2" if hires_v else "")]
+            if refs:
+                logs.append(f"Références : {len(refs)} image(s)")
             yield (t("⏳ Génération vidéo en cours — plusieurs minutes, "
                      "c'est normal…"), gr.update(), "\n".join(logs))
             while True:
@@ -313,6 +394,7 @@ def build_video_tab(tab_id="video"):
         evt = run.click(
             do_video,
             inputs=[model, mode, prompt, negative, init_image, end_image,
-                    fmt, duration, fps, steps, cfg_s, hires, hires_steps, seed],
+                    ref1, ref2, fmt, duration, fps, steps, cfg_s, hires,
+                    hires_steps, seed],
             outputs=[status, result, logbox])
         stop.click(lambda: vid.cancel(), outputs=None, cancels=[evt])

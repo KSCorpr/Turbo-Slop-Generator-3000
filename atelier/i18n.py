@@ -95,26 +95,39 @@ _EN: dict[str, str] = {
     # ---- titres d'onglets ----
     "📚 Catalogue de modèles": "📚 Model Catalog",
     "🧰 Toolkit": "🧰 Toolkit",
-    "🎬 Vidéo (LTX-2.3)": "🎬 Video (LTX-2.3)",
     "{w}×{h} · {n} images à {fps} i/s · {s} s":
         "{w}×{h} · {n} frames at {fps} fps · {s} s",
     " · reprise ×2 → {w}×{h}": " · ×2 refine → {w}×{h}",
+    " · cadence imposée par le modèle": " · frame rate forced by the model",
+    "Votre `sd-cli` ne connaît pas le mode vidéo (`-M vid_gen`). Mettez le moteur à jour avec **update-engine.bat**.":
+        "Your `sd-cli` does not know the video mode (`-M vid_gen`). Update the engine with **update-engine.bat**.",
+    "Votre `sd-cli` est trop ancien pour « {name} » (option {opt} inconnue). Mettez le moteur à jour avec **update-engine.bat** — inutile de télécharger les poids avant.":
+        "Your `sd-cli` is too old for “{name}” (unknown option {opt}). Update the engine with **update-engine.bat** — no need to download the weights first.",
+    "⬇️ **« {name} » n'est pas installé** — il manque : {parts}.  \nTéléchargez-le depuis l'onglet **📚 Catalogue de modèles** (~{gb} Go, c'est long).":
+        "⬇️ **“{name}” is not installed** — missing: {parts}.  \nDownload it from the **📚 Model Catalog** tab (~{gb} GB, it takes a while).",
+    "✅ **« {name} » est prêt** (avec upscaler latent ×2). Comptez plusieurs minutes par clip.":
+        "✅ **“{name}” is ready** (with the ×2 latent upscaler). Expect several minutes per clip.",
+    "✅ **« {name} » est prêt.** Comptez plusieurs minutes par clip.":
+        "✅ **“{name}” is ready.** Expect several minutes per clip.",
+    "encodeur de prompt": "prompt encoder",
+    "🎬 Vidéo": "🎬 Video",
+    "🎭 Référence (garder le personnage)":
+        "🎭 Reference (keep the character)",
+    "Référence 1": "Reference 1",
+    "Référence 2 (optionnel)": "Reference 2 (optional)",
+    "Fournissez au moins une image de référence.":
+        "Provide at least one reference image.",
+    "Désignez la référence dans le prompt, en anglais — par exemple « use the cat from &lt;Picture 1&gt;, keep its appearance and identity consistent ». Sans ça le modèle voit l'image mais ne sait pas quoi en faire.":
+        "Point at the reference from inside the prompt — e.g. “use the cat from &lt;Picture 1&gt;, keep its appearance and identity consistent”. Without that the model sees the image but does not know what to do with it.",
+    "Paysage 16:9 — 864×480 (recommandé MiniMax-H3)":
+        "Landscape 16:9 — 864×480 (recommended for MiniMax-H3)",
     "Binaire `sd-cli` introuvable. Lancez `install.bat` (ou `python scripts/get_sdcpp.py`).":
         "`sd-cli` binary not found. Run `install.bat` (or `python scripts/get_sdcpp.py`).",
-    "Votre `sd-cli` ne connaît pas le mode vidéo (`-M vid_gen`). Mettez le moteur à jour avec **update-engine.bat** : LTX-2.3 est supporté par stable-diffusion.cpp depuis mai 2026.":
-        "Your `sd-cli` does not know the video mode (`-M vid_gen`). Update the engine with **update-engine.bat**: LTX-2.3 has been supported by stable-diffusion.cpp since May 2026.",
     "❌ **Moteur** — {why}": "❌ **Engine** — {why}",
     "❌ Aucun modèle vidéo au catalogue.": "❌ No video model in the catalog.",
-    "⬇️ **« {name} » n'est pas installé** — il manque : {parts}.  \nTéléchargez-le depuis l'onglet **📚 Catalogue de modèles** (~25 Go, c'est long).":
-        "⬇️ **“{name}” is not installed** — missing: {parts}.  \nDownload it from the **📚 Model Catalog** tab (~25 GB, it takes a while).",
-    "✅ **« {name} » est prêt** ({up} upscaler latent ×2). Comptez plusieurs minutes par clip.":
-        "✅ **“{name}” is ready** ({up} the ×2 latent upscaler). Expect several minutes per clip.",
-    "avec": "with",
-    "sans": "without",
     "modèle de diffusion": "diffusion model",
     "VAE vidéo": "video VAE",
     "VAE audio": "audio VAE",
-    "encodeur de prompt (Gemma-3-12B)": "prompt encoder (Gemma-3-12B)",
     "connecteurs d'embeddings": "embeddings connectors",
     "⚙️ Réglages": "⚙️ Settings",
 
