@@ -32,6 +32,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
+| 💊 **Krea 2 — Xanax** · 💊 **Flux.2 Klein — Xanax** | one sentence → **3 photos** of the same scene, different framings · style **hard-wired**, nothing to configure |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN · SeedVR2 · creative SDXL upscale |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
@@ -46,6 +47,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Generation options](#generation-options)
+- [Xanax tabs](#xanax-tabs)
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
@@ -288,6 +290,40 @@ its aspect.
   (depth, background removal, SAM, ESRGAN or creative upscale).
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
+
+## Xanax tabs
+
+**💊 Krea 2 — Xanax** and **💊 Flux.2 Klein — Xanax** are the same idea on the
+two models: you write one sentence, you get **3 photos** of that scene. There is
+no style dropdown, no system-prompt box, no preset menu — **the style is compiled
+into the tab** and cannot be changed. That is the point of these tabs; the normal
+generation tabs are there when you want to tune something.
+
+The fixed style: amateur snapshot, provincial France, 1995–2005, cheap
+point-and-shoot, ordinary people, unstaged, always overcast, no grain, no filter,
+no post-processing, **4:3** on each model's native grid (1184×880 for Flux.2,
+1152×896 for Krea 2).
+
+Three details are less obvious than they look, and each one is a deliberate
+choice rather than an oversight:
+
+- **The "no collage" rule lives in the *positive* prompt.** The instinctive place
+  for it is the negative prompt — but both models are distilled at CFG 1.0 and
+  **ignore the negative prompt entirely**, so the rule would be silently dropped.
+  It is part of the style string instead.
+- **"3 images" means 3 separate generations, never a batch.** A batch of 3 gives
+  three variations of the *same* framing; the brief asks for different angles,
+  distances and moments. Each photo therefore gets its own shot directive (wide /
+  medium / closer) and its own seed, `base`, `base+1`, `base+2` — so a fixed seed
+  replays the exact same series.
+- **Translation needs the prompt enhancer.** The style is an English prefix glued
+  in front of your text: on its own it translates nothing. With the enhancer
+  installed, the checkbox translates and fleshes out your sentence *with the style
+  as a constraint*. Without it, the tab says so and you should write in English.
+
+Each photo is captioned with the exact prompt that produced it, and the usual
+`.txt` sidecar lands next to it in `outputs/`.
+
 
 ## Hardware & optimization
 
@@ -749,7 +785,8 @@ atelier/
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
   ui/
     theme.py                 # light theme + CSS
-    generate_tab.py · library_tab.py · toolkit_tab.py · outpaint_tab.py · settings_tab.py
+    generate_tab.py · xanax_tab.py (hard-wired style) · library_tab.py · toolkit_tab.py
+    outpaint_tab.py · settings_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   _torch_setup.py            # shared PyTorch-CUDA install helpers

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Catalogue de modèles ·
+Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Xanax (style figé) ·
+Catalogue de modèles ·
 Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · Réglages.
 """
 from __future__ import annotations
@@ -108,6 +109,7 @@ from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.toolkit_tab import build_toolkit_tab
+from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
 def _head_for(mode: str) -> str:
@@ -184,6 +186,9 @@ def build_app() -> gr.Blocks:
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)
+            # Onglets « Xanax » : style figé, aucun réglage de style exposé.
+            build_xanax_tab("krea2-turbo", "💊 Krea 2 — Xanax")
+            build_xanax_tab("flux2-klein-9b", "💊 Flux.2 Klein — Xanax")
             build_library_tab()
             build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
             build_outpaint_tab(pending_outpaint=pending_outpaint, tabs=tabs)
