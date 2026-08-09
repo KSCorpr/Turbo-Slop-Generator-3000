@@ -446,6 +446,82 @@ _EN: dict[str, str] = {
     "Choisissez un modèle d'upscale (téléchargez-les d'abord).":
         "Choose an upscale model (download them first).",
 
+    # ---- toolkit : HD natif sd.cpp ----
+    "🚀 HD (natif sd.cpp)": "🚀 HD (native sd.cpp)",
+    "**Passe HD native de sd.cpp** : l'image est agrandie puis "
+    "**re-débruitée en entier** par votre modèle de génération "
+    "(Krea 2, Flux.2). Le tout en **une seule commande**, "
+    "100% GPU, sans PyTorch.\n\n"
+    "Deux différences de fond avec l'upscale créatif SDXL :\n"
+    "- **aucun découpage en tuiles** — le second passage voit "
+    "l'image entière, donc il n'y a pas de couture *possible*, "
+    "et pas d'incohérence entre deux carrés voisins ;\n"
+    "- **c'est votre modèle** qui redessine, pas un SDXL de "
+    "2023 : le détail ajouté reste dans le style que le modèle "
+    "connaît déjà.\n\n"
+    "En échange il faut charger le modèle de diffusion (donc de "
+    "la VRAM), et le côté final est plafonné : au-delà, le "
+    "modèle sort de son échelle d'entraînement et se met à "
+    "répéter des motifs.":
+        "**Native sd.cpp HD pass**: the image is enlarged, then "
+        "**re-denoised as a whole** by your generation model (Krea 2, "
+        "Flux.2). All in **a single command**, 100% GPU, no PyTorch.\n\n"
+        "Two fundamental differences from the creative SDXL upscale:\n"
+        "- **no tiling at all** — the second pass sees the whole image, so "
+        "there is no seam *possible*, and no mismatch between neighbouring "
+        "squares;\n"
+        "- **your model** does the redrawing, not a 2023 SDXL: the added "
+        "detail stays in the style the model already knows.\n\n"
+        "In exchange the diffusion model has to be loaded (so, VRAM), and the "
+        "final side is capped: beyond it the model leaves the scale it was "
+        "trained on and starts repeating patterns.",
+    "> ⚠️ **Aucun modèle de génération installé.** "
+    "Téléchargez Krea 2 Turbo ou Flux.2 Klein depuis "
+    "l'onglet « Catalogue de modèles », puis revenez ici.":
+        "> ⚠️ **No generation model installed.** Download Krea 2 Turbo or "
+        "Flux.2 Klein from the “Model catalog” tab, then come back here.",
+    "Le côté final est plafonné : au-delà, le facteur est réduit "
+    "automatiquement et le journal annonce la valeur retenue.":
+        "The final side is capped: beyond it the factor is reduced "
+        "automatically and the log states the value it settled on.",
+    "Modèle de génération": "Generation model",
+    "Image à passer en HD": "Image to take to HD",
+    "Facteur d'agrandissement": "Enlargement factor",
+    "Détail ajouté (débruitage de la passe HD)":
+        "Added detail (HD pass denoise)",
+    "Le SEUL réglage qui compte vraiment. 0,2 = "
+    "reste très près de l'original ; 0,5+ = le "
+    "modèle réinvente franchement la matière.":
+        "The ONLY setting that really matters. 0.2 = stays very close to the "
+        "original; 0.5+ = the model frankly reinvents the material.",
+    "Agrandissement intermédiaire": "Intermediate enlargement",
+    "Ce qui agrandit AVANT le second débruitage. "
+    "« Latent » travaille dans l'espace du modèle "
+    "et laisse le débruitage tout reconstruire ; "
+    "un ESRGAN donne une base déjà nette (utile "
+    "sur du trait), au risque de figer ses propres "
+    "défauts.":
+        "What enlarges BEFORE the second denoise. “Latent” works in the "
+        "model's own space and lets the denoise rebuild everything; an ESRGAN "
+        "gives an already-crisp base (useful on line art), at the risk of "
+        "freezing its own flaws.",
+    "Latent (défaut — le plus doux)": "Latent (default — the gentlest)",
+    "Latent antialiasé": "Latent antialiased",
+    "Lanczos (image, neutre)": "Lanczos (image, neutral)",
+    "Description (optionnelle)": "Description (optional)",
+    "ce que montre l'image, en quelques mots":
+        "what the image shows, in a few words",
+    "Guide le détail ajouté. Vide fonctionne très "
+    "bien : le modèle part de l'image.":
+        "Guides the added detail. Empty works very well: the model starts "
+        "from the image.",
+    "🚀 Passer en HD": "🚀 Take to HD",
+    "Passe HD…": "HD pass…",
+    "Aucun modèle de génération installé : téléchargez-en un depuis l'onglet "
+    "« Catalogue de modèles ».":
+        "No generation model installed: download one from the “Model "
+        "catalog” tab.",
+
     # ---- toolkit : SDXL créatif ----
     "✨ Upscale créatif (SDXL)": "✨ Creative upscale (SDXL)",
     "Upscale **créatif** « Ultimate SD Upscale » : pré-agrandit "

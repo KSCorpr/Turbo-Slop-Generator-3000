@@ -345,6 +345,131 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                 u_stop.click(lambda: gen_engine.cancel(), outputs=None,
                              cancels=[u_evt])
 
+            # ---------- HD natif sd.cpp (highres fix) -----------------------
+            with gr.Tab("🚀 HD (natif sd.cpp)", id="hd"):
+                gr.Markdown(
+                    "**Passe HD native de sd.cpp** : l'image est agrandie puis "
+                    "**re-débruitée en entier** par votre modèle de génération "
+                    "(Krea 2, Flux.2). Le tout en **une seule commande**, "
+                    "100% GPU, sans PyTorch.\n\n"
+                    "Deux différences de fond avec l'upscale créatif SDXL :\n"
+                    "- **aucun découpage en tuiles** — le second passage voit "
+                    "l'image entière, donc il n'y a pas de couture *possible*, "
+                    "et pas d'incohérence entre deux carrés voisins ;\n"
+                    "- **c'est votre modèle** qui redessine, pas un SDXL de "
+                    "2023 : le détail ajouté reste dans le style que le modèle "
+                    "connaît déjà.\n\n"
+                    "En échange il faut charger le modèle de diffusion (donc de "
+                    "la VRAM), et le côté final est plafonné : au-delà, le "
+                    "modèle sort de son échelle d'entraînement et se met à "
+                    "répéter des motifs.")
+
+                _hd_models = [(m.name, m.id)
+                              for m in registry.load_base_models(
+                                  settings.load_prefs())
+                              if registry.model_is_ready(m)]
+                if not _hd_models:
+                    gr.Markdown(
+                        "> ⚠️ **Aucun modèle de génération installé.** "
+                        "Téléchargez Krea 2 Turbo ou Flux.2 Klein depuis "
+                        "l'onglet « Catalogue de modèles », puis revenez ici.")
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        hd_image = gr.Image(label="Image à passer en HD",
+                                            type="pil")
+                        hd_model = gr.Dropdown(
+                            choices=_hd_models,
+                            value=(_hd_models[0][1] if _hd_models else None),
+                            label="Modèle de génération")
+                        hd_scale = gr.Slider(
+                            1.5, 3.0, value=2.0, step=0.25,
+                            label="Facteur d'agrandissement",
+                            info="Le côté final est plafonné : au-delà, le "
+                                 "facteur est réduit automatiquement et le "
+                                 "journal annonce la valeur retenue.")
+                        hd_denoise = gr.Slider(
+                            0.15, 0.70, value=0.40, step=0.05,
+                            label="Détail ajouté (débruitage de la passe HD)",
+                            info="Le SEUL réglage qui compte vraiment. 0,2 = "
+                                 "reste très près de l'original ; 0,5+ = le "
+                                 "modèle réinvente franchement la matière.")
+                        _hd_ups = registry.list_upscalers()
+                        hd_upscaler = gr.Dropdown(
+                            choices=[("Latent (défaut — le plus doux)", "Latent"),
+                                     ("Latent antialiasé", "Latent (antialiased)"),
+                                     ("Lanczos (image, neutre)", "Lanczos")]
+                                    + [(f"ESRGAN — {u}", u) for u in _hd_ups],
+                            value="Latent",
+                            label="Agrandissement intermédiaire",
+                            info="Ce qui agrandit AVANT le second débruitage. "
+                                 "« Latent » travaille dans l'espace du modèle "
+                                 "et laisse le débruitage tout reconstruire ; "
+                                 "un ESRGAN donne une base déjà nette (utile "
+                                 "sur du trait), au risque de figer ses propres "
+                                 "défauts.")
+                        hd_prompt = gr.Textbox(
+                            label="Description (optionnelle)", lines=2,
+                            placeholder="ce que montre l'image, en quelques mots",
+                            info="Guide le détail ajouté. Vide fonctionne très "
+                                 "bien : le modèle part de l'image.")
+                        hd_seed = gr.Number(value=-1, precision=0,
+                                            label="Seed (-1 = aléatoire)")
+                        with gr.Row():
+                            hd_run = gr.Button("🚀 Passer en HD",
+                                               variant="primary", size="lg",
+                                               scale=2)
+                            hd_stop = gr.Button("⏹️ Annuler", variant="stop",
+                                                size="sm")
+                    with gr.Column(scale=4):
+                        hd_result = gr.Image(
+                            label="Aperçu temps réel (pleine résolution dans "
+                                  "outputs/)", height=520, format="png",
+                            show_download_button=True)
+                        hd_log = gr.Textbox(label="Journal", lines=12,
+                                            autoscroll=True,
+                                            elem_classes="log-box")
+
+                def do_hd(img, model_id, scale, denoise, upscaler, prompt,
+                          seed_v, progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    if not model_id:
+                        raise gr.Error(t("Aucun modèle de génération installé : "
+                                         "téléchargez-en un depuis l'onglet "
+                                         "« Catalogue de modèles »."))
+                    logs: list[str] = []
+                    settings.ensure_dirs()
+                    preview = settings.TMP_DIR / "hd_preview.png"
+                    try:
+                        seed_i = int(seed_v)
+                    except (TypeError, ValueError):
+                        seed_i = -1
+                    progress(0.1, desc="Passe HD…")
+                    try:
+                        outs = gen_engine.hd_upscale(
+                            model_id, img, scale=float(scale),
+                            upscaler=upscaler, denoise=float(denoise),
+                            prompt=prompt or "", seed=seed_i,
+                            preview_path=preview, log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERREUR] {exc}")
+                        return None, "\n".join(logs)
+                    if not outs:
+                        logs.append("\n[ERREUR] aucune image produite.")
+                        return None, "\n".join(logs)
+                    progress(1.0, desc="Terminé")
+                    logs.append(f"\n✅ Image HD : {outs[0]}")
+                    return str(outs[0]), "\n".join(logs)
+
+                hd_evt = hd_run.click(
+                    do_hd,
+                    inputs=[hd_image, hd_model, hd_scale, hd_denoise,
+                            hd_upscaler, hd_prompt, hd_seed],
+                    outputs=[hd_result, hd_log])
+                hd_stop.click(lambda: gen_engine.cancel(), outputs=None,
+                              cancels=[hd_evt])
+
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
             with gr.Tab("🌱 Restaurer (SeedVR2)", id="seedvr2"):
                 gr.Markdown(

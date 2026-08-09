@@ -134,6 +134,7 @@ def generate(
     encoder_override: Path | None = None,
     preview_path: Path | None = None,
     save_prompt: bool = True,
+    hires: "sdcpp.HiresParams | None" = None,
     log: Callable[[str], None] | None = None,
 ) -> list[Path]:
     prefs = settings.load_prefs()
@@ -232,6 +233,7 @@ def generate(
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
+        hires=hires,
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
@@ -318,3 +320,132 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     if found:
         return found[0]
     raise sdcpp.EngineError("L'upscale n'a produit aucune image.")
+
+
+# Alignement des tailles de la passe HD.
+#
+# On aligne sur 16 px, PAS sur la grille « native » de chaque famille (32 px
+# Flux.2, 64 px Krea 2), et vers le HAUT. Deux raisons :
+#
+#  • 16 est un diviseur commun à toutes ces grilles, donc c'est le pas qui
+#    déforme le moins — et surtout il préserve tel quel tout ce que
+#    l'application produit elle-même (1184×880, 1152×896, 752…), alors qu'un
+#    arrondi à 64 les déplacerait ;
+#  • sd.cpp aligne de toute façon LUI-MÊME vers le haut sur son vrai multiple
+#    (`vae_scale_factor × diffusion_model_down_factor`) et le journalise. Il est
+#    l'autorité sur ce chiffre, pas nous : on lui donne une taille propre et on
+#    le laisse compléter s'il lui faut davantage.
+#
+# Vers le haut, jamais vers le bas : arrondir à la baisse rognerait du cadrage.
+HD_ALIGN = 16
+
+
+def _align_up(v: int, step: int = HD_ALIGN) -> int:
+    return max(step, -(-int(v) // step) * step)
+
+
+# Plafond de côté pour la passe HD. Au-delà, le second débruitage se fait sur
+# une image que le modèle n'a jamais vue à cette échelle : il se met à répéter
+# des motifs (« doublons »), et la VRAM part en vrille.
+HD_MAX_SIDE = 3072
+
+# Débruitage du PREMIER passage (img2img avant l'agrandissement). sd.cpp calcule
+# t_enc = pas × force : à 0,15 sur 8 pas ça fait un seul pas, à très bas sigma —
+# l'image d'origine est pratiquement recopiée. On ne peut pas le supprimer (la
+# passe HD s'accroche derrière une génération), alors on le rend négligeable.
+HD_FIRST_PASS_STRENGTH = 0.15
+
+
+def hd_upscale(model_id: str, image, scale: float = 2.0,
+               upscaler: str = "Latent", denoise: float = 0.4,
+               prompt: str = "", negative: str = "", steps: int = 0,
+               hd_steps: int = 0, seed: int = -1,
+               preview_path: Path | None = None,
+               log: Callable[[str], None] | None = None) -> list[Path]:
+    """Passe **HD** native sd.cpp : agrandir puis re-débruiter l'image ENTIÈRE.
+
+    Ni PyTorch, ni SDXL, ni découpage en tuiles — donc aucune couture possible,
+    et c'est le modèle de génération installé (Krea 2, Flux.2) qui redessine le
+    détail, dans le style qu'il connaît déjà.
+
+    Déroulé côté sd.cpp, en une seule commande : img2img très léger à la taille
+    d'origine → agrandissement (latent, Lanczos ou un ESRGAN) → second
+    débruitage à la taille finale. `denoise` règle ce second passage : c'est le
+    seul réglage qui compte vraiment ici.
+    """
+    from PIL import Image
+    sd_cli = settings.find_sd_cli()
+    if sd_cli is None:
+        raise sdcpp.EngineError(
+            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
+    if not sdcpp.hires_supported(sd_cli):
+        raise sdcpp.EngineError(
+            "Votre moteur sd.cpp ne connaît pas encore la passe HD "
+            "(option « --hires »).\n"
+            "→ Lancez update-engine.bat pour récupérer une version récente, "
+            "puis relancez l'application.")
+    prefs = settings.load_prefs()
+    model = registry.get_base_model(model_id, prefs)
+    if model is None:
+        raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
+
+    settings.ensure_dirs()
+    src = settings.TMP_DIR / "hd_in.png"
+    im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
+        else image.convert("RGB")
+    im.save(src)
+    ow, oh = im.size
+
+    # Taille de travail : c'est à cette taille que sd.cpp redimensionne l'image
+    # d'entrée pour le premier passage.
+    bw, bh = _align_up(ow), _align_up(oh)
+
+    # Plafond : on réduit le FACTEUR plutôt que de rogner l'image, pour que le
+    # cadrage demandé soit toujours celui rendu.
+    scale = float(scale)
+    if max(bw, bh) * scale > HD_MAX_SIDE:
+        scale = max(1.25, HD_MAX_SIDE / max(bw, bh))
+        if log:
+            log(f"[hd] facteur ramené à ×{scale:.2f} pour rester sous "
+                f"{HD_MAX_SIDE} px de côté.")
+    tw, th = _align_up(bw * scale), _align_up(bh * scale)
+
+    d = dict(model.defaults)
+    base_steps = int(steps or d.get("steps", 8) or 8)
+    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    hires = sdcpp.HiresParams(
+        scale=scale, upscaler=upscaler or "Latent",
+        upscalers_dir=registry.upscalers_dir(),
+        denoise=float(denoise), steps=int(hd_steps or 0),
+        target_width=tw, target_height=th,
+        # Ne sert que si l'agrandisseur intermédiaire est un ESRGAN : même
+        # correction de tuilage que pour l'agrandissement simple.
+        tile_size=sdcpp.upscale_tile_size(
+            tw, th, prof.gpu.vram_gb if prof.gpu else None))
+    if log:
+        log(f"HD « {model.name} » : {ow}×{oh} → {tw}×{th} (×{scale:.2f}), "
+            f"agrandisseur « {hires.upscaler} », détail {denoise:g}.")
+        log("[hd] second débruitage sur l'image ENTIÈRE : pas de tuiles, donc "
+            "pas de couture possible.")
+    outs = generate(
+        model_id=model_id, prompt=prompt, negative=negative,
+        steps=base_steps,
+        cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
+        width=bw, height=bh, seed=seed, batch_count=1,
+        sampler=d.get("sampler") or "euler",
+        schedule=("" if d.get("scheduler") in (None, "", "auto")
+                  else d["scheduler"]),
+        init_image=src, strength=HD_FIRST_PASS_STRENGTH,
+        preview_path=preview_path, hires=hires, log=log)
+    # Taille RÉELLE : sd.cpp peut avoir arrondi au-dessus de notre demande pour
+    # tomber sur son propre multiple. Autant lire le résultat que d'affirmer
+    # une taille qu'on n'a pas vérifiée.
+    if log and outs:
+        try:
+            with Image.open(outs[0]) as res:
+                if res.size != (tw, th):
+                    log(f"[hd] taille finale réelle : {res.width}×{res.height} "
+                        "(sd.cpp a aligné sur son propre multiple).")
+        except OSError:
+            pass
+    return outs

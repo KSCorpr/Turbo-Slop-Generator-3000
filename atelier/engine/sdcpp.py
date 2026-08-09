@@ -48,6 +48,30 @@ def was_cancelled() -> bool:
 
 
 @dataclass
+class HiresParams:
+    """« Highres fix » natif de sd.cpp : agrandir puis re-débruiter EN ENTIER.
+
+    Le second passage se fait sur l'image complète, pas tuile par tuile — donc
+    aucune couture possible, et le modèle voit la scène entière au lieu d'un
+    carré de 1024 px. C'est la différence de fond avec l'upscale créatif SDXL.
+
+    `upscaler` : « Latent », « Lanczos », « Nearest » (intégrés à sd.cpp) ou le
+    NOM DE FICHIER d'un ESRGAN présent dans `upscalers_dir`.
+    """
+    scale: float = 2.0
+    upscaler: str = "Latent"
+    upscalers_dir: Path | None = None
+    denoise: float = 0.4
+    steps: int = 0             # 0 = réutiliser --steps
+    tile_size: int = 0         # 0 = laisser le défaut sd.cpp (ESRGAN seulement)
+    # Taille finale EXPLICITE. Renseignée, elle prime sur `scale` côté sd.cpp —
+    # et surtout elle garantit que la taille annoncée dans le journal est celle
+    # qui sort réellement, au lieu d'un arrondi calculé deux fois.
+    target_width: int = 0
+    target_height: int = 0
+
+
+@dataclass
 class GenRequest:
     diffusion_model: Path | None = None   # modèle de diffusion seul (GGUF flow)
     vae: Path | None = None
@@ -92,6 +116,7 @@ class GenRequest:
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
+    hires: "HiresParams | None" = None  # passe HD native (voir HiresParams)
 
 
 # --------------------------------------------------------------------------- #
@@ -194,6 +219,41 @@ def _ref_list(ref) -> list[Path]:
     return [Path(ref)]
 
 
+# Agrandisseurs intégrés à sd.cpp pour la passe HD (pas de fichier à installer).
+# Le reste des valeurs acceptées par --hires-upscaler est un NOM DE FICHIER
+# d'ESRGAN cherché dans --hires-upscalers-dir.
+HIRES_BUILTIN = ("Latent", "Latent (antialiased)", "Latent (bicubic)",
+                 "Latent (bicubic antialiased)", "Latent (nearest)",
+                 "Latent (nearest-exact)", "Lanczos", "Nearest")
+
+
+def hires_supported(sd_cli: Path | None) -> bool:
+    """Ce binaire connaît-il la passe HD native (`--hires`) ?"""
+    return "--hires" in supported_options(sd_cli)
+
+
+def hires_args(h: "HiresParams") -> list[str]:
+    """Options CLI de la passe HD. Appelant responsable de `hires_supported`."""
+    args = ["--hires",
+            "--hires-denoising-strength", f"{float(h.denoise):g}"]
+    if h.target_width > 0 and h.target_height > 0:
+        args += ["--hires-width", str(int(h.target_width)),
+                 "--hires-height", str(int(h.target_height))]
+    else:
+        args += ["--hires-scale", f"{float(h.scale):g}"]
+    if h.upscaler:
+        args += ["--hires-upscaler", h.upscaler]
+    # Le dossier n'est utile que pour un agrandisseur À MODÈLE : sd.cpp y
+    # cherche le fichier nommé par --hires-upscaler.
+    if h.upscalers_dir and h.upscaler not in HIRES_BUILTIN:
+        args += ["--hires-upscalers-dir", str(h.upscalers_dir)]
+        if h.tile_size and int(h.tile_size) > 0:
+            args += ["--hires-upscale-tile-size", str(int(h.tile_size))]
+    if h.steps and int(h.steps) > 0:
+        args += ["--hires-steps", str(int(h.steps))]
+    return args
+
+
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
@@ -252,6 +312,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
+    if req.hires and hires_supported(sd_cli):
+        cmd += hires_args(req.hires)
     if req.preview_path:
         cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
                 "--preview-interval", "1"]

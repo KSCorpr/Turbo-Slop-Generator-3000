@@ -34,7 +34,7 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 💊 **Krea 2 — Xanax** · 💊 **Flux.2 Klein — Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN · SeedVR2 · creative SDXL upscale |
+| 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD** (native sd.cpp highres fix, no tiles) · SeedVR2 · creative SDXL upscale |
 | 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
 | 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
 | 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
@@ -474,8 +474,9 @@ shown at the top. Engine logs and progress hints stay in French.
 
 ## Upscaling
 
-Three complementary upscalers live under **Toolkit**, in increasing order of
-invention: ESRGAN enlarges, SeedVR2 restores, SDXL hallucinates.
+Four complementary tools live under **Toolkit**, in increasing order of
+invention: ESRGAN enlarges, **HD** re-denoises with your own model, SeedVR2
+restores, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
 Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
@@ -520,6 +521,44 @@ you can convert one yourself with
 `sd-cli --mode convert --model x.pth --output x.gguf`. Note that sd.cpp only
 implements the **ESRGAN (RRDBNet)** architecture for image upscaling, so newer
 SPAN / DAT / Compact models will not load.
+
+### 🚀 HD (native sd.cpp *highres fix*)
+
+The one that has no seams, because it never cuts the image up.
+
+sd.cpp gained a native highres fix, and `sd_img_gen_params_t` carries both an
+init image and the hires block — so a single `sd-cli` command does the whole
+job: a very light img2img at the source size, then the enlargement (latent,
+Lanczos or one of your ESRGAN models), then a **second denoise pass over the
+entire image** at the final size. No PyTorch, no SDXL, **no tiles**.
+
+Two things follow from that, and they are the reason this tab exists:
+
+- **there is no seam to hide.** The creative SDXL upscale refines 1024 px tiles
+  and blends them; a feather can smooth a border but cannot make two tiles agree
+  about what they are drawing. Here the second pass sees the whole scene at once,
+  so the question does not arise;
+- **your model does the redrawing.** Krea 2 or Flux.2 add detail in the style
+  they already know, instead of an SDXL from 2023 reinterpreting it.
+
+Controls: the **factor**, the **added detail** (the hires denoise — the only
+setting that really matters: 0.2 stays very close to the source, 0.5+ frankly
+reinvents the material), the **intermediate enlarger**, and an optional short
+description. The first img2img pass is fixed at a deliberately negligible
+strength — sd.cpp computes `t_enc = steps × strength`, so it amounts to a single
+step at very low sigma; it cannot be removed (the hires pass hangs off a
+generation) so it is made harmless instead.
+
+Sizes are aligned **up** to 16 px — the common divisor of every family's grid,
+which leaves the app's own resolutions (1184×880, 1152×896…) untouched where a
+64 px grid would move them. sd.cpp then aligns further up to its real multiple
+if it needs to, and the log reports the size that actually came out rather than
+the one that was requested. The final side is capped at 3072 px: past that the
+model is outside its training scale and starts repeating patterns. Hitting the
+cap lowers the *factor*, never the framing, and says so.
+
+Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
+and points at `update-engine.bat` instead of silently producing a plain image.
 
 ### 🌱 Restore (SeedVR2 3B)
 Diffusion restoration/upscale using the standalone
@@ -694,8 +733,8 @@ subprocesses so torch DLLs never lock the UI process):
   license).
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
-- **Upscale (ESRGAN)**, **Restore (SeedVR2)** and **Creative upscale (SDXL)** —
-  see [Upscaling](#upscaling).
+- **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**
+  and **Creative upscale (SDXL)** — see [Upscaling](#upscaling).
 
 ### Prompt enhancer (AI)
 The **✨ Enhance prompt** button (in each generation tab) runs a small instruct

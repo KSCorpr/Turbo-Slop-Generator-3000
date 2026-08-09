@@ -76,5 +76,62 @@ class BuildUpscaleCmdTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--upscale-repeats") + 1], "2")
 
 
+class HiresArgsTests(unittest.TestCase):
+    """Passe HD native (`--hires`) : ce qu'on envoie réellement à sd-cli."""
+
+    def test_builtin_upscaler_needs_no_directory(self):
+        args = sdcpp.hires_args(sdcpp.HiresParams(
+            upscaler="Latent", upscalers_dir=Path("/ups"), tile_size=832))
+        self.assertIn("--hires", args)
+        self.assertNotIn("--hires-upscalers-dir", args)
+        # La tuile ne concerne que les agrandisseurs à MODÈLE.
+        self.assertNotIn("--hires-upscale-tile-size", args)
+
+    def test_model_upscaler_gets_directory_and_tile(self):
+        args = sdcpp.hires_args(sdcpp.HiresParams(
+            upscaler="4x_anime.gguf", upscalers_dir=Path("/ups"),
+            tile_size=832))
+        self.assertEqual(args[args.index("--hires-upscaler") + 1],
+                         "4x_anime.gguf")
+        self.assertEqual(args[args.index("--hires-upscalers-dir") + 1], "/ups")
+        self.assertEqual(args[args.index("--hires-upscale-tile-size") + 1],
+                         "832")
+
+    def test_explicit_target_wins_over_scale(self):
+        # Une taille explicite garantit que ce qu'on annonce est ce qu'on demande.
+        args = sdcpp.hires_args(sdcpp.HiresParams(
+            scale=2.0, target_width=2304, target_height=1792))
+        self.assertNotIn("--hires-scale", args)
+        self.assertEqual(args[args.index("--hires-width") + 1], "2304")
+        self.assertEqual(args[args.index("--hires-height") + 1], "1792")
+
+    def test_scale_used_when_no_target(self):
+        args = sdcpp.hires_args(sdcpp.HiresParams(scale=2.5))
+        self.assertEqual(args[args.index("--hires-scale") + 1], "2.5")
+        self.assertNotIn("--hires-width", args)
+
+    def test_gen_cmd_omits_hires_on_an_older_binary(self):
+        req = sdcpp.GenRequest(diffusion_model=Path("d.gguf"),
+                               hires=sdcpp.HiresParams())
+        with patch.object(sdcpp, "_require", lambda *a, **k: None), \
+             patch.object(sdcpp, "supported_options", return_value=frozenset()):
+            cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
+        self.assertNotIn("--hires", cmd)
+
+
+class HdAlignTests(unittest.TestCase):
+    def test_aligns_up_never_down(self):
+        from atelier.engine import generate as gen
+        self.assertEqual(gen._align_up(1000), 1008)
+        self.assertEqual(gen._align_up(1152), 1152)
+        # Les tailles produites par l'application ne bougent pas.
+        for v in (1184, 880, 1152, 896, 1248, 832, 752, 1024):
+            self.assertEqual(gen._align_up(v), v, v)
+
+    def test_never_returns_zero(self):
+        from atelier.engine import generate as gen
+        self.assertEqual(gen._align_up(1), gen.HD_ALIGN)
+
+
 if __name__ == "__main__":
     unittest.main()
