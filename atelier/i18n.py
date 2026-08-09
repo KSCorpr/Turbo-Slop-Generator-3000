@@ -113,7 +113,7 @@ _EN: dict[str, str] = {
     "Votre phrase ou thème": "Your sentence or theme",
     "un homme qui attend le bus devant un supermarché…":
         "a man waiting for the bus outside a supermarket…",
-    "📷 Générer les 3 photos": "📷 Generate the 3 photos",
+    "📷 Générer": "📷 Generate",
     "Écrivez une phrase ou un thème.": "Write a sentence or a theme.",
     "✨ Traduire et étoffer ma phrase (améliorateur IA)":
         "✨ Translate and flesh out my sentence (AI enhancer)",
@@ -121,16 +121,12 @@ _EN: dict[str, str] = {
         "Translates French to English and enriches the description, while respecting the fixed style.",
     "Améliorateur non installé — installez-le depuis un onglet de génération. Sans lui, écrivez en ANGLAIS : le style est un préfixe anglais, il ne traduit rien.":
         "Enhancer not installed — install it from a generation tab. Without it, write in ENGLISH: the style is an English prefix, it translates nothing.",
-    "Une graine fixe rejoue exactement la même série de 3 photos.":
-        "A fixed seed replays exactly the same series of 3 photos.",
-    "Les 3 photos": "The 3 photos",
+    "Une graine fixe rejoue exactement la même photo.":
+        "A fixed seed replays exactly the same photo.",
+    "Photo": "Photo",
     "⏳ Traduction et mise en forme de la phrase…":
         "⏳ Translating and shaping the sentence…",
-    "📷 Photo {n}/3 — {label}…": "📷 Photo {n}/3 — {label}…",
-    "❌ Échec sur la photo {n}/3 — voir le journal.":
-        "❌ Failed on photo {n}/3 — see the log.",
-    "✅ 3 photos générées (seeds {a} à {b})":
-        "✅ 3 photos generated (seeds {a} to {b})",
+    "✅ Photo générée (seed {s})": "✅ Photo generated (seed {s})",
     "⬆️ Mettre à jour le binaire (sans les modèles)":
         "⬆️ Update the binary (models untouched)",
     "⏳ Téléchargement du binaire trellis le plus récent…":

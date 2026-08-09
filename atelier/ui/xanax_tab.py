@@ -1,33 +1,22 @@
 """Onglets « Xanax » : le style est CODÉ EN DUR, il n'y a rien à régler.
 
-Transcription du system prompt Gemini de l'utilisateur. Contrairement aux
-onglets de génération classiques, il n'y a ici ni menu de préréglages, ni
-banques de styles, ni prompt système modifiable : le style est « fixe et non
-négociable », donc il n'est pas exposé. On écrit une phrase, on obtient trois
-photos.
+Transcription du system prompt Gemini de l'utilisateur, réduite à l'essentiel :
+une phrase en entrée, une image en sortie. Contrairement aux onglets de
+génération classiques, il n'y a ici ni menu de préréglages, ni banques de
+styles, ni prompt système modifiable — le style est « fixe et non négociable »,
+donc il n'est pas exposé.
 
-Trois points de traduction méritent d'être expliqués, parce qu'ils ne sont pas
-évidents en lisant le system prompt d'origine :
-
-1. **L'anti-collage vit dans le prompt POSITIF.** Le system prompt interdit les
-   collages/diptyques. Le réflexe serait de le mettre en négatif — sauf que les
-   deux modèles sont distillés à CFG 1.0 et *ignorent le prompt négatif*. La
-   consigne serait donc silencieusement perdue. Elle est intégrée au style.
-
-2. **« 3 images » = 3 GÉNÉRATIONS séparées**, jamais un batch. Un batch produit
-   trois variations du même cadrage ; le system prompt demande explicitement des
-   angles/distances/moments différents. Chaque image reçoit donc sa propre
-   directive de cadrage, et une graine différente.
-
-3. **La traduction FR→EN a besoin de l'améliorateur.** Le style est un préfixe
-   anglais collé devant le texte : à lui seul il ne traduit rien. Si
-   l'améliorateur est installé on s'en sert (avec le style en contrainte), sinon
-   on le dit clairement au lieu de laisser croire que ça marche.
+Un point mérite d'être explicité, parce qu'il surprend : **la traduction FR→EN
+a besoin de l'améliorateur**. Le style est un préfixe anglais collé devant le
+texte ; à lui seul il ne traduit rien. Si l'améliorateur est installé on s'en
+sert (avec le style transmis en contrainte, pour qu'il n'écrive rien qui le
+contredise) ; sinon on le dit clairement au lieu de laisser croire que ça marche.
 """
 from __future__ import annotations
 
 import queue
 import random
+import re
 import threading
 
 import gradio as gr
@@ -47,41 +36,25 @@ XANAX_STYLE = (
     "framing, ordinary unremarkable people going about their day, raw "
     "unstaged daily life, flat grey overcast daylight, dull mundane "
     "surroundings, clean untouched image straight out of the camera, no grain, "
-    "no filter, no post-processing, "
-    # Anti-collage : ici et pas en négatif — voir l'en-tête du module.
-    "a single standalone photograph, one single frame, "
-    "not a collage, not a diptych, not a triptych, not a split image"
+    "no filter, no post-processing"
 )
 
-# Les trois prises de vue. Même sujet, même scène : ce qui change est l'angle,
-# la distance, le cadrage et l'instant — c'est la demande du system prompt
-# (« cohérentes comme série, sans être identiques »).
-XANAX_SHOTS = [
-    ("Plan large",
-     "wide shot, subject small within its surroundings, plenty of ordinary "
-     "context around it, taken a few steps back"),
-    ("Plan moyen",
-     "medium shot at eye level, subject framed from the waist up or at "
-     "mid-distance, slightly off-centre and carelessly framed"),
-    ("Plan rapproché",
-     "closer tighter view on the same scene a moment later, focusing on one "
-     "detail of it, shot from a slightly different angle"),
-]
-
-# Format 4:3 imposé par le system prompt, sur la grille NATIVE de chaque modèle
-# (32 px pour Flux.2, 64 px pour Krea 2 — sortir de la grille dégrade le rendu).
+# Format 4:3 imposé par le brief, sur la grille NATIVE de chaque modèle (32 px
+# pour Flux.2, 64 px pour Krea 2 — sortir de la grille dégrade le rendu).
 XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896)}
+
+# Barres de progression de sd.cpp : converties en ligne de statut, jamais
+# écrites dans le journal (elles arrivent par centaines et le noient).
+_PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _size_for(family: str) -> tuple[int, int]:
     return XANAX_SIZE.get(family, (1184, 880))
 
 
-def _build_prompts(subject: str) -> list[tuple[str, str]]:
-    """(libellé du plan, prompt complet) pour les trois photos."""
-    base = (subject or "").strip().strip(",")
-    return [(label, f"{XANAX_STYLE}, {base}, {shot}".strip(", "))
-            for label, shot in XANAX_SHOTS]
+def build_prompt(subject: str) -> str:
+    """Le prompt réellement envoyé : le style figé, puis le sujet."""
+    return f"{XANAX_STYLE}, {(subject or '').strip().strip(',')}".strip(", ")
 
 
 def build_xanax_tab(model_id: str, title: str):
@@ -90,6 +63,7 @@ def build_xanax_tab(model_id: str, title: str):
     family = model.family if model else "flux2"
     d = dict(model.defaults) if model else {}
     width, height = _size_for(family)
+    steps = int(d.get("steps", 8) or 8)
 
     with gr.Tab(title):
         ready = model is not None and registry.model_is_ready(model)
@@ -97,8 +71,7 @@ def build_xanax_tab(model_id: str, title: str):
                        else t("○ à télécharger (onglet Catalogue de modèles)"))
         gr.Markdown(
             f"### {title} — {status_line}\n"
-            "Écrivez une phrase ou un thème. L'onglet produit **3 photos** de "
-            "la même scène, sous des angles et des cadrages différents.\n\n"
+            "Écrivez une phrase ou un thème, vous obtenez **une photo**.\n\n"
             "**Le style est figé et non modifiable** : photo amateur, France "
             "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
             f"format 4:3 ({width}×{height}). C'est le principe de cet onglet — "
@@ -112,8 +85,8 @@ def build_xanax_tab(model_id: str, title: str):
                     placeholder="un homme qui attend le bus devant un "
                                 "supermarché…")
                 with gr.Row(elem_classes="go-row"):
-                    run = gr.Button("📷 Générer les 3 photos",
-                                    variant="primary", size="lg", scale=4)
+                    run = gr.Button("📷 Générer", variant="primary",
+                                    size="lg", scale=4)
                     stop = gr.Button("⏹️ Stop", variant="stop", scale=1,
                                      min_width=90)
                 status = gr.Markdown("")
@@ -130,11 +103,11 @@ def build_xanax_tab(model_id: str, title: str):
                 seed = gr.Number(value=-1, precision=0,
                                  label="Seed (-1 = aléatoire)",
                                  info="Une graine fixe rejoue exactement la "
-                                      "même série de 3 photos.")
+                                      "même photo.")
             with gr.Column(scale=4):
-                gallery = gr.Gallery(label="Les 3 photos", columns=3,
-                                     height=460, object_fit="contain",
-                                     show_download_button=True)
+                result = gr.Image(label="Photo", type="filepath", height=460,
+                                  format="png", show_download_button=True)
+                used_md = gr.Markdown("", elem_classes="hint")
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
@@ -152,12 +125,9 @@ def build_xanax_tab(model_id: str, title: str):
             logs: list[str] = []
             text = subject.strip()
 
-            # Traduction/étoffement AVANT de fabriquer les trois prompts : les
-            # trois photos doivent décrire le MÊME sujet, sinon la série perd
-            # sa cohérence.
             if use_enhance and tools.enhance_is_installed():
                 yield (t("⏳ Traduction et mise en forme de la phrase…"),
-                       gr.update(), "\n".join(logs))
+                       gr.update(), gr.update(), "\n".join(logs))
                 try:
                     out = tools.enhance_prompt_variants(
                         text, style=("krea2" if family == "krea2" else "generic"),
@@ -165,64 +135,66 @@ def build_xanax_tab(model_id: str, title: str):
                         style_constraint=XANAX_STYLE, log=logs.append)
                     if out and out[0].strip():
                         text = out[0].strip()
-                        logs.append(f"Sujet retenu : {text}")
                 except Exception as exc:  # noqa: BLE001
                     # Un échec de l'améliorateur ne doit pas empêcher de générer.
                     logs.append(f"[améliorateur indisponible] {exc}")
 
-            shots = _build_prompts(text)
-            results: list = []
+            full_prompt = build_prompt(text)
+            q: "queue.Queue[str | None]" = queue.Queue()
+            state: dict = {}
 
-            for i, (label, full_prompt) in enumerate(shots):
-                q: "queue.Queue[str | None]" = queue.Queue()
-                state: dict = {}
-                shot_seed = base_seed + i
+            def worker():
+                try:
+                    outs = gen_engine.generate(
+                        model_id=model_id, prompt=full_prompt, negative="",
+                        steps=steps,
+                        cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
+                        width=width, height=height, seed=base_seed,
+                        batch_count=1, sampler=d.get("sampler") or "euler",
+                        schedule=("" if d.get("scheduler") in (None, "", "auto")
+                                  else d["scheduler"]),
+                        log=q.put)
+                    state["outs"] = [str(p) for p in outs]
+                except Exception as exc:  # noqa: BLE001
+                    state["err"] = str(exc)
+                finally:
+                    q.put(None)
 
-                def worker(p=full_prompt, s=shot_seed, qq=q, st=state):
-                    try:
-                        outs = gen_engine.generate(
-                            model_id=model_id, prompt=p, negative="",
-                            steps=int(d.get("steps", 8) or 8),
-                            cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
-                            width=width, height=height, seed=s, batch_count=1,
-                            sampler=d.get("sampler") or "euler",
-                            schedule=("" if d.get("scheduler") in
-                                      (None, "", "auto") else d["scheduler"]),
-                            log=qq.put)
-                        st["outs"] = [str(x) for x in outs]
-                    except Exception as exc:  # noqa: BLE001
-                        st["err"] = str(exc)
-                    finally:
-                        qq.put(None)
-
-                threading.Thread(target=worker, daemon=True).start()
-                logs.append(f"\n── Photo {i + 1}/3 — {label} (seed {shot_seed})")
-                yield (t("📷 Photo {n}/3 — {label}…").format(n=i + 1,
-                                                            label=label),
-                       gr.update(), "\n".join(logs[-400:]))
-                while True:
-                    line = q.get()
-                    if line is None:
-                        break
-                    logs.append(line)
-                    yield gr.update(), gr.update(), "\n".join(logs[-400:])
-
-                if "err" in state or not state.get("outs"):
-                    logs.append(f"[ERREUR] {state.get('err', 'aucune image')}")
-                    yield (t("❌ Échec sur la photo {n}/3 — voir le "
-                             "journal.").format(n=i + 1),
-                           gr.update(value=results), "\n".join(logs[-400:]))
-                    return
-                # Le prompt accompagne l'image, comme demandé par la consigne
-                # « écris le prompt après chaque image ».
-                results.append((state["outs"][0], f"{label} — {full_prompt}"))
-                yield (gr.update(), gr.update(value=results),
+            threading.Thread(target=worker, daemon=True).start()
+            step_re = re.compile(rf"(\d+)\s*/\s*{steps}\b")
+            logs.append(f"Seed : {base_seed}")
+            logs.append(f"Prompt : {full_prompt}")
+            yield (t("⏳ Chargement du modèle…"), gr.update(), gr.update(),
+                   "\n".join(logs))
+            while True:
+                line = q.get()
+                if line is None:
+                    break
+                mt = step_re.search(line)
+                if mt:
+                    yield (t("🎨 Étape {cur}/{total}").format(
+                        cur=min(int(mt.group(1)), steps), total=steps),
+                        gr.update(), gr.update(), "\n".join(logs[-400:]))
+                    continue
+                if _PROGRESS_BAR.search(line) or "\x1b" in line:
+                    continue
+                logs.append(line)
+                yield (gr.update(), gr.update(), gr.update(),
                        "\n".join(logs[-400:]))
 
-            yield (t("✅ 3 photos générées (seeds {a} à {b})").format(
-                a=base_seed, b=base_seed + 2),
-                gr.update(value=results), "\n".join(logs[-400:]))
+            if "err" in state or not state.get("outs"):
+                logs.append(f"\n[ERREUR] {state.get('err', 'aucune image')}")
+                yield (t("❌ Échec — voir le journal."), gr.update(),
+                       gr.update(), "\n".join(logs[-400:]))
+                return
+
+            # Le prompt accompagne l'image, comme demandé par la consigne
+            # « écris le prompt après chaque image ».
+            yield (t("✅ Photo générée (seed {s})").format(s=base_seed),
+                   gr.update(value=state["outs"][0]),
+                   gr.update(value=f"**Prompt utilisé :** {full_prompt}"),
+                   "\n".join(logs[-400:]))
 
         evt = run.click(do_xanax, inputs=[prompt, enhance, seed],
-                        outputs=[status, gallery, log])
+                        outputs=[status, result, used_md, log])
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])
