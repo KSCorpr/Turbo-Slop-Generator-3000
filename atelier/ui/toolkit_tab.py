@@ -359,10 +359,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                     "- **c'est votre modèle** qui redessine, pas un SDXL de "
                     "2023 : le détail ajouté reste dans le style que le modèle "
                     "connaît déjà.\n\n"
-                    "En échange il faut charger le modèle de diffusion (donc de "
-                    "la VRAM), et le côté final est plafonné : au-delà, le "
-                    "modèle sort de son échelle d'entraînement et se met à "
-                    "répéter des motifs.")
+                    "En échange, **c'est gourmand en VRAM** : refuser les "
+                    "tuiles a un prix. Le second passage réserve un tampon "
+                    "proportionnel au nombre de pixels, **qui s'ajoute aux "
+                    "poids du modèle** déjà sur la carte. Le facteur est donc "
+                    "budgété selon votre VRAM et la taille de votre modèle, et "
+                    "réduit tout seul si ça ne tient pas — le journal annonce "
+                    "la valeur retenue. Sur 11–12 Go avec un modèle en Q5, "
+                    "comptez ×1,25 à ×1,5 ; une quantification plus légère "
+                    "achète du facteur.")
 
                 _hd_models = [(m.name, m.id)
                               for m in registry.load_base_models(
@@ -383,7 +388,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                             value=(_hd_models[0][1] if _hd_models else None),
                             label="Modèle de génération")
                         hd_scale = gr.Slider(
-                            1.5, 3.0, value=2.0, step=0.25,
+                            1.25, 3.0, value=2.0, step=0.25,
                             label="Facteur d'agrandissement",
                             info="Le côté final est plafonné : au-delà, le "
                                  "facteur est réduit automatiquement et le "

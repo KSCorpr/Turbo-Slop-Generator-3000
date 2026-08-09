@@ -557,6 +557,27 @@ the one that was requested. The final side is capped at 3072 px: past that the
 model is outside its training scale and starts repeating patterns. Hitting the
 cap lowers the *factor*, never the framing, and says so.
 
+**VRAM is the real limit here, not the side length.** Refusing to tile has a
+price: the second pass allocates a compute buffer proportional to the pixel
+count, *on top of* the model weights already resident on the card. A measured
+example — Krea 2 at 2304×1792 (4.13 Mpx) asks for a 4.62 GiB buffer while 8.4 GB
+of weights are loaded: 13 GB total, which no 11–12 GB card can serve. So the
+factor is budgeted rather than capped by a magic number: usable VRAM minus the
+diffusion file's size on disk, divided by ~1200 bytes per pixel (the constant
+comes from that same failure). Concretely, with Krea 2 at **Q5_K_M** (8.4 GB) an
+11 GB card tops out near **×1.25** and a 12 GB card near **×1.5**; dropping to
+**Q4_K_M** restores a full **×2** on 12 GB. A lighter quantization buys HD
+factor.
+
+That budget is only an estimate, so it is not the safety net. **An out-of-memory
+failure is caught, the factor is stepped down 20% and the run is retried** (twice
+at most), and the log states what it settled on. sd-cli failures are now typed:
+only a genuine VRAM error is retried, because it is the only one where trying
+something smaller can succeed — everything else would fail identically. When even
+the smallest attempt fails, the message names the two ways out (lower the factor,
+or use the tiled ESRGAN → SDXL path, which fits in far less VRAM) instead of the
+old bare "sd-cli exited with code 1".
+
 Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
 and points at `update-engine.bat` instead of silently producing a plain image.
 

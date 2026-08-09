@@ -459,10 +459,15 @@ _EN: dict[str, str] = {
     "- **c'est votre modèle** qui redessine, pas un SDXL de "
     "2023 : le détail ajouté reste dans le style que le modèle "
     "connaît déjà.\n\n"
-    "En échange il faut charger le modèle de diffusion (donc de "
-    "la VRAM), et le côté final est plafonné : au-delà, le "
-    "modèle sort de son échelle d'entraînement et se met à "
-    "répéter des motifs.":
+    "En échange, **c'est gourmand en VRAM** : refuser les "
+    "tuiles a un prix. Le second passage réserve un tampon "
+    "proportionnel au nombre de pixels, **qui s'ajoute aux "
+    "poids du modèle** déjà sur la carte. Le facteur est donc "
+    "budgété selon votre VRAM et la taille de votre modèle, et "
+    "réduit tout seul si ça ne tient pas — le journal annonce "
+    "la valeur retenue. Sur 11–12 Go avec un modèle en Q5, "
+    "comptez ×1,25 à ×1,5 ; une quantification plus légère "
+    "achète du facteur.":
         "**Native sd.cpp HD pass**: the image is enlarged, then "
         "**re-denoised as a whole** by your generation model (Krea 2, "
         "Flux.2). All in **a single command**, 100% GPU, no PyTorch.\n\n"
@@ -472,9 +477,13 @@ _EN: dict[str, str] = {
         "squares;\n"
         "- **your model** does the redrawing, not a 2023 SDXL: the added "
         "detail stays in the style the model already knows.\n\n"
-        "In exchange the diffusion model has to be loaded (so, VRAM), and the "
-        "final side is capped: beyond it the model leaves the scale it was "
-        "trained on and starts repeating patterns.",
+        "In exchange, **it is VRAM-hungry**: refusing to tile has a price. The "
+        "second pass allocates a buffer proportional to the pixel count, "
+        "**on top of the model weights** already on the card. The factor is "
+        "therefore budgeted from your VRAM and your model's size, and lowered "
+        "on its own if it does not fit — the log states the value it settled "
+        "on. On 11–12 GB with a Q5 model, expect ×1.25 to ×1.5; a lighter "
+        "quantization buys factor.",
     "> ⚠️ **Aucun modèle de génération installé.** "
     "Téléchargez Krea 2 Turbo ou Flux.2 Klein depuis "
     "l'onglet « Catalogue de modèles », puis revenez ici.":

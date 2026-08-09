@@ -119,6 +119,75 @@ class HiresArgsTests(unittest.TestCase):
         self.assertNotIn("--hires", cmd)
 
 
+class OomDiagnosisTests(unittest.TestCase):
+    """Un OOM doit être RECONNU comme tel : c'est le seul échec qu'on retente."""
+
+    REAL_LOG = [
+        "ggml_backend_cuda_buffer_type_alloc_buffer: allocating 4731.82 MiB "
+        "on device 0: cudaMalloc failed: out of memory",
+        "ggml_gallocr_reserve_n_impl: failed to allocate CUDA0 buffer of size "
+        "4961670528",
+        "krea2: failed to allocate the compute buffer",
+        "hires sampling for image 1/1 failed after 1.63s",
+    ]
+
+    def test_recognised_and_typed(self):
+        from collections import deque
+        err = sdcpp._failure_error(1, ["sd-cli", "--hires"],
+                                   deque(self.REAL_LOG))
+        self.assertIsInstance(err, sdcpp.VramError)
+        # La taille manquante est citée : c'est ce qui rend le message utile.
+        self.assertIn("4.6 Go", str(err))
+
+    def test_hires_gets_its_own_advice(self):
+        from collections import deque
+        hires = str(sdcpp._failure_error(1, ["sd-cli", "--hires"],
+                                        deque(self.REAL_LOG)))
+        plain = str(sdcpp._failure_error(1, ["sd-cli"], deque(self.REAL_LOG)))
+        self.assertIn("facteur d'agrandissement", hires)
+        self.assertIn("quantification", plain)
+
+    def test_other_failures_stay_plain_engine_errors(self):
+        from collections import deque
+        err = sdcpp._failure_error(1, ["sd-cli"], deque(["something else"]))
+        self.assertIsInstance(err, sdcpp.EngineError)
+        self.assertNotIsInstance(err, sdcpp.VramError)
+
+
+class HdBudgetTests(unittest.TestCase):
+    """Le budget en pixels de la passe HD : VRAM moins les poids du modèle."""
+
+    def _model(self, weights_gb):
+        from atelier.engine import generate as gen
+        m = object()
+        self._patch = patch.object(
+            gen, "_weights_bytes",
+            lambda _m, gb=weights_gb: int(gb * 1024 ** 3))
+        return m
+
+    def test_lighter_weights_buy_more_pixels(self):
+        from atelier.engine import generate as gen
+        m = self._model(8.2)
+        with self._patch:
+            tight = gen.hd_pixel_budget(m, 12.0)
+        self._model(6.3)
+        with self._patch:
+            roomy = gen.hd_pixel_budget(m, 12.0)
+        self.assertGreater(roomy, tight)
+
+    def test_unknown_vram_means_no_cap(self):
+        from atelier.engine import generate as gen
+        self.assertEqual(gen.hd_pixel_budget(object(), None), 0)
+
+    def test_weights_bigger_than_vram_means_no_cap(self):
+        # Rien à budgéter : on laisse la reprise automatique trancher plutôt
+        # que d'inventer une taille.
+        from atelier.engine import generate as gen
+        m = self._model(20.0)
+        with self._patch:
+            self.assertEqual(gen.hd_pixel_budget(m, 11.0), 0)
+
+
 class HdAlignTests(unittest.TestCase):
     def test_aligns_up_never_down(self):
         from atelier.engine import generate as gen

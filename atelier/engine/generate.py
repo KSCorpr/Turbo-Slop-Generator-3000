@@ -346,14 +346,72 @@ def _align_up(v: int, step: int = HD_ALIGN) -> int:
 
 # Plafond de côté pour la passe HD. Au-delà, le second débruitage se fait sur
 # une image que le modèle n'a jamais vue à cette échelle : il se met à répéter
-# des motifs (« doublons »), et la VRAM part en vrille.
+# des motifs (« doublons »).
 HD_MAX_SIDE = 3072
+
+# --------------------------------------------------------------------------- #
+#  Budget mémoire de la passe HD.
+#
+#  Le second débruitage porte sur l'image ENTIÈRE : son tampon de calcul est
+#  proportionnel au nombre de pixels, et il s'AJOUTE aux poids du modèle déjà
+#  résidents sur la carte. C'est ce cumul qui déborde, pas la taille seule —
+#  d'où un budget calculé, et non un plafond fixe en pixels.
+#
+#  La constante ci-dessous vient d'un OOM réel de sd.cpp : Krea 2 en 2304×1792
+#  (4,13 Mpx) a réclamé un tampon de 4961670528 octets, soit ~1200 octets par
+#  pixel. C'est un ordre de grandeur, pas une loi — il dépend du modèle et de la
+#  version du moteur. Le vrai filet de sécurité est la reprise automatique en
+#  plus petit, qui, elle, ne dépend d'aucune estimation.
+# --------------------------------------------------------------------------- #
+HD_COMPUTE_BYTES_PER_PX = 1200
+
+# Fraction de la VRAM qu'on s'autorise (le reste : contexte CUDA, bureau,
+# fragmentation).
+HD_VRAM_USABLE = 0.90
+
+# Réduction linéaire appliquée à chaque nouvelle tentative après un OOM.
+# 0,8 en côté = 0,64 en pixels : assez pour changer le résultat, assez peu pour
+# ne pas sacrifier l'agrandissement dès le premier échec.
+HD_RETRY_FACTOR = 0.8
+HD_MAX_RETRIES = 2
 
 # Débruitage du PREMIER passage (img2img avant l'agrandissement). sd.cpp calcule
 # t_enc = pas × force : à 0,15 sur 8 pas ça fait un seul pas, à très bas sigma —
 # l'image d'origine est pratiquement recopiée. On ne peut pas le supprimer (la
 # passe HD s'accroche derrière une génération), alors on le rend négligeable.
 HD_FIRST_PASS_STRENGTH = 0.15
+
+
+def _weights_bytes(model: registry.BaseModel) -> int:
+    """Taille sur disque des poids qui atterrissent sur le GPU.
+
+    Approximation volontairement grossière — mais mesurée, pas devinée : un
+    GGUF occupe en VRAM à peu près sa taille de fichier. On ne compte QUE la
+    diffusion : l'encodeur de texte est déchargé en RAM, et le VAE est
+    négligeable devant le reste.
+    """
+    for role in ("diffusion", "model"):
+        p = _component(model, role)
+        if p is not None:
+            try:
+                return Path(p).stat().st_size
+            except OSError:
+                pass
+    return 0
+
+
+def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None) -> int:
+    """Nombre de pixels que la passe HD peut viser sur cette carte.
+
+    0 = inconnu (pas de GPU détecté) : on ne plafonne pas, on laisse la reprise
+    automatique faire le travail plutôt que d'inventer une limite.
+    """
+    if not vram_gb:
+        return 0
+    free = vram_gb * (1024 ** 3) * HD_VRAM_USABLE - _weights_bytes(model)
+    if free <= 0:
+        return 0
+    return max(512 * 512, int(free / HD_COMPUTE_BYTES_PER_PX))
 
 
 def hd_upscale(model_id: str, image, scale: float = 2.0,
@@ -400,52 +458,82 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     # d'entrée pour le premier passage.
     bw, bh = _align_up(ow), _align_up(oh)
 
-    # Plafond : on réduit le FACTEUR plutôt que de rogner l'image, pour que le
-    # cadrage demandé soit toujours celui rendu.
+    # Deux plafonds, et on réduit toujours le FACTEUR plutôt que de rogner :
+    # le cadrage demandé doit rester celui qui sort.
+    #   1. le côté, au-delà duquel le modèle quitte son échelle d'entraînement ;
+    #   2. le nombre de PIXELS que la VRAM peut porter — c'est celui qui mord en
+    #      pratique, parce que le tampon du second débruitage s'ajoute aux poids.
     scale = float(scale)
+    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    vram = prof.gpu.vram_gb if prof.gpu else None
     if max(bw, bh) * scale > HD_MAX_SIDE:
         scale = max(1.25, HD_MAX_SIDE / max(bw, bh))
         if log:
             log(f"[hd] facteur ramené à ×{scale:.2f} pour rester sous "
                 f"{HD_MAX_SIDE} px de côté.")
-    tw, th = _align_up(bw * scale), _align_up(bh * scale)
+    budget = hd_pixel_budget(model, vram)
+    if budget and bw * bh * scale * scale > budget:
+        scale = max(1.25, (budget / (bw * bh)) ** 0.5)
+        if log:
+            log(f"[hd] facteur ramené à ×{scale:.2f} : au-delà, le tampon du "
+                f"second débruitage ne tient pas dans {vram:.0f} Go de VRAM "
+                "avec ce modèle chargé.")
 
     d = dict(model.defaults)
     base_steps = int(steps or d.get("steps", 8) or 8)
-    prof = hardware.auto_profile(prefs.get("gpu_index"))
-    hires = sdcpp.HiresParams(
-        scale=scale, upscaler=upscaler or "Latent",
-        upscalers_dir=registry.upscalers_dir(),
-        denoise=float(denoise), steps=int(hd_steps or 0),
-        target_width=tw, target_height=th,
-        # Ne sert que si l'agrandisseur intermédiaire est un ESRGAN : même
-        # correction de tuilage que pour l'agrandissement simple.
-        tile_size=sdcpp.upscale_tile_size(
-            tw, th, prof.gpu.vram_gb if prof.gpu else None))
-    if log:
-        log(f"HD « {model.name} » : {ow}×{oh} → {tw}×{th} (×{scale:.2f}), "
-            f"agrandisseur « {hires.upscaler} », détail {denoise:g}.")
-        log("[hd] second débruitage sur l'image ENTIÈRE : pas de tuiles, donc "
-            "pas de couture possible.")
-    outs = generate(
-        model_id=model_id, prompt=prompt, negative=negative,
-        steps=base_steps,
-        cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
-        width=bw, height=bh, seed=seed, batch_count=1,
-        sampler=d.get("sampler") or "euler",
-        schedule=("" if d.get("scheduler") in (None, "", "auto")
-                  else d["scheduler"]),
-        init_image=src, strength=HD_FIRST_PASS_STRENGTH,
-        preview_path=preview_path, hires=hires, log=log)
-    # Taille RÉELLE : sd.cpp peut avoir arrondi au-dessus de notre demande pour
-    # tomber sur son propre multiple. Autant lire le résultat que d'affirmer
-    # une taille qu'on n'a pas vérifiée.
-    if log and outs:
+
+    def _attempt(sc: float) -> list[Path]:
+        tw, th = _align_up(bw * sc), _align_up(bh * sc)
+        hires = sdcpp.HiresParams(
+            scale=sc, upscaler=upscaler or "Latent",
+            upscalers_dir=registry.upscalers_dir(),
+            denoise=float(denoise), steps=int(hd_steps or 0),
+            target_width=tw, target_height=th,
+            # Ne sert que si l'agrandisseur intermédiaire est un ESRGAN : même
+            # correction de tuilage que pour l'agrandissement simple.
+            tile_size=sdcpp.upscale_tile_size(tw, th, vram))
+        if log:
+            log(f"HD « {model.name} » : {ow}×{oh} → {tw}×{th} (×{sc:.2f}), "
+                f"agrandisseur « {hires.upscaler} », détail {denoise:g}.")
+            log("[hd] second débruitage sur l'image ENTIÈRE : pas de tuiles, "
+                "donc pas de couture possible.")
+        got = generate(
+            model_id=model_id, prompt=prompt, negative=negative,
+            steps=base_steps,
+            cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
+            width=bw, height=bh, seed=seed, batch_count=1,
+            sampler=d.get("sampler") or "euler",
+            schedule=("" if d.get("scheduler") in (None, "", "auto")
+                      else d["scheduler"]),
+            init_image=src, strength=HD_FIRST_PASS_STRENGTH,
+            preview_path=preview_path, hires=hires, log=log)
+        # Taille RÉELLE : sd.cpp peut avoir arrondi au-dessus de notre demande
+        # pour tomber sur son propre multiple. Autant lire le résultat que
+        # d'affirmer une taille qu'on n'a pas vérifiée.
+        if log and got:
+            try:
+                with Image.open(got[0]) as res:
+                    if res.size != (tw, th):
+                        log(f"[hd] taille finale réelle : {res.width}×"
+                            f"{res.height} (aligné par sd.cpp).")
+            except OSError:
+                pass
+        return got
+
+    # Reprise automatique sur manque de VRAM. Le budget calculé plus haut n'est
+    # qu'une estimation ; ceci est la mesure. Un OOM est le seul échec qui vaille
+    # une nouvelle tentative — tout le reste échouerait à l'identique.
+    for attempt in range(HD_MAX_RETRIES + 1):
         try:
-            with Image.open(outs[0]) as res:
-                if res.size != (tw, th):
-                    log(f"[hd] taille finale réelle : {res.width}×{res.height} "
-                        "(sd.cpp a aligné sur son propre multiple).")
-        except OSError:
-            pass
-    return outs
+            return _attempt(scale)
+        except sdcpp.VramError:
+            last = scale
+            if sdcpp.was_cancelled() or attempt == HD_MAX_RETRIES:
+                raise
+            scale = max(1.25, scale * HD_RETRY_FACTOR)
+            if scale >= last:
+                raise      # plancher atteint : insister ne changerait rien
+            if log:
+                log(f"[hd] VRAM insuffisante à ×{last:.2f} → nouvelle tentative "
+                    f"à ×{scale:.2f}.")
+    raise sdcpp.EngineError("La passe HD n'a produit aucune image.")

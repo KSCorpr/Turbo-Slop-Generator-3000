@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 import time
@@ -15,6 +16,14 @@ from .. import settings
 
 class EngineError(RuntimeError):
     pass
+
+
+class VramError(EngineError):
+    """Échec par manque de mémoire GPU.
+
+    Distinguée du reste parce que c'est le SEUL échec qu'il vaille la peine de
+    retenter : à l'identique il se reproduirait, mais en plus petit il peut
+    passer. Les appelants qui savent réduire (la passe HD) s'appuient dessus."""
 
 
 # Registre des process sd-cli en cours, pour pouvoir les annuler.
@@ -141,7 +150,6 @@ def supported_options(sd_cli: Path | None) -> frozenset:
         return frozenset()
     if key in _OPTS_CACHE:
         return _OPTS_CACHE[key]
-    import re
     text = ""
     try:
         # -h sort parfois sur stderr et/ou avec un code de retour non nul.
@@ -451,16 +459,55 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
     if _CANCELLED:
         raise EngineError("Interrompu par l'utilisateur.")
     if code != 0:
-        raise EngineError(_diagnose_failure(code, cmd, tail))
+        raise _failure_error(code, cmd, tail)
+
+
+_OOM_MARKERS = ("cudaMalloc failed: out of memory",
+                "failed to allocate the compute buffer",
+                "alloc compute buffer failed",
+                "ggml_gallocr_reserve_n_impl: failed to allocate",
+                "out of memory")
+
+# « allocating 4731.82 MiB on device 0 » → on récupère la taille demandée pour
+# pouvoir la citer : c'est le chiffre qui rend le message actionnable.
+_OOM_SIZE = re.compile(r"allocating\s+([\d.]+)\s*MiB")
+
+
+def _failure_error(code: int, cmd: list[str],
+                   tail: "deque[str]") -> EngineError:
+    """Exception TYPÉE pour un échec de sd-cli.
+
+    Le type porte l'information « on peut réessayer plus petit » ; le message
+    porte l'explication pour l'utilisateur. Les deux séparément, plutôt qu'un
+    marqueur planqué dans le texte que le premier reformatage effacerait.
+    """
+    if any(m in ln for ln in tail for m in _OOM_MARKERS):
+        want = ""
+        for ln in reversed(tail):
+            m = _OOM_SIZE.search(ln)
+            if m:
+                want = (f" Il manquait un bloc de "
+                        f"{float(m.group(1)) / 1024:.1f} Go.")
+                break
+        return VramError(
+            "❌ Mémoire GPU insuffisante." + want + "\n"
+            + ("La passe HD re-débruite l'image ENTIÈRE : son coût grimpe avec "
+               "le nombre de pixels, et s'ajoute aux poids du modèle déjà sur "
+               "la carte.\n"
+               "→ Baissez le facteur d'agrandissement, ou passez par "
+               "« 🔼 Agrandir (ESRGAN) » puis « ✨ Upscale créatif (SDXL) », "
+               "qui travaille par tuiles et tient dans beaucoup moins de VRAM."
+               if "--hires" in cmd else
+               "→ Réduisez la résolution, ou choisissez une quantification plus "
+               "légère dans Réglages (le modèle occupera moins de VRAM)."))
+    return EngineError(_diagnose_failure(code, cmd, tail))
 
 
 def _diagnose_failure(code: int, cmd: list[str], tail: "deque[str]") -> str:
     """Transforme un code de sortie brut de sd-cli en message actionnable.
 
-    Le cas le plus fréquent est l'assert GGML de reshape (`ggml_nelements(a) ==
-    ne0*ne1*ne2`) : dimensions de tenseur incompatibles. Avec un LoRA, c'est
-    quasi toujours un LoRA entraîné pour une autre base (ex. Krea 2 « full » vs
-    Turbo) ; sinon c'est une résolution qui ne respecte pas la grille du modèle.
+    L'assert GGML de reshape — dimensions de tenseur incompatibles — est presque
+    toujours un LoRA entraîné pour une autre base, ou une résolution hors grille.
     """
     reshape_assert = any("GGML_ASSERT(ggml_nelements(a) ==" in ln for ln in tail)
     if reshape_assert:
