@@ -485,6 +485,25 @@ no prompt**. One-click downloads **all** models from
 model (×2/×4 depending on its name); **Repeat ×2** chains two passes (a ×2 model
 twice = ×4). Best for a clean, faithful enlargement.
 
+**Tile size — where ESRGAN artifacts actually come from.** sd.cpp runs the RRDB
+network on **128 px tiles** by default (25% overlap, smootherstep blend). A RRDB
+decides how hard to sharpen from what it can see, and on 128 px it sees almost
+nothing: two neighbouring tiles treat the same line differently. The feather
+softens the seam but cannot reconcile two contradictory decisions — that is the
+micro-staircasing on diagonals and the grain that changes character from square
+to square. The app therefore sizes the tile itself, from your VRAM (1024 px at
+16 GB+, 832 at 11 GB, 640 at 8 GB, 512 otherwise) and, when the image fits under
+that cap, asks for **a tile at least as large as the image** — sd.cpp then takes
+its untiled path and there is no seam at all, by construction. If the wider tile
+runs out of memory the run is retried once at sd.cpp's 128 px and the log says
+so. On an older `sd-cli` that predates `--upscale-tile-size`, the option is
+simply not sent and the log tells you to update the engine.
+
+**Repeating is worse than it looks.** Chaining passes runs the network on its
+*own output*: pass 2 mistakes the high frequencies pass 1 invented for real
+detail and sharpens them again, turning mild ringing into hard stair-steps. A ×4
+model always beats a ×2 model run twice.
+
 **Line art, comics and illustration.** The model matters more than the settings.
 Photo-trained models (Remacri, Nomos, UltraSharp…) learned natural texture: on a
 flat colour area they hallucinate grain, and along a clean ink line they ring.
@@ -530,13 +549,16 @@ Controls:
   **VAE** choice: external fp16-fix (recommended, avoids black images) or the
   checkpoint's **built-in VAE**.
 - **Pre-upscale** — base enlargement before the SDXL tile refine: **Lanczos**
-  (default) or any installed **ESRGAN** model (sharper, real detail). The number
-  of ESRGAN passes is **computed from the target**: a ×2 model asked for a ×4
-  result runs twice, because landing *below* the target would force the runner to
-  finish in Lanczos — reintroducing exactly the blur the ESRGAN was there to
-  avoid. Overshooting is harmless (the following downscale is sharp), so passes
-  are only capped by an 8192 px ceiling on the intermediate image; when that
-  ceiling stops it short, the log says so instead of quietly going soft.
+  (default) or any installed **ESRGAN** model (sharper, real detail). It runs
+  **exactly one pass, never two**. Chaining is what manufactures the artifacts
+  and aliasing this pass is supposed to avoid, and a soft base is the cheaper
+  mistake: SDXL's refine puts detail back onto a soft base, but it *freezes*
+  stair-stepped edges instead of fixing them. So when the model's factor falls
+  short of the target the runner finishes in Lanczos and the log says so — and
+  when the factor **overshoots** (a ×4 model for a ×2 target) the downscale that
+  follows is free supersampling, which is the cleanest case available. Picking a
+  pre-upscaler whose factor is *above* your target is the single best setting
+  here.
 - **Presets** — a dropdown that sets **the whole recipe**, not just a prompt:
   prompt, negative prompt, creativity, CFG, steps, structure locking and
   pre-upscaler. A line under the menu states what it just applied. See

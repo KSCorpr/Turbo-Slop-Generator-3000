@@ -39,6 +39,14 @@ def cancel_active() -> str:
     return "⏹️ Génération annulée."
 
 
+def was_cancelled() -> bool:
+    """Le dernier `run()` s'est-il arrêté parce que l'utilisateur a annulé ?
+
+    Sert aux appelants qui réessaient après un échec : une annulation ne doit
+    évidemment pas déclencher une nouvelle tentative."""
+    return _CANCELLED
+
+
 @dataclass
 class GenRequest:
     diffusion_model: Path | None = None   # modèle de diffusion seul (GGUF flow)
@@ -282,18 +290,63 @@ def build_convert_cmd(sd_cli: Path, input_model: Path, output_model: Path,
             "-o", str(output_model), "--type", qtype, "-v"]
 
 
+# Taille de tuile de l'upscaler ESRGAN, par défaut dans sd.cpp : 128 px.
+#
+# C'est la cause principale des artefacts et de l'aliasing d'un agrandissement
+# ESRGAN. sd.cpp découpe l'image en tuiles de 128 px (recouvrement 25%, fondu
+# smootherstep) et fait tourner le réseau RRDB sur chaque tuile SÉPARÉMENT. Un
+# RRDB décide de son accentuation d'après le contenu qu'il voit : sur 128 px il
+# ne voit presque rien, donc deux tuiles voisines traitent le même trait
+# différemment. Le fondu adoucit la couture mais ne recolle pas deux décisions
+# contradictoires — d'où les micro-marches sur les diagonales et le grain qui
+# change de nature d'un carré à l'autre.
+#
+# La correction est de laisser le réseau voir l'image entière (ou de très
+# grandes tuiles). Coût : de la VRAM, d'où le plafond par carte ci-dessous.
+SDCPP_DEFAULT_UPSCALE_TILE = 128
+
+# (VRAM minimale en Go, tuile maximale en px). Volontairement prudent : un OOM
+# est pire qu'un artefact, et un repli automatique existe de toute façon.
+_UPSCALE_TILE_BY_VRAM = ((16, 1024), (11, 832), (8, 640), (0, 512))
+
+
+def upscale_tile_size(width: int, height: int,
+                      vram_gb: float | None = None) -> int:
+    """Tuile ESRGAN à demander pour une image de `width`×`height`.
+
+    Renvoie `max(width, height)` quand l'image tient sous le plafond de la carte
+    — sd.cpp prend alors son chemin SANS découpage (`tile_size <= 0 ||
+    l'image tient dans la tuile`), c'est-à-dire zéro couture par construction.
+    Sinon on renvoie le plafond : moins de tuiles, plus de contexte, donc moins
+    d'artefacts qu'avec les 128 px d'origine.
+    """
+    cap = 512
+    if vram_gb:
+        cap = next(px for gb, px in _UPSCALE_TILE_BY_VRAM if vram_gb >= gb)
+    longest = max(int(width or 0), int(height or 0), 1)
+    return longest if longest <= cap else cap
+
+
 def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
                       output: Path, repeats: int = 1,
-                      offload: bool = True) -> list[str]:
+                      offload: bool = True, tile_size: int = 0) -> list[str]:
     """Upscale ESRGAN natif sd.cpp (--mode upscale). Déterministe, 100% GPU.
 
     `repeats` applique le modèle plusieurs fois (ex. un modèle ×2 appliqué 2 fois
-    = ×4). Aucun prompt/diffusion : c'est un réseau ESRGAN GGUF."""
+    = ×4). Aucun prompt/diffusion : c'est un réseau ESRGAN GGUF.
+
+    `tile_size` > 0 élargit les tuiles du réseau (voir `upscale_tile_size`).
+    L'option n'est envoyée que si CE binaire la connaît : sur un sd-cli plus
+    ancien elle n'existe pas et l'argument inconnu ferait échouer la commande.
+    """
     _require(upscale_model, init_image)
     cmd = [str(sd_cli), "--mode", "upscale", "-i", str(init_image),
            "--upscale-model", str(upscale_model)]
     if repeats and repeats > 1:
         cmd += ["--upscale-repeats", str(int(repeats))]
+    if tile_size and int(tile_size) > 0 and \
+            "--upscale-tile-size" in supported_options(sd_cli):
+        cmd += ["--upscale-tile-size", str(int(tile_size))]
     if offload:
         cmd.append("--offload-to-cpu")
     cmd += ["-o", str(output), "-v"]

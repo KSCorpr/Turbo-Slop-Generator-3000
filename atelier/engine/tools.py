@@ -384,37 +384,41 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
 
     # Pré-agrandissement ESRGAN optionnel (sd.cpp) : base plus nette que Lanczos.
     #
-    # Le nombre de passes est calculé, pas laissé à 1 : un modèle ×2 utilisé une
-    # seule fois pour une cible ×4 sort SOUS la cible, et le runner doit alors
-    # ré-agrandir en Lanczos — soit exactement l'interpolation floue qu'on
-    # voulait éviter en prenant un ESRGAN. Dépasser la cible, en revanche, est
-    # sans danger : la réduction qui suit est nette (suréchantillonnage).
+    # UNE SEULE passe, jamais deux. Enchaîner un ESRGAN sur sa propre sortie est
+    # le meilleur moyen de fabriquer les artefacts et l'aliasing qu'on cherche à
+    # éviter : la 2ᵉ passe prend les hautes fréquences INVENTÉES par la 1ʳᵉ pour
+    # du détail réel et les ré-accentue, ce qui transforme un léger ringing en
+    # marches d'escalier franches sur les diagonales. Si une passe ne suffit pas
+    # à atteindre la cible, le runner complète en Lanczos : c'est plus doux,
+    # mais c'est propre — et c'est précisément le rôle du raffinage SDXL qui
+    # suit de redonner le détail. Une base molle se rattrape, une base crénelée
+    # non : SDXL fige les créneaux au lieu de les corriger.
+    #
+    # Quand le facteur du modèle DÉPASSE la cible (un ×4 pour un ×2), la
+    # réduction faite ensuite par le runner est un suréchantillonnage : c'est le
+    # cas le plus propre possible, l'aliasing est moyenné à la baisse.
     inp = src
     if esrgan_model:
         from .. import registry
         from . import generate as gen_engine
         factor = registry.upscaler_factor(esrgan_model)
-        # On ajoute une passe tant qu'on est sous la cible ET que le résultat
-        # intermédiaire reste sous le plafond de 8192 px du runner. Sans ce
-        # second garde-fou, un ×4 visé en ×8 partirait à ×16, soit une image
-        # intermédiaire de plusieurs centaines de mégapixels.
-        repeats = 1
-        while (factor ** repeats < float(scale) and repeats < 3
-               and max(ow, oh) * factor ** (repeats + 1) <= 8192):
-            repeats += 1
-        reached = factor ** repeats
         try:
             if log:
-                log(f"Pré-agrandissement ESRGAN « {esrgan_model} » (×{factor}"
-                    + (f", {repeats} passes → ×{reached}" if repeats > 1
-                       else "") + ")…")
-                if reached < float(scale):
-                    # Honnêteté : au-delà, c'est le runner qui complète en
-                    # Lanczos, donc le rendu sera plus mou que promis.
-                    log(f"[usdu] ×{reached} < cible ×{scale:g} : le reste sera "
-                        "complété en Lanczos (rendu plus doux). Visez un "
-                        "facteur plus bas pour un trait parfaitement net.")
-            inp = gen_engine.upscale_image(src, esrgan_model, repeats=repeats,
+                log(f"Pré-agrandissement ESRGAN « {esrgan_model} » (×{factor}, "
+                    "1 passe)…")
+                if factor > float(scale):
+                    log(f"[usdu] ×{factor} pour une cible ×{scale:g} : la "
+                        "réduction qui suit sert de suréchantillonnage "
+                        "(anti-aliasing gratuit).")
+                elif factor < float(scale):
+                    # Honnêteté : le runner complète en Lanczos, donc la base
+                    # sera plus douce — mais pas crénelée, et SDXL la reprend.
+                    log(f"[usdu] ×{factor} < cible ×{scale:g} : le reste est "
+                        "complété en Lanczos (base plus douce, que le "
+                        "raffinage SDXL redétaille). Pour un trait net dès la "
+                        f"base, prenez un modèle ×{int(-(-float(scale) // 1))} "
+                        "ou visez un facteur plus bas.")
+            inp = gen_engine.upscale_image(src, esrgan_model, repeats=1,
                                            log=log)
         except Exception as exc:  # noqa: BLE001
             if log:

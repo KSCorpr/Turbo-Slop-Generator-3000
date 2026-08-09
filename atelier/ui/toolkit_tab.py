@@ -282,8 +282,16 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                             info="🎨 = entraîné pour le DESSIN (trait net, "
                                  "aplats propres) · 📷 = photo. Sur une planche "
                                  "de BD, un modèle photo bave et pose des halos.")
-                        u_repeats = gr.Radio([("×1 (natif)", 1), ("Répéter ×2", 2)],
-                                             value=1, label="Répétition")
+                        u_repeats = gr.Radio(
+                            [("×1 (natif)", 1), ("Répéter ×2", 2)],
+                            value=1, label="Répétition",
+                            info="⚠️ Répéter fait tourner le réseau sur sa "
+                                 "PROPRE sortie : il reprend pour du détail "
+                                 "réel les hautes fréquences qu'il vient "
+                                 "d'inventer et les ré-accentue. C'est ce qui "
+                                 "crée les créneaux sur les diagonales. Un "
+                                 "modèle ×4 vaut toujours mieux qu'un ×2 "
+                                 "répété.")
                         with gr.Row():
                             u_refresh = gr.Button("↻ Rafraîchir la liste", size="sm")
                             u_run = gr.Button("🔼 Agrandir", variant="primary",
@@ -478,7 +486,12 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
                         c_esrgan = gr.Dropdown(
                             choices=[(t("Lanczos (par défaut)"), "")]
                                     + [(u, u) for u in _ups],
-                            value="", label="Pré-agrandissement (base avant SDXL)")
+                            value="", label="Pré-agrandissement (base avant SDXL)",
+                            info="Une seule passe, toujours. Un modèle dont le "
+                                 "facteur DÉPASSE l'agrandissement demandé "
+                                 "(un ×4 pour un ×2) est le meilleur choix : "
+                                 "la réduction qui suit fait office "
+                                 "d'anti-aliasing.")
                         c_refresh = gr.Button("↻ Rafraîchir les modèles", size="sm")
                         c_preset = gr.Dropdown(
                             choices=[(t(p["name"]), p["name"])

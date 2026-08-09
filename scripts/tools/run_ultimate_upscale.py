@@ -198,7 +198,11 @@ def main():
                 kw["control_image"] = inp
                 kw["controlnet_conditioning_scale"] = float(args.cn_scale)
             out = pipe(**kw).images[0]
-            arr = np.asarray(out.convert("RGB").resize((cw, ch)), np.float32)
+            # Filtre EXPLICITE : le défaut de PIL est bicubique, qui laisse un
+            # léger crénelage sur les diagonales à chaque remise à la taille de
+            # tuile — répété sur des dizaines de tuiles, ça se voit.
+            arr = np.asarray(
+                out.convert("RGB").resize((cw, ch), Image.LANCZOS), np.float32)
             mask = _feather(ch, cw, overlap)
             acc[y1:y2, x1:x2] += arr * mask
             wsum[y1:y2, x1:x2] += mask

@@ -248,7 +248,13 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     """Agrandissement SIMPLE via un upscaler ESRGAN GGUF (sd.cpp --mode upscale).
 
     Déterministe, 100% GPU, aucun prompt. `repeats` ré-applique le modèle (un
-    modèle ×2 appliqué 2 fois = ×4)."""
+    modèle ×2 appliqué 2 fois = ×4).
+
+    La taille de tuile du réseau est choisie ici, pas laissée au défaut de
+    sd.cpp (128 px) : voir `sdcpp.upscale_tile_size`. Si la tuile élargie ne
+    passe pas en VRAM, on relance une fois au défaut plutôt que de rendre une
+    erreur — l'image sortira comme avant, pas mieux, mais elle sortira.
+    """
     from PIL import Image
     prefs = settings.load_prefs()
     sd_cli = settings.find_sd_cli()
@@ -266,14 +272,46 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     im = Image.open(image).convert("RGB") if isinstance(image, (str, Path)) \
         else image.convert("RGB")
     im.save(src)
+    w, h = im.size
 
     _, gpu_index = _resolved_flags(prefs)
+    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    vram = prof.gpu.vram_gb if prof.gpu else None
+    tile = sdcpp.upscale_tile_size(w, h, vram)
     out = sdcpp.unique_output("upscale")
-    cmd = sdcpp.build_upscale_cmd(sd_cli, src, model, out,
-                                  repeats=int(repeats or 1))
     if log:
         log(f"Upscale ESRGAN « {model_name} » (×{repeats or 1}) sur le GPU…")
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+        if "--upscale-tile-size" in sdcpp.supported_options(sd_cli):
+            log(f"[esrgan] tuiles de {tile} px"
+                + (" — image entière en une passe, aucune couture."
+                   if tile >= max(w, h) else
+                   f" (au lieu de {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px :"
+                   " moins de coutures et d'aliasing)."))
+        else:
+            log("[esrgan] sd-cli trop ancien pour --upscale-tile-size : tuiles "
+                f"de {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px (coutures possibles). "
+                "Mettez le moteur à jour (update-engine.bat).")
+
+    def _cmd(tile_px: int) -> list[str]:
+        return sdcpp.build_upscale_cmd(sd_cli, src, model, out,
+                                       repeats=int(repeats or 1),
+                                       tile_size=tile_px)
+
+    # Les commandes sont construites AVANT le try : une erreur de construction
+    # (fichier manquant) n'a rien à voir avec la VRAM et ne doit pas déclencher
+    # une seconde tentative sous un message trompeur.
+    first, fallback = _cmd(tile), _cmd(sdcpp.SDCPP_DEFAULT_UPSCALE_TILE)
+    try:
+        sdcpp.run(first, log=log, gpu_index=gpu_index)
+    except sdcpp.EngineError:
+        # Annulation utilisateur : ne surtout pas relancer.
+        if sdcpp.was_cancelled() or first == fallback:
+            raise
+        if log:
+            log(f"[esrgan] échec avec des tuiles de {tile} px (VRAM ?) → "
+                f"nouvelle tentative au défaut sd.cpp "
+                f"({sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px).")
+        sdcpp.run(fallback, log=log, gpu_index=gpu_index)
     if out.is_file():
         return out
     found = sorted(out.parent.glob(f"{out.stem}*{out.suffix}"))
