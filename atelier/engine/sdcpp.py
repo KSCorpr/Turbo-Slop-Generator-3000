@@ -126,6 +126,10 @@ class GenRequest:
     cache_mode: str = ""               # easycache | dbcache | taylorseer | …
     cache_option: str = ""             # ex. "threshold=0.2"
     hires: "HiresParams | None" = None  # passe HD native (voir HiresParams)
+    # Budget VRAM pour l'exécution SEGMENTÉE (voir max_vram_arg). Vide = option
+    # non envoyée, sd.cpp alloue son graphe d'un bloc comme avant.
+    max_vram: str = ""
+    stream_layers: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -240,6 +244,42 @@ def hires_supported(sd_cli: Path | None) -> bool:
     return "--hires" in supported_options(sd_cli)
 
 
+# --------------------------------------------------------------------------- #
+#  Exécution SEGMENTÉE (« graph cut »).
+#
+#  Par défaut, sd.cpp alloue le graphe de calcul d'un seul bloc : si le bloc ne
+#  tient pas, cudaMalloc échoue et toute la génération tombe — c'est l'OOM de la
+#  passe HD. `--max-vram` lui donne un budget et l'autorise à DÉCOUPER le graphe
+#  pour tenir dedans, au lieu de tenter le tout-ou-rien.
+#
+#  Une valeur NÉGATIVE est la plus intéressante : sd.cpp détecte alors la VRAM
+#  réellement libre et en réserve la valeur indiquée
+#  (resolve_auto_max_vram_bytes). « -1 » = « prends tout le libre sauf 1 Gio » —
+#  ce qui s'adapte tout seul à la carte ET à ce qui l'occupe déjà, là où un
+#  chiffre en dur ne s'adapte à rien.
+# --------------------------------------------------------------------------- #
+MAX_VRAM_AUTO = "auto"
+
+
+def max_vram_supported(sd_cli: Path | None) -> bool:
+    return "--max-vram" in supported_options(sd_cli)
+
+
+def max_vram_arg(setting: str, spare_gib: float = 1.0) -> str:
+    """Traduit la préférence utilisateur en valeur pour `--max-vram`.
+
+    « auto » -> « -1 » (VRAM libre moins `spare_gib`). Un nombre est repris tel
+    quel : l'utilisateur qui écrit « 6 » veut un plafond ferme de 6 Gio, et
+    « cuda0=6,cuda1=4 » reste possible pour les machines multi-cartes.
+    """
+    s = (setting or "").strip()
+    if not s or s in ("off", "0"):
+        return ""
+    if s == MAX_VRAM_AUTO:
+        return f"-{spare_gib:g}"
+    return s
+
+
 def hires_args(h: "HiresParams") -> list[str]:
     """Options CLI de la passe HD. Appelant responsable de `hires_supported`."""
     args = ["--hires",
@@ -320,6 +360,12 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
+    if req.max_vram and max_vram_supported(sd_cli):
+        cmd += ["--max-vram", req.max_vram]
+        # `--stream-layers` n'a aucun effet sans `--max-vram` : le lier ici
+        # évite d'envoyer une option inerte.
+        if req.stream_layers and "--stream-layers" in supported_options(sd_cli):
+            cmd.append("--stream-layers")
     if req.hires and hires_supported(sd_cli):
         cmd += hires_args(req.hires)
     if req.preview_path:

@@ -200,6 +200,38 @@ def build_settings_tab():
                     value=bool(prefs.get("conv_direct_vae")),
                     label="Convolution directe — VAE")
 
+            gr.Markdown(
+                "---\n"
+                "**Exécution segmentée** (`--max-vram`) — par défaut, le moteur "
+                "réserve son graphe de calcul **d'un seul bloc** : si le bloc ne "
+                "tient pas, la génération s'arrête sur une erreur mémoire. Avec "
+                "un budget, il a le droit de **découper le graphe** pour tenir "
+                "dedans.\n\n"
+                "👉 « Auto » ne fixe rien en dur : le moteur mesure la VRAM "
+                "**libre** au lancement et s'en réserve une marge — il s'adapte "
+                "donc à votre carte *et* à ce qui l'occupe déjà.\n\n"
+                "⚠️ Découper coûte des allers-retours mémoire : **c'est plus lent**. "
+                "À activer pour les résolutions qui ne passent pas autrement, pas "
+                "par défaut. L'onglet **🚀 HD** s'en sert de toute façon — c'est "
+                "là que le tout-ou-rien casse.")
+            with gr.Row():
+                max_vram = gr.Dropdown(
+                    [(t("Désactivé (recommandé pour la génération)"), ""),
+                     (t("Auto — VRAM libre moins 1 Go"), "auto"),
+                     (t("Plafond ferme : 6 Go"), "6"),
+                     (t("Plafond ferme : 8 Go"), "8"),
+                     (t("Plafond ferme : 10 Go"), "10")],
+                    value=prefs.get("max_vram", ""), allow_custom_value=True,
+                    label="Budget VRAM du graphe",
+                    info="Valeur libre acceptée : « 6 », ou « cuda0=6,cuda1=4 » "
+                         "sur une machine multi-cartes.")
+                stream_layers = gr.Checkbox(
+                    value=bool(prefs.get("stream_layers")),
+                    label="Streaming des couches (sans effet sans budget)",
+                    info="Précharge les couches à la demande. Encore plus "
+                         "dépendant du PCIe : à n'essayer que si le budget seul "
+                         "ne suffit pas.")
+
         # ------------------------------------------------------------------ #
         #  Réseau & comptes
         # ------------------------------------------------------------------ #
@@ -216,7 +248,8 @@ def build_settings_tab():
 
         def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
                     offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
-                    conv_diff, conv_vae, hf_ep, civitai_tok):
+                    conv_diff, conv_vae, max_vram, stream_layers,
+                    hf_ep, civitai_tok):
             p = settings.load_prefs()
             # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
             for stale in ("engine", "use_sd_server", "sd_server_port",
@@ -237,6 +270,10 @@ def build_settings_tab():
             # Hors de « flags » : voir settings.DEFAULT_PREFS.
             p["conv_direct_diffusion"] = bool(conv_diff)
             p["conv_direct_vae"] = bool(conv_vae)
+            # Exécution segmentée : la valeur est reprise telle quelle (elle
+            # peut être « auto », un nombre, ou une affectation par carte).
+            p["max_vram"] = (max_vram or "").strip()
+            p["stream_layers"] = bool(stream_layers)
             p["quant"] = None if quant == "auto" else quant
             p["enc_quant"] = None if enc_quant == "auto" else enc_quant
             p["flags"] = {
@@ -253,7 +290,7 @@ def build_settings_tab():
                    inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
                            enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
                            cache_mode, cache_opt, conv_diff, conv_vae,
-                           hf_ep, civitai_tok],
+                           max_vram, stream_layers, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 
         # --- Optimisation curatée par génération de carte (1 clic) ---

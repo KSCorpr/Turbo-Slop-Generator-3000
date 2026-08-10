@@ -94,6 +94,17 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
+    # Exécution SEGMENTÉE (sd.cpp --max-vram) : autorise le moteur à découper
+    # son graphe de calcul pour tenir dans un budget, au lieu d'allouer d'un
+    # bloc et d'échouer si ça ne rentre pas.
+    #   ""     -> désactivé pour la génération ordinaire (comportement d'avant)
+    #   "auto" -> VRAM libre détectée moins une marge
+    #   "6" / "cuda0=6,cuda1=4" -> plafond ferme
+    # La passe HD l'utilise de toute façon : c'est là que le tout-ou-rien casse.
+    "max_vram": "",
+    # Résidence + préchargement des couches, par-dessus --max-vram (sans effet
+    # sans lui). Coûteux en bande passante PCIe : opt-in.
+    "stream_layers": False,
 }
 
 

@@ -107,6 +107,25 @@ _EN: dict[str, str] = {
     "modèle de diffusion": "diffusion model",
     "⚙️ Réglages": "⚙️ Settings",
 
+    # ---- réglages : exécution segmentée ----
+    "Budget VRAM du graphe": "Graph VRAM budget",
+    "Désactivé (recommandé pour la génération)":
+        "Disabled (recommended for generation)",
+    "Auto — VRAM libre moins 1 Go": "Auto — free VRAM minus 1 GB",
+    "Plafond ferme : 6 Go": "Hard cap: 6 GB",
+    "Plafond ferme : 8 Go": "Hard cap: 8 GB",
+    "Plafond ferme : 10 Go": "Hard cap: 10 GB",
+    "Valeur libre acceptée : « 6 », ou « cuda0=6,cuda1=4 » sur une machine "
+    "multi-cartes.":
+        "Free-form values accepted: “6”, or “cuda0=6,cuda1=4” on a multi-GPU "
+        "machine.",
+    "Streaming des couches (sans effet sans budget)":
+        "Layer streaming (no effect without a budget)",
+    "Précharge les couches à la demande. Encore plus dépendant du PCIe : à "
+    "n'essayer que si le budget seul ne suffit pas.":
+        "Prefetches layers on demand. Even more PCIe-dependent: only worth "
+        "trying if the budget alone is not enough.",
+
     # ---- groupes d'onglets racine ----
     "🧰 Outils": "🧰 Tools",
     "⚙️ Système": "⚙️ System",

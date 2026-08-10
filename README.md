@@ -594,7 +594,21 @@ comes from that same failure). Concretely, with Krea 2 at **Q5_K_M** (8.4 GB) an
 **Q4_K_M** restores a full **×2** on 12 GB. A lighter quantization buys HD
 factor.
 
-That budget is only an estimate, so it is not the safety net. **An out-of-memory
+**Segmented execution lifts that ceiling** (`--max-vram`). By default sd.cpp
+reserves its compute graph *in one block*: if the block does not fit, the run
+dies. Given a budget it is allowed to **cut the graph** to fit instead. A
+negative value is the interesting one — the engine measures **free** VRAM at
+launch and reserves the given margin, so `-1` means "take what is free, keep
+1 GiB back", which adapts to the card *and* to whatever already occupies it.
+The HD tab therefore turns it on regardless of the Settings preference, because
+HD is where all-or-nothing allocation breaks; when it is active the pixel budget
+above is **dropped rather than half-relaxed**, since keeping it would throttle
+exactly what was just made possible. Cutting the graph costs memory round-trips,
+so it is **slower** — which is why ordinary generation leaves it off by default
+and Settings exposes it (auto / hard cap / per-device, plus `--stream-layers`)
+for people who would rather wait than not get the image at all.
+
+Neither the budget nor the segmentation is the safety net. **An out-of-memory
 failure is caught, the factor is stepped down 20% and the run is retried** (twice
 at most), and the log states what it settled on. sd-cli failures are now typed:
 only a genuine VRAM error is retried, because it is the only one where trying

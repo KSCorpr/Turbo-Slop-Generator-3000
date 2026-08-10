@@ -175,17 +175,67 @@ class HdBudgetTests(unittest.TestCase):
             roomy = gen.hd_pixel_budget(m, 12.0)
         self.assertGreater(roomy, tight)
 
-    def test_unknown_vram_means_no_cap(self):
+    def test_no_measurement_at_all_means_no_cap(self):
+        # Aucune mesure : on ne plafonne pas, la reprise automatique tranchera.
         from atelier.engine import generate as gen
         self.assertEqual(gen.hd_pixel_budget(object(), None), 0)
 
-    def test_weights_bigger_than_vram_means_no_cap(self):
-        # Rien à budgéter : on laisse la reprise automatique trancher plutôt
-        # que d'inventer une taille.
+    def test_hopeless_case_caps_hard_instead_of_giving_up(self):
+        # « Mesuré, et ça ne rentre pas » n'est PAS « je ne sais pas ». Rendre 0
+        # ici revenait à tenter la pleine taille précisément quand la mémoire
+        # manquait le plus.
         from atelier.engine import generate as gen
         m = self._model(20.0)
         with self._patch:
-            self.assertEqual(gen.hd_pixel_budget(m, 11.0), 0)
+            self.assertEqual(gen.hd_pixel_budget(m, 11.0), gen.HD_MIN_PIXELS)
+
+    def test_budget_shrinks_as_free_vram_shrinks(self):
+        # Monotonie : moins de VRAM libre ne doit JAMAIS donner un budget plus
+        # large. C'est l'inversion qui rendait le cas serré le plus dangereux.
+        from atelier.engine import generate as gen
+        m = self._model(4.0)
+        with self._patch:
+            budgets = [gen.hd_pixel_budget(m, 12.0, free)
+                       for free in (11.0, 8.0, 5.0, 2.0)]
+        self.assertEqual(budgets, sorted(budgets, reverse=True), budgets)
+
+
+class MaxVramTests(unittest.TestCase):
+    """Exécution segmentée : la préférence utilisateur -> l'argument sd-cli."""
+
+    def test_auto_asks_for_free_vram_minus_a_margin(self):
+        # Négatif = « prends le libre, réserve tant » : c'est ce qui s'adapte
+        # à la carte ET à ce qui l'occupe déjà.
+        self.assertEqual(sdcpp.max_vram_arg("auto"), "-1")
+        self.assertEqual(sdcpp.max_vram_arg("auto", 2.0), "-2")
+
+    def test_disabled_values_send_nothing(self):
+        for off in ("", "off", "0", None, "   "):
+            self.assertEqual(sdcpp.max_vram_arg(off), "")
+
+    def test_explicit_values_pass_through(self):
+        self.assertEqual(sdcpp.max_vram_arg("6"), "6")
+        self.assertEqual(sdcpp.max_vram_arg("cuda0=6,cuda1=4"),
+                         "cuda0=6,cuda1=4")
+
+    def test_option_omitted_on_an_older_binary(self):
+        req = sdcpp.GenRequest(diffusion_model=Path("d.gguf"), max_vram="-1")
+        with patch.object(sdcpp, "_require", lambda *a, **k: None), \
+             patch.object(sdcpp, "supported_options", return_value=frozenset()):
+            cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
+        self.assertNotIn("--max-vram", cmd)
+
+    def test_stream_layers_never_sent_alone(self):
+        # `--stream-layers` est sans effet sans `--max-vram` : l'envoyer seul
+        # serait une option inerte de plus dans la ligne de commande.
+        req = sdcpp.GenRequest(diffusion_model=Path("d.gguf"), max_vram="",
+                               stream_layers=True)
+        with patch.object(sdcpp, "_require", lambda *a, **k: None), \
+             patch.object(sdcpp, "supported_options",
+                          return_value=frozenset({"--max-vram",
+                                                  "--stream-layers"})):
+            cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
+        self.assertNotIn("--stream-layers", cmd)
 
 
 class HdAlignTests(unittest.TestCase):

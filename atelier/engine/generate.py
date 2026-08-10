@@ -135,6 +135,10 @@ def generate(
     preview_path: Path | None = None,
     save_prompt: bool = True,
     hires: "sdcpp.HiresParams | None" = None,
+    # None = suivre la préférence utilisateur ; une chaîne force la valeur
+    # (la passe HD s'en sert pour activer la découpe même si la préférence
+    # laisse la génération ordinaire tranquille).
+    max_vram: str | None = None,
     log: Callable[[str], None] | None = None,
 ) -> list[Path]:
     prefs = settings.load_prefs()
@@ -234,6 +238,9 @@ def generate(
         cache_mode=prefs.get("cache_mode") or "",
         cache_option=prefs.get("cache_option") or "",
         hires=hires,
+        max_vram=(max_vram if max_vram is not None
+                  else sdcpp.max_vram_arg(prefs.get("max_vram") or "")),
+        stream_layers=bool(prefs.get("stream_layers")),
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
@@ -365,6 +372,11 @@ HD_MAX_SIDE = 3072
 # --------------------------------------------------------------------------- #
 HD_COMPUTE_BYTES_PER_PX = 1200
 
+# Plancher du budget : en dessous, l'agrandissement n'aurait plus d'intérêt et
+# c'est à la reprise automatique de constater l'échec, pas à l'estimation de
+# proposer une taille absurde.
+HD_MIN_PIXELS = 512 * 512
+
 # Fraction de la VRAM qu'on s'autorise (le reste : contexte CUDA, bureau,
 # fragmentation).
 HD_VRAM_USABLE = 0.90
@@ -410,8 +422,12 @@ def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None,
     — et c'est alors l'OOM garanti. On garde le total comme repli, et on ne
     dépasse jamais ce que le libre autorise.
 
-    0 = indéterminable : on ne plafonne pas, on laisse la reprise automatique
-    faire le travail plutôt que d'inventer une limite.
+    0 = AUCUNE mesure disponible (pas de GPU détecté) : on ne plafonne pas, on
+    laisse la reprise automatique faire le travail plutôt que d'inventer une
+    limite. À ne pas confondre avec « mesuré, et ça ne rentre pas » : là on
+    renvoie le plancher, c'est-à-dire le plafond le plus SERRÉ possible. Rendre
+    0 dans ce cas revenait à tenter la pleine taille précisément quand la
+    mémoire manquait le plus — soit exactement l'inverse du but.
     """
     usable = None
     for candidate in (free_gb, vram_gb):
@@ -420,10 +436,8 @@ def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None,
             usable = v if usable is None else min(usable, v)
     if usable is None:
         return 0
-    free = usable - _weights_bytes(model)
-    if free <= 0:
-        return 0
-    return max(512 * 512, int(free / HD_COMPUTE_BYTES_PER_PX))
+    return max(HD_MIN_PIXELS,
+               int((usable - _weights_bytes(model)) / HD_COMPUTE_BYTES_PER_PX))
 
 
 def hd_upscale(model_id: str, image, scale: float = 2.0,
@@ -484,16 +498,36 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             log(f"[hd] facteur ramené à ×{scale:.2f} pour rester sous "
                 f"{HD_MAX_SIDE} px de côté.")
     free = hardware.free_vram_gb(prof.gpu.index if prof.gpu else None)
-    budget = hd_pixel_budget(model, vram, free)
-    if budget and bw * bh * scale * scale > budget:
-        scale = max(1.25, (budget / (bw * bh)) ** 0.5)
+
+    # Exécution segmentée : quand le moteur sait DÉCOUPER son graphe pour tenir
+    # dans un budget, notre estimation en pixels cesse d'être la contrainte —
+    # ce n'est plus « ça rentre d'un bloc ou ça casse ». On l'active ici même si
+    # la préférence laisse la génération ordinaire tranquille : c'est la passe HD
+    # qui souffre du tout-ou-rien, pas une génération à la taille native.
+    #
+    # Le budget en pixels est alors ABANDONNÉ plutôt que relâché à moitié :
+    # le garder brimerait précisément ce qu'on vient de rendre possible. Le vrai
+    # plancher est trouvé par la reprise automatique, qui mesure au lieu d'estimer.
+    cut = sdcpp.max_vram_arg(prefs.get("max_vram") or sdcpp.MAX_VRAM_AUTO)
+    if cut and not sdcpp.max_vram_supported(sd_cli):
+        cut = ""
+    if cut:
         if log:
-            have = (f"{free:.1f} Go libres" if free else
-                    f"{vram:.0f} Go de VRAM" if vram else "la VRAM disponible")
-            log(f"[hd] facteur ramené à ×{scale:.2f} : au-delà, le tampon du "
-                f"second débruitage ne tient pas dans {have} avec ce modèle "
-                "chargé.")
-    elif log and free and vram and free < vram * 0.75:
+            log(f"[hd] exécution segmentée (--max-vram {cut}) : le moteur "
+                "découpe son graphe pour tenir dans la VRAM libre au lieu "
+                "d'allouer d'un bloc.")
+    else:
+        budget = hd_pixel_budget(model, vram, free)
+        if budget and bw * bh * scale * scale > budget:
+            scale = max(1.25, (budget / (bw * bh)) ** 0.5)
+            if log:
+                have = (f"{free:.1f} Go libres" if free else
+                        f"{vram:.0f} Go de VRAM" if vram else
+                        "la VRAM disponible")
+                log(f"[hd] facteur ramené à ×{scale:.2f} : au-delà, le tampon "
+                    f"du second débruitage ne tient pas dans {have} avec ce "
+                    "modèle chargé.")
+    if log and free and vram and free < vram * 0.75:
         # Utile à savoir AVANT de lancer : de la VRAM est prise ailleurs.
         log(f"[hd] {free:.1f} Go libres sur {vram:.0f} — une autre application "
             "occupe la carte. Fermez-la pour viser plus grand.")
@@ -525,7 +559,7 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             schedule=("" if d.get("scheduler") in (None, "", "auto")
                       else d["scheduler"]),
             init_image=src, strength=HD_FIRST_PASS_STRENGTH,
-            preview_path=preview_path, hires=hires, log=log)
+            preview_path=preview_path, hires=hires, max_vram=cut, log=log)
         # Taille RÉELLE : sd.cpp peut avoir arrondi au-dessus de notre demande
         # pour tomber sur son propre multiple. Autant lire le résultat que
         # d'affirmer une taille qu'on n'a pas vérifiée.
