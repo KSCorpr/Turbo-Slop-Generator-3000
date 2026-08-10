@@ -412,35 +412,208 @@ def _spec_ok(version: str, spec: str) -> bool:
     return True
 
 
-def check_engine() -> None:
+# --------------------------------------------------------------------------- #
+#  CAPACITÉS ATTENDUES DU MOTEUR
+#
+#  Le dépôt et le binaire sd-cli se mettent à jour SÉPARÉMENT : copier le code
+#  par-dessus l'ancien ne touche pas à bin/. Une fonction de l'application peut
+#  donc réclamer une option que le moteur installé ne connaît pas encore, et
+#  l'utilisateur ne le découvre qu'au moment où ça casse.
+#
+#  On liste donc ici ce dont le code a réellement besoin. Chaque entrée dit
+#  quelle FONCTION dépend de quelle option : un « --hires manquant » ne parle à
+#  personne, « l'onglet HD ne marchera pas » si.
+# --------------------------------------------------------------------------- #
+ENGINE_FEATURES = [
+    {"option": "--hires", "needed_by": "l'onglet « 🚀 HD »",
+     "blocking": True},
+    {"option": "--upscale-tile-size",
+     "needed_by": "l'agrandissement ESRGAN sans coutures", "blocking": False},
+    {"option": "--diffusion-conv-direct",
+     "needed_by": "la convolution directe (Réglages)", "blocking": False},
+    {"option": "--preview", "needed_by": "l'aperçu temps réel",
+     "blocking": False},
+]
+
+
+def check_engine(update: bool) -> bool:
+    """Présence ET capacités du moteur. Renvoie True si une MAJ est conseillée."""
     print("• Moteur stable-diffusion.cpp (sd-cli)…")
     try:
         from atelier import settings
+        from atelier.engine import sdcpp
         sd = settings.find_sd_cli()
     except Exception as exc:  # noqa: BLE001
         _warn(f"vérification impossible : {exc}")
-        return
-    if sd:
-        print(OK + f"trouvé : {sd}")
-    else:
+        return False
+
+    if sd is None:
         # Pas de « --variant cuda » en dur : sur Mac ce serait un mauvais
         # conseil (il n'existe que des builds Metal). get_sdcpp déduit seul.
-        _warn("binaire sd-cli introuvable → install.bat / ./install.sh, ou "
-              "python scripts/get_sdcpp.py")
+        if update:
+            print(INFO + "binaire absent → installation…")
+            return not _run_get_sdcpp()
+        _warn("binaire sd-cli introuvable → maintenance.bat --update-engine "
+              "(ou install.bat)")
+        return True
+    print(OK + f"trouvé : {sd}")
+
+    opts = sdcpp.supported_options(sd)
+    if not opts:
+        _warn("le binaire ne répond pas à « -h » : impossible de vérifier ses "
+              "capacités. S'il ne démarre pas non plus, réinstallez-le "
+              "(maintenance.bat --update-engine).")
+        return False
+
+    missing = [f for f in ENGINE_FEATURES if f["option"] not in opts]
+    if not missing:
+        print(OK + f"{len(ENGINE_FEATURES)} capacité(s) attendue(s) présente(s).")
+        return False
+    for f in missing:
+        line = f"{f['option']} absent → {f['needed_by']} ne fonctionnera pas."
+        if f["blocking"]:
+            _warn(line)
+        else:
+            print(INFO + line)
+    if update:
+        print(INFO + "mise à jour du moteur…")
+        return not _run_get_sdcpp(force=True)
+    print(INFO + "Moteur d'une version antérieure au code. Pour l'aligner :")
+    print("        maintenance.bat --update-engine"
+          "   (./maintenance.sh --update-engine)")
+    return True
+
+
+def _run_get_sdcpp(force: bool = False) -> bool:
+    """Lance scripts/get_sdcpp.py dans CE Python. True si ça a réussi.
+
+    Sous-process plutôt qu'import : le script est fait pour être un programme
+    (il appelle sys.exit), et un échec de téléchargement ne doit pas emporter
+    la maintenance avec lui.
+    """
+    import subprocess
+    cmd = [sys.executable, str(ROOT / "scripts" / "get_sdcpp.py")]
+    if force:
+        cmd.append("--force")
+    print(INFO + "$ " + " ".join(cmd))
+    try:
+        code = subprocess.call(cmd, cwd=str(ROOT))
+    except OSError as exc:
+        _warn(f"lancement impossible : {exc}")
+        return False
+    if code == 0:
+        # Le cache d'options est indexé sur (chemin, mtime, taille) : un
+        # nouveau binaire produit une clé différente, la relecture est donc
+        # automatique. On revérifie pour AFFICHER le résultat, pas pour purger.
+        print(OK + "moteur installé/mis à jour.")
+        return True
+    _warn(f"la mise à jour du moteur a échoué (code {code}). Réseau ? "
+          "Réessayez, ou lancez update-engine.bat.")
+    return False
+
+
+def check_orphan_modules() -> None:
+    """Modules Python de atelier/ que plus RIEN n'importe.
+
+    Complément générique à REMOVED_FEATURES : celle-ci ne connaît que les
+    fonctions qu'on a pensé à y déclarer. Ici on part de app.py et des scripts,
+    on suit les imports, et tout module de atelier/ jamais atteint est un reste
+    d'une version précédente — quelle qu'elle soit, déclarée ou non.
+    """
+    print("• Modules Python orphelins (plus importés par personne)…")
+    import ast
+
+    def module_of(path: Path) -> str:
+        rel = path.relative_to(ROOT).with_suffix("")
+        parts = [p for p in rel.parts if p != "__init__"]
+        return ".".join(parts)
+
+    files = {module_of(p): p for p in (ROOT / "atelier").rglob("*.py")}
+    roots = [ROOT / "app.py"] + sorted((ROOT / "scripts").glob("*.py"))
+
+    def imports_of(path: Path) -> set[str]:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            return set()
+        found: set[str] = set()
+        pkg = module_of(path).rsplit(".", 1)[0] if path != ROOT / "app.py" else ""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                found.update(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:                       # import relatif
+                    up = pkg.split(".")
+                    base = ".".join(up[:len(up) - node.level + 1]
+                                    + ([base] if base else []))
+                found.add(base)
+                found.update(f"{base}.{a.name}" for a in node.names)
+        return found
+
+    seen: set[str] = set()
+    queue = list(roots)
+    while queue:
+        path = queue.pop()
+        for name in imports_of(path):
+            if name in seen or name not in files:
+                continue
+            seen.add(name)
+            # Importer « atelier.ui.generate_tab » importe forcément le paquet
+            # « atelier.ui » : sans ça, chaque __init__.py serait signalé
+            # orphelin alors qu'il est la condition de tous ses modules.
+            parts = name.split(".")
+            for i in range(1, len(parts)):
+                seen.add(".".join(parts[:i]))
+            queue.append(files[name])
+
+    orphans = sorted(m for m in files if m not in seen and m != "atelier")
+    if not orphans:
+        print(OK + "aucun module orphelin (propre).")
+        return
+    for m in orphans:
+        print(f"    - {files[m].relative_to(ROOT)}")
+    _warn(f"{len(orphans)} module(s) que rien n'importe — probablement des "
+          "restes d'une version précédente. Vérifiez avant de supprimer : un "
+          "module chargé dynamiquement apparaîtrait ici à tort.")
+
+
+USAGE = """\
+Maintenance — Turbo Slop Generator 3000
+
+  maintenance.bat                   vérifie et nettoie le CODE (aucune donnée
+                                    supprimée, l'espace récupérable est chiffré)
+  maintenance.bat --update-engine   + aligne le moteur sd-cli sur le code
+  maintenance.bat --purge           + supprime les données des fonctions
+                                    retirées et les orphelins
+  maintenance.bat --all             tout : purge + mise à jour du moteur
+                                    (« après une MAJ, tout est nickel »)
+
+(./maintenance.sh … sur Linux/Mac)
+Ne touche jamais à models/custom/, loras/, outputs/, userdata/, python/.
+"""
 
 
 def main() -> int:
     # « --purge » supprime TOUT ce qui reste des fonctions retirées : dossiers
     # d'add-ons, modèles orphelins, données laissées derrière. « --prune-models »
     # est conservé comme alias historique (il ne visait que les modèles).
-    purge = "--purge" in sys.argv
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(USAGE)
+        return 0
+    everything = "--all" in sys.argv
+    purge = everything or "--purge" in sys.argv
+    update_engine = everything or "--update-engine" in sys.argv
     prune_models = purge or "--prune-models" in sys.argv
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
+    modes = []
     if purge:
-        print("  (--purge : suppression des restes des fonctions retirées)")
-    elif prune_models:
-        print("  (--prune-models : suppression des modèles orphelins)")
+        modes.append("suppression des restes des fonctions retirées")
+    if update_engine:
+        modes.append("mise à jour du moteur")
+    if modes:
+        print("  (" + " + ".join(modes) + ")")
     print("=" * 60)
     recoverable = clean_removed_features(purge)
     clean_pycache()
@@ -448,9 +621,10 @@ def main() -> int:
     check_catalog()
     recoverable += report_orphan_addons(purge)
     recoverable += report_orphan_models(prune_models)
+    check_orphan_modules()
     compile_check()
     check_deps()
-    check_engine()
+    engine_stale = check_engine(update_engine)
     print("-" * 60)
     if recoverable > 0:
         # Un chiffre global, puis la commande exacte : c'est tout ce qu'il faut
@@ -459,6 +633,10 @@ def main() -> int:
               "retirées).")
         print("   Pour libérer :  maintenance.bat --purge"
               "   (./maintenance.sh --purge sur Linux/Mac)")
+    if engine_stale and not update_engine:
+        print("🔧 Le moteur est en retard sur le code.")
+        print("   Pour tout aligner d'un coup :  maintenance.bat --all")
+    if recoverable > 0 or (engine_stale and not update_engine):
         print("-" * 60)
     if _problems == 0:
         print("✅ Tout est propre et vérifié. Vous pouvez lancer run.bat.")

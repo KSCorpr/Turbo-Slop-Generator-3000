@@ -180,8 +180,10 @@ _CRASH: "deque[str]" = deque(maxlen=25)
 
 # Capacité de calcul CUDA par architecture, pour nommer précisément ce qui
 # manque dans le binaire (« sm_75 ») plutôt que de rester vague.
-_SM_BY_ARCH = {"pascal": "sm_61", "turing": "sm_75", "ampere": "sm_86",
-               "ada": "sm_89", "blackwell": "sm_120"}
+# La table vit désormais dans hardware, alimentée par la capacité de calcul que
+# rapporte le pilote — plus fiable qu'une déduction depuis le nom commercial.
+# Alias conservé : d'anciennes traces d'exécution y font référence.
+from ..hardware import _SM_BY_ARCH  # noqa: E402,F401
 
 
 def _note_if_fatal(line: str) -> None:
@@ -201,8 +203,9 @@ def _gpu_hint(gpu_index: "int | None") -> str:
                                     if gpus else None)
     if g is None:
         return ""
-    sm = _SM_BY_ARCH.get(g.arch)
-    return f"{g.name} ({g.arch}{', ' + sm if sm else ''})"
+    # `g.sm` vient de la capacité de calcul rapportée par le pilote quand elle
+    # est disponible : c'est EXACTEMENT le sm_XX que cite l'erreur CUDA.
+    return f"{g.name} ({g.arch}{', ' + g.sm if g.sm else ''})"
 
 
 def _diagnose_crash(gpu_index: "int | None" = None) -> str:

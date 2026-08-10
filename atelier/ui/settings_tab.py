@@ -12,7 +12,7 @@ LANGS = [("Français", "fr"), ("English", "en")]
 
 
 def _gpu_choices() -> list[tuple[str, int]]:
-    return [(f"#{g.index} — {g.name} ({g.vram_gb:.0f} Go, {g.arch})", g.index)
+    return [(f"#{g.index} — {g.label()}", g.index)
             for g in hardware.detect_gpus()]
 
 

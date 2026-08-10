@@ -6,6 +6,7 @@ flash-attention dès Turing, offload CPU, VAE tiling).
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -22,17 +23,82 @@ class Gpu:
     index: int
     name: str
     vram_gb: float
-    # pascal | turing | ampere | ada | blackwell | apple | unknown
+    # maxwell | pascal | volta | turing | ampere | ada | hopper | blackwell |
+    # apple | unknown
     arch: str
     tensor_cores: bool
+    # Capacité de calcul CUDA telle que RAPPORTÉE par le pilote (« 7.5 »), vide
+    # si le pilote est trop ancien pour l'exposer. C'est la seule source fiable
+    # : le nom commercial ne dit pas tout (une même série mélange des puces) et
+    # c'est ce chiffre — pas le nom — qui décide si un binaire CUDA tournera.
+    compute_cap: str = ""
+    driver: str = ""
 
     @property
     def is_apple(self) -> bool:
         return self.arch == "apple"
 
+    @property
+    def sm(self) -> str:
+        """« sm_75 » — l'identifiant que réclament les erreurs CUDA."""
+        if self.compute_cap and "." in self.compute_cap:
+            major, minor = self.compute_cap.split(".", 1)
+            return f"sm_{major}{minor}"
+        return _SM_BY_ARCH.get(self.arch, "")
+
+    def label(self) -> str:
+        """Libellé lisible et complet, pour les menus et les diagnostics."""
+        bits = [f"{self.vram_gb:.0f} Go", self.arch]
+        if self.sm:
+            bits.append(self.sm)
+        return f"{self.name} ({', '.join(bits)})"
+
+
+# Capacité de calcul -> architecture. Table officielle NVIDIA ; c'est elle qui
+# fait autorité, le nom commercial ne sert que de repli.
+_ARCH_BY_CC = {
+    (5, 0): "maxwell", (5, 2): "maxwell", (5, 3): "maxwell",
+    (6, 0): "pascal", (6, 1): "pascal", (6, 2): "pascal",
+    (7, 0): "volta", (7, 2): "volta",
+    (7, 5): "turing",
+    (8, 0): "ampere", (8, 6): "ampere", (8, 7): "ampere",
+    (8, 9): "ada",
+    (9, 0): "hopper",
+    (10, 0): "blackwell", (10, 1): "blackwell", (10, 3): "blackwell",
+    (12, 0): "blackwell", (12, 1): "blackwell",
+}
+
+# Architecture -> sm, pour les cartes dont le pilote ne rapporte pas la
+# capacité de calcul (repli seulement).
+_SM_BY_ARCH = {"maxwell": "sm_52", "pascal": "sm_61", "volta": "sm_70",
+               "turing": "sm_75", "ampere": "sm_86", "ada": "sm_89",
+               "hopper": "sm_90", "blackwell": "sm_120"}
+
+# Architectures dotées de tensor cores (donc où flash-attention vaut le coup).
+TENSOR_CORE_ARCHS = frozenset(
+    {"volta", "turing", "ampere", "ada", "hopper", "blackwell"})
+
+
+def _arch_from_cc(cc: str) -> tuple[str, bool] | None:
+    """(architecture, tensor cores) depuis « 7.5 ». None si illisible."""
+    try:
+        major, minor = (int(x) for x in cc.strip().split(".", 1))
+    except (ValueError, AttributeError):
+        return None
+    arch = _ARCH_BY_CC.get((major, minor))
+    if arch is None:
+        # Puce plus récente que cette table : au-delà de Volta, NVIDIA n'a
+        # jamais retiré les tensor cores. Mieux vaut un nom d'architecture
+        # inconnu qu'un profil dégradé sur une carte neuve.
+        arch = "blackwell" if major >= 10 else "unknown"
+    return arch, (arch in TENSOR_CORE_ARCHS)
+
 
 def _arch_from_name(name: str) -> tuple[str, bool]:
-    """Déduit l'architecture et la présence de tensor cores depuis le nom."""
+    """Déduit l'architecture et la présence de tensor cores depuis le nom.
+
+    REPLI uniquement : utilisé quand le pilote ne rapporte pas la capacité de
+    calcul. Un nom commercial est une heuristique, pas une donnée."""
     n = name.upper()
     # RTX 50xx
     if re.search(r"RTX\s?50\d\d", n):
@@ -94,19 +160,34 @@ def _apple_gpu() -> "Gpu | None":
     return Gpu(0, name, round(ram * _APPLE_GPU_SHARE, 1), "apple", True)
 
 
+def _nvidia_smi(fields: str) -> str | None:
+    """`nvidia-smi --query-gpu=<fields>`, ou None s'il n'est pas exploitable."""
+    try:
+        return subprocess.check_output(
+            ["nvidia-smi", f"--query-gpu={fields}",
+             "--format=csv,noheader,nounits"],
+            text=True, stderr=subprocess.DEVNULL, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 @lru_cache(maxsize=1)
 def detect_gpus() -> tuple[Gpu, ...]:
+    """Cartes détectées, avec leur architecture RÉELLE quand le pilote la donne.
+
+    `compute_cap` n'existe que depuis les pilotes 510+ : sur un pilote plus
+    ancien la requête échoue en bloc, donc on retente sans ce champ et on
+    retombe sur la déduction par le nom. Un vieux pilote doit dégrader la
+    finesse du diagnostic, pas empêcher l'application de démarrer.
+    """
     apple = _apple_gpu()
     if apple is not None:
         return (apple,)
-    try:
-        out = subprocess.check_output(
-            ["nvidia-smi",
-             "--query-gpu=index,name,memory.total",
-             "--format=csv,noheader,nounits"],
-            text=True, stderr=subprocess.DEVNULL, timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
+    full = "index,name,memory.total,compute_cap,driver_version"
+    out, has_cc = _nvidia_smi(full), True
+    if out is None:
+        out, has_cc = _nvidia_smi("index,name,memory.total"), False
+    if out is None:
         return ()
     gpus: list[Gpu] = []
     for line in out.strip().splitlines():
@@ -118,9 +199,74 @@ def detect_gpus() -> tuple[Gpu, ...]:
             vram = float(parts[2]) / 1024.0  # Mio -> Gio
         except ValueError:
             continue
-        arch, tc = _arch_from_name(parts[1])
-        gpus.append(Gpu(idx, parts[1], round(vram, 1), arch, tc))
+        name = parts[1]
+        cc = parts[3] if (has_cc and len(parts) > 3) else ""
+        driver = parts[4] if (has_cc and len(parts) > 4) else ""
+        found = _arch_from_cc(cc) if cc else None
+        if found is None:
+            arch, tc = _arch_from_name(name)
+            cc = ""
+        else:
+            arch, tc = found
+            # Seule exception à l'autorité de la capacité de calcul : les GTX
+            # 16xx sont en 7.5 comme les RTX 20xx mais n'ont PAS de tensor
+            # cores. Le nom est ici la seule façon de les distinguer.
+            if re.search(r"GTX\s?16\d\d", name.upper()):
+                tc = False
+        gpus.append(Gpu(idx, name, round(vram, 1), arch, tc,
+                        compute_cap=cc, driver=driver))
     return tuple(gpus)
+
+
+def free_vram_gb(index: int | None = None) -> float:
+    """VRAM RÉELLEMENT libre, en Gio. 0 si indéterminable.
+
+    Volontairement NON mise en cache, contrairement à `detect_gpus` : c'est une
+    mesure d'instant, qui change selon ce que fait le reste de la machine. La
+    budgéter à partir de la VRAM *totale* est ce qui fait planter une passe HD
+    quand un navigateur ou un jeu occupe déjà la carte.
+    """
+    if _apple_gpu() is not None:
+        return 0.0                      # mémoire unifiée : la notion n'a pas cours
+    out = _nvidia_smi("index,memory.free")
+    if out is None:
+        return 0.0
+    best = 0.0
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            idx, free = int(parts[0]), float(parts[1]) / 1024.0
+        except ValueError:
+            continue
+        if index is None:
+            best = max(best, free)
+        elif idx == index:
+            return round(free, 1)
+    return round(best, 1)
+
+
+@lru_cache(maxsize=1)
+def cpu_name() -> str:
+    """Modèle de processeur, pour les diagnostics (et le mode CPU)."""
+    import platform
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            return subprocess.check_output(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                text=True, stderr=subprocess.DEVNULL, timeout=10).strip()
+        if system == "Linux":
+            with open("/proc/cpuinfo", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("model name"):
+                        return line.split(":", 1)[1].strip()
+        if system == "Windows":
+            return (os.environ.get("PROCESSOR_IDENTIFIER") or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return platform.processor() or ""
 
 
 @lru_cache(maxsize=1)
@@ -329,11 +475,15 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
                        "Metal."))
         return profile
 
-    # Flash attention : à partir de Turing (RTX 20xx). Désactivé sur Pascal.
-    fa = gpu.arch in ("turing", "ampere", "ada", "blackwell")
-    if gpu.arch == "pascal":
-        notes.append(t("Carte Pascal (GTX 10xx) : flash-attention désactivé "
-                       "(peu efficace), génération plus lente."))
+    # Flash-attention : on suit les TENSOR CORES, pas une liste de noms
+    # d'architectures. C'est ce qui règle enfin le cas des GTX 16xx, en 7.5
+    # comme les RTX 20xx mais dépourvues de tensor cores — elles héritaient
+    # jusqu'ici du réglage « Turing » et de sa flash-attention inutile.
+    fa = gpu.tensor_cores
+    if not fa:
+        notes.append(t("{name} : pas de tensor cores → flash-attention "
+                       "désactivé (elle n'apporte rien ici), génération plus "
+                       "lente.").format(name=gpu.name))
 
     profile = Profile(
         gpu=gpu, ram_gb=ram, quant=quant, enc_quant=enc_quant,

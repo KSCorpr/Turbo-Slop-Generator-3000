@@ -400,15 +400,27 @@ def _weights_bytes(model: registry.BaseModel) -> int:
     return 0
 
 
-def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None) -> int:
+def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None,
+                    free_gb: float | None = None) -> int:
     """Nombre de pixels que la passe HD peut viser sur cette carte.
 
-    0 = inconnu (pas de GPU détecté) : on ne plafonne pas, on laisse la reprise
-    automatique faire le travail plutôt que d'inventer une limite.
+    `free_gb` = VRAM réellement libre à l'instant T. Quand on l'a, elle prime :
+    budgéter sur la VRAM TOTALE revient à supposer la carte vide, ce qui est
+    faux dès qu'un navigateur, un jeu ou une autre application y a pris sa part
+    — et c'est alors l'OOM garanti. On garde le total comme repli, et on ne
+    dépasse jamais ce que le libre autorise.
+
+    0 = indéterminable : on ne plafonne pas, on laisse la reprise automatique
+    faire le travail plutôt que d'inventer une limite.
     """
-    if not vram_gb:
+    usable = None
+    for candidate in (free_gb, vram_gb):
+        if candidate and candidate > 0:
+            v = candidate * (1024 ** 3) * HD_VRAM_USABLE
+            usable = v if usable is None else min(usable, v)
+    if usable is None:
         return 0
-    free = vram_gb * (1024 ** 3) * HD_VRAM_USABLE - _weights_bytes(model)
+    free = usable - _weights_bytes(model)
     if free <= 0:
         return 0
     return max(512 * 512, int(free / HD_COMPUTE_BYTES_PER_PX))
@@ -471,13 +483,20 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
         if log:
             log(f"[hd] facteur ramené à ×{scale:.2f} pour rester sous "
                 f"{HD_MAX_SIDE} px de côté.")
-    budget = hd_pixel_budget(model, vram)
+    free = hardware.free_vram_gb(prof.gpu.index if prof.gpu else None)
+    budget = hd_pixel_budget(model, vram, free)
     if budget and bw * bh * scale * scale > budget:
         scale = max(1.25, (budget / (bw * bh)) ** 0.5)
         if log:
+            have = (f"{free:.1f} Go libres" if free else
+                    f"{vram:.0f} Go de VRAM" if vram else "la VRAM disponible")
             log(f"[hd] facteur ramené à ×{scale:.2f} : au-delà, le tampon du "
-                f"second débruitage ne tient pas dans {vram:.0f} Go de VRAM "
-                "avec ce modèle chargé.")
+                f"second débruitage ne tient pas dans {have} avec ce modèle "
+                "chargé.")
+    elif log and free and vram and free < vram * 0.75:
+        # Utile à savoir AVANT de lancer : de la VRAM est prise ailleurs.
+        log(f"[hd] {free:.1f} Go libres sur {vram:.0f} — une autre application "
+            "occupe la carte. Fermez-la pour viser plus grand.")
 
     d = dict(model.defaults)
     base_steps = int(steps or d.get("steps", 8) or 8)
