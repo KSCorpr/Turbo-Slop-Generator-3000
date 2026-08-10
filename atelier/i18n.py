@@ -107,9 +107,32 @@ _EN: dict[str, str] = {
     "modèle de diffusion": "diffusion model",
     "⚙️ Réglages": "⚙️ Settings",
 
-    # ---- onglets Xanax (style figé) ----
-    "💊 Krea 2 — Xanax": "💊 Krea 2 — Xanax",
-    "💊 Flux.2 Klein — Xanax": "💊 Flux.2 Klein — Xanax",
+    # ---- groupes d'onglets racine ----
+    "🧰 Outils": "🧰 Tools",
+    "⚙️ Système": "⚙️ System",
+    "mode CPU": "CPU mode",
+    "**Binaire `sd-cli` introuvable** — lancez `install.bat` / `install.sh`.":
+        "**`sd-cli` binary not found** — run `install.bat` / `install.sh`.",
+    "**Aucun GPU détecté** — mode CPU (très lent). Vérifiez vos pilotes "
+    "NVIDIA / `nvidia-smi`.":
+        "**No GPU detected** — CPU mode (very slow). Check your NVIDIA "
+        "drivers / `nvidia-smi`.",
+
+    # ---- onglet Xanax (style figé) ----
+    "💊 Xanax": "💊 Xanax",
+    "Modèle": "Model",
+    "Modèle indisponible.": "Model unavailable.",
+    "### Une phrase, une photo\n"
+    "**Le style est figé et non modifiable** : photo amateur, France "
+    "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
+    "format 4:3 sur la grille native du modèle. C'est le principe de "
+    "cet onglet — pour régler quoi que ce soit, utilisez un onglet de "
+    "génération normal.":
+        "### One sentence, one photo\n"
+        "**The style is fixed and cannot be changed**: amateur snapshot, "
+        "provincial France, 1995-2005, overcast, no post-processing, 4:3 on "
+        "the model's native grid. That is the point of this tab — to tune "
+        "anything at all, use a normal generation tab.",
     "Votre phrase ou thème": "Your sentence or theme",
     "un homme qui attend le bus devant un supermarché…":
         "a man waiting for the bus outside a supermarket…",

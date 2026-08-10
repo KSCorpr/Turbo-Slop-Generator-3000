@@ -81,7 +81,10 @@ def _defaults(model_id: str | None) -> dict:
             "edit": _is_edit(m)}
 
 
-def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
+def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
+                       parent_tabs=None):
+    """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet (voir
+    build_toolkit_tab — l'image doit atterrir dans un onglet VISIBLE)."""
     with gr.Tab("🖼️ Outpaint", id=tab_id):
         gr.Markdown(
             "### Étendre une image (outpaint)\n"
@@ -333,13 +336,17 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None):
         if pending_outpaint is not None and tabs is not None:
             def _consume(pend):
                 if not pend:
-                    return gr.update(), None, gr.update()
+                    return gr.update(), None, gr.update(), gr.update()
                 from PIL import Image as _PI
                 im = _PI.open(pend)
-                return gr.update(value=im), None, gr.update(value="")
+                top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
+                       else gr.update())
+                return gr.update(value=im), None, gr.update(value=""), top
 
             tabs.select(_consume, inputs=[pending_outpaint],
-                        outputs=[image, pending_outpaint, status])
+                        outputs=[image, pending_outpaint, status,
+                                 parent_tabs if parent_tabs is not None
+                                 else status])
 
 
 def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,

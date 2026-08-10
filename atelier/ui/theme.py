@@ -1,19 +1,46 @@
-"""Thème et habillage CSS (clair, moderne) — accent cyan #00ccff."""
+"""Thème et habillage CSS.
+
+Trois principes, dans cet ordre :
+
+1. **L'accent se mérite.** Le cyan ne sert qu'à l'action principale et à l'état
+   actif. Quand chaque libellé de champ porte une pastille colorée — ce que
+   faisait la version précédente — plus rien ne ressort, et l'ensemble a l'air
+   d'un jouet. La hiérarchie se fait à la graisse et à l'espacement.
+
+2. **Aucune ressource externe.** Une application locale ne doit pas attendre
+   Google Fonts pour s'afficher : hors ligne, la page reste sur « Loading… » le
+   temps du timeout. On utilise donc la pile de polices SYSTÈME, qui est déjà
+   sur la machine, s'affiche instantanément et ne dépend de rien.
+
+3. **Les sélecteurs doivent exister.** Gradio 5.x a renommé le conteneur
+   d'onglets : le CSS visait `.tab-nav`, qui n'existe plus, donc rien ne
+   s'appliquait. On cible désormais `button[role=tab]`, stable parce que c'est
+   la sémantique ARIA et non une classe interne.
+"""
 from __future__ import annotations
 
 import gradio as gr
 
-ACCENT = "#00ccff"
-ACCENT_HOVER = "#00b3e6"
-ACCENT_DARK = "#006688"
+ACCENT = "#00b8e6"
+ACCENT_HOVER = "#00a1cc"
+ACCENT_DARK = "#00647f"
 
-# Rampe de teintes centrée sur #00ccff (c500), pour les accents Gradio.
+# Rampe de teintes centrée sur l'accent, pour les composants Gradio.
 _ACCENT_RAMP = gr.themes.Color(
     name="cyan-accent",
-    c50="#e6faff", c100="#c2f2ff", c200="#8ae8ff", c300="#4dddff",
-    c400="#1ad4ff", c500="#00ccff", c600="#00a3cc", c700="#007a99",
-    c800="#005c73", c900="#08384a", c950="#04222e",
+    c50="#ecfbff", c100="#cff4ff", c200="#9de8ff", c300="#5fd8fb",
+    c400="#22c6ef", c500="#00b8e6", c600="#0092b8", c700="#00708f",
+    c800="#00566e", c900="#083a4a", c950="#04222e",
 )
+
+# Pile SYSTÈME : présente partout, aucun téléchargement, aucun décalage de mise
+# en page au chargement. `-apple-system` couvre macOS, `Segoe UI Variable`
+# Windows 11, `Segoe UI` Windows 10, `Inter`/`Roboto` les Linux qui les ont.
+_FONTS = ["-apple-system", "BlinkMacSystemFont", "Segoe UI Variable Text",
+          "Segoe UI", "Inter", "Roboto", "Helvetica Neue", "system-ui",
+          "sans-serif"]
+_MONO = ["ui-monospace", "SFMono-Regular", "SF Mono", "Cascadia Mono",
+         "JetBrains Mono", "Consolas", "monospace"]
 
 
 def theme() -> gr.Theme:
@@ -22,86 +49,188 @@ def theme() -> gr.Theme:
         secondary_hue=_ACCENT_RAMP,
         neutral_hue=gr.themes.colors.slate,
         radius_size=gr.themes.sizes.radius_lg,
-        font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+        font=_FONTS,
+        font_mono=_MONO,
     ).set(
-        body_background_fill="#f6f7fb",
-        body_background_fill_dark="#0b1117",
+        body_background_fill="#f4f6fa",
+        body_background_fill_dark="#0a0f14",
         block_background_fill="#ffffff",
-        block_background_fill_dark="#141b22",
+        block_background_fill_dark="#131a21",
         block_border_width="1px",
+        block_border_color="#e6e9ef",
+        block_border_color_dark="#1f2a35",
+        block_label_background_fill="transparent",
+        block_label_background_fill_dark="transparent",
+        block_label_text_color="#5b6675",
+        block_label_text_color_dark="#8d9aa9",
+        block_label_text_weight="600",
+        block_label_text_size="0.8rem",
+        block_title_text_color="#5b6675",
+        block_title_text_color_dark="#8d9aa9",
         block_title_text_weight="600",
+        block_shadow="0 1px 2px rgba(15,23,42,.05)",
+        input_background_fill="#ffffff",
+        input_background_fill_dark="#0f161d",
+        input_border_color="#dde2ea",
+        input_border_color_dark="#243240",
         button_primary_background_fill=ACCENT,
         button_primary_background_fill_hover=ACCENT_HOVER,
-        button_primary_text_color="#03303f",   # navy sombre = lisible sur le cyan
-        button_primary_text_color_dark="#03303f",
+        button_primary_text_color="#ffffff",
+        button_primary_text_color_dark="#ffffff",
+        button_large_radius="10px",
+        button_small_radius="8px",
         slider_color=ACCENT,
     )
 
 
 CSS = f"""
+/* ------------------------------------------------------------------ *
+ *  Jetons : une seule source pour les couleurs qu'on répète.
+ * ------------------------------------------------------------------ */
+:root {{
+  --tsg-accent: {ACCENT};
+  --tsg-accent-dark: {ACCENT_DARK};
+  --tsg-ink: #0f172a;
+  --tsg-muted: #64748b;
+  --tsg-line: #e6e9ef;
+  --tsg-surface: #ffffff;
+  --tsg-raise: 0 1px 2px rgba(15,23,42,.05);
+}}
+.dark {{
+  --tsg-ink: #e6edf3;
+  --tsg-muted: #8d9aa9;
+  --tsg-line: #1f2a35;
+  --tsg-surface: #131a21;
+  --tsg-raise: none;
+}}
+
 .gradio-container {{ max-width: 1750px !important; margin: auto; }}
-#atelier-header {{ text-align: left; padding: 4px 0 2px 0; }}
-#atelier-header h1 {{ font-size: 1.7rem; margin: 0; letter-spacing: .5px;
-                      color: {ACCENT_DARK}; }}
-#atelier-header .sub {{ color: #6b7280; font-size: .85rem; margin-top: 2px; }}
 
-/* ---- Onglets : plus lisibles, état sélectionné net (accent cyan) ---- */
-.tab-nav {{ border-bottom: 2px solid #e5e7eb !important; gap: 2px; }}
-.tab-nav button {{ font-size: .98rem !important; font-weight: 600 !important;
-                   padding: 9px 16px !important; color: #475569 !important;
-                   border: none !important; border-radius: 8px 8px 0 0 !important; }}
-.tab-nav button:hover {{ color: {ACCENT_DARK} !important;
-                         background: {ACCENT}14 !important; }}
-.tab-nav button.selected {{ color: {ACCENT_DARK} !important;
-    background: {ACCENT}1f !important;
-    border-bottom: 3px solid {ACCENT} !important; }}
+/* ------------------------------------------------------------------ *
+ *  En-tête : compact. Il ne doit pas coûter un tiers du premier écran.
+ * ------------------------------------------------------------------ */
+#atelier-header {{ display:flex; align-items:baseline; gap:12px;
+                   flex-wrap:wrap; padding:2px 0 8px 0; }}
+#atelier-header h1 {{ font-size:1.35rem; margin:0; letter-spacing:-.01em;
+                      font-weight:700; color:var(--tsg-ink); }}
+#atelier-header .sub {{ color:var(--tsg-muted); font-size:.8rem; }}
+#atelier-header .dot {{ color:var(--tsg-line); }}
+/* Pastille d'état matériel : lisible d'un coup d'œil, jamais criarde. */
+#atelier-header .chip {{ font-size:.74rem; font-weight:600; padding:2px 9px;
+    border-radius:999px; border:1px solid var(--tsg-line);
+    color:var(--tsg-muted); white-space:nowrap; }}
+#atelier-header .chip.ok {{ color:#15803d; border-color:#bbf7d0;
+    background:#f0fdf4; }}
+#atelier-header .chip.warn {{ color:#b45309; border-color:#fde68a;
+    background:#fffbeb; }}
+.dark #atelier-header .chip.ok {{ background:#052e16; border-color:#14532d;
+    color:#4ade80; }}
+.dark #atelier-header .chip.warn {{ background:#2a1c05; border-color:#57400d;
+    color:#fbbf24; }}
 
-.model-card {{ border:1px solid #e5e7eb; border-radius:14px; padding:14px 16px;
-               background:#ffffff; margin-bottom:10px;
-               box-shadow:0 1px 2px rgba(16,24,40,.04); }}
-.model-card h3 {{ margin:0 0 4px 0; }}
-.tag {{ display:inline-block; background:{ACCENT}22; color:{ACCENT_DARK};
-        border-radius:999px; padding:2px 10px; font-size:.72rem; margin-right:6px; }}
-.status-ok {{ color:#16a34a; font-weight:600; }}
-.status-missing {{ color:#d97706; font-weight:600; }}
-.log-box textarea {{ font-family: ui-monospace, monospace; font-size:.8rem;
-                     resize: vertical; }}
+/* ------------------------------------------------------------------ *
+ *  Onglets. `button[role=tab]` : sémantique ARIA, donc stable d'une
+ *  version de Gradio à l'autre — contrairement aux classes internes.
+ * ------------------------------------------------------------------ */
+.tab-container {{ border-bottom:1px solid var(--tsg-line) !important;
+                  gap:2px !important; margin-bottom:14px !important; }}
+button[role=tab] {{
+    font-size:.9rem !important; font-weight:600 !important;
+    padding:8px 14px !important; color:var(--tsg-muted) !important;
+    border:none !important; background:transparent !important;
+    border-radius:8px 8px 0 0 !important;
+    border-bottom:2px solid transparent !important;
+    transition:color .12s ease, background .12s ease; }}
+button[role=tab]:hover {{ color:var(--tsg-ink) !important;
+    background:rgba(100,116,139,.08) !important; }}
+button[role=tab][aria-selected=true] {{
+    color:var(--tsg-accent-dark) !important;
+    background:transparent !important;
+    border-bottom:2px solid var(--tsg-accent) !important; }}
+.dark button[role=tab][aria-selected=true] {{ color:var(--tsg-accent) !important; }}
+/* Sous-onglets : plus discrets que les onglets racine, pour que la
+   hiérarchie se lise sans avoir à réfléchir. */
+.tab-container .tab-container button[role=tab] {{
+    font-size:.85rem !important; padding:6px 11px !important; }}
 
-/* ---- Zone d'action principale : « Générer » doit sauter aux yeux ---- */
-.go-row button {{ font-weight: 700 !important; }}
-.go-row button.primary {{ font-size: 1.02rem !important;
-    box-shadow: 0 2px 8px {ACCENT}3d; letter-spacing:.2px; }}
+/* ------------------------------------------------------------------ *
+ *  Libellés : typographiques, PAS des pastilles colorées.
+ *
+ *  Le thème « Soft » de Gradio pose un fond teinté derrière chaque
+ *  libellé de bloc. Multiplié par les vingt champs d'un onglet, l'accent
+ *  finit partout — donc plus nulle part : rien ne ressort, et l'ensemble
+ *  a l'air d'une maquette. Les jetons du thème ne couvrent pas tous les
+ *  composants (galerie, accordéon, image), d'où ces règles explicites.
+ * ------------------------------------------------------------------ */
+.block-label, .block-title, label > span:first-child,
+.gradio-container .block > .label-wrap > span {{
+    background:transparent !important;
+    border:none !important;
+    box-shadow:none !important;
+    color:var(--tsg-muted) !important;
+    font-weight:600 !important;
+    font-size:.8rem !important;
+    letter-spacing:.005em;
+    padding-left:0 !important; }}
+.block-label {{ backdrop-filter:none !important; }}
+.gradio-container .block > .label-wrap {{ margin-bottom:4px; }}
+/* L'accordéon garde du poids : c'est un titre de section, pas un libellé. */
+.gradio-container .label-wrap > span {{ font-size:.88rem !important;
+    color:var(--tsg-ink) !important; }}
 
-/* ---- Aides et retours : lisibles sans crier ---- */
-/* .hint = ce qui VA se passer (récapitulatif avant clic). */
-.hint p {{ margin:.25rem 0 !important; font-size:.82rem; color:#64748b;
-           line-height:1.45; }}
-/* .feedback = ce qui S'EST passé, encadré pour être repérable d'un coup d'œil. */
-.feedback:not(:empty) {{ border-left:3px solid {ACCENT};
-    background:{ACCENT}0f; border-radius:0 8px 8px 0;
+/* ------------------------------------------------------------------ *
+ *  Action principale : le seul endroit où l'accent est plein.
+ * ------------------------------------------------------------------ */
+.go-row {{ gap:8px !important; }}
+.go-row button {{ font-weight:650 !important; }}
+.go-row button.primary {{ font-size:1rem !important; letter-spacing:.01em;
+    box-shadow:0 1px 2px rgba(0,184,230,.35), 0 4px 14px rgba(0,184,230,.22); }}
+.go-row button.primary:hover {{
+    box-shadow:0 1px 2px rgba(0,184,230,.4), 0 6px 18px rgba(0,184,230,.3); }}
+
+/* ------------------------------------------------------------------ *
+ *  Cartes, étiquettes, états.
+ * ------------------------------------------------------------------ */
+.model-card {{ border:1px solid var(--tsg-line); border-radius:12px;
+               padding:13px 15px; background:var(--tsg-surface);
+               margin-bottom:9px; box-shadow:var(--tsg-raise); }}
+.model-card h3 {{ margin:0 0 4px 0; font-size:1rem; }}
+.tag {{ display:inline-block; background:rgba(0,184,230,.12);
+        color:var(--tsg-accent-dark); border-radius:999px; padding:2px 9px;
+        font-size:.7rem; font-weight:600; margin-right:5px; }}
+.dark .tag {{ color:#5fd8fb; }}
+.status-ok {{ color:#15803d; font-weight:600; }}
+.status-missing {{ color:#b45309; font-weight:600; }}
+.log-box textarea {{ font-family:{", ".join(_MONO)}; font-size:.78rem;
+                     line-height:1.5; resize:vertical; }}
+
+/* .hint = ce qui VA se passer · .feedback = ce qui S'EST passé. */
+.hint p {{ margin:.2rem 0 !important; font-size:.8rem;
+           color:var(--tsg-muted); line-height:1.5; }}
+.feedback:not(:empty) {{ border-left:3px solid var(--tsg-accent);
+    background:rgba(0,184,230,.06); border-radius:0 8px 8px 0;
     padding:7px 11px; margin:6px 0; }}
-.feedback p {{ margin:.15rem 0 !important; font-size:.84rem; line-height:1.5; }}
+.feedback p {{ margin:.15rem 0 !important; font-size:.83rem; line-height:1.5; }}
 
-/* ---- Stabilité des dimensions (évite les sauts/collapse au resize) ---- */
-/* Images (upload/preview) : l'image s'inscrit en entier, sans collapse de
-   largeur sur les ratios non carrés, et sans déborder verticalement. */
+/* Bandeau d'alerte au démarrage : compact, replié sur une ligne. */
+#atelier-alerts:not(:empty) {{ border:1px solid #fde68a; background:#fffbeb;
+    color:#92400e; border-radius:10px; padding:8px 12px; margin-bottom:10px;
+    font-size:.84rem; }}
+#atelier-alerts p {{ margin:.12rem 0 !important; }}
+.dark #atelier-alerts:not(:empty) {{ background:#2a1c05; border-color:#57400d;
+    color:#fcd34d; }}
+
+/* ------------------------------------------------------------------ *
+ *  Stabilité des dimensions (évite les sauts au redimensionnement).
+ * ------------------------------------------------------------------ */
 [data-testid="image"] img, .image-frame img, .image-container img {{
-    object-fit: contain !important; width: 100% !important;
-    max-height: 70vh; }}
-[data-testid="image"], .image-container {{ overflow: hidden; }}
-/* Zones de texte : redimensionnables verticalement seulement (pas de
-   débordement horizontal qui casse la mise en page). */
-textarea {{ resize: vertical !important; max-width: 100% !important; }}
-.gr-image, .gr-gallery {{ min-height: 0; }}
+    object-fit:contain !important; width:100% !important; max-height:70vh; }}
+[data-testid="image"], .image-container {{ overflow:hidden; }}
+textarea {{ resize:vertical !important; max-width:100% !important; }}
+.gr-image, .gr-gallery {{ min-height:0; }}
 footer {{ display:none !important; }}
 
-/* ---- Mode sombre : overrides des couleurs codées en dur ci-dessus ---- */
-.dark #atelier-header h1 {{ color: {ACCENT}; }}
-.dark #atelier-header .sub {{ color: #94a3b8; }}
-.dark .model-card {{ background:#141b22; border-color:#243240;
-                     box-shadow:none; }}
-.dark .tab-nav {{ border-bottom-color:#243240 !important; }}
-.dark .tab-nav button {{ color:#9aa7b4 !important; }}
-.dark .tab-nav button:hover,
-.dark .tab-nav button.selected {{ color:{ACCENT} !important; }}
+/* Accessibilité : un anneau de focus visible, à l'accent. */
+:where(button, input, textarea, select, [tabindex]):focus-visible {{
+    outline:2px solid var(--tsg-accent) !important; outline-offset:2px; }}
 """

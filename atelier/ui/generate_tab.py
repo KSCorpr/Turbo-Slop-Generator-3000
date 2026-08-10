@@ -111,9 +111,13 @@ def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
 
 
 def build_generative_tab(model_id: str, title: str,
-                         pending_toolkit=None, tabs=None, toolkit_tab_id="toolkit",
-                         pending_3d=None, threed_tab_id="threed",
-                         pending_outpaint=None, outpaint_tab_id="outpaint"):
+                         # Les trois destinations vivent désormais SOUS le même
+                         # onglet racine « 🧰 Outils » : c'est lui qu'on
+                         # sélectionne ici, chaque onglet enfant se chargeant
+                         # ensuite de se mettre au premier plan.
+                         pending_toolkit=None, tabs=None, toolkit_tab_id="tools",
+                         pending_3d=None, threed_tab_id="tools",
+                         pending_outpaint=None, outpaint_tab_id="tools"):
     d = _defaults(model_id)
 
     with gr.Tab(title):
@@ -1003,8 +1007,8 @@ def build_generative_tab(model_id: str, title: str,
                    gr.update(value=items, visible=True),
                    "\n".join(logs), paths, seeds)
 
-        gen_evt = run.click(
-            do_generate,
+        _gen_io = dict(
+            fn=do_generate,
             inputs=[system_prompt, prompt, negative, photo_pick, art_pick,
                     init_image,
                     ref_image2, ref_image3, strength, outpaint, edit_mode, width,
@@ -1014,7 +1018,14 @@ def build_generative_tab(model_id: str, title: str,
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )
-        stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[gen_evt])
+        gen_evt = run.click(**_gen_io)
+        # QOL : Ctrl+Entrée (ou Cmd+Entrée) depuis le prompt lance la
+        # génération. Un champ multiligne n'a pas de « validation » naturelle,
+        # et faire l'aller-retour jusqu'au bouton à chaque essai est le geste
+        # qu'on répète le plus dans cette application.
+        prompt.submit(**_gen_io)
+        stop.click(lambda: gen_engine.cancel(), outputs=None,
+                   cancels=[gen_evt])
 
         # --- Seed : vidé -> -1 ; sélection -> affichage copiable ; réutiliser ---
         def _seed_default(v):

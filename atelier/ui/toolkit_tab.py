@@ -96,7 +96,13 @@ def _installer_block(title: str, note: str, stream_fn, installed: bool):
         btn.click(_install, outputs=[log])
 
 
-def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
+def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
+                      parent_tabs=None):
+    """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet.
+
+    Depuis le regroupement des onglets, atteindre un outil demande DEUX
+    sélections — le groupe à la racine, puis l'outil dedans. L'appelant fournit
+    donc le conteneur, sinon l'image arriverait dans un onglet resté masqué."""
     with gr.Tab("🧰 Toolkit", id=tab_id):
         gr.Markdown(
             "### Outils utilitaires\n"
@@ -877,14 +883,20 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None):
             _keys = ["depth", "bg", "sam", "esrgan", "seedvr2", "creative"]
 
             def _consume(pend):
+                # +2 sorties fixes : le groupe parent et le sélecteur d'outil.
                 if not pend:
-                    return tuple([gr.update()] * (len(_keys) + 1) + [None])
+                    return tuple([gr.update()] * (len(_keys) + 2) + [None])
                 path, dest = pend
                 sub = gr.Tabs(selected=dest) if dest in _keys else gr.update()
+                # Remonter le groupe « Outils » : sans ça l'outil est bien
+                # sélectionné, mais dans un onglet que personne n'affiche.
+                top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
+                       else gr.update())
                 img_upd = [gr.update(value=path) if k == dest else gr.update()
                            for k in _keys]
-                return tuple([sub] + img_upd + [None])
+                return tuple([top, sub] + img_upd + [None])
 
-            tabs.select(_consume, inputs=[pending_toolkit],
-                        outputs=[sub_tabs, d_image, b_image, s_image, u_image,
-                                 seed_image, c_image, pending_toolkit])
+            _outs = [parent_tabs if parent_tabs is not None else sub_tabs,
+                     sub_tabs, d_image, b_image, s_image, u_image,
+                     seed_image, c_image, pending_toolkit]
+            tabs.select(_consume, inputs=[pending_toolkit], outputs=_outs)

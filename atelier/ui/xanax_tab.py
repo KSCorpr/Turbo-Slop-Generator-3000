@@ -57,29 +57,51 @@ def build_prompt(subject: str) -> str:
     return f"{XANAX_STYLE}, {(subject or '').strip().strip(',')}".strip(", ")
 
 
-def build_xanax_tab(model_id: str, title: str):
-    prefs = settings.load_prefs()
-    model = registry.get_base_model(model_id, prefs)
+# Modèles proposés dans l'onglet, du plus rapide au plus lourd. Un SEUL onglet
+# pour les deux : le style est identique, seul le moteur change — deux onglets
+# jumeaux, c'était deux fois le même écran à maintenir et une case de plus à
+# lire dans la barre.
+XANAX_MODELS = [("⚡ Krea 2 Turbo", "krea2-turbo"),
+                ("🟣 Flux.2 Klein 9B", "flux2-klein-9b")]
+
+
+def _model_info(model_id: str):
+    """(modèle, famille, défauts, largeur, hauteur, pas) pour un id donné."""
+    model = registry.get_base_model(model_id, settings.load_prefs())
     family = model.family if model else "flux2"
     d = dict(model.defaults) if model else {}
-    width, height = _size_for(family)
-    steps = int(d.get("steps", 8) or 8)
+    w, h = _size_for(family)
+    return model, family, d, w, h, int(d.get("steps", 8) or 8)
 
+
+def _recap_for(model_id: str) -> str:
+    """État du modèle choisi + format qu'il produira, avant le clic."""
+    model, _fam, _d, w, h, _st = _model_info(model_id)
+    ready = model is not None and registry.model_is_ready(model)
+    state = (t("● modèle prêt") if ready
+             else t("○ à télécharger (onglet Catalogue de modèles)"))
+    return f"{state} · {w}×{h}"
+
+
+def build_xanax_tab(title: str = "💊 Xanax"):
     with gr.Tab(title):
-        ready = model is not None and registry.model_is_ready(model)
-        status_line = (t("● modèle prêt") if ready
-                       else t("○ à télécharger (onglet Catalogue de modèles)"))
+        # Texte SÉPARÉ du titre : une f-string composée ne peut pas servir de
+        # clé de traduction (elle ne correspondrait jamais au dictionnaire).
         gr.Markdown(
-            f"### {title} — {status_line}\n"
-            "Écrivez une phrase ou un thème, vous obtenez **une photo**.\n\n"
+            "### Une phrase, une photo\n"
             "**Le style est figé et non modifiable** : photo amateur, France "
             "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
-            f"format 4:3 ({width}×{height}). C'est le principe de cet onglet — "
-            "pour régler quoi que ce soit, utilisez l'onglet de génération "
-            "normal.")
+            "format 4:3 sur la grille native du modèle. C'est le principe de "
+            "cet onglet — pour régler quoi que ce soit, utilisez un onglet de "
+            "génération normal.")
 
         with gr.Row():
             with gr.Column(scale=3):
+                model_pick = gr.Radio(
+                    choices=[(t(lbl), mid) for lbl, mid in XANAX_MODELS],
+                    value=XANAX_MODELS[0][1], label="Modèle")
+                model_state = gr.Markdown(_recap_for(XANAX_MODELS[0][1]),
+                                          elem_classes="hint")
                 prompt = gr.Textbox(
                     label="Votre phrase ou thème", lines=3,
                     placeholder="un homme qui attend le bus devant un "
@@ -111,10 +133,16 @@ def build_xanax_tab(model_id: str, title: str):
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
-        def do_xanax(subject, use_enhance, seed_v):
+        model_pick.change(_recap_for, inputs=[model_pick],
+                          outputs=[model_state])
+
+        def do_xanax(model_id, subject, use_enhance, seed_v):
             if not (subject or "").strip():
                 raise gr.Error(t("Écrivez une phrase ou un thème."))
             settings.ensure_dirs()
+            model, family, d, width, height, steps = _model_info(model_id)
+            if model is None:
+                raise gr.Error(t("Modèle indisponible."))
             try:
                 base_seed = int(seed_v)
             except (TypeError, ValueError):
@@ -195,6 +223,9 @@ def build_xanax_tab(model_id: str, title: str):
                    gr.update(value=f"**Prompt utilisé :** {full_prompt}"),
                    "\n".join(logs[-400:]))
 
-        evt = run.click(do_xanax, inputs=[prompt, enhance, seed],
+        evt = run.click(do_xanax, inputs=[model_pick, prompt, enhance, seed],
                         outputs=[status, result, used_md, log])
+        # QOL : Ctrl+Entrée depuis le champ de saisie lance la génération.
+        prompt.submit(do_xanax, inputs=[model_pick, prompt, enhance, seed],
+                      outputs=[status, result, used_md, log])
         stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])

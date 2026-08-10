@@ -28,17 +28,20 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
+**Six root tabs**, arranged by what they do rather than by what they are: what
+*produces* an image stays at the root, what *retouches* one lives under **Tools**,
+what administers the machine lives under **System**. (Eleven root tabs used to
+overflow into a `…` menu, which made Manage and Settings invisible at a glance —
+so the grouping is not decoration.)
+
 | Tab | What it does |
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 💊 **Krea 2 — Xanax** · 💊 **Flux.2 Klein — Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure |
+| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Toolkit** | depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD** (native sd.cpp highres fix, no tiles) · SeedVR2 · creative SDXL upscale |
-| 🧊 **Image → 3D** | image → textured 3D mesh (GLB) via **trellis.cpp** (TRELLIS.2, native CUDA, no PyTorch) · one-shot (frees VRAM) · **f16/q8/q4 weight variants** (~16.5 / 9.9 / 6 GB) · in-browser 3D preview |
-| 🔧 **Convert to GGUF** | quantize any checkpoint / safetensors / diffusion model to a lighter GGUF (CPU, `sd --mode convert`) so it fits your card |
-| 🧹 **Manage & help** | disk inventory of everything downloaded (engines, models, add-ons, your data) with sizes · selective uninstall with confirmation · **in-app documentation of every option** |
-| ⚙️ **Settings** | detected hardware, quantization, optimizations (auto profile per detected GPU / manual override) |
+| 🧰 **Tools** | **Toolkit** (depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, in-app documentation of every option) · **Convert to GGUF** |
 
 ---
 
@@ -124,6 +127,28 @@ It deletes the **code** of removed features, purges `__pycache__` and `tmp/`,
 then verifies that everything compiles, the model catalog is valid, and the
 dependencies + `sd-cli` engine are present. It never touches `models/custom/`,
 `loras/`, `outputs/`, `userdata/`, `python/` or `bin/`.
+
+**The engine updates separately from the code, and that is the trap.** Copying
+the repo over the old one does not touch `bin/`, so the app can start asking for
+a `sd-cli` option the installed binary has never heard of — and you find out when
+a tab fails. Maintenance therefore checks the engine's *capabilities*, not just
+its presence: it parses `sd-cli -h` against the options the current code actually
+needs, and names the feature rather than the flag ("`--hires` missing" tells
+nobody anything; "the HD tab will not work" does). To fix everything in one go:
+
+```bat
+maintenance.bat --all    ::  purge + engine update  (./maintenance.sh --all)
+```
+
+`--update-engine` alone does just the engine. The engine download runs as a
+subprocess, so a network failure is reported rather than taking maintenance down
+with it.
+
+**Orphan modules are found generically.** Beyond the hand-declared
+`REMOVED_FEATURES`, maintenance walks the import graph from `app.py` and
+`scripts/`, and reports any module under `atelier/` that nothing reaches. That
+catches leftovers from versions nobody remembered to declare. It reports rather
+than deletes: a dynamically loaded module would show up here wrongly.
 
 **Data left behind by removed features is measured, not deleted.** When a feature
 goes away it leaves gigabytes on disk — downloaded weights, cloned repos, model

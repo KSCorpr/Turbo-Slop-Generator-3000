@@ -79,7 +79,10 @@ def _gpu_choices() -> list[tuple[str, int]]:
             for g in hardware.detect_gpus()]
 
 
-def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
+def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
+                     parent_tabs=None):
+    """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet (voir
+    build_toolkit_tab — l'image doit atterrir dans un onglet VISIBLE)."""
     with gr.Tab("🧊 Image → 3D", id=tab_id):
         ready = trellis.is_ready()
         # trellis.cpp n'est publié qu'en binaire Windows CUDA. Sur Mac (et sur
@@ -425,8 +428,12 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None):
         if pending_3d is not None and tabs is not None:
             def _consume3d(pend):
                 if not pend:
-                    return gr.update(), None
-                return gr.update(value=pend), None
+                    return gr.update(), None, gr.update()
+                top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
+                       else gr.update())
+                return gr.update(value=pend), None, top
 
             tabs.select(_consume3d, inputs=[pending_3d],
-                        outputs=[image, pending_3d])
+                        outputs=[image, pending_3d,
+                                 parent_tabs if parent_tabs is not None
+                                 else image])

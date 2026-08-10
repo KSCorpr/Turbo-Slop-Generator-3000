@@ -135,12 +135,21 @@ def build_app() -> gr.Blocks:
 
     with gr.Blocks(title=f"{APP_NAME} {__version__}", theme=theme(), css=CSS,
                    head=head) as demo:
+        # En-tête sur une ligne : titre, sous-titre, puis une pastille qui dit
+        # sur QUOI ça tourne. C'est l'information qu'on veut avoir sous les yeux
+        # en permanence quand on choisit une résolution ou un facteur d'upscale
+        # — pas enfouie dans Réglages.
         _subtitle = i18n.t("Génération d'images locale")
+        if gpus:
+            _best = max(gpus, key=lambda g: g.vram_gb)
+            _chip = (f"<span class='chip ok'>{_best.name} · "
+                     f"{_best.vram_gb:.0f} Go</span>")
+        else:
+            _chip = (f"<span class='chip warn'>{i18n.t('mode CPU')}</span>")
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
-            f"<div class='sub'>{_subtitle} · "
-            f"Flux.2 Klein 9B · Krea 2 Turbo · "
-            f"v{__version__}</div></div>")
+            f"<span class='sub'>{_subtitle} · v{__version__}</span>"
+            f"{_chip}</div>")
 
         # Premier démarrage : choix de la langue (bilingue, persisté).
         if first_run:
@@ -160,16 +169,24 @@ def build_app() -> gr.Blocks:
             _fr_btn.click(lambda: _pick_lang("fr"), outputs=[_lang_msg])
             _en_btn.click(lambda: _pick_lang("en"), outputs=[_lang_msg])
 
-        if sd_cli is None:
-            gr.Markdown("> ⚠️ **Binaire `sd-cli` introuvable.** Lancez "
-                        "`install.bat` / `install.sh`, ou "
-                        "`python scripts/get_sdcpp.py`.")
+        # Alertes de démarrage : UN bandeau compact, pas un empilement. Deux
+        # blocs Markdown pleine largeur coûtaient une centaine de pixels du
+        # premier écran, en permanence, pour un message qu'on lit une fois.
         # Sur Mac Apple Silicon, detect_gpus() renvoie le GPU intégré : pas
-        # d'avertissement, il n'y a rien à installer. L'alerte ne vise que les
-        # PC où un GPU NVIDIA est attendu mais absent (pilotes manquants).
+        # d'avertissement, il n'y a rien à installer. L'alerte GPU ne vise que
+        # les PC où une carte NVIDIA est attendue mais absente.
+        alerts = []
+        if sd_cli is None:
+            alerts.append(i18n.t(
+                "**Binaire `sd-cli` introuvable** — lancez `install.bat` / "
+                "`install.sh`."))
         if not gpus:
-            gr.Markdown("> ⚠️ **Aucun GPU détecté** (mode CPU très lent). "
-                        "Sur PC, vérifiez vos pilotes NVIDIA / `nvidia-smi`.")
+            alerts.append(i18n.t(
+                "**Aucun GPU détecté** — mode CPU (très lent). Vérifiez vos "
+                "pilotes NVIDIA / `nvidia-smi`."))
+        if alerts:
+            gr.Markdown("⚠️ " + "  ·  ".join(alerts),
+                        elem_id="atelier-alerts")
 
         # Image en attente d'envoi vers le Toolkit : (chemin, destination).
         pending_toolkit = gr.State(None)
@@ -177,6 +194,14 @@ def build_app() -> gr.Blocks:
         pending_3d = gr.State(None)
         # Image en attente d'envoi vers l'onglet « Outpaint » (chemin).
         pending_outpaint = gr.State(None)
+        # Six onglets racine, pas onze. Au-delà, Gradio replie la barre dans un
+        # menu « … » : sur la version précédente, « Gestion » et « Réglages »
+        # étaient littéralement invisibles au premier coup d'œil. Le regroupement
+        # n'est donc pas cosmétique — il rend deux fonctions atteignables.
+        #
+        # La règle de rangement : ce qui PRODUIT une image reste à la racine ;
+        # ce qui la RETOUCHE va dans « Outils » ; ce qui administre la machine
+        # va dans « Système ».
         with gr.Tabs() as tabs:
             build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B",
                                  pending_toolkit=pending_toolkit, tabs=tabs,
@@ -186,16 +211,28 @@ def build_app() -> gr.Blocks:
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)
-            # Onglets « Xanax » : style figé, aucun réglage de style exposé.
-            build_xanax_tab("krea2-turbo", "💊 Krea 2 — Xanax")
-            build_xanax_tab("flux2-klein-9b", "💊 Flux.2 Klein — Xanax")
+            # « Xanax » : style figé, aucun réglage de style exposé. Un seul
+            # onglet pour les deux modèles — ils partagent tout sauf le moteur.
+            build_xanax_tab("💊 Xanax")
             build_library_tab()
-            build_toolkit_tab(pending_toolkit=pending_toolkit, tabs=tabs)
-            build_outpaint_tab(pending_outpaint=pending_outpaint, tabs=tabs)
-            build_threed_tab(pending_3d=pending_3d, tabs=tabs)
-            build_convert_tab()
-            build_manage_tab()
-            build_settings_tab()
+
+            # « Outils » : tout ce qui part d'une image existante. Les envois
+            # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
+            # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
+            with gr.Tab("🧰 Outils", id="tools"):
+                with gr.Tabs() as tool_tabs:
+                    build_toolkit_tab(pending_toolkit=pending_toolkit,
+                                      tabs=tabs, parent_tabs=tool_tabs)
+                    build_outpaint_tab(pending_outpaint=pending_outpaint,
+                                       tabs=tabs, parent_tabs=tool_tabs)
+                    build_threed_tab(pending_3d=pending_3d, tabs=tabs,
+                                     parent_tabs=tool_tabs)
+
+            with gr.Tab("⚙️ Système", id="system"):
+                with gr.Tabs():
+                    build_settings_tab()
+                    build_manage_tab()
+                    build_convert_tab()
 
     i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)
     return demo
@@ -245,10 +282,6 @@ def main():
 
     demo.launch(server_name=host, server_port=port, share=args.share,
                 auth=auth, inbrowser=not args.listen, show_api=False)
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":
