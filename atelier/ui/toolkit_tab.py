@@ -189,7 +189,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log])
 
             # ---------- Segment Anything (clic) ----------
-            with gr.Tab("🪄 Détourer un objet (SAM)", id="sam"):
+            with gr.Tab("🪄 Détourer (SAM)", id="sam"):
                 gr.Markdown(
                     "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
                     "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
@@ -246,7 +246,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
 
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
-            with gr.Tab("🔼 Agrandir (ESRGAN)", id="esrgan"):
+            with gr.Tab("🔼 Agrandir", id="esrgan"):
                 gr.Markdown(
                     "Agrandissement **simple** par réseau ESRGAN, natif "
                     "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
@@ -351,8 +351,184 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 u_stop.click(lambda: gen_engine.cancel(), outputs=None,
                              cancels=[u_evt])
 
+            # ---------- Décomposition en calques (PSD) ----------------------
+            with gr.Tab("🧩 Calques", id="layers"):
+                gr.Markdown(
+                    "Découpe une image en **calques** et écrit un **PSD** "
+                    "(ou des PNG transparents séparés). Deux façons de "
+                    "procéder : laisser SAM balayer l'image tout seul, ou "
+                    "**désigner vous-même** les zones au clic.\n\n"
+                    "⚠️ **À savoir avant de cliquer** : les calques sont des "
+                    "**découpes à plat**. Déplacer un objet révèle un trou — "
+                    "le fond derrière lui n'a jamais existé. C'est fait pour "
+                    "masquer, retoucher une zone ou exporter un élément, **pas** "
+                    "pour recomposer la scène.\n\n"
+                    "L'ordre d'empilement vient de la carte de **profondeur** "
+                    "si l'outil Profondeur est installé ; sinon les grandes "
+                    "zones passent derrière, ce qui n'est qu'une approximation.")
+                _installer_block(
+                    "Segment Anything",
+                    "Même add-on que « Détourer un objet ». L'outil "
+                    "**Profondeur** est facultatif mais améliore nettement "
+                    "l'ordre des calques.",
+                    tools.install_sam_stream, tools.sam_is_installed())
+
+                lay_masks = gr.State([])      # masques choisis à la main
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        lay_image = gr.Image(label="Image à décomposer",
+                                             type="pil")
+                        lay_mode = gr.Radio(
+                            [(t("Automatique — SAM balaie l'image"), "auto"),
+                             (t("Manuel — je clique les zones"), "manual")],
+                            value="auto", label="Mode")
+                        with gr.Group(visible=False) as lay_manual_box:
+                            lay_hint = gr.Markdown(
+                                "**Cliquez un objet** dans l'image ci-dessus : "
+                                "il devient un calque. Recliquez ailleurs pour "
+                                "en ajouter d'autres.", elem_classes="hint")
+                            lay_list = gr.Markdown("*Aucune zone choisie.*",
+                                                   elem_classes="feedback")
+                            with gr.Row():
+                                lay_undo = gr.Button("↩️ Retirer la dernière",
+                                                     size="sm")
+                                lay_clear = gr.Button("🗑️ Tout effacer",
+                                                      size="sm")
+                        with gr.Group(visible=True) as lay_auto_box:
+                            lay_points = gr.Slider(
+                                6, 24, value=12, step=2,
+                                label="Finesse du balayage (points par côté)",
+                                info="↑ = plus de zones trouvées, et beaucoup "
+                                     "plus long. 12 est un bon départ.")
+                            lay_minarea = gr.Slider(
+                                0.1, 5.0, value=0.4, step=0.1,
+                                label="Surface minimale d'un calque (% de l'image)",
+                                info="Monter cette valeur est le meilleur moyen "
+                                     "d'éviter la soupe de petits calques.")
+                            lay_max = gr.Slider(
+                                4, 40, value=24, step=1,
+                                label="Nombre maximum de calques")
+                        with gr.Row():
+                            lay_psd = gr.Checkbox(value=True, label="Fichier PSD")
+                            lay_png = gr.Checkbox(
+                                value=False, label="PNG transparents séparés")
+                        with gr.Row(elem_classes="go-row"):
+                            lay_run = gr.Button("🧩 Décomposer", variant="primary",
+                                                size="lg", scale=3)
+                            lay_stop = gr.Button("⏹️ Annuler", variant="stop",
+                                                 scale=1, min_width=90)
+                    with gr.Column(scale=4):
+                        lay_preview = gr.Image(
+                            label="Zones retenues (aperçu)", height=460,
+                            interactive=False, format="png")
+                        lay_files = gr.File(label="Fichiers produits",
+                                            file_count="multiple")
+                        lay_log = gr.Textbox(label="Journal", lines=10,
+                                             autoscroll=True,
+                                             elem_classes="log-box")
+
+                def _lay_mode(mode):
+                    manual = (mode == "manual")
+                    return (gr.update(visible=manual),
+                            gr.update(visible=not manual))
+
+                lay_mode.change(_lay_mode, inputs=[lay_mode],
+                                outputs=[lay_manual_box, lay_auto_box])
+
+                def _lay_overlay(img, masks):
+                    """Teinte les zones choisies, pour voir ce qu'on a."""
+                    import numpy as np
+                    if img is None:
+                        return None
+                    arr = np.asarray(img.convert("RGB")).astype("float32")
+                    palette = [(0, 200, 255), (255, 120, 90), (140, 230, 120),
+                               (240, 200, 80), (200, 140, 255), (255, 150, 200)]
+                    for i, m in enumerate(masks):
+                        tint = np.array(palette[i % len(palette)], "float32")
+                        sel = m[..., None]
+                        arr = np.where(sel, arr * 0.55 + tint * 0.45, arr)
+                    from PIL import Image as _PI
+                    return _PI.fromarray(arr.clip(0, 255).astype("uint8"))
+
+                def _lay_summary(masks):
+                    if not masks:
+                        return "*Aucune zone choisie.*"
+                    return (f"**{len(masks)} zone(s) choisie(s)** — cliquez "
+                            "encore pour en ajouter, puis « Décomposer ».")
+
+                def _lay_click(img, mode, masks, evt: gr.SelectData):
+                    if mode != "manual" or img is None:
+                        return gr.update(), gr.update(), gr.update()
+                    if not tools.sam_is_installed():
+                        raise gr.Error(t("Segment Anything n'est pas installé "
+                                         "(bouton « Installer » ci-dessus)."))
+                    import numpy as np
+                    from PIL import Image as _PI
+                    x, y = int(evt.index[0]), int(evt.index[1])
+                    try:
+                        cut, _ = tools.sam_segment(img, x, y)
+                    except Exception as exc:  # noqa: BLE001
+                        raise gr.Error(str(exc))
+                    alpha = np.asarray(_PI.open(cut).convert("RGBA"))[:, :, 3]
+                    new = list(masks) + [alpha > 127]
+                    return new, _lay_overlay(img, new), _lay_summary(new)
+
+                lay_image.select(_lay_click,
+                                 inputs=[lay_image, lay_mode, lay_masks],
+                                 outputs=[lay_masks, lay_preview, lay_list])
+
+                def _lay_undo(img, masks):
+                    new = list(masks)[:-1]
+                    return new, _lay_overlay(img, new), _lay_summary(new)
+
+                lay_undo.click(_lay_undo, inputs=[lay_image, lay_masks],
+                               outputs=[lay_masks, lay_preview, lay_list])
+                lay_clear.click(lambda img: ([], _lay_overlay(img, []),
+                                             _lay_summary([])),
+                                inputs=[lay_image],
+                                outputs=[lay_masks, lay_preview, lay_list])
+
+                def do_layers(img, mode, masks, points, minarea, maxn,
+                              want_psd, want_png, progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    if not (want_psd or want_png):
+                        raise gr.Error(t("Choisissez au moins un format de "
+                                         "sortie (PSD ou PNG)."))
+                    logs: list[str] = []
+                    progress(0.1, desc="Décomposition…")
+                    try:
+                        if mode == "manual":
+                            out = tools.masks_to_layers(
+                                img, list(masks), want_psd=want_psd,
+                                want_png=want_png, log=logs.append)
+                        else:
+                            out = tools.image_to_layers(
+                                img, points_per_side=int(points),
+                                max_layers=int(maxn),
+                                min_area_pct=float(minarea),
+                                want_psd=want_psd, want_png=want_png,
+                                log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERREUR] {exc}")
+                        return gr.update(), "\n".join(logs)
+                    progress(1.0, desc="Terminé")
+                    logs.append("\n✅ " + " · ".join(str(p.name) for p in out))
+                    # Un dossier ne se télécharge pas : on ne propose que les
+                    # fichiers, et le journal donne le chemin du dossier PNG.
+                    files = [str(p) for p in out if p.is_file()]
+                    return (files or gr.update()), "\n".join(logs)
+
+                lay_evt = lay_run.click(
+                    do_layers,
+                    inputs=[lay_image, lay_mode, lay_masks, lay_points,
+                            lay_minarea, lay_max, lay_psd, lay_png],
+                    outputs=[lay_files, lay_log])
+                lay_stop.click(lambda: tools.cancel(), outputs=None,
+                               cancels=[lay_evt])
+
             # ---------- HD natif sd.cpp (highres fix) -----------------------
-            with gr.Tab("🚀 HD (natif sd.cpp)", id="hd"):
+            with gr.Tab("🚀 HD", id="hd"):
                 gr.Markdown(
                     "**Passe HD native de sd.cpp** : l'image est agrandie puis "
                     "**re-débruitée en entier** par votre modèle de génération "
@@ -482,7 +658,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                               cancels=[hd_evt])
 
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
-            with gr.Tab("🌱 Restaurer (SeedVR2)", id="seedvr2"):
+            with gr.Tab("🌱 Restaurer", id="seedvr2"):
                 gr.Markdown(
                     "Restauration diffusion **SeedVR2 3B** : récupère des détails "
                     "plus naturels qu'ESRGAN tout en restant plus fidèle que "
@@ -591,7 +767,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                 cancels=[seed_evt])
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
-            with gr.Tab("✨ Upscale créatif (SDXL)", id="creative"):
+            with gr.Tab("✨ Upscale SDXL", id="creative"):
                 gr.Markdown(
                     "Upscale **créatif** « Ultimate SD Upscale » : pré-agrandit "
                     "puis **raffine tuile par tuile** en SDXL img2img à faible "

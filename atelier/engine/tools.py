@@ -16,6 +16,7 @@ from typing import Callable
 from PIL import Image
 
 from .. import hardware, settings
+from ..i18n import t
 
 TOOLS_DIR = settings.ROOT / "tools_repo"
 DEPTH_MODEL_DIR = TOOLS_DIR / "depth" / "model"
@@ -292,6 +293,118 @@ def sam_segment(image, x: int, y: int,
     _run_tool(cmd, log, "La segmentation a échoué (voir le journal).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "sam", stamp), (overlay if overlay.exists() else None)
+
+
+def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
+                     want_psd: bool, want_png: bool,
+                     log: Callable[[str], None] | None = None) -> list[Path]:
+    """Assemble des masques en PSD et/ou en PNG transparents séparés.
+
+    Volontairement HORS du sous-process : l'écriture PSD n'a besoin ni de torch
+    ni de transformers, et la faire ici évite d'imposer l'add-on à qui veut
+    seulement rassembler des calques déjà découpés (mode manuel).
+    """
+    import numpy as np
+    from . import psd as psd_writer
+
+    rgb = np.asarray(Image.open(src).convert("RGB"))
+    h, w = rgb.shape[:2]
+    out: list[Path] = []
+
+    # Le fond, c'est l'image entière : même si une zone est détourée par-dessus,
+    # on ne laisse jamais un trou dans le fichier final.
+    layers = [(t("Fond (image complète)"),
+               np.dstack([rgb, np.full((h, w), 255, "uint8")]))]
+    for name, m in zip(names, masks):
+        alpha = np.zeros((h, w), "uint8")
+        alpha[m] = 255
+        layers.append((name, np.dstack([rgb, alpha])))
+
+    if want_psd:
+        dest = settings.OUTPUT_DIR / f"calques-{stamp}.psd"
+        psd_writer.write_psd(dest, rgb, layers)
+        size = dest.stat().st_size / (1024 * 1024)
+        if log:
+            log(f"[calques] PSD écrit : {dest.name} ({size:.1f} Mo, "
+                f"{len(layers)} calques)")
+        out.append(dest)
+    if want_png:
+        folder = settings.OUTPUT_DIR / f"calques-{stamp}"
+        folder.mkdir(parents=True, exist_ok=True)
+        for i, (name, rgba) in enumerate(layers):
+            safe = "".join(c if (c.isalnum() or c in " -_") else "_"
+                           for c in name).strip() or f"calque{i}"
+            Image.fromarray(rgba, "RGBA").save(folder / f"{i:02d}_{safe}.png")
+        if log:
+            log(f"[calques] {len(layers)} PNG transparents : {folder.name}/")
+        out.append(folder)
+    return out
+
+
+def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
+                    min_area_pct: float = 0.4, want_psd: bool = True,
+                    want_png: bool = False,
+                    log: Callable[[str], None] | None = None) -> list[Path]:
+    """AUTOMATIQUE : SAM balaie l'image, on en tire des calques triés en
+    profondeur, puis on assemble le PSD.
+
+    Ce que ça ne fait PAS, et qu'il faut savoir avant de cliquer : les calques
+    sont des DÉCOUPES à plat. Déplacer un objet révèle un trou, parce que le
+    fond derrière lui n'a jamais existé. C'est utile pour masquer, retoucher une
+    zone ou exporter un élément — pas pour recomposer la scène.
+    """
+    if not sam_is_installed():
+        raise ToolError("Segment Anything n'est pas installé "
+                        "(bouton « Installer » du Toolkit).")
+    import numpy as np
+
+    src = _to_src(image, "layers")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    work = settings.TMP_DIR / f"layers_{stamp}"
+    runner = settings.ROOT / "scripts" / "tools" / "run_layers.py"
+    cmd = [sys.executable, str(runner),
+           "--sam-dir", str(SAM_MODEL_DIR),
+           "--input", str(src), "--output-dir", str(work),
+           "--points-per-side", str(int(points_per_side)),
+           "--max-layers", str(int(max_layers)),
+           "--min-area", f"{max(0.0005, float(min_area_pct) / 100.0):g}"]
+    # La profondeur n'est PAS requise : sans elle on trie par surface, et le
+    # runner le dit. L'exiger transformerait un add-on optionnel en dépendance.
+    if depth_is_installed():
+        cmd += ["--depth-dir", str(DEPTH_MODEL_DIR)]
+    _run_tool(cmd, log, "La décomposition en calques a échoué (voir le journal).",
+              gpu_index=_gen_gpu_index())
+
+    manifest = work / "layers.json"
+    if not manifest.is_file():
+        raise ToolError("Aucun calque produit (voir le journal).")
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    masks, names = [], []
+    for i, entry in enumerate(data.get("masks", [])):
+        m = np.asarray(Image.open(work / entry["file"]).convert("L")) > 127
+        masks.append(m)
+        names.append(f"Zone {i + 1} — {entry['area_pct']:g}%")
+    if not masks:
+        raise ToolError(
+            "Aucune zone exploitable trouvée. Essayez plus de points de "
+            "sondage, ou une surface minimale plus basse.")
+    return _layers_to_files(src, masks, names, stamp, want_psd, want_png, log)
+
+
+def masks_to_layers(image, masks: list, names: list[str] | None = None,
+                    want_psd: bool = True, want_png: bool = False,
+                    log: Callable[[str], None] | None = None) -> list[Path]:
+    """MANUEL : assemble des zones choisies à la main (clics SAM successifs).
+
+    Les masques arrivent déjà segmentés : aucun modèle n'est chargé ici.
+    """
+    if not masks:
+        raise ToolError("Aucune zone sélectionnée — cliquez d'abord sur "
+                        "l'image pour créer des calques.")
+    src = _to_src(image, "layers")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    names = names or [f"Zone {i + 1}" for i in range(len(masks))]
+    return _layers_to_files(src, masks, names, stamp, want_psd, want_png, log)
 
 
 ENHANCE_STYLES = ("generic", "krea2")

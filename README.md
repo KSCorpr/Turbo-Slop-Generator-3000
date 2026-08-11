@@ -793,8 +793,47 @@ subprocesses so torch DLLs never lock the UI process):
   license).
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
+- **Layers (PSD)** — decompose an image into layers, see below.
 - **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**
   and **Creative upscale (SDXL)** — see [Upscaling](#upscaling).
+
+### Layers → PSD
+
+Cuts an image into layers and writes a **PSD** (and/or separate transparent
+PNGs), either by letting SAM sweep the image or by **clicking the areas
+yourself**. Same add-on as click-to-cutout — nothing extra to download.
+
+**Read this before using it: the layers are flat cut-outs.** Move an object and
+you reveal a hole, because the background behind it never existed. This is for
+masking, retouching a region or exporting an element — *not* for recomposing a
+scene. Doing it properly would mean inpainting behind every layer, one diffusion
+pass each; that is a deliberate omission, not an oversight.
+
+**Writing the PSD is done in-house, and that was the surprise.** No usable
+library exists: [`psd-tools`](https://pypi.org/project/psd-tools/1.9.28) reads
+well but "does not support editing of layer structure, such as adding or removing
+a layer", and [`pytoshop`](https://pypi.org/project/pytoshop/) — the only writer
+— is from 2018 and no longer builds on a modern Python (verified: its `setup.py`
+fails against current setuptools). The format is documented and needs nothing but
+`struct`, so `atelier/engine/psd.py` writes it directly: ~180 lines, pure Python,
+no compiled dependency, runs as-is in the portable Python. Two decisions carry
+the file size — each layer is **cropped to its bounding box** (a PSD stores the
+layer position, so keeping the full canvas for a 200 px object would multiply the
+weight by twenty) and channels use the format's native **PackBits RLE**. A
+512×384 three-layer file lands at 44 KB instead of 1 MB uncompressed. The output
+is validated against `psd-tools` in the test suite — an independent reader is the
+only honest way to check you produced a valid file rather than one that merely
+pleases you.
+
+**The two real difficulties are not in the plumbing.** SAM segments *appearance*,
+not meaning: on a photo it happily returns forty to eighty nested masks — a
+shirt, a button, a fold, a reflection. Raw, that is unusable. So masks are sorted
+by descending area and a smaller one is only accepted if it contributes **new**
+surface (the *coverage* threshold), which is what prevents the
+"object / part of object / detail of part" pile-up. And SAM gives **no depth
+order**: that comes from Depth Anything V2 when it is installed — median depth
+under each mask, far to near. Without it, large areas go to the back, which is an
+approximation and is labelled as one rather than presented as a result.
 
 ### Prompt enhancer (AI)
 The **✨ Enhance prompt** button (in each generation tab) runs a small instruct

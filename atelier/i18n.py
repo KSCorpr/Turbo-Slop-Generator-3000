@@ -107,6 +107,39 @@ _EN: dict[str, str] = {
     "modèle de diffusion": "diffusion model",
     "⚙️ Réglages": "⚙️ Settings",
 
+    # ---- toolkit : décomposition en calques (PSD) ----
+    "🧩 Calques": "🧩 Layers",
+    "🌱 Restaurer": "🌱 Restore",
+    "Image à décomposer": "Image to decompose",
+    "Mode": "Mode",
+    "Automatique — SAM balaie l'image": "Automatic — SAM sweeps the image",
+    "Manuel — je clique les zones": "Manual — I click the areas",
+    "Finesse du balayage (points par côté)":
+        "Sweep density (points per side)",
+    "↑ = plus de zones trouvées, et beaucoup plus long. 12 est un bon départ.":
+        "↑ = more areas found, and much slower. 12 is a good starting point.",
+    "Surface minimale d'un calque (% de l'image)":
+        "Minimum layer area (% of the image)",
+    "Monter cette valeur est le meilleur moyen d'éviter la soupe de petits "
+    "calques.":
+        "Raising this is the best way to avoid a soup of tiny layers.",
+    "Nombre maximum de calques": "Maximum number of layers",
+    "Fichier PSD": "PSD file",
+    "PNG transparents séparés": "Separate transparent PNGs",
+    "🧩 Décomposer": "🧩 Decompose",
+    "Zones retenues (aperçu)": "Selected areas (preview)",
+    "Fichiers produits": "Files produced",
+    "Choisissez au moins un format de sortie (PSD ou PNG).":
+        "Choose at least one output format (PSD or PNG).",
+    "**Cliquez un objet** dans l'image ci-dessus : il devient un calque. "
+    "Recliquez ailleurs pour en ajouter d'autres.":
+        "**Click an object** in the image above: it becomes a layer. Click "
+        "elsewhere to add more.",
+    "*Aucune zone choisie.*": "*No area selected.*",
+    "↩️ Retirer la dernière": "↩️ Remove the last one",
+    "🗑️ Tout effacer": "🗑️ Clear all",
+    "Fond (image complète)": "Background (full image)",
+
     # ---- réglages : exécution segmentée ----
     "Budget VRAM du graphe": "Graph VRAM budget",
     "Désactivé (recommandé pour la génération)":
@@ -430,7 +463,7 @@ _EN: dict[str, str] = {
         "Uses PyTorch + transformers (~176 MB model). No command to type.",
     "✂️ Détourer": "✂️ Cut out",
     "Sujet détouré (PNG transparent)": "Cutout subject (transparent PNG)",
-    "🪄 Détourer un objet (SAM)": "🪄 Cut out an object (SAM)",
+    "🪄 Détourer (SAM)": "🪄 Cut out (SAM)",
     "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
     "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
     "recliquant, puis « Extraire » pour le **PNG transparent**.":
@@ -460,7 +493,6 @@ _EN: dict[str, str] = {
         "Click an object in the image first.",
 
     # ---- toolkit : ESRGAN ----
-    "🔼 Agrandir (ESRGAN)": "🔼 Upscale (ESRGAN)",
     "Agrandissement **simple** par réseau ESRGAN GGUF, natif "
     "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
     "prompt. Le facteur (×2 ou ×4) dépend du modèle choisi ; "
@@ -489,7 +521,7 @@ _EN: dict[str, str] = {
         "Choose an upscale model (download them first).",
 
     # ---- toolkit : HD natif sd.cpp ----
-    "🚀 HD (natif sd.cpp)": "🚀 HD (native sd.cpp)",
+    "🚀 HD": "🚀 HD",
     "**Passe HD native de sd.cpp** : l'image est agrandie puis "
     "**re-débruitée en entier** par votre modèle de génération "
     "(Krea 2, Flux.2). Le tout en **une seule commande**, "
@@ -574,7 +606,7 @@ _EN: dict[str, str] = {
         "catalog” tab.",
 
     # ---- toolkit : SDXL créatif ----
-    "✨ Upscale créatif (SDXL)": "✨ Creative upscale (SDXL)",
+    "✨ Upscale SDXL": "✨ SDXL upscale",
     "Upscale **créatif** « Ultimate SD Upscale » : pré-agrandit "
     "puis **raffine tuile par tuile** en SDXL img2img à faible "
     "débruitage (modèle **résident** → tuiles rapides, fondu par "
@@ -611,7 +643,6 @@ _EN: dict[str, str] = {
     "inutile de recopier le prompt de génération)":
         "Prompt (optional — guides the detail, KEEP IT SHORT: ~77 tokens max "
         "for SDXL; no need to copy the generation prompt)",
-    "Facteur d'agrandissement": "Upscale factor",
     "Jusqu'à ~8K (plafonné à 8192 px). ×6–×8 = "
     "beaucoup de tuiles : très long + ~1–2 Go de RAM.":
         "Up to ~8K (capped at 8192 px). ×6–×8 = many tiles: very slow "
