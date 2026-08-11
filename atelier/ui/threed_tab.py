@@ -144,10 +144,15 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             gr.Markdown(
                 "⬆️ **Mettre à jour le binaire** — l'installation ci-dessus "
                 "**ne remplace pas** un binaire déjà présent : une fois "
-                "trellis installé, il reste tel quel indéfiniment. À utiliser "
-                "si votre carte n'est pas reconnue (« no kernel image ») ou "
-                "pour profiter des correctifs amont. Ne retélécharge **pas** "
-                "les ~10 Go de modèles.",
+                "trellis installé, il reste tel quel indéfiniment. Ne "
+                "retélécharge **pas** les ~10 Go de modèles.\n\n"
+                "Le **backend est choisi d'après votre carte**. La build CUDA "
+                "amont n'embarque de code machine que pour les **RTX 30xx** et "
+                "**RTX 50xx** : son `CMakeLists.txt` épingle les noyaux de "
+                "trellis à `86;120`, écrasant la liste complète de sa propre "
+                "CI. Sur RTX 20xx, RTX 40xx, A100 ou H100 elle échoue par "
+                "« no kernel image » — on installe donc la build **Vulkan**, "
+                "qui ne compile rien par architecture et marche partout.",
                 elem_classes="hint")
             upd_btn = gr.Button("⬆️ Mettre à jour le binaire (sans les modèles)",
                                 size="sm")

@@ -43,8 +43,45 @@ TRELLIS_BIN_DIR = BIN_DIR / "trellis"
 MODELS_DIR = _settings.MODELS_DIR / "trellis"
 
 GH_RELEASE = "https://api.github.com/repos/pwilkin/trellis.cpp/releases/latest"
-ASSET_MATCH = ("cuda", "win")          # archive Windows CUDA
 HF_MODEL_REPO = "ilintar/trellis2-gguf"
+
+# --------------------------------------------------------------------------- #
+#  CHOIX DU BACKEND — et pourquoi ce n'est pas « CUDA, évidemment ».
+#
+#  La build CUDA de trellis.cpp ne tourne PAS sur toutes les cartes NVIDIA. Son
+#  CMakeLists épingle ses propres noyaux CUDA à deux architectures :
+#
+#      set_target_properties(trellis_core PROPERTIES CUDA_ARCHITECTURES "86;120")
+#
+#  ce qui écrase la liste pourtant complète passée par la CI
+#  (75;80;86;89;90;120). Seuls sm_86 (RTX 30xx) et sm_120 (RTX 50xx) reçoivent
+#  donc du code machine pour `deform_conv.cu` et `decimate_qem.cu`. Sur une
+#  RTX 20xx (75), une RTX 40xx (89), une A100 (80) ou une H100 (90), le premier
+#  lancement de ces noyaux échoue par « no kernel image is available » — et
+#  comme les erreurs CUDA sont RÉMANENTES, c'est l'opération ggml suivante
+#  (souvent IM2COL) qui la rapporte, ce qui égare le diagnostic.
+#
+#  La build Vulkan n'a pas ce problème : rien n'y est compilé par architecture,
+#  la convolution déformable passe par un shader de calcul. Elle est d'ailleurs
+#  la seule des deux que la CI amont ne marque PAS « experimental » sur Windows.
+#  D'où : Vulkan par défaut sauf carte explicitement couverte par CUDA.
+# --------------------------------------------------------------------------- #
+TRELLIS_CUDA_SM = frozenset({"8.6", "12.0"})
+
+
+def cuda_build_supports(compute_cap: str) -> bool:
+    """La build CUDA amont a-t-elle du code machine pour cette carte ?"""
+    return (compute_cap or "").strip() in TRELLIS_CUDA_SM
+
+
+def preferred_backend(compute_cap: str | None = None) -> str:
+    """« cuda » ou « vulkan », selon la carte détectée.
+
+    Sans capacité de calcul connue on choisit Vulkan : mieux vaut un backend
+    qui marche partout qu'un backend plus rapide sur deux modèles de cartes et
+    inutilisable sur les autres.
+    """
+    return "cuda" if cuda_build_supports(compute_cap or "") else "vulkan"
 
 
 def _is_binary(p: Path) -> bool:
@@ -86,33 +123,58 @@ def has_models() -> bool:
     return MODELS_DIR.is_dir() and any(MODELS_DIR.rglob("*.gguf"))
 
 
-def _pick_asset(assets: list[dict]) -> dict | None:
-    """Choisit l'archive Windows CUDA (trellis-cuda-windows-x64.zip)."""
-    best = None
+def _pick_asset(assets: list[dict], backend: str = "cuda") -> dict | None:
+    """Archive Windows du backend demandé, avec repli sur l'autre.
+
+    Le repli compte : une release où le job CUDA a échoué (il est marqué
+    « experimental » côté CI) ne doit pas bloquer l'installation.
+    """
+    other = "vulkan" if backend == "cuda" else "cuda"
+    wanted = fallback = None
     for a in assets:
         n = a.get("name", "").lower()
-        if not n.endswith(".zip"):
+        if not n.endswith(".zip") or "win" not in n or "rocm" in n:
             continue
-        if all(tok in n for tok in ASSET_MATCH) and "rocm" not in n \
-                and "vulkan" not in n:
-            return a
-        if "win" in n and best is None:
-            best = a
-    return best
+        if backend in n and wanted is None:
+            wanted = a
+        elif other in n and fallback is None:
+            fallback = a
+    return wanted or fallback
 
 
-def install_binary(force: bool = False, log=print) -> bool:
+def install_binary(force: bool = False, log=print,
+                   backend: str | None = None) -> bool:
     if has_cli() and not force:
         log("Binaire trellis-cli déjà présent, on saute (--force pour MAJ).")
         return True
+    if backend is None:
+        # Choix guidé par la carte : voir TRELLIS_CUDA_SM plus haut.
+        cap = ""
+        try:
+            from atelier import hardware
+            gpus = hardware.detect_gpus()
+            if gpus:
+                cap = max(gpus, key=lambda g: g.vram_gb).compute_cap
+        except Exception:  # noqa: BLE001
+            pass
+        backend = preferred_backend(cap)
+        if backend == "vulkan":
+            log("Backend VULKAN retenu : la build CUDA de trellis.cpp n'embarque "
+                "de code machine que pour sm_86 (RTX 30xx) et sm_120 (RTX 50xx)"
+                + (f" — votre carte est en sm_{cap.replace('.', '')}." if cap
+                   else " et votre carte n'a pas pu être identifiée.")
+                + " Vulkan marche sur toutes les cartes.")
+        else:
+            log(f"Backend CUDA retenu (carte en sm_{cap.replace('.', '')}, "
+                "couverte par la build amont).")
     log("Recherche de la dernière release pwilkin/trellis.cpp…")
     rel = get_sdcpp._fetch_json(GH_RELEASE)
     if isinstance(rel, dict) and rel.get("message") and not rel.get("assets"):
         log(f"API GitHub : {rel.get('message')}")
         return False
-    asset = _pick_asset(rel.get("assets", []))
+    asset = _pick_asset(rel.get("assets", []), backend)
     if not asset:
-        log("Aucune archive Windows CUDA trouvée dans la release. Disponibles :")
+        log("Aucune archive Windows trouvée dans la release. Disponibles :")
         for a in rel.get("assets", []):
             log("  " + a.get("name", "?"))
         return False
@@ -206,8 +268,9 @@ def install_models(variant: str = "f16", log=print) -> bool:
     return False
 
 
-def install_all(force: bool = False, variant: str = "f16", log=print) -> bool:
-    ok_bin = install_binary(force=force, log=log)
+def install_all(force: bool = False, variant: str = "f16", log=print,
+                backend: str | None = None) -> bool:
+    ok_bin = install_binary(force=force, log=log, backend=backend)
     ok_mdl = install_models(variant=variant, log=log)
     return ok_bin and ok_mdl
 
@@ -228,6 +291,11 @@ def main():
                     help="variante de poids : f16 (défaut), q8 ou q4")
     ap.add_argument("--force", action="store_true",
                     help="re-télécharger le binaire même s'il est présent")
+    ap.add_argument("--backend", choices=["auto", "cuda", "vulkan"],
+                    default="auto",
+                    help="backend du binaire. auto (défaut) = CUDA seulement si "
+                         "la carte est couverte par la build amont (sm_86 / "
+                         "sm_120), Vulkan sinon — voir TRELLIS_CUDA_SM.")
     ap.add_argument("--allow-ipv6", action="store_true")
     args = ap.parse_args()
     if not args.allow_ipv6:
@@ -238,12 +306,14 @@ def main():
     print(f"Dossier des modèles : {MODELS_DIR}")
     print(f"Dossier du moteur   : {TRELLIS_BIN_DIR}")
 
+    backend = None if args.backend == "auto" else args.backend
     if args.binary:
-        ok = install_binary(force=args.force)
+        ok = install_binary(force=args.force, backend=backend)
     elif args.models:
         ok = install_models(variant=args.variant)
     else:
-        ok = install_all(force=args.force, variant=args.variant)
+        ok = install_all(force=args.force, variant=args.variant,
+                         backend=backend)
     print("Terminé." if ok else "Terminé avec des erreurs (voir ci-dessus).")
     sys.exit(0 if ok else 1)
 

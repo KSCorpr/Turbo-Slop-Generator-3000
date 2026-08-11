@@ -1072,16 +1072,29 @@ maintenance) — the fastest way to know what a slider actually does.
   `unclosed transport`. Only connection errors are caught; anything else still
   propagates.
 - **Image → 3D: `CUDA error: no kernel image is available for execution on the
-  device`** → the trellis binary contains no machine code for your GPU's
-  architecture. It is not a VRAM problem and no setting changes it. The catch:
-  the trellis installer **skips the download when a binary is already there**,
-  so an engine installed months ago stays frozen forever. Use **⬆️ Update the
-  binary** in the 3D tab (models are not re-downloaded). If it still fails after
-  updating, the upstream release genuinely does not cover your card — report it
-  at `github.com/pwilkin/trellis.cpp`. The app now surfaces this diagnosis
-  itself: when the trellis server dies mid-generation the HTTP connection is cut
-  and `requests` raises a bare `ConnectionResetError`, which says nothing — the
-  real cause is captured from the server's output and reported instead.
+  device`** → the **upstream CUDA build only covers RTX 30xx and RTX 50xx**, and
+  updating will not change that. Its `CMakeLists.txt` pins trellis's own CUDA
+  kernels (`deform_conv.cu`, `decimate_qem.cu`) with
+  `set_target_properties(trellis_core PROPERTIES CUDA_ARCHITECTURES "86;120")`,
+  which **overrides** the complete list its own CI passes
+  (`75;80;86;89;90;120`). So sm_75 (RTX 20xx), sm_89 (RTX 40xx), sm_80 (A100)
+  and sm_90 (H100) get no machine code. Because CUDA errors are *sticky*, the
+  failure surfaces on the next ggml op — usually `IM2COL` — which sends the
+  diagnosis off in the wrong direction. Checked across every published tag:
+  `75` has been in the CI list since the very first release, so "your binary is
+  old" was never the explanation.
+  **The fix is the Vulkan build**, which compiles nothing per-architecture and
+  is, tellingly, the only one of the two the upstream CI does *not* mark
+  `experimental` on Windows. The installer now picks the backend **from your
+  card** — CUDA only for sm_86/sm_120, Vulkan otherwise, and Vulkan too when the
+  card cannot be identified, because a backend that works everywhere beats a
+  faster one that works on two models. Press **⬆️ Update the binary** in the 3D
+  tab; the ~10 GB of models are not re-downloaded. Force it either way with
+  `python scripts/get_trellis.py --binary --force --backend vulkan`.
+  The app surfaces the diagnosis itself: when the trellis server dies
+  mid-generation the HTTP connection is cut and `requests` raises a bare
+  `ConnectionResetError`, which says nothing — the real cause is captured from
+  the server's output and reported instead.
 - **A Toolkit add-on fails at import (`DTensor`, `diffusers`, numpy…)** → a
   shared package drifted. All add-ons share one Python, so the last installer to
   run decides the versions. Run `maintenance.bat`: it names the offending
