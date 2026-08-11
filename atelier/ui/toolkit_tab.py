@@ -365,7 +365,12 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "pour recomposer la scène.\n\n"
                     "L'ordre d'empilement vient de la carte de **profondeur** "
                     "si l'outil Profondeur est installé ; sinon les grandes "
-                    "zones passent derrière, ce qui n'est qu'une approximation.")
+                    "zones passent derrière, ce qui n'est qu'une approximation.\n\n"
+                    "Les zones sont **nettoyées** avant d'être posées : trous "
+                    "intérieurs bouchés, morceaux épars séparés en zones "
+                    "distinctes, miettes écartées, bords adoucis. Et les calques "
+                    "sont **disjoints** — les afficher tous redonne exactement "
+                    "l'image d'origine, aucun pixel n'est peint deux fois.")
                 _installer_block(
                     "Segment Anything",
                     "Même add-on que « Détourer un objet ». L'outil "

@@ -139,6 +139,16 @@ _EN: dict[str, str] = {
     "↩️ Retirer la dernière": "↩️ Remove the last one",
     "🗑️ Tout effacer": "🗑️ Clear all",
     "Fond (image complète)": "Background (full image)",
+    "Les zones sont **nettoyées** avant d'être posées : trous "
+    "intérieurs bouchés, morceaux épars séparés en zones "
+    "distinctes, miettes écartées, bords adoucis. Et les calques "
+    "sont **disjoints** — les afficher tous redonne exactement "
+    "l'image d'origine, aucun pixel n'est peint deux fois.":
+        "Zones are **cleaned up** before being placed: interior holes "
+        "filled, scattered pieces split into distinct zones, crumbs "
+        "discarded, edges feathered. And the layers are **disjoint** — "
+        "showing them all reproduces the source image exactly, no pixel "
+        "is painted twice.",
 
     # ---- réglages : exécution segmentée ----
     "Budget VRAM du graphe": "Graph VRAM budget",

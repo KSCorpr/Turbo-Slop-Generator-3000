@@ -305,6 +305,7 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
     seulement rassembler des calques déjà découpés (mode manuel).
     """
     import numpy as np
+    from . import masks as mask_utils
     from . import psd as psd_writer
 
     rgb = np.asarray(Image.open(src).convert("RGB"))
@@ -316,8 +317,10 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
     layers = [(t("Fond (image complète)"),
                np.dstack([rgb, np.full((h, w), 255, "uint8")]))]
     for name, m in zip(names, masks):
-        alpha = np.zeros((h, w), "uint8")
-        alpha[m] = 255
+        # Bord ADOUCI : un masque binaire collé tel quel donne ce contour en
+        # marches d'escalier qui trahit le détourage automatique. Un pixel de
+        # transition suffit à le faire disparaître, sans manger la zone.
+        alpha = mask_utils.feather_alpha(m, radius=1)
         layers.append((name, np.dstack([rgb, alpha])))
 
     if want_psd:
@@ -379,11 +382,16 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     if not manifest.is_file():
         raise ToolError("Aucun calque produit (voir le journal).")
     data = json.loads(manifest.read_text(encoding="utf-8"))
+    from . import masks as mask_utils
+    rgb = np.asarray(Image.open(src).convert("RGB"))
+    entries = data.get("masks", [])
     masks, names = [], []
-    for i, entry in enumerate(data.get("masks", [])):
+    for i, entry in enumerate(entries):
         m = np.asarray(Image.open(work / entry["file"]).convert("L")) > 127
         masks.append(m)
-        names.append(f"Zone {i + 1} — {entry['area_pct']:g}%")
+        # « Zone 9 — 0,48 % » n'apprend rien à personne : on nomme le calque
+        # avec ce qu'on sait déjà de lui — son plan, où il est, sa couleur.
+        names.append(mask_utils.describe(m, rgb, i, len(entries)))
     if not masks:
         raise ToolError(
             "Aucune zone exploitable trouvée. Essayez plus de points de "

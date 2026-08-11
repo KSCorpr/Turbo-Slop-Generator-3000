@@ -10,9 +10,11 @@ Deux difficultés, et elles ne sont pas dans le code de segmentation :
 
 1. **SAM segmente l'apparence, pas le sens.** Sur une photo il rend volontiers
    quarante à quatre-vingts masques imbriqués — une chemise, un bouton, un pli,
-   un reflet. Bruts, ce sont des calques inexploitables. Tout le travail utile
-   est dans le filtrage : surface minimale, doublons, et surtout recouvrement
-   (un masque déjà couvert à 80 % par ceux qu'on garde n'apporte rien).
+   un reflet — et, pire, des « zones » faites de taches éparpillées aux quatre
+   coins de l'image. Tout le travail utile est là : découper chaque masque en
+   ses morceaux CONNEXES, boucher les trous intérieurs, écarter les miettes et
+   les quasi-doublons, puis rendre les calques DISJOINTS pour que l'empilement
+   reconstitue exactement l'image.
 
 2. **SAM ne donne aucun ordre de profondeur.** On le récupère de Depth Anything
    V2 quand il est installé : profondeur médiane sous chaque masque, du plus
@@ -43,38 +45,75 @@ def _iou(a, b) -> float:
     return float(inter) / float((a | b).sum())
 
 
-def _filter_masks(masks, min_area, max_area, iou_max, cover_max, log):
+def _filter_masks(masks, min_area, max_area, iou_max, log):
     """Réduit une soupe de masques à un jeu de calques exploitable.
 
-    Ordre décroissant de surface : on pose d'abord les grandes zones, puis on
-    n'accepte un masque plus petit que s'il apporte de la surface NEUVE. C'est
-    ce qui évite l'empilement « objet / partie de l'objet / détail de la partie ».
+    L'étape qui change tout est la PREMIÈRE : chaque masque brut est nettoyé et
+    surtout DÉCOUPÉ en ses morceaux connexes. Sans elle, SAM rend volontiers une
+    « zone » faite de trente taches éparpillées aux quatre coins de l'image — ce
+    n'est pas un calque, c'est du bruit qu'aucun logiciel ne permet d'exploiter.
+    Les trous intérieurs sont bouchés dans la foulée : ils donnaient aux
+    découpes leur aspect de gruyère.
+
+    Ensuite seulement : rejet des quasi-doublons. Volontairement PAS de rejet
+    sur le recouvrement — une zone contenue dans une plus grande n'est pas
+    redondante, elle est DEVANT (la voiture sur la route, le personnage devant
+    un mur). La disjonction finale s'occupe du recouvrement en découpant
+    l'arrière-plan.
     """
-    import numpy as np
+    from atelier.engine import masks as M
+
+    pieces: list = []
+    for m in masks:
+        for part in M.largest_components(M.fill_holes(m), int(min_area)):
+            pieces.append(part)
+    log(f"[calques] {len(masks)} masque(s) bruts -> {len(pieces)} morceau(x) "
+        "connexes après nettoyage.")
+
     kept: list = []
-    covered = None
-    dropped = {"petit": 0, "grand": 0, "doublon": 0, "recouvert": 0}
-    for m in sorted(masks, key=lambda x: int(x.sum()), reverse=True):
+    dropped = {"grand": 0, "doublon": 0}
+    for m in sorted(pieces, key=lambda x: int(x.sum()), reverse=True):
         area = int(m.sum())
-        if area < min_area:
-            dropped["petit"] += 1
-            continue
         if area > max_area:
             # Masque « toute l'image » : c'est le fond, on l'a déjà.
             dropped["grand"] += 1
             continue
+        # SEUL critère de rejet : le quasi-doublon. On ne rejette PLUS une zone
+        # parce qu'une plus grande la recouvre — c'était le cas de la voiture
+        # sur la route, du personnage devant un mur, de la fenêtre sur une
+        # façade : contenu ne veut pas dire redondant, ça veut dire DEVANT.
+        # La disjonction qui suit règle le recouvrement en découpant l'arrière,
+        # ce qui rend ce filtre non seulement inutile mais nuisible.
         if any(_iou(m, k) > iou_max for k in kept):
             dropped["doublon"] += 1
             continue
-        if covered is not None:
-            new = int((m & ~covered).sum())
-            if new / area < (1.0 - cover_max):
-                dropped["recouvert"] += 1
-                continue
         kept.append(m)
-        covered = m.copy() if covered is None else (covered | m)
     log(f"[calques] {len(kept)} zone(s) retenue(s) — écartées : "
-        + ", ".join(f"{v} {k}" for k, v in dropped.items() if v))
+        + (", ".join(f"{v} {k}" for k, v in dropped.items() if v) or "aucune"))
+    return kept
+
+
+def _partition(ordered, log):
+    """Rend les calques DISJOINTS : chaque pixel appartient à un seul.
+
+    `ordered` va de l'arrière-plan vers le premier plan. On retire donc de
+    chaque calque ce que les calques SITUÉS DEVANT lui recouvrent : c'est le
+    comportement d'un vrai empilement, où l'avant-plan cache l'arrière, et ça
+    garantit une propriété simple et vérifiable — tout afficher redonne l'image
+    d'origine, sans qu'un pixel soit peint deux fois.
+    """
+    import numpy as np
+    out = []
+    front = None                       # union de tout ce qui est DEVANT
+    for m in reversed(ordered):        # du premier plan vers le fond
+        vis = m if front is None else (m & ~front)
+        front = m.copy() if front is None else (front | m)
+        out.append(vis)
+    out.reverse()
+    kept = [m for m in out if m.any()]
+    if len(kept) != len(out):
+        log(f"[calques] {len(out) - len(kept)} zone(s) entièrement masquée(s) "
+            "par l'avant-plan, retirée(s).")
     return kept
 
 
@@ -153,9 +192,6 @@ def main():
                     help="surface minimale d'un calque, en fraction de l'image")
     ap.add_argument("--max-area", type=float, default=0.85)
     ap.add_argument("--iou-max", type=float, default=0.75)
-    ap.add_argument("--cover-max", type=float, default=0.80,
-                    help="au-delà de ce recouvrement par les calques déjà "
-                         "retenus, la zone n'apporte rien et est écartée")
     ap.add_argument("--max-layers", type=int, default=24)
     args = ap.parse_args()
 
@@ -170,7 +206,7 @@ def main():
     masks = _auto_masks(args.sam_dir, img, args.points_per_side, args.batch, log)
     log(f"[calques] {len(masks)} masque(s) bruts.")
     kept = _filter_masks(masks, args.min_area * total, args.max_area * total,
-                         args.iou_max, args.cover_max, log)
+                         args.iou_max, log)
     if not kept:
         log("[calques] aucune zone exploitable — image trop uniforme ?")
     order = _depth_order(args.depth_dir, img, kept, log)
@@ -178,6 +214,8 @@ def main():
         order = sorted(range(len(kept)), key=lambda i: int(kept[i].sum()),
                        reverse=True)
     kept = [kept[i] for i in order][:args.max_layers]
+    # Disjonction APRÈS le tri : elle dépend de qui est devant qui.
+    kept = _partition(kept, log)
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)

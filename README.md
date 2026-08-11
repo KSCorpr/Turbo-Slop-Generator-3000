@@ -827,13 +827,37 @@ pleases you.
 
 **The two real difficulties are not in the plumbing.** SAM segments *appearance*,
 not meaning: on a photo it happily returns forty to eighty nested masks — a
-shirt, a button, a fold, a reflection. Raw, that is unusable. So masks are sorted
-by descending area and a smaller one is only accepted if it contributes **new**
-surface (the *coverage* threshold), which is what prevents the
-"object / part of object / detail of part" pile-up. And SAM gives **no depth
-order**: that comes from Depth Anything V2 when it is installed — median depth
-under each mask, far to near. Without it, large areas go to the back, which is an
-approximation and is labelled as one rather than presented as a result.
+shirt, a button, a fold, a reflection — and, worse, "zones" made of specks
+scattered across the whole frame. And SAM gives **no depth order**: that comes
+from Depth Anything V2 when it is installed — median depth under each mask, far
+to near. Without it, large areas go to the back, which is an approximation and is
+labelled as one rather than presented as a result.
+
+**Everything useful happens in the cleanup**, in `atelier/engine/masks.py` —
+written in plain numpy rather than pulling in scipy or OpenCV, since the
+segmentation add-on is heavy enough and these operations are a few dozen lines.
+Connected components use a union-find over per-row *runs*, not pixels: a
+million-pixel union-find in Python would take seconds, while the number of runs
+is in the thousands (18 ms on a 1200×900 mask).
+
+- **Split into connected pieces.** A "layer" made of thirty specks in the four
+  corners is not a layer, it is noise no editor can use. Each piece becomes its
+  own zone, and pieces under the minimum area vanish.
+- **Fill interior holes**, which is what gave the cut-outs their swiss-cheese
+  look. A notch *open to the edge* is kept — it is part of the silhouette.
+- **Keep contained zones.** Being inside a larger mask does not mean redundant,
+  it means *in front*: the car on the road, the figure against a wall, the
+  window on a façade. An earlier coverage filter deleted exactly those, and it
+  was the single worst behaviour of the first version.
+- **Disjoint layers.** Fronts are subtracted from backs, so showing every layer
+  reproduces the source image exactly and no pixel is painted twice — verified
+  in the tests by compositing the PSD back and comparing to the original.
+- **Feathered edges** (1 px), because a binary mask pasted as-is has the
+  staircase border that gives automatic cut-outs away.
+- **Names you can read.** "Zone 9 — 0.48%" teaches nobody anything; layers are
+  named from what is already known about them — depth band, position, dominant
+  colour, size: *"foreground · bottom · orange — 3.8%"*. Colour matching weights
+  lightness over hue, otherwise charcoal grey gets called dark green.
 
 ### Prompt enhancer (AI)
 The **✨ Enhance prompt** button (in each generation tab) runs a small instruct
