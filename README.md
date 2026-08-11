@@ -859,6 +859,33 @@ is in the thousands (18 ms on a 1200×900 mask).
   colour, size: *"foreground · bottom · orange — 3.8%"*. Colour matching weights
   lightness over hue, otherwise charcoal grey gets called dark green.
 
+**With CLIP installed, the tool stops seeing shapes and starts seeing objects.**
+It is an optional add-on (`openai/clip-vit-base-patch32`, ~600 MB, one click, on
+the same footing as Depth) and it does three things that change the result, not
+just the labels:
+
+- **It merges the pieces of one object.** SAM returns "body", "door" and "wheel"
+  as three masks. Labelled *vehicle* and adjacent, they become **one layer** —
+  what a human calls a car. Adjacency is required: two cars at opposite ends of
+  the frame share a label but are not the same object.
+- **It discards what is nothing.** A flat fill, a patch of blur, a meaningless
+  fragment. A zero-shot classifier cannot say "nothing" — forced to choose, it
+  labels a blurry piece of asphalt *car*. So the vocabulary carries deliberate
+  **junk categories** whose only job is to absorb those, plus a margin test:
+  a label that wins by a hair is a coin toss, not information.
+- **It orders the stack by meaning** when Depth is not installed — sky at the
+  back because it is the sky, not because it is large. Each vocabulary entry
+  declares a typical depth for exactly this.
+
+The vocabulary lives in `atelier/engine/vocab.py` as **data, not code**: that is
+the file to edit when labels land wide, with no change to the pipeline. Each
+entry carries several phrasings, because CLIP scores an image against a *text* —
+"a car" and "a racing car seen head-on" do not score alike on the same crop, and
+the best variant wins. Crops are fed as the bounding box with margin, with the
+outside of the mask **faded toward neutral grey** rather than cut to black: a raw
+box drowns a thin object in its surroundings, while a black cut-out strips the
+context CLIP was trained on.
+
 ### Prompt enhancer (AI)
 The **✨ Enhance prompt** button (in each generation tab) runs a small instruct
 LLM (*Qwen2.5-3B-Instruct*, PyTorch ~6 GB, one-click install) that rewrites your

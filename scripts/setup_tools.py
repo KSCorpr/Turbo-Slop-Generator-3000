@@ -39,6 +39,10 @@ DEPTH_REPO = "depth-anything/Depth-Anything-V2-Small-hf"
 BG_REPO = "briaai/RMBG-1.4"
 # Segment Anything (base, ~375 Mo) via transformers, depuis HF.
 SAM_REPO = "facebook/sam-vit-base"
+# CLIP pour l'étiquetage zéro-shot des zones segmentées. Le modèle « base
+# patch32 » suffit largement : on lui demande de choisir parmi une vingtaine
+# de catégories de scène, pas de faire de la reconnaissance fine.
+CLIP_REPO = "openai/clip-vit-base-patch32"
 # Améliorateur de prompt : petit LLM instruct (~6 Go fp16), tourne en sous-process.
 ENHANCE_REPO = "Qwen/Qwen2.5-3B-Instruct"
 # Upscale créatif tuilé : SDXL base (1 fichier) + VAE fp16-fix + ControlNet Tile
@@ -118,6 +122,20 @@ def install_bg():
     snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] RMBG-1.4 installé. Disponible dans l'onglet Toolkit.")
+
+
+def install_clip():
+    model_dir = settings.ROOT / "tools_repo" / "clip" / "model"
+    ensure_torch_cuda()
+    print("Installation de transformers…")
+    sh([sys.executable, "-m", "pip", "install",
+        TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
+    print(f"\nTéléchargement de CLIP ({CLIP_REPO})…")
+    from huggingface_hub import snapshot_download
+    snapshot_download(repo_id=CLIP_REPO, local_dir=str(model_dir))
+    pin_numpy()
+    print("\n[OK] CLIP installé — la décomposition en calques sait maintenant "
+          "nommer et regrouper les zones.")
 
 
 def install_sam():
@@ -248,7 +266,7 @@ def install_upscale():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("tool", choices=["depth", "bg", "sam", "enhance",
+    ap.add_argument("tool", choices=["depth", "bg", "sam", "clip", "enhance",
                                      "upscale"])
     args = ap.parse_args()
     settings.configure_hf_env()
@@ -258,6 +276,8 @@ def main():
         install_bg()
     elif args.tool == "sam":
         install_sam()
+    elif args.tool == "clip":
+        install_clip()
     elif args.tool == "enhance":
         install_enhance()
     elif args.tool == "upscale":

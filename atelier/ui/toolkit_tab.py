@@ -373,10 +373,28 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "l'image d'origine, aucun pixel n'est peint deux fois.")
                 _installer_block(
                     "Segment Anything",
-                    "Même add-on que « Détourer un objet ». L'outil "
-                    "**Profondeur** est facultatif mais améliore nettement "
-                    "l'ordre des calques.",
+                    "Même add-on que « Détourer un objet ». Indispensable.",
                     tools.install_sam_stream, tools.sam_is_installed())
+                _installer_block(
+                    "CLIP (compréhension des zones)",
+                    "**Facultatif, ~600 Mo — mais c'est lui qui apporte "
+                    "l'intelligence.** Sans CLIP, l'outil ne voit que des "
+                    "formes. Avec, il reconnaît ce qu'il découpe et s'en sert "
+                    "pour trois choses :\n\n"
+                    "- **regrouper les morceaux d'un même objet** — SAM rend "
+                    "« carrosserie », « portière » et « roue » séparément ; "
+                    "étiquetés « véhicule » et voisins, ils redeviennent **un "
+                    "seul calque** ;\n"
+                    "- **écarter ce qui n'est rien** — un aplat, un bout de "
+                    "flou, un fragment sans signification. Un classifieur ne "
+                    "sait pas dire « rien », alors le vocabulaire contient des "
+                    "catégories poubelle faites pour les absorber ;\n"
+                    "- **nommer les calques** : « véhicule », « ciel », "
+                    "« personne » au lieu de « premier plan · centre · "
+                    "orange ». Et sans l'outil Profondeur, l'ordre "
+                    "d'empilement se déduit du sens — le ciel derrière parce "
+                    "que c'est le ciel, pas parce qu'il est grand.",
+                    tools.install_clip_stream, tools.clip_is_installed())
 
                 lay_masks = gr.State([])      # masques choisis à la main
                 with gr.Row():

@@ -156,6 +156,146 @@ def _auto_masks(model_dir, img, points_per_side, batch, log):
     return out
 
 
+def _clip_labels(clip_dir, img, masks, log):
+    """Étiquette chaque zone par CLIP en zéro-shot. [(étiquette, score)] ou None.
+
+    Le découpage envoyé à CLIP mérite une explication : ni la boîte englobante
+    brute, ni la découpe sur fond noir.
+
+    · La boîte brute noie un objet fin dans son décor — un mât au milieu d'un
+      ciel se fait étiqueter « ciel ».
+    · La découpe sur fond noir supprime tout contexte et déroute CLIP, qui a été
+      entraîné sur des photos entières, pas sur des silhouettes.
+
+    On garde donc la boîte (avec une marge) en ATTÉNUANT l'extérieur du masque
+    vers un gris neutre : l'objet ressort sans que sa scène disparaisse.
+    """
+    if not clip_dir or not Path(clip_dir).is_dir():
+        log("[calques] CLIP non installé → pas d'étiquetage sémantique "
+            "(les calques seront nommés par position et couleur).")
+        return None
+    import numpy as np
+    from PIL import Image
+    try:
+        import torch
+        from transformers import CLIPModel, CLIPProcessor
+        from atelier.engine import vocab
+    except Exception as exc:  # noqa: BLE001
+        log(f"[calques] CLIP indisponible ({exc}) → pas d'étiquetage.")
+        return None
+
+    device = pick_device(torch)
+    log(f"[calques] étiquetage CLIP de {len(masks)} zone(s) sur {label(device)}…")
+    model = CLIPModel.from_pretrained(clip_dir).to(device).eval()
+    processor = CLIPProcessor.from_pretrained(clip_dir)
+    texts, owner = vocab.prompts()
+    names = [n for n, _v, _d in vocab.entries()]
+
+    with torch.no_grad():
+        tin = processor(text=texts, return_tensors="pt", padding=True).to(device)
+        temb = model.get_text_features(**tin)
+        temb = temb / temb.norm(dim=-1, keepdim=True)
+
+    rgb = np.asarray(img.convert("RGB"))
+    H, W = rgb.shape[:2]
+    crops = []
+    for m in masks:
+        ys, xs = np.nonzero(m)
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        pad = max(8, int(0.12 * max(y1 - y0, x1 - x0)))
+        y0, y1 = max(0, y0 - pad), min(H, y1 + pad)
+        x0, x1 = max(0, x0 - pad), min(W, x1 + pad)
+        sub = rgb[y0:y1, x0:x1].astype(np.float32)
+        keep = m[y0:y1, x0:x1][..., None].astype(np.float32)
+        # Extérieur du masque atténué vers un gris neutre (60 % de fondu).
+        blended = sub * keep + (sub * 0.4 + 128.0 * 0.6) * (1.0 - keep)
+        crops.append(Image.fromarray(blended.clip(0, 255).astype("uint8")))
+
+    out = []
+    BATCH = 16
+    for start in range(0, len(crops), BATCH):
+        chunk = crops[start:start + BATCH]
+        with torch.no_grad():
+            iin = processor(images=chunk, return_tensors="pt").to(device)
+            iemb = model.get_image_features(**iin)
+            iemb = iemb / iemb.norm(dim=-1, keepdim=True)
+            sims = (iemb @ temb.T).cpu().numpy()
+        for row in sims:
+            # Score d'une CATÉGORIE = meilleure de ses formulations.
+            per = {}
+            for j, o in enumerate(owner):
+                per[o] = max(per.get(o, -9.9), float(row[j]))
+            best = max(per, key=per.get)
+            # Marge sur le second : une étiquette qui ne gagne que d'un cheveu
+            # n'est pas une information, c'est un tirage au sort.
+            ordered = sorted(per.values(), reverse=True)
+            margin = ordered[0] - (ordered[1] if len(ordered) > 1 else 0.0)
+            out.append((names[best], margin))
+    return out
+
+
+def _merge_by_label(masks, labels, log, gap=12):
+    """Fusionne les zones VOISINES portant la même étiquette.
+
+    C'est ici que l'étiquetage sert vraiment à la segmentation, et pas seulement
+    à l'affichage : SAM rend « carrosserie », « portière », « roue » comme trois
+    masques distincts. Étiquetés « véhicule » tous les trois et adjacents, ils
+    redeviennent UN calque — ce qu'un humain appelle une voiture.
+
+    L'adjacence est exigée : deux voitures aux extrémités de l'image partagent
+    l'étiquette mais ne sont pas le même objet.
+    """
+    import numpy as np
+    boxes = []
+    for m in masks:
+        ys, xs = np.nonzero(m)
+        boxes.append((int(xs.min()), int(ys.min()),
+                      int(xs.max()) + 1, int(ys.max()) + 1))
+
+    def near(a, b):
+        ax0, ay0, ax1, ay1 = a
+        bx0, by0, bx1, by1 = b
+        return not (ax1 + gap < bx0 or bx1 + gap < ax0
+                    or ay1 + gap < by0 or by1 + gap < ay0)
+
+    parent = list(range(len(masks)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(masks)):
+        for j in range(i + 1, len(masks)):
+            if labels[i][0] == labels[j][0] and near(boxes[i], boxes[j]):
+                a, b = find(i), find(j)
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+
+    groups: dict[int, list[int]] = {}
+    for i in range(len(masks)):
+        groups.setdefault(find(i), []).append(i)
+    if len(groups) == len(masks):
+        log("[calques] aucune fusion sémantique (aucune zone voisine de même "
+            "nature).")
+        return masks, labels
+
+    out_m, out_l = [], []
+    for members in groups.values():
+        m = masks[members[0]].copy()
+        for k in members[1:]:
+            m |= masks[k]
+        out_m.append(m)
+        # On garde la meilleure marge du groupe : c'est le membre le plus sûr
+        # qui répond de l'étiquette commune.
+        out_l.append(max((labels[k] for k in members), key=lambda x: x[1]))
+    log(f"[calques] fusion sémantique : {len(masks)} zone(s) -> {len(out_m)} "
+        "(morceaux d'un même objet regroupés).")
+    return out_m, out_l
+
+
 def _depth_order(depth_dir, img, masks, log):
     """Indices des masques triés du PLUS LOIN au plus près, ou None."""
     import numpy as np
@@ -184,6 +324,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sam-dir", required=True)
     ap.add_argument("--depth-dir", default="")
+    ap.add_argument("--clip-dir", default="",
+                    help="modèle CLIP : étiquetage sémantique + fusion des "
+                         "morceaux d'un même objet. Facultatif.")
+    ap.add_argument("--junk-margin", type=float, default=0.012,
+                    help="marge minimale entre la 1re et la 2e étiquette : "
+                         "en dessous, l'étiquette est un tirage au sort")
     ap.add_argument("--input", required=True)
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--points-per-side", type=int, default=12)
@@ -209,13 +355,54 @@ def main():
                          args.iou_max, log)
     if not kept:
         log("[calques] aucune zone exploitable — image trop uniforme ?")
+    # --- Sémantique (facultative) : étiqueter, écarter le vide, fusionner ---
+    labels = _clip_labels(args.clip_dir, img, kept, log) if kept else None
+    if labels:
+        from atelier.engine import vocab
+        keep_idx = []
+        for i, (name, margin) in enumerate(labels):
+            if name in vocab.JUNK_LABELS:
+                continue                     # flou, texture plate, fragment
+            if margin < args.junk_margin:
+                continue                     # aucune étiquette ne se détache
+            keep_idx.append(i)
+        dropped = len(kept) - len(keep_idx)
+        if dropped:
+            log(f"[calques] {dropped} zone(s) écartée(s) : ne correspondent à "
+                "rien d'identifiable (flou, aplat, fragment).")
+        # Garde-fou : si TOUT est écarté, l'étiquetage s'est trompé, pas
+        # l'image. Mieux vaut des calques sans nom que pas de calques.
+        if keep_idx:
+            kept = [kept[i] for i in keep_idx]
+            labels = [labels[i] for i in keep_idx]
+        else:
+            log("[calques] toutes les zones jugées non identifiables — "
+                "étiquetage ignoré.")
+            labels = None
+    if labels:
+        kept, labels = _merge_by_label(kept, labels, log)
+
     order = _depth_order(args.depth_dir, img, kept, log)
+    if order is None and labels:
+        # Sans carte de profondeur, la sémantique fait un bien meilleur juge que
+        # la surface : le ciel va derrière parce que c'est le ciel, pas parce
+        # qu'il est grand.
+        from atelier.engine import vocab
+        order = sorted(range(len(kept)),
+                       key=lambda i: vocab.typical_depth(labels[i][0]))
+        log("[calques] ordre d'empilement déduit des étiquettes "
+            "(ciel et sol derrière, sujets devant).")
     if order is None:
         order = sorted(range(len(kept)), key=lambda i: int(kept[i].sum()),
                        reverse=True)
     kept = [kept[i] for i in order][:args.max_layers]
+    if labels:
+        labels = [labels[i] for i in order][:args.max_layers]
     # Disjonction APRÈS le tri : elle dépend de qui est devant qui.
+    before = len(kept)
     kept = _partition(kept, log)
+    if labels and len(kept) != before:
+        labels = labels[:len(kept)]
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -227,6 +414,7 @@ def main():
         entries.append({
             "file": name,
             "area_pct": round(100.0 * int(m.sum()) / total, 2),
+            "label": labels[i][0] if labels else "",
             "bbox": [int(xs.min()), int(ys.min()),
                      int(xs.max()) + 1, int(ys.max()) + 1],
         })

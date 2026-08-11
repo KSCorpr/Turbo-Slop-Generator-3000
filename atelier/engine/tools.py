@@ -22,6 +22,7 @@ TOOLS_DIR = settings.ROOT / "tools_repo"
 DEPTH_MODEL_DIR = TOOLS_DIR / "depth" / "model"
 BG_MODEL_DIR = TOOLS_DIR / "bg" / "model"
 SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
+CLIP_MODEL_DIR = TOOLS_DIR / "clip" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
@@ -73,6 +74,10 @@ def bg_is_installed() -> bool:
 
 def sam_is_installed() -> bool:
     return _model_present(SAM_MODEL_DIR)
+
+
+def clip_is_installed() -> bool:
+    return _model_present(CLIP_MODEL_DIR)
 
 
 def enhance_is_installed() -> bool:
@@ -145,6 +150,10 @@ def install_bg_stream():
 
 def install_sam_stream():
     yield from _install_stream("sam")
+
+
+def install_clip_stream():
+    yield from _install_stream("clip")
 
 
 def install_enhance_stream():
@@ -375,6 +384,10 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     # runner le dit. L'exiger transformerait un add-on optionnel en dépendance.
     if depth_is_installed():
         cmd += ["--depth-dir", str(DEPTH_MODEL_DIR)]
+    # CLIP : étiquetage sémantique, fusion des morceaux d'un même objet, et
+    # rejet des zones qui ne ressemblent à rien. Facultatif comme la profondeur.
+    if clip_is_installed():
+        cmd += ["--clip-dir", str(CLIP_MODEL_DIR)]
     _run_tool(cmd, log, "La décomposition en calques a échoué (voir le journal).",
               gpu_index=_gen_gpu_index())
 
@@ -389,9 +402,13 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     for i, entry in enumerate(entries):
         m = np.asarray(Image.open(work / entry["file"]).convert("L")) > 127
         masks.append(m)
-        # « Zone 9 — 0,48 % » n'apprend rien à personne : on nomme le calque
-        # avec ce qu'on sait déjà de lui — son plan, où il est, sa couleur.
-        names.append(mask_utils.describe(m, rgb, i, len(entries)))
+        # Nom SÉMANTIQUE quand CLIP a pu étiqueter la zone (« véhicule »,
+        # « ciel »), descriptif sinon (plan, position, couleur). Dans les deux
+        # cas on garde plan et taille : ce sont eux qui situent le calque dans
+        # la pile.
+        base = mask_utils.describe(m, rgb, i, len(entries))
+        lab = (entry.get("label") or "").strip()
+        names.append(f"{lab} · {base}" if lab else base)
     if not masks:
         raise ToolError(
             "Aucune zone exploitable trouvée. Essayez plus de points de "

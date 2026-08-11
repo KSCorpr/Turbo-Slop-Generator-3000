@@ -139,6 +139,9 @@ _EN: dict[str, str] = {
     "↩️ Retirer la dernière": "↩️ Remove the last one",
     "🗑️ Tout effacer": "🗑️ Clear all",
     "Fond (image complète)": "Background (full image)",
+    "CLIP (compréhension des zones)": "CLIP (zone understanding)",
+    "Même add-on que « Détourer un objet ». Indispensable.":
+        "Same add-on as “Cut out an object”. Required.",
     "Les zones sont **nettoyées** avant d'être posées : trous "
     "intérieurs bouchés, morceaux épars séparés en zones "
     "distinctes, miettes écartées, bords adoucis. Et les calques "
