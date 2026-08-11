@@ -163,7 +163,10 @@ def items(prefs: dict | None = None) -> list[Item]:
              note="⚠️ Vos créations.", protected=True),
         Item("tmp", "Fichiers temporaires (tmp/)", "Vos données",
              [settings.TMP_DIR],
-             note="Sans risque : caches d'aperçu et fichiers de travail."),
+             note="Caches d'aperçu, fichiers de travail et cache d'images de "
+                  "l'interface. Sans risque application FERMÉE ; en cours "
+                  "d'exécution, les images déjà affichées deviendront des "
+                  "icônes cassées jusqu'au rechargement de la page."),
     ]
     return out
 

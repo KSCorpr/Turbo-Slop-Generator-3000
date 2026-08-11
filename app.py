@@ -13,7 +13,28 @@ import sys
 import warnings
 
 # Le Python portable n'ajoute pas le dossier projet au chemin d'import.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _ROOT)
+
+# --------------------------------------------------------------------------- #
+#  Cache de fichiers de Gradio : DANS le projet, pas dans le dossier temporaire
+#  du système.
+#
+#  Gradio ne sert pas les images depuis leur emplacement d'origine : il en copie
+#  une version dans son cache, et c'est CETTE copie que le navigateur demande.
+#  Par défaut ce cache vit dans %TEMP% (Windows) ou /tmp — deux endroits que le
+#  système se croit autorisé à vider quand bon lui semble : Storage Sense, le
+#  nettoyage de disque, un antivirus, ou simplement un redémarrage. La copie
+#  disparaît alors sous les pieds du navigateur, la requête renvoie 404, et
+#  l'image affiche une icône cassée — de façon intermittente, ce qui est la
+#  signature du problème.
+#
+#  Le placer sous tmp/ le met à l'abri de ces nettoyages, et le rend visible
+#  dans « Gestion & nettoyage » avec le reste. À définir AVANT d'importer
+#  gradio : la variable est lue au chargement du module.
+# --------------------------------------------------------------------------- #
+os.environ.setdefault("GRADIO_TEMP_DIR", os.path.join(_ROOT, "tmp", "gradio"))
+os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
 
 # Avertissements bénins de Gradio (paramètres déplacés en v6.0) : on les masque
 # pour ne pas inquiéter inutilement au démarrage. L'usage actuel (5.x) est correct.
@@ -281,7 +302,8 @@ def main():
         _print_lan_banner(port, auth is not None)
 
     demo.launch(server_name=host, server_port=port, share=args.share,
-                auth=auth, inbrowser=not args.listen, show_api=False)
+                auth=auth, inbrowser=not args.listen, show_api=False,
+                allowed_paths=settings.served_paths())
 
 
 if __name__ == "__main__":

@@ -108,6 +108,20 @@ DEFAULT_PREFS: dict[str, Any] = {
 }
 
 
+def served_paths() -> list[str]:
+    """Dossiers que le serveur web a le droit de servir, en plus du cache Gradio.
+
+    Sans cette liste, une image désignée par son chemin D'ORIGINE — et non par
+    une copie de cache — reçoit un 403, donc une icône cassée côté navigateur.
+    C'est le cas de tout ce que l'application produit elle-même.
+
+    Volontairement limité aux deux dossiers qui contiennent des IMAGES. En
+    partage réseau (`--listen`), cette liste est ce que la machine expose :
+    y ajouter models/ ou la racine du projet publierait bien plus que ça.
+    """
+    return [str(OUTPUT_DIR), str(TMP_DIR)]
+
+
 def ensure_dirs() -> None:
     for d in (MODELS_DIR, CUSTOM_DIR, LORA_DIR, BIN_DIR, OUTPUT_DIR, TMP_DIR,
               USERDATA_DIR):

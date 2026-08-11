@@ -1015,6 +1015,22 @@ maintenance) — the fastest way to know what a slider actually does.
   `python\python.exe scripts\get_sdcpp.py --variant cuda`
   (fetches the **win-cuda12** build *and* the **cudart** runtime side by side).
 - **“No NVIDIA GPU detected”** → check drivers / `nvidia-smi`.
+- **An image shows as a broken-image icon** — the browser got a response, just
+  not an image. Two causes have been closed off. Gradio does not serve images
+  from where they live; it copies them into a cache and serves *that*, and the
+  cache defaulted to `%TEMP%` — a folder Windows Storage Sense, disk cleanup and
+  antivirus all consider fair game. When the copy vanishes the request 404s and
+  the image breaks, intermittently, which is what makes it maddening to
+  diagnose. The cache is now pinned to `tmp/gradio` inside the project. And
+  anything the app hands over *by path* rather than through that cache — a
+  generated image sent to a tool, a live preview, a mask — used to get a **403**,
+  because `allowed_paths` was never declared at launch; `outputs/` and `tmp/` are
+  now declared (and only those: on `--listen` that list is what the machine
+  exposes). If it still happens, press **F12 → Network**, reproduce, and read the
+  status of the red line — `403`, `404` and `ERR_CONNECTION_RESET` each point at
+  a different cause. Note that emptying `tmp/` from **Manage & clean** *while the
+  app is running* legitimately breaks already-displayed images until you reload
+  the page.
 - **Model shows “to download”** → Model Catalog tab → **Download**.
 - **Out of memory** → Settings: lower the quantization, enable offload/tiling, or
   reduce the resolution. For very tight setups, try a per-generation preset.
