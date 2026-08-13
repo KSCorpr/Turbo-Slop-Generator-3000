@@ -139,6 +139,125 @@ def write_test_image(dest_dir: Path) -> tuple[Path | None, float, str]:
         return None, 0.0, str(exc)
 
 
+# Formats qu'un composant image accepte couramment. La tuile de test est
+# écrite dans CHACUN : si le PNG s'affiche et pas le JPEG, le problème n'est
+# pas la chaîne de service mais le type de fichier — une piste qu'aucun
+# contrôle général ne peut donner.
+TEST_FORMATS = [("PNG", ".png"), ("JPEG", ".jpg"), ("WEBP", ".webp"),
+                ("GIF", ".gif"), ("BMP", ".bmp")]
+
+
+def mime_of(suffix: str) -> str:
+    """Type MIME que Python associe à une extension.
+
+    Sous Windows, `mimetypes` s'initialise depuis la BASE DE REGISTRE. Une
+    entrée absente ou détournée (un logiciel qui s'est approprié `.webp`, par
+    exemple) fait renvoyer autre chose qu'un `image/…`, et Gradio sert alors
+    le fichier en `application/octet-stream` avec une en-tête de
+    téléchargement — le navigateur ne l'affiche plus. C'est invisible partout
+    ailleurs, et ça ne touche QUE certaines extensions : exactement le profil
+    d'un bug qui frappe les imports et épargne l'image de test.
+    """
+    import mimetypes
+    return mimetypes.guess_type(f"x{suffix}")[0] or ""
+
+
+def format_probe(dest_dir: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """(libellés+chemins des tuiles écrites, lignes de rapport MIME)."""
+    tiles: list[tuple[str, str]] = []
+    lines: list[str] = []
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover
+        return tiles, ["Pillow indisponible."]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for name, suffix in TEST_FORMATS:
+        mime = mime_of(suffix)
+        ok_mime = mime.startswith("image/")
+        path = dest_dir / f"test_{name.lower()}{suffix}"
+        try:
+            img = Image.new("RGB", (160, 100), (24, 132, 168))
+            img.save(path, format=name)
+            tiles.append((str(path), f"{name} — {mime or 'MIME inconnu'}"))
+            wrote = True
+        except (OSError, KeyError, ValueError) as exc:
+            wrote = False
+            lines.append(f"❌ **{name}** — impossible à écrire : {exc}")
+        if wrote:
+            mark = "✅" if ok_mime else "❌"
+            detail = (mime if ok_mime else
+                      f"`{mime or 'aucun'}` — Windows ne reconnaît pas "
+                      f"`{suffix}` comme une image (base de registre). Gradio "
+                      "le sert alors en téléchargement et le navigateur "
+                      "n'affiche rien.")
+            lines.append(f"{mark} **{name}** ({suffix}) — {detail}")
+    return tiles, lines
+
+
+def recent_uploads(cache: Path, limit: int = 5) -> list[Path]:
+    """Les derniers fichiers réellement déposés par le navigateur.
+
+    C'est le contrôle qui tranche : si l'image que vous venez d'importer est
+    là, le dépôt a fonctionné et seul l'affichage est en cause ; si elle n'y
+    est pas, c'est l'envoi qui échoue, et regarder du côté du serveur d'images
+    ne mènera nulle part.
+    """
+    out: list[Path] = []
+    try:
+        for p in cache.rglob("*"):
+            # Nos propres tuiles de test ne comptent pas comme des imports.
+            if p.is_file() and "diagnostic" not in p.parts:
+                out.append(p)
+    except OSError:
+        return []
+    out.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return out[:limit]
+
+
+# Au-delà, un navigateur peut renoncer à décoder l'image et n'afficher qu'une
+# icône cassée, alors que le fichier est parfaitement valide. Repère indicatif :
+# les limites réelles dépendent du navigateur et de la mémoire disponible.
+HUGE_PIXELS = 80_000_000
+HUGE_BYTES = 50 * 1024 * 1024
+
+
+def describe_file(path: Path) -> str:
+    """Ce que le fichier EST vraiment : format, taille, dimensions.
+
+    L'extension ne prouve rien — un `.png` qui est en fait un JPEG, un fichier
+    tronqué par un transfert, une image de 200 mégapixels : trois cas où le
+    navigateur renonce et n'affiche qu'une icône cassée, sans que rien côté
+    serveur n'ait échoué.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return f"❌ illisible : {exc}"
+    parts = [f"{size / 1024:.0f} Ko"]
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im.verify()
+        with Image.open(path) as im:
+            w, h = im.size
+            fmt = im.format or "?"
+        parts.append(f"{w}×{h}, {fmt}")
+        if fmt and f".{fmt.lower()}" != path.suffix.lower() and not (
+                fmt == "JPEG" and path.suffix.lower() in (".jpg", ".jpeg")):
+            parts.append(f"⚠️ l'extension `{path.suffix}` ne correspond pas au "
+                         f"contenu ({fmt})")
+        if w * h > HUGE_PIXELS:
+            parts.append(f"⚠️ {w * h / 1e6:.0f} mégapixels — certains "
+                         "navigateurs renoncent à décoder au-delà")
+        if size > HUGE_BYTES:
+            parts.append(f"⚠️ {size / 1e6:.0f} Mo — très lourd à transférer "
+                         "puis à décoder")
+    except Exception as exc:  # noqa: BLE001 - Pillow lève un peu de tout
+        parts.append(f"❌ illisible même par l'application : {exc}. Le fichier "
+                     "est probablement corrompu ou tronqué")
+    return " · ".join(parts)
+
+
 def checks() -> tuple[list[Check], Path | None]:
     """Tous les points de contrôle + l'image de test à afficher."""
     out: list[Check] = []
@@ -231,24 +350,62 @@ def _is_within(path: Path, parent: Path) -> bool:
         return False
 
 
-def report() -> tuple[str, str | None]:
-    """(rapport Markdown, chemin de l'image de test) pour l'interface."""
+@dataclass
+class Report:
+    markdown: str
+    test_image: str | None
+    tiles: list[tuple[str, str]]     # (chemin, libellé) pour la galerie
+    last_upload: str | None
+
+
+def report() -> Report:
+    """Tout ce que l'interface affiche : rapport, image de test, tuiles de
+    format, et le dernier fichier réellement importé."""
+    cache = temp_dir()
     items, dest = checks()
     bad = [c for c in items if c.ok is False]
-    head = ("### ✅ Rien d'anormal détecté\n"
-            "Si l'image de test ci-contre s'affiche, la chaîne complète "
-            "fonctionne : écriture du cache, autorisation du serveur, "
-            "affichage. Un problème d'import vient alors du fichier "
-            "lui-même — réessayez avec l'image qui échoue et regardez si "
-            "cette image de test reste, elle, visible.\n"
-            if not bad else
-            f"### ❌ {len(bad)} problème(s) trouvé(s)\n"
-            "Les lignes ❌ ci-dessous expliquent quoi faire.\n")
-    lines = [head]
+
+    lines = []
     for c in items:
         detail = f" — {c.detail}" if c.detail else ""
         lines.append(f"{c.mark} **{c.label}**{detail}")
     if dest is None:
-        lines.append("\n⚠️ L'image de test n'a pas pu être écrite : "
-                     "c'est déjà l'explication.")
-    return "\n\n".join(lines), (str(dest) if dest else None)
+        lines.append("⚠️ L'image de test n'a pas pu être écrite : c'est déjà "
+                     "l'explication.")
+
+    tiles, mime_lines = format_probe(cache / "diagnostic")
+    bad_mime = [l for l in mime_lines if l.startswith("❌")]
+    lines.append("\n**Types de fichiers** — chaque tuile ci-dessous est écrite "
+                 "dans un format différent. Celles qui ne s'affichent pas "
+                 "désignent le coupable.")
+    lines += mime_lines
+
+    ups = recent_uploads(cache)
+    lines.append("\n**Derniers fichiers importés par le navigateur**")
+    if ups:
+        for p in ups:
+            age = max(0, int(time.time() - p.stat().st_mtime))
+            lines.append(f"• `{p.name}` — il y a {age // 60} min {age % 60} s "
+                         f"· {mime_of(p.suffix) or 'MIME inconnu'} · "
+                         f"{describe_file(p)}")
+        lines.append("Le plus récent est affiché en bas. **S'il s'affiche ici "
+                     "mais pas dans l'outil, le fichier est intact et le "
+                     "problème est ailleurs ; s'il est cassé ici aussi, c'est "
+                     "ce fichier-là que le navigateur n'arrive pas à lire.**")
+    else:
+        lines.append("• *Aucun.* Importez une image dans un outil, puis "
+                     "relancez ce diagnostic : si rien n'apparaît ici, c'est "
+                     "l'ENVOI qui échoue, pas l'affichage.")
+
+    if bad or bad_mime:
+        head = (f"### ❌ {len(bad) + len(bad_mime)} problème(s) trouvé(s)\n"
+                "Les lignes ❌ ci-dessous expliquent quoi faire.")
+    else:
+        head = ("### ✅ Rien d'anormal détecté\n"
+                "La chaîne de service fonctionne. Regardez alors les tuiles de "
+                "format et le dernier fichier importé, plus bas : c'est là que "
+                "se voit un problème propre à UN fichier.")
+    return Report("\n\n".join([head] + lines),
+                  str(dest) if dest else None,
+                  tiles,
+                  str(ups[0]) if ups else None)

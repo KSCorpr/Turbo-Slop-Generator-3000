@@ -74,10 +74,19 @@ class ReportTests(unittest.TestCase):
         with mock.patch.dict(
                 os.environ,
                 {"GRADIO_TEMP_DIR": str(settings.ROOT / "tmp" / "gradio")}):
-            md, path = imgcheck.report()
-        self.assertIn("Rien d'anormal", md)
-        self.assertIsNotNone(path)
-        self.assertTrue(Path(path).is_file())
+            r = imgcheck.report()
+        self.assertIn("Rien d'anormal", r.markdown)
+        self.assertIsNotNone(r.test_image)
+        self.assertTrue(Path(r.test_image).is_file())
+
+    def test_the_report_carries_one_tile_per_format(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict(os.environ, {"GRADIO_TEMP_DIR": d}):
+                r = imgcheck.report()
+            # DANS le with : les tuiles vivent dans ce dossier temporaire.
+            self.assertEqual(len(r.tiles), len(imgcheck.TEST_FORMATS))
+            for path, label in r.tiles:
+                self.assertTrue(Path(path).is_file(), label)
 
     def test_a_cache_outside_the_project_is_flagged(self):
         """Le cas qui explique les images cassées PAR INTERMITTENCE : dans le
@@ -102,6 +111,113 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(imgcheck.Check(True, "x").mark, "✅")
         self.assertEqual(imgcheck.Check(False, "x").mark, "❌")
         self.assertEqual(imgcheck.Check(None, "x").mark, "•")
+
+
+class FormatProbeTests(unittest.TestCase):
+    """La tuile par format est le contrôle qui manquait : le diagnostic
+    général disait « tout va bien » pendant que les imports cassaient."""
+
+    def test_it_writes_one_readable_tile_per_format(self):
+        with tempfile.TemporaryDirectory() as d:
+            tiles, lines = imgcheck.format_probe(Path(d))
+            self.assertEqual(len(tiles), len(imgcheck.TEST_FORMATS))
+            self.assertEqual(len(lines), len(imgcheck.TEST_FORMATS))
+            for path, _label in tiles:
+                self.assertGreater(Path(path).stat().st_size, 0)
+
+    def test_a_missing_mime_is_flagged(self):
+        """Sous Windows, `mimetypes` s'initialise depuis la base de registre :
+        une extension non reconnue s'y voit servir en téléchargement, et le
+        navigateur n'affiche rien. Le rapport doit le dire."""
+        with mock.patch("mimetypes.guess_type", return_value=(None, None)):
+            with tempfile.TemporaryDirectory() as d:
+                _tiles, lines = imgcheck.format_probe(Path(d))
+        self.assertTrue(all(l.startswith("❌") for l in lines), lines)
+        self.assertTrue(any("registre" in l for l in lines))
+
+    def test_known_extensions_resolve_to_an_image_type(self):
+        for _name, suffix in imgcheck.TEST_FORMATS:
+            self.assertTrue(imgcheck.mime_of(suffix).startswith("image/"),
+                            f"{suffix} -> {imgcheck.mime_of(suffix)!r}")
+
+
+class RecentUploadsTests(unittest.TestCase):
+    def test_our_own_test_tiles_are_not_counted_as_imports(self):
+        with tempfile.TemporaryDirectory() as d:
+            cache = Path(d)
+            (cache / "diagnostic").mkdir()
+            (cache / "diagnostic" / "test_png.png").write_bytes(b"x")
+            (cache / "abc123").mkdir()
+            (cache / "abc123" / "photo.jpg").write_bytes(b"y")
+            got = imgcheck.recent_uploads(cache)
+        self.assertEqual([p.name for p in got], ["photo.jpg"])
+
+    def test_the_most_recent_comes_first(self):
+        import time as _time
+        with tempfile.TemporaryDirectory() as d:
+            cache = Path(d)
+            for i in range(3):
+                sub = cache / f"h{i}"
+                sub.mkdir()
+                (sub / f"f{i}.png").write_bytes(b"z")
+                _time.sleep(0.01)
+            got = imgcheck.recent_uploads(cache)
+        self.assertEqual([p.name for p in got], ["f2.png", "f1.png", "f0.png"])
+
+    def test_a_missing_cache_answers_empty(self):
+        self.assertEqual(imgcheck.recent_uploads(Path("/nulle/part")), [])
+
+
+class DescribeFileTests(unittest.TestCase):
+    """Trois fichiers parfaitement servis par le serveur et pourtant cassés
+    dans le navigateur : tronqué, mal étiqueté, gigantesque. Le rapport doit
+    savoir les distinguer d'un fichier sain."""
+
+    def _png(self, path, size=(100, 80), fmt=None):
+        from PIL import Image
+        Image.new("RGB", size).save(path, format=fmt)
+
+    def test_a_healthy_file_is_described_not_accused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ok.png"
+            self._png(p)
+            got = imgcheck.describe_file(p)
+        self.assertIn("100×80", got)
+        self.assertIn("PNG", got)
+        self.assertNotIn("❌", got)
+
+    def test_a_truncated_file_is_called_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            good, bad = Path(d) / "ok.png", Path(d) / "coupé.png"
+            self._png(good)
+            bad.write_bytes(good.read_bytes()[:40])
+            got = imgcheck.describe_file(bad)
+        self.assertIn("❌", got)
+        self.assertIn("tronqué", got)
+
+    def test_a_mislabelled_extension_is_called_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "faux.png"
+            self._png(p, fmt="JPEG")
+            got = imgcheck.describe_file(p)
+        self.assertIn("⚠️", got)
+        self.assertIn("JPEG", got)
+
+    def test_jpg_and_jpeg_are_not_false_positives(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("photo.jpg", "photo.jpeg"):
+                p = Path(d) / name
+                self._png(p, fmt="JPEG")
+                self.assertNotIn("ne correspond pas",
+                                 imgcheck.describe_file(p), name)
+
+    def test_a_huge_image_is_flagged_without_being_decoded(self):
+        # Pas de vraie image de 200 Mpx en test : on interroge le seuil.
+        self.assertGreater(imgcheck.HUGE_PIXELS, 50_000_000)
+        self.assertGreater(imgcheck.HUGE_BYTES, 10 * 1024 * 1024)
+
+    def test_a_missing_file_answers_instead_of_raising(self):
+        self.assertIn("❌", imgcheck.describe_file(Path("/nulle/part/x.png")))
 
 
 class DriveKindTests(unittest.TestCase):

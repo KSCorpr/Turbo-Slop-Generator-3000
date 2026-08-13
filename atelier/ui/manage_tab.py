@@ -278,15 +278,28 @@ def build_manage_tab():
             diag_btn = gr.Button("🩺 Lancer le diagnostic", variant="primary")
             with gr.Row():
                 diag_md = gr.Markdown("")
-                diag_img = gr.Image(label="Image de test", height=220,
-                                    interactive=False, show_download_button=False)
+                with gr.Column():
+                    diag_img = gr.Image(label="Image de test", height=200,
+                                        interactive=False,
+                                        show_download_button=False)
+                    # Une tuile par format : celle qui casse DÉSIGNE la cause,
+                    # là où un contrôle général ne peut que dire « tout va
+                    # bien » — ce qu'il disait, pendant que les imports
+                    # cassaient.
+                    diag_tiles = gr.Gallery(label="Un format par tuile",
+                                            height=200, columns=5,
+                                            show_download_button=False)
+                    diag_last = gr.Image(
+                        label="Dernier fichier importé (le vôtre)", height=220,
+                        interactive=False, show_download_button=False)
 
             def _diagnose():
                 from .. import imgcheck
-                md, path = imgcheck.report()
-                return md, path
+                r = imgcheck.report()
+                return r.markdown, r.test_image, r.tiles, r.last_upload
 
-            diag_btn.click(_diagnose, outputs=[diag_md, diag_img])
+            diag_btn.click(_diagnose,
+                           outputs=[diag_md, diag_img, diag_tiles, diag_last])
 
         # ------------------------------------------------------------------ #
         #  Documentation des options

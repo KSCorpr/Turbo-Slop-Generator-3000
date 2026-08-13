@@ -1176,13 +1176,26 @@ maintenance) — the fastest way to know what a slider actually does.
   line exists to prevent. It is now set outright.
   **If it still happens, don't open the browser console** — go to
   **⚙️ System → 🧹 Manage & help → 🩺 Diagnose image display** and press the
-  button. It redoes the full journey of an imported image (write to the cache,
-  then serve it over HTTP) and reports which link broke, naming the causes that
-  actually bite on Windows: a cache on a **network or removable drive**, a
-  **full disk**, an **unwritable folder**, a **path too long** for the Win32 API,
-  and an **antivirus** locking each new file (visible as an abnormal read-back
-  time). A test image is displayed next to the report — if you can see it, the
-  serving chain works and the problem is the imported file itself.
+  button. It answers in three layers, because the first two can pass while
+  imports still break:
+  1. **The chain itself** — writes a file into the cache and serves it over
+     HTTP, naming the causes that actually bite on Windows: a cache on a
+     **network or removable drive**, a **full disk**, an **unwritable folder**,
+     a **path too long** for the Win32 API, and an **antivirus** locking each
+     new file (visible as an abnormal read-back time).
+  2. **One tile per format** (PNG, JPEG, WEBP, GIF, BMP) with the MIME type
+     Python resolves for each. On Windows `mimetypes` initialises from the
+     **registry**, so a missing or hijacked entry makes Gradio serve that
+     format as a download and the browser shows nothing — which hits *some*
+     extensions and spares the rest, exactly the shape of a bug that breaks
+     imports while the general test passes. The tile that fails names the
+     format.
+  3. **Your last imported file**, displayed, with what it really is: size,
+     dimensions, actual format. This is the one that settles it. If the file
+     is not listed at all, the **upload** is failing, not the display. If it
+     is listed, the report calls out a **truncated file**, an **extension that
+     does not match the content** (a `.png` that is really a JPEG), and images
+     so large the browser gives up decoding them.
   Note that emptying `tmp/` from **Manage & clean** *while the app is running*
   legitimately breaks already-displayed images until you reload the page.
 - **Model shows “to download”** → Model Catalog tab → **Download**.
