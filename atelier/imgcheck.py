@@ -290,7 +290,25 @@ def checks() -> tuple[list[Check], Path | None]:
         "`GRADIO_TEMP_DIR` définie dans votre environnement prend le pas sur "
         "celle de l'application — supprimez-la puis relancez."))
 
-    # 2. Type de lecteur (Windows). Réseau/amovible = cause connue.
+    # 2. Le dépôt et le cache sont-ils sur le MÊME disque ?
+    #
+    # Cause avérée, mesurée : quand `os.rename` ne peut pas franchir les deux
+    # volumes, Gradio recopie le fichier en tâche de fond MAIS répond tout de
+    # suite avec le chemin final. Le navigateur demande alors une image encore
+    # incomplète, la réponse est tronquée, et l'icône casse — pendant que
+    # l'outil, lui, reçoit le fichier complet une fois la copie finie.
+    upload_tmp = Path(settings.ROOT) / "tmp" / "upload"
+    if upload_tmp.is_dir():
+        same = _same_volume(upload_tmp, cache)
+        out.append(Check(
+            same, "Dépôt et cache sur le même disque",
+            "" if same else
+            "les fichiers déposés transitent par un autre volume que le "
+            "cache : la vignette est demandée avant que la copie soit finie, "
+            "et la réponse arrive tronquée. Signalez-le — c'est un défaut de "
+            "l'application, pas de votre machine."))
+
+    # 3. Type de lecteur (Windows). Réseau/amovible = cause connue.
     kind = drive_kind(cache)
     if kind:
         ok = kind == "fixe"
@@ -339,6 +357,17 @@ def checks() -> tuple[list[Check], Path | None]:
     out.append(Check(None, "Contenu du cache",
                      f"{n} fichier(s), {size / 1e6:.0f} Mo"))
     return out, dest
+
+
+def _same_volume(a: Path, b: Path) -> bool:
+    """Deux chemins sur le même volume ? (lettre de lecteur, puis `st_dev`)."""
+    try:
+        if os.path.splitdrive(a.absolute())[0].lower() != \
+                os.path.splitdrive(b.absolute())[0].lower():
+            return False
+        return a.stat().st_dev == b.stat().st_dev
+    except OSError:
+        return False
 
 
 def _is_within(path: Path, parent: Path) -> bool:

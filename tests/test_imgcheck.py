@@ -220,6 +220,27 @@ class DescribeFileTests(unittest.TestCase):
         self.assertIn("❌", imgcheck.describe_file(Path("/nulle/part/x.png")))
 
 
+class SameVolumeTests(unittest.TestCase):
+    """La cause avérée de l'icône cassée à l'import : dépôt et cache sur deux
+    volumes -> copie en tâche de fond -> réponse tronquée."""
+
+    def test_a_folder_shares_its_own_volume(self):
+        self.assertTrue(imgcheck._same_volume(settings.ROOT, settings.ROOT))
+
+    def test_a_missing_path_answers_false(self):
+        self.assertFalse(imgcheck._same_volume(Path("/nulle/part"),
+                                               settings.ROOT))
+
+    def test_the_check_appears_once_the_upload_folder_exists(self):
+        (settings.ROOT / "tmp" / "upload").mkdir(parents=True, exist_ok=True)
+        with mock.patch.dict(
+                os.environ,
+                {"GRADIO_TEMP_DIR": str(settings.ROOT / "tmp" / "gradio")}):
+            items, _dest = imgcheck.checks()
+        labels = [c.label for c in items]
+        self.assertIn("Dépôt et cache sur le même disque", labels)
+
+
 class DriveKindTests(unittest.TestCase):
     def test_it_stays_silent_outside_windows(self):
         # Aucun type de lecteur à annoncer ailleurs : mieux vaut se taire que

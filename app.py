@@ -66,6 +66,63 @@ def _patch_gradio_client() -> None:
         pass
 
 
+def _upload_on_the_same_volume() -> None:
+    """Le dépôt d'une image doit atterrir sur le MÊME disque que le cache.
+
+    C'est la cause de l'icône d'image cassée à l'import, et c'est une
+    régression que la ligne GRADIO_TEMP_DIR ci-dessus a introduite.
+
+    Le trajet, dans Gradio 5.50 : le corps de la requête est écrit dans un
+    `NamedTemporaryFile()` SANS `dir=` — donc dans %TEMP%, sur `C:` — puis
+    déplacé vers le cache par `os.rename` (`routes.py`). Quand la destination
+    est sur un AUTRE disque, `os.rename` lève, et Gradio se rabat sur une
+    copie EN TÂCHE DE FOND :
+
+        try:
+            os.rename(temp_file.file.name, dest)
+        except OSError:
+            files_to_copy.append(...)          # copie plus tard
+        output_files.append(dest)              # ... mais on répond tout de suite
+
+    La réponse part avec le chemin final alors que la copie n'a pas commencé.
+    Le navigateur demande aussitôt l'image ; `FileResponse` lit la taille du
+    fichier PARTIEL, l'annonce en `Content-Length`, puis continue de lire
+    pendant que la copie l'agrandit. h11 s'en aperçoit et coupe :
+
+        LocalProtocolError: Too much data for declared Content-Length
+
+    Réponse tronquée, donc icône cassée — mais le fichier finit bien d'être
+    copié, ce qui explique le symptôme déroutant : l'image ne s'affiche pas
+    alors qu'elle est correctement utilisée par l'outil. Et c'est
+    intermittent : les petits fichiers gagnent la course, les gros la perdent.
+
+    Tant que le cache était dans %TEMP% (le défaut de Gradio), départ et
+    arrivée étaient sur le même volume, `os.rename` réussissait et la course
+    n'existait pas. En déplaçant le cache dans le projet — pour le protéger du
+    ménage de Windows — on a créé le cas « deux disques » sur toute machine
+    dont le projet ne vit pas sur `C:`.
+
+    Le correctif ne touche pas au trajet : il fait simplement écrire le
+    fichier temporaire à côté de sa destination. `os.rename` redevient un
+    renommage sur place, instantané, et il n'y a plus rien à copier après
+    coup.
+    """
+    try:
+        import gradio.route_utils as ru
+
+        upload_tmp = os.path.join(_ROOT, "tmp", "upload")
+        os.makedirs(upload_tmp, exist_ok=True)
+        _orig = ru.NamedTemporaryFile
+
+        def _same_volume(*args, **kwargs):
+            kwargs.setdefault("dir", upload_tmp)
+            return _orig(*args, **kwargs)
+
+        ru.NamedTemporaryFile = _same_volume
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _disable_brotli() -> None:
     """Désactive la compression Brotli de Gradio : son middleware calcule mal le
     Content-Length et casse le service des images (erreurs « Too much/little data
@@ -124,6 +181,7 @@ def _quiet_connection_reset() -> None:
 
 
 _patch_gradio_client()
+_upload_on_the_same_volume()
 _disable_brotli()
 _quiet_connection_reset()
 

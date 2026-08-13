@@ -1159,7 +1159,25 @@ maintenance) — the fastest way to know what a slider actually does.
   (fetches the **win-cuda12** build *and* the **cudart** runtime side by side).
 - **“No NVIDIA GPU detected”** → check drivers / `nvidia-smi`.
 - **An image shows as a broken-image icon** — the browser got a response, just
-  not an image. Two causes have been closed off. Gradio does not serve images
+  not an image.
+  **The main cause, found and fixed, was self-inflicted.** Pinning the image
+  cache inside the project (see below) put it on a different drive from
+  `%TEMP%` on any machine whose project does not live on `C:`. Gradio 5.50
+  moves an uploaded file with `os.rename`, which cannot cross volumes; it then
+  falls back to copying **in a background task** — *after* already answering
+  with the final path. The browser asks for the image immediately,
+  `FileResponse` puts the size of the **partial** file in `Content-Length`,
+  then keeps reading as the copy grows it, and h11 cuts the response with
+  `LocalProtocolError: Too much data for declared Content-Length`. Truncated
+  response, broken icon — while the tool itself gets the complete file once the
+  copy finishes, which is why the image was *used* correctly but never
+  *displayed*. Measured on an 11 MB upload: the endpoint returned a path to a
+  **0 KB** file, and the next request announced 65 536 bytes and delivered
+  65 536 of 11 234 505. The upload's temp file is now created next to the
+  cache, so `os.rename` is an in-place rename again and there is nothing left
+  to copy afterwards. `tests/test_upload_volume.py` fails if that ever stops
+  being true.
+  Two earlier causes had already been closed off. Gradio does not serve images
   from where they live; it copies them into a cache and serves *that*, and the
   cache defaulted to `%TEMP%` — a folder Windows Storage Sense, disk cleanup and
   antivirus all consider fair game. When the copy vanishes the request 404s and
