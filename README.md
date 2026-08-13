@@ -1237,6 +1237,18 @@ The weights: diffusion `ref2va_pruned-Q2_K_M` (6.7 GB), text encoder
 (5.2 GB), audio VAE (0.6 GB), Turbo LoRA (~1 GB). They land in `models/` and are
 removable from **Manage & clean** like everything else.
 
+**The text encoder runs on the CPU, and that is arithmetic, not caution.** The
+first real run failed on it: Qwen3-VL 32B asks for a **12 845 MiB** compute
+buffer, and an RTX 3060 has 12 288 MiB in total — it does not fit on an empty
+card. `--offload-to-cpu` is not enough, because it parks the *weights* in RAM
+while the computation still happens on the GPU; `--backend te=cpu` runs the
+encoder itself on the processor. (`--clip-on-cpu` does the same thing but is
+deprecated upstream — it now merely prepends `te=cpu`.) So **~13 GB of RAM** is
+the real floor, and the probe checks it before downloading anything. If a pass
+still runs out of memory, it retries once with a VRAM budget (`--max-vram -1`)
+and says which configuration worked; on an error that is *not* a memory problem
+it says so instead of wasting a second pass.
+
 `ref2va` is a *reference*-to-video model, so it needs a source image: the probe
 takes the most recent one in `outputs/`, or `--ref path/to/image.png`. The two
 passes run the same generation with and without the LoRA and write two separate

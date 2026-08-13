@@ -52,9 +52,9 @@ class CommandLineTests(unittest.TestCase):
     def setUp(self):
         self.paths = _paths()
 
-    def _cmd(self, turbo):
+    def _cmd(self, turbo, budget=False):
         return T.build_cmd(Path("sd-cli"), self.paths, turbo,
-                           Path("out.webm"), Path("/ref.png"))
+                           Path("out.webm"), Path("/ref.png"), budget=budget)
 
     def test_the_four_components_are_all_passed(self):
         """Quatre poids, quatre drapeaux distincts : oublier `--audio-vae` est
@@ -127,3 +127,46 @@ class ReferencePickingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MemoryPlacementTests(unittest.TestCase):
+    """Le premier essai réel a échoué là-dessus, et c'est arithmétique :
+    Qwen3-VL 32B réclame 12 845 Mio de tampon de calcul, une RTX 3060 en a
+    12 288 en tout. Carte vide, ça ne rentre pas."""
+
+    def _cmd(self, budget=False):
+        return T.build_cmd(Path("sd-cli"), _paths(), False,
+                           Path("out.webm"), Path("/ref.png"), budget=budget)
+
+    def test_the_text_encoder_runs_on_the_cpu(self):
+        cmd = self._cmd()
+        self.assertIn("--backend", cmd)
+        self.assertEqual(cmd[cmd.index("--backend") + 1], "te=cpu")
+
+    def test_offload_alone_is_not_relied_upon(self):
+        """`--offload-to-cpu` range les POIDS en RAM mais ramène le calcul sur
+        le GPU : c'est exactement ce qui a échoué. Il reste utile, il ne
+        remplace pas le placement de l'encodeur."""
+        cmd = self._cmd()
+        self.assertIn("--offload-to-cpu", cmd)
+        self.assertIn("te=cpu", cmd)
+
+    def test_the_vram_budget_is_only_for_the_retry(self):
+        self.assertNotIn("--max-vram", self._cmd(budget=False))
+        cmd = self._cmd(budget=True)
+        self.assertEqual(cmd[cmd.index("--max-vram") + 1], "-1")
+
+    def test_out_of_memory_is_recognised_in_the_engine_output(self):
+        """Les trois formulations relevées dans la sortie réelle du moteur."""
+        for line in ("cudaMalloc failed: out of memory",
+                     "alloc_tensor_range: failed to allocate CUDA0 buffer",
+                     "ggml_backend_cuda_buffer_type_alloc_buffer: "
+                     "allocating 12844.50 MiB on device 0: cudaMalloc failed"):
+            self.assertTrue(any(sig in line.lower() for sig in T._OOM), line)
+
+    def test_an_ordinary_error_is_not_taken_for_a_memory_problem(self):
+        """Relancer avec un budget VRAM sur une erreur qui n'en est pas une
+        ferait perdre une seconde passe entière."""
+        for line in ("GGML_ASSERT(!hidden_states.empty()) failed",
+                     "unknown argument: --nope"):
+            self.assertFalse(any(sig in line.lower() for sig in T._OOM), line)

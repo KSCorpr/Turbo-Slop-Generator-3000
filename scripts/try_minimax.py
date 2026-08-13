@@ -70,7 +70,26 @@ BASE_ARGS = [
     "-W", "864", "-H", "480",
     "--diffusion-fa", "--offload-to-cpu", "--rng", "cpu",
     "--fps", "24", "--video-frames", "22",
+    # L'ENCODEUR TOURNE SUR LE PROCESSEUR, et ce n'est pas un réglage
+    # prudent : c'est une obligation arithmétique. Qwen3-VL 32B réclame
+    # 12 845 Mio pour son tampon de calcul ; une RTX 3060 en a 12 288 en tout.
+    # Même carte vide, ça ne rentre pas — mesuré, pas supposé.
+    #
+    # `--offload-to-cpu` ne suffit pas : il range les POIDS en RAM, mais le
+    # calcul revient sur le GPU. `--backend te=cpu` fait tourner l'encodeur
+    # lui-même côté processeur. (`--clip-on-cpu` fait la même chose mais est
+    # déprécié en amont : il ne fait plus que préfixer `te=cpu` ici.)
+    "--backend", "te=cpu",
 ]
+
+# Second recours si ça bute encore : donner au moteur un budget VRAM au lieu
+# de le laisser allouer d'un bloc. « -1 » = toute la VRAM libre moins 1 Gio,
+# valeur qui s'adapte à la carte et à ce qui l'occupe déjà.
+RETRY_ARGS = ["--max-vram", "-1"]
+
+# Signature d'un manque de mémoire dans la sortie du moteur : c'est ce qui
+# déclenche la relance, et ce qui permet de nommer le vrai coupable.
+_OOM = ("out of memory", "cudamalloc failed", "failed to allocate")
 
 # Le modèle choisi est ref2va — REFERENCE-to-video : il part d'une image et
 # doit la recevoir via `-r`. Le prompt la désigne par « <Picture 1> », comme
@@ -86,6 +105,34 @@ NEEDED_GB = sum(w[3] for w in WEIGHTS) + TURBO[3]
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
+
+
+def _ram_gb() -> float:
+    """RAM totale, sans dépendance : Windows par ctypes, Linux par /proc."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class _S(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+            st = _S()
+            st.dwLength = ctypes.sizeof(_S)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+            return st.ullTotalPhys / 1e9
+        import os
+        return (os.sysconf("SC_PAGE_SIZE")
+                * os.sysconf("SC_PHYS_PAGES")) / 1e9
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 # --------------------------------------------------------------------------- #
@@ -132,6 +179,16 @@ def check() -> bool:
         if best.vram_gb < 11:
             log(f"  ⚠️ {best.vram_gb:.0f} Go de VRAM : sous les 12 Go des "
                 "retours connus, ça peut ne pas passer")
+
+    # L'encodeur tourne sur le processeur : ses 12,5 Gio sont désormais un
+    # besoin de RAM, pas de VRAM. C'est devenu le vrai plancher.
+    ram = _ram_gb()
+    if ram:
+        log(f"{'✓' if ram >= 24 else '✗'} RAM : {ram:.0f} Go "
+            "(l'encodeur en réclame ~13 à lui seul)")
+        ok = ok and ram >= 24
+    else:
+        log("• RAM : indéterminée — il en faut au moins 24 Go")
 
     free = shutil.disk_usage(settings.MODELS_DIR).free / 1e9
     log(f"{'✓' if free > NEEDED_GB + 5 else '✗'} disque libre : "
@@ -187,7 +244,7 @@ def pick_reference(explicit: str | None) -> Path | None:
 
 
 def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
-              out_file: Path, ref: Path) -> list[str]:
+              out_file: Path, ref: Path, budget: bool = False) -> list[str]:
     prompt = PROMPT
     extra: list[str] = []
     if turbo:
@@ -205,6 +262,7 @@ def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
         "-p", prompt,
         "-r", str(ref),
         *BASE_ARGS, *extra,
+        *(RETRY_ARGS if budget else []),
         "-o", str(out_file),
     ]
 
@@ -216,30 +274,66 @@ def out_path(turbo: bool) -> Path:
         f"minimax_test_{'turbo' if turbo else 'base'}.webm")
 
 
+def _launch(cmd: list[str]) -> tuple[int, float, bool]:
+    """Lance le moteur en RELAYANT sa sortie, et dit si elle parle de mémoire.
+
+    On relaie ligne à ligne plutôt que de capturer en silence : une passe dure
+    des minutes, et regarder une fenêtre muette n'apprend rien. Mais on garde
+    de quoi reconnaître un manque de mémoire, pour relancer avec un budget au
+    lieu de rendre un simple « échec ».
+    """
+    oom = False
+    start = time.time()
+    proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace", bufsize=1)
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        low = line.lower()
+        if any(sig in low for sig in _OOM):
+            oom = True
+    proc.wait()
+    return proc.returncode, time.time() - start, oom
+
+
 def run_pass(sd_cli: Path, paths: dict[str, Path], turbo: bool,
              ref: Path) -> bool:
     name = "AVEC la LoRA Turbo (4 pas)" if turbo else "SANS LoRA (pas de base)"
     out_file = out_path(turbo)
-    cmd = build_cmd(sd_cli, paths, turbo, out_file, ref)
 
-    log()
-    log(f"── Passe : {name} " + "─" * max(0, 40 - len(name)))
-    log(" ".join(f'"{c}"' if " " in c else c for c in cmd))
-    log()
+    for budget in (False, True):
+        cmd = build_cmd(sd_cli, paths, turbo, out_file, ref, budget=budget)
+        log()
+        title = name + (" — 2e essai, avec budget VRAM" if budget else "")
+        log(f"── Passe : {title} " + "─" * max(0, 30 - len(title)))
+        log(" ".join(f'"{c}"' if " " in c else c for c in cmd))
+        log()
 
-    start = time.time()
-    proc = subprocess.run(cmd, cwd=str(ROOT))
-    took = time.time() - start
+        code, took, oom = _launch(cmd)
 
-    if proc.returncode != 0:
-        log(f"✗ échec (code {proc.returncode}) après {took / 60:.1f} min")
-        return False
-    if not out_file.is_file():
-        log(f"✗ terminé sans erreur mais aucun fichier produit ({took:.0f} s)")
-        return False
-    log(f"✓ {out_file.name} — {out_file.stat().st_size / 1e6:.1f} Mo "
-        f"en {took / 60:.1f} min")
-    return True
+        if code == 0 and out_file.is_file():
+            log(f"✓ {out_file.name} — {out_file.stat().st_size / 1e6:.1f} Mo "
+                f"en {took / 60:.1f} min"
+                + ("  (budget VRAM nécessaire)" if budget else ""))
+            return True
+        if code == 0:
+            log(f"✗ terminé sans erreur mais aucun fichier produit ({took:.0f} s)")
+            return False
+
+        log(f"✗ échec (code {code}) après {took / 60:.1f} min")
+        if not oom:
+            log("  Ce n'est PAS un manque de mémoire — relancer avec un budget "
+                "n'y changerait rien. Le message du moteur ci-dessus est la "
+                "vraie piste.")
+            return False
+        if budget:
+            log("  Toujours à court de mémoire malgré le budget VRAM.")
+            log("  → cette carte ne suffit pas pour ce modèle, même au plus "
+                "petit quant publié.")
+            return False
+        log("  Manque de mémoire → nouvel essai avec un budget VRAM…")
+    return False
 
 
 def main() -> int:
@@ -298,7 +392,13 @@ def main() -> int:
         if base_ok and not turbo_ok:
             log("  → sans la LoRA, comptez le régime de pas complet : c'est "
                 "jouable mais lent.")
-    log("  Les deux fichiers .webm sont dans outputs/ — comparez-les.")
+    # Ne rien annoncer qui n'existe pas : la version précédente invitait à
+    # comparer deux fichiers alors que les deux passes avaient échoué.
+    made = [p for p in (out_path(False), out_path(True)) if p.is_file()]
+    if made:
+        log("  Produit : " + ", ".join(p.name for p in made) + " (outputs/)")
+    else:
+        log("  Aucun fichier produit.")
     return 0 if base_ok else 1
 
 
