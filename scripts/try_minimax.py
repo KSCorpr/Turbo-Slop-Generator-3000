@@ -70,22 +70,45 @@ BASE_ARGS = [
     "-W", "864", "-H", "480",
     "--diffusion-fa", "--offload-to-cpu", "--rng", "cpu",
     "--fps", "24", "--video-frames", "22",
-    # L'ENCODEUR TOURNE SUR LE PROCESSEUR, et ce n'est pas un réglage
-    # prudent : c'est une obligation arithmétique. Qwen3-VL 32B réclame
-    # 12 845 Mio pour son tampon de calcul ; une RTX 3060 en a 12 288 en tout.
-    # Même carte vide, ça ne rentre pas — mesuré, pas supposé.
-    #
-    # `--offload-to-cpu` ne suffit pas : il range les POIDS en RAM, mais le
-    # calcul revient sur le GPU. `--backend te=cpu` fait tourner l'encodeur
-    # lui-même côté processeur. (`--clip-on-cpu` fait la même chose mais est
-    # déprécié en amont : il ne fait plus que préfixer `te=cpu` ici.)
-    "--backend", "te=cpu",
 ]
 
-# Second recours si ça bute encore : donner au moteur un budget VRAM au lieu
-# de le laisser allouer d'un bloc. « -1 » = toute la VRAM libre moins 1 Gio,
-# valeur qui s'adapte à la carte et à ce qui l'occupe déjà.
-RETRY_ARGS = ["--max-vram", "-1"]
+
+# --------------------------------------------------------------------------- #
+#  OÙ METTRE L'ENCODEUR — la question qui décide, et sa réponse dépend du
+#  nombre de cartes.
+#
+#  Qwen3-VL 32B réclame 12 845 Mio pour son tampon de calcul. Une RTX 3060 en
+#  a 12 288 en tout : carte vide, ça ne rentre pas. Mesuré, pas supposé.
+#
+#  `--offload-to-cpu` n'y suffit pas : il range les POIDS en RAM mais le calcul
+#  revient sur le GPU. Il faut placer l'encodeur lui-même, via `--backend`.
+#  Trois placements, du plus rapide au plus sûr :
+#
+#   1. RÉPARTI SUR PLUSIEURS CARTES — `te=cuda0&cuda1`. sd.cpp découpe les
+#      blocs de l'encodeur en tranches proportionnelles à la mémoire libre de
+#      chaque carte. Une 3060 (12 Go) et une 1080 Ti (11 Go) font 23 Go
+#      cumulés : l'encodeur y tient, et il tourne sur GPU.
+#   2. SUR LE PROCESSEUR — `te=cpu`. Marche partout, mais encoder un 32B sur
+#      processeur coûte plusieurs minutes.
+#   3. Le même, plus un budget VRAM pour le reste du graphe.
+#
+#  `--clip-on-cpu` ferait la même chose que (2) mais est déprécié en amont : il
+#  ne fait plus que préfixer `te=cpu`.
+# --------------------------------------------------------------------------- #
+def placements(gpus) -> list[tuple[str, list[str]]]:
+    """Placements à essayer, du plus rapide au plus sûr."""
+    out: list[tuple[str, list[str]]] = []
+    cuda = [g for g in gpus if not g.is_apple]
+    if len(cuda) >= 2:
+        total = sum(g.vram_gb for g in cuda)
+        devices = "&".join(f"cuda{g.index}" for g in cuda)
+        out.append((f"encodeur réparti sur {len(cuda)} cartes "
+                    f"({total:.0f} Go cumulés)",
+                    ["--backend", f"te={devices}"]))
+    out.append(("encodeur sur le processeur", ["--backend", "te=cpu"]))
+    out.append(("encodeur sur le processeur + budget VRAM",
+                ["--backend", "te=cpu", "--max-vram", "-1"]))
+    return out
 
 # Signature d'un manque de mémoire dans la sortie du moteur : c'est ce qui
 # déclenche la relance, et ce qui permet de nommer le vrai coupable.
@@ -169,16 +192,24 @@ def check() -> bool:
         else:
             log("✓ le moteur connaît vid_gen, l'audio et les LoRA")
 
+    # TOUTES les cartes, pas seulement la meilleure : la VRAM cumulée décide
+    # du placement de l'encodeur, et n'afficher qu'une carte cache l'option la
+    # plus rapide sur une machine qui en a deux.
     gpus = hardware.detect_gpus()
     if not gpus:
         log("✗ aucun GPU détecté — inutile d'essayer en CPU")
         ok = False
     else:
-        best = max(gpus, key=lambda g: g.vram_gb)
-        log(f"✓ GPU : {best.label()}")
-        if best.vram_gb < 11:
-            log(f"  ⚠️ {best.vram_gb:.0f} Go de VRAM : sous les 12 Go des "
-                "retours connus, ça peut ne pas passer")
+        total = sum(g.vram_gb for g in gpus)
+        log(f"✓ {len(gpus)} carte(s), {total:.0f} Go de VRAM cumulée :")
+        for g in gpus:
+            log(f"    cuda{g.index}  {g.label()}")
+        if len(gpus) >= 2 and total >= 14:
+            log("  → l'encodeur peut être RÉPARTI sur les cartes : c'est le "
+                "placement le plus rapide, essayé en premier.")
+        else:
+            log("  → l'encodeur (12,5 Gio) ne tient sur aucune carte seule : "
+                "il tournera sur le processeur.")
 
     # L'encodeur tourne sur le processeur : ses 12,5 Gio sont désormais un
     # besoin de RAM, pas de VRAM. C'est devenu le vrai plancher.
@@ -244,7 +275,8 @@ def pick_reference(explicit: str | None) -> Path | None:
 
 
 def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
-              out_file: Path, ref: Path, budget: bool = False) -> list[str]:
+              out_file: Path, ref: Path,
+              placement: list[str] | None = None) -> list[str]:
     prompt = PROMPT
     extra: list[str] = []
     if turbo:
@@ -262,7 +294,7 @@ def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
         "-p", prompt,
         "-r", str(ref),
         *BASE_ARGS, *extra,
-        *(RETRY_ARGS if budget else []),
+        *(placement or []),
         "-o", str(out_file),
     ]
 
@@ -298,15 +330,20 @@ def _launch(cmd: list[str]) -> tuple[int, float, bool]:
 
 
 def run_pass(sd_cli: Path, paths: dict[str, Path], turbo: bool,
-             ref: Path) -> bool:
+             ref: Path, ladder: list[tuple[str, list[str]]]) -> str | None:
+    """Essaie les placements jusqu'à ce que l'un passe. Rend celui qui a marché.
+
+    On descend l'échelle SEULEMENT sur un manque de mémoire : sur une autre
+    erreur, réessayer ailleurs coûte plusieurs minutes pour rien et brouille le
+    diagnostic.
+    """
     name = "AVEC la LoRA Turbo (4 pas)" if turbo else "SANS LoRA (pas de base)"
     out_file = out_path(turbo)
 
-    for budget in (False, True):
-        cmd = build_cmd(sd_cli, paths, turbo, out_file, ref, budget=budget)
+    for i, (label, extra) in enumerate(ladder, 1):
+        cmd = build_cmd(sd_cli, paths, turbo, out_file, ref, placement=extra)
         log()
-        title = name + (" — 2e essai, avec budget VRAM" if budget else "")
-        log(f"── Passe : {title} " + "─" * max(0, 30 - len(title)))
+        log(f"── {name} · placement {i}/{len(ladder)} : {label} ──")
         log(" ".join(f'"{c}"' if " " in c else c for c in cmd))
         log()
 
@@ -314,26 +351,25 @@ def run_pass(sd_cli: Path, paths: dict[str, Path], turbo: bool,
 
         if code == 0 and out_file.is_file():
             log(f"✓ {out_file.name} — {out_file.stat().st_size / 1e6:.1f} Mo "
-                f"en {took / 60:.1f} min"
-                + ("  (budget VRAM nécessaire)" if budget else ""))
-            return True
+                f"en {took / 60:.1f} min — placement : {label}")
+            return label
         if code == 0:
             log(f"✗ terminé sans erreur mais aucun fichier produit ({took:.0f} s)")
-            return False
+            return None
 
         log(f"✗ échec (code {code}) après {took / 60:.1f} min")
         if not oom:
-            log("  Ce n'est PAS un manque de mémoire — relancer avec un budget "
+            log("  Ce n'est PAS un manque de mémoire : changer de placement "
                 "n'y changerait rien. Le message du moteur ci-dessus est la "
                 "vraie piste.")
-            return False
-        if budget:
-            log("  Toujours à court de mémoire malgré le budget VRAM.")
-            log("  → cette carte ne suffit pas pour ce modèle, même au plus "
+            return None
+        if i == len(ladder):
+            log("  À court de mémoire sur TOUS les placements possibles.")
+            log("  → cette machine ne suffit pas pour ce modèle, même au plus "
                 "petit quant publié.")
-            return False
-        log("  Manque de mémoire → nouvel essai avec un budget VRAM…")
-    return False
+            return None
+        log("  Manque de mémoire → on essaie le placement suivant…")
+    return None
 
 
 def main() -> int:
@@ -380,15 +416,21 @@ def main() -> int:
             "chemin/vers/image.png")
         return 1
     log(f"  référence : {ref}")
-    base_ok = run_pass(sd_cli, paths, turbo=False, ref=ref)
-    turbo_ok = None if args.no_turbo else run_pass(sd_cli, paths, turbo=True,
-                                                   ref=ref)
+    ladder = placements(hardware.detect_gpus())
+    base_ok = run_pass(sd_cli, paths, turbo=False, ref=ref, ladder=ladder)
+    turbo_ok = None if args.no_turbo else run_pass(
+        sd_cli, paths, turbo=True, ref=ref,
+        # Une fois un placement trouvé, on ne recommence pas l'escalade : la
+        # seconde passe teste la LoRA, pas la mémoire.
+        ladder=[(l, e) for l, e in ladder if l == base_ok] or ladder)
 
     log()
     log("── Verdict ────────────────────────────────────────────────")
-    log(f"  modèle sur cette carte : {'OUI' if base_ok else 'NON'}")
-    if turbo_ok is not None:
-        log(f"  LoRA Turbo appliquée   : {'OUI' if turbo_ok else 'NON'}")
+    log(f"  modèle sur cette machine : {'OUI' if base_ok else 'NON'}")
+    if base_ok:
+        log(f"  placement retenu         : {base_ok}")
+    if not args.no_turbo:
+        log(f"  LoRA Turbo appliquée     : {'OUI' if turbo_ok else 'NON'}")
         if base_ok and not turbo_ok:
             log("  → sans la LoRA, comptez le régime de pas complet : c'est "
                 "jouable mais lent.")

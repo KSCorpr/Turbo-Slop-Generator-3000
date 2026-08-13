@@ -52,9 +52,10 @@ class CommandLineTests(unittest.TestCase):
     def setUp(self):
         self.paths = _paths()
 
-    def _cmd(self, turbo, budget=False):
+    def _cmd(self, turbo, placement=None):
         return T.build_cmd(Path("sd-cli"), self.paths, turbo,
-                           Path("out.webm"), Path("/ref.png"), budget=budget)
+                           Path("out.webm"), Path("/ref.png"),
+                           placement=placement)
 
     def test_the_four_components_are_all_passed(self):
         """Quatre poids, quatre drapeaux distincts : oublier `--audio-vae` est
@@ -134,27 +135,59 @@ class MemoryPlacementTests(unittest.TestCase):
     Qwen3-VL 32B réclame 12 845 Mio de tampon de calcul, une RTX 3060 en a
     12 288 en tout. Carte vide, ça ne rentre pas."""
 
-    def _cmd(self, budget=False):
-        return T.build_cmd(Path("sd-cli"), _paths(), False,
-                           Path("out.webm"), Path("/ref.png"), budget=budget)
+    def _gpu(self, index, vram, arch="ampere"):
+        from atelier.hardware import Gpu
+        return Gpu(index=index, name=f"carte{index}", vram_gb=vram,
+                   arch=arch, tensor_cores=True)
 
-    def test_the_text_encoder_runs_on_the_cpu(self):
-        cmd = self._cmd()
-        self.assertIn("--backend", cmd)
+    def test_two_cards_get_the_split_placement_first(self):
+        """LE point manqué au premier essai : avec deux cartes, l'encodeur peut
+        être RÉPARTI (12 + 11 = 23 Go) au lieu de tomber sur le processeur.
+        C'est le placement le plus rapide, il doit passer en tête."""
+        ladder = T.placements((self._gpu(0, 12.0), self._gpu(1, 11.0, "pascal")))
+        self.assertEqual(ladder[0][1], ["--backend", "te=cuda0&cuda1"])
+        self.assertIn("réparti", ladder[0][0])
+
+    def test_the_split_uses_the_real_card_indices(self):
+        """Coder « cuda0&cuda1 » en dur serait faux dès qu'une carte manque à
+        l'appel ou que l'ordre change."""
+        ladder = T.placements((self._gpu(0, 12.0), self._gpu(2, 24.0)))
+        self.assertEqual(ladder[0][1], ["--backend", "te=cuda0&cuda2"])
+
+    def test_a_single_card_falls_back_to_the_processor(self):
+        ladder = T.placements((self._gpu(0, 11.0, "turing"),))
+        self.assertEqual(ladder[0][1], ["--backend", "te=cpu"])
+        self.assertTrue(all("cuda" not in " ".join(e) for _l, e in ladder))
+
+    def test_the_ladder_always_ends_with_a_vram_budget(self):
+        for gpus in ((self._gpu(0, 12.0),),
+                     (self._gpu(0, 12.0), self._gpu(1, 11.0))):
+            last = T.placements(gpus)[-1][1]
+            self.assertIn("--max-vram", last)
+            self.assertEqual(last[last.index("--max-vram") + 1], "-1")
+
+    def test_the_budget_is_not_used_before_it_is_needed(self):
+        """Un budget VRAM coûte en performance : il ne sert qu'en dernier
+        recours, pas d'entrée de jeu."""
+        for gpus in ((self._gpu(0, 12.0),),
+                     (self._gpu(0, 12.0), self._gpu(1, 11.0))):
+            self.assertNotIn("--max-vram", T.placements(gpus)[0][1])
+
+    def test_offload_stays_on_top_of_the_placement(self):
+        """`--offload-to-cpu` range les POIDS en RAM mais ramène le calcul sur
+        le GPU : c'est ce qui a échoué. Il reste utile, il ne remplace pas le
+        placement de l'encodeur."""
+        cmd = T.build_cmd(Path("sd-cli"), _paths(), False, Path("o.webm"),
+                          Path("/ref.png"),
+                          placement=["--backend", "te=cpu"])
+        self.assertIn("--offload-to-cpu", cmd)
         self.assertEqual(cmd[cmd.index("--backend") + 1], "te=cpu")
 
-    def test_offload_alone_is_not_relied_upon(self):
-        """`--offload-to-cpu` range les POIDS en RAM mais ramène le calcul sur
-        le GPU : c'est exactement ce qui a échoué. Il reste utile, il ne
-        remplace pas le placement de l'encodeur."""
-        cmd = self._cmd()
-        self.assertIn("--offload-to-cpu", cmd)
-        self.assertIn("te=cpu", cmd)
-
-    def test_the_vram_budget_is_only_for_the_retry(self):
-        self.assertNotIn("--max-vram", self._cmd(budget=False))
-        cmd = self._cmd(budget=True)
-        self.assertEqual(cmd[cmd.index("--max-vram") + 1], "-1")
+    def test_no_placement_is_baked_into_the_common_arguments(self):
+        """Le placement se décide d'après le matériel : le figer dans
+        BASE_ARGS ramènerait le défaut d'origine."""
+        self.assertNotIn("--backend", T.BASE_ARGS)
+        self.assertNotIn("--max-vram", T.BASE_ARGS)
 
     def test_out_of_memory_is_recognised_in_the_engine_output(self):
         """Les trois formulations relevées dans la sortie réelle du moteur."""

@@ -1237,17 +1237,31 @@ The weights: diffusion `ref2va_pruned-Q2_K_M` (6.7 GB), text encoder
 (5.2 GB), audio VAE (0.6 GB), Turbo LoRA (~1 GB). They land in `models/` and are
 removable from **Manage & clean** like everything else.
 
-**The text encoder runs on the CPU, and that is arithmetic, not caution.** The
+**Where the text encoder goes is the question that decides everything.** The
 first real run failed on it: Qwen3-VL 32B asks for a **12 845 MiB** compute
 buffer, and an RTX 3060 has 12 288 MiB in total — it does not fit on an empty
-card. `--offload-to-cpu` is not enough, because it parks the *weights* in RAM
-while the computation still happens on the GPU; `--backend te=cpu` runs the
-encoder itself on the processor. (`--clip-on-cpu` does the same thing but is
-deprecated upstream — it now merely prepends `te=cpu`.) So **~13 GB of RAM** is
-the real floor, and the probe checks it before downloading anything. If a pass
-still runs out of memory, it retries once with a VRAM budget (`--max-vram -1`)
-and says which configuration worked; on an error that is *not* a memory problem
-it says so instead of wasting a second pass.
+card, and no smaller quant is published. `--offload-to-cpu` does not help,
+because it parks the *weights* in RAM while the computation still happens on
+the GPU; the encoder itself has to be placed, with `--backend`.
+
+The probe therefore walks a **ladder of placements**, fastest first, and only
+steps down when the engine actually reports running out of memory:
+
+1. **Split across cards** — `te=cuda0&cuda1`. sd.cpp cuts the encoder's blocks
+   into ranges proportional to each device's free memory, so a 12 GB card and
+   an 11 GB card pool into 23 GB and the encoder runs *on GPU*. Only offered
+   when two or more cards are present, and it uses their real indices.
+2. **On the processor** — `te=cpu`. Works anywhere, but encoding a 32B model on
+   CPU costs minutes. (`--clip-on-cpu` does the same and is deprecated upstream
+   — it now merely prepends `te=cpu`.)
+3. The same, plus a VRAM budget (`--max-vram -1`) for the rest of the graph.
+
+On an error that is *not* a memory problem, it says so rather than burning
+another multi-minute pass. The report names the placement that worked, and
+`--check` lists **every** card with the pooled total — a machine with two GPUs
+has an option a single-card summary hides. When the encoder does end up on the
+CPU, **~13 GB of RAM** becomes the real floor, so that is checked before
+anything is downloaded.
 
 `ref2va` is a *reference*-to-video model, so it needs a source image: the probe
 takes the most recent one in `outputs/`, or `--ref path/to/image.png`. The two
