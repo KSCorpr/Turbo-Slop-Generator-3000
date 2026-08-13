@@ -100,16 +100,24 @@ def _filter_masks(masks, min_area, max_area, iou_max, log):
     return kept
 
 
-def _partition(ordered, log):
-    """Rend les calques DISJOINTS : chaque pixel appartient à un seul.
+def _partition(ordered, log, min_area=0):
+    """Rend les calques DISJOINTS. Retourne (masques, indices conservés).
 
     `ordered` va de l'arrière-plan vers le premier plan. On retire donc de
     chaque calque ce que les calques SITUÉS DEVANT lui recouvrent : c'est le
     comportement d'un vrai empilement, où l'avant-plan cache l'arrière, et ça
     garantit une propriété simple et vérifiable — tout afficher redonne l'image
     d'origine, sans qu'un pixel soit peint deux fois.
+
+    Les INDICES sont rendus avec les masques, et ce n'est pas un détail de
+    confort : la découpe supprime des calques au milieu de la liste, alors que
+    l'appelant tronquait ses étiquettes par la fin. Les noms se décalaient donc
+    d'un cran à partir du premier calque disparu — la voiture prenait le nom du
+    mur. Impossible à voir dans le code, immédiat dans Photoshop.
+
+    Un calque réduit à une frange de quelques pixels est également retiré :
+    ce n'est plus un objet, c'est le contour de celui qui le cache.
     """
-    import numpy as np
     out = []
     front = None                       # union de tout ce qui est DEVANT
     for m in reversed(ordered):        # du premier plan vers le fond
@@ -117,11 +125,23 @@ def _partition(ordered, log):
         front = m.copy() if front is None else (front | m)
         out.append(vis)
     out.reverse()
-    kept = [m for m in out if m.any()]
-    if len(kept) != len(out):
-        log(f"[calques] {len(out) - len(kept)} zone(s) entièrement masquée(s) "
-            "par l'avant-plan, retirée(s).")
-    return kept
+
+    kept, idx, thin = [], [], 0
+    for i, m in enumerate(out):
+        area = int(m.sum())
+        if area == 0:
+            continue
+        if area < min_area:
+            thin += 1
+            continue
+        kept.append(m)
+        idx.append(i)
+    lost = len(out) - len(kept)
+    if lost:
+        log(f"[calques] {lost} zone(s) retirée(s) après découpe "
+            f"({thin} réduite(s) à une frange, {lost - thin} entièrement "
+            "cachée(s) par l'avant-plan).")
+    return kept, idx
 
 
 def _auto_masks(model_dir, img, points_per_side, batch, log):
@@ -242,31 +262,44 @@ def _clip_labels(clip_dir, img, masks, log):
     return out
 
 
-def _merge_by_label(masks, labels, log, gap=12):
-    """Fusionne les zones VOISINES portant la même étiquette.
+def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
+                    max_share=0.35):
+    """Fusionne les zones qui se TOUCHENT et portent la même étiquette.
 
-    C'est ici que l'étiquetage sert vraiment à la segmentation, et pas seulement
-    à l'affichage : SAM rend « carrosserie », « portière », « roue » comme trois
-    masques distincts. Étiquetés « véhicule » tous les trois et adjacents, ils
-    redeviennent UN calque — ce qu'un humain appelle une voiture.
+    C'est ici que l'étiquetage sert à la segmentation et pas seulement à
+    l'affichage : SAM rend « carrosserie », « portière », « roue » comme trois
+    masques distincts. Étiquetés « véhicule » tous les trois et collés les uns
+    aux autres, ils redeviennent UN calque — ce qu'un humain appelle une
+    voiture.
 
-    L'adjacence est exigée : deux voitures aux extrémités de l'image partagent
-    l'étiquette mais ne sont pas le même objet.
+    Trois garde-fous, chacun payé par un vrai raté :
+
+    · **Adjacence des PIXELS, pas des boîtes englobantes.** La version
+      précédente comparait les rectangles englobants. Sur une image large, la
+      boîte d'une voiture couvre la moitié du cadre : la fumée à l'autre bout
+      et le grillage du fond tombaient « à côté » d'elle et fusionnaient. Le
+      calque « véhicule » faisait 25 % de l'image et contenait trois choses
+      sans rapport.
+
+    · **Une étiquette incertaine ne fusionne pas.** Fusionner sur un mot dont
+      la marge est nulle, c'est propager un tirage au sort ; la zone reste
+      seule, quitte à donner un calque de plus.
+
+    · **Un groupe ne peut pas avaler l'image.** Même en vraie adjacence, une
+      chaîne de zones de même nom peut traverser tout le cadre. Au-delà de
+      `max_share`, la fusion est refusée : un calque géant n'est plus un
+      objet, c'est un fond.
     """
-    import numpy as np
-    boxes = []
-    for m in masks:
-        ys, xs = np.nonzero(m)
-        boxes.append((int(xs.min()), int(ys.min()),
-                      int(xs.max()) + 1, int(ys.max()) + 1))
+    from atelier.engine.masks import touches
 
-    def near(a, b):
-        ax0, ay0, ax1, ay1 = a
-        bx0, by0, bx1, by1 = b
-        return not (ax1 + gap < bx0 or bx1 + gap < ax0
-                    or ay1 + gap < by0 or by1 + gap < ay0)
+    total = float(masks[0].size) if masks else 1.0
+    limit = max_share * total
+    order = sorted(range(len(masks)), key=lambda i: int(masks[i].sum()),
+                   reverse=True)
 
     parent = list(range(len(masks)))
+    union = {i: masks[i].copy() for i in range(len(masks))}
+    area = {i: int(masks[i].sum()) for i in range(len(masks))}
 
     def find(i):
         while parent[i] != i:
@@ -274,27 +307,42 @@ def _merge_by_label(masks, labels, log, gap=12):
             i = parent[i]
         return i
 
-    for i in range(len(masks)):
-        for j in range(i + 1, len(masks)):
-            if labels[i][0] == labels[j][0] and near(boxes[i], boxes[j]):
-                a, b = find(i), find(j)
-                if a != b:
-                    parent[max(a, b)] = min(a, b)
+    refused = {"marge": 0, "taille": 0}
+    for a in range(len(order)):
+        for b in range(a + 1, len(order)):
+            i, j = order[a], order[b]
+            if labels[i][0] != labels[j][0]:
+                continue
+            ri, rj = find(i), find(j)
+            if ri == rj:
+                continue
+            if labels[i][1] < min_margin or labels[j][1] < min_margin:
+                refused["marge"] += 1
+                continue
+            if not touches(union[ri], union[rj], gap):
+                continue
+            if area[ri] + area[rj] > limit:
+                refused["taille"] += 1
+                continue
+            keep, gone = min(ri, rj), max(ri, rj)
+            parent[gone] = keep
+            union[keep] = union[ri] | union[rj]
+            area[keep] = int(union[keep].sum())
 
     groups: dict[int, list[int]] = {}
     for i in range(len(masks)):
         groups.setdefault(find(i), []).append(i)
+    for reason, n in refused.items():
+        if n:
+            log(f"[calques] {n} fusion(s) refusée(s) — {reason}.")
     if len(groups) == len(masks):
-        log("[calques] aucune fusion sémantique (aucune zone voisine de même "
+        log("[calques] aucune fusion sémantique (aucune zone contiguë de même "
             "nature).")
         return masks, labels
 
     out_m, out_l = [], []
-    for members in groups.values():
-        m = masks[members[0]].copy()
-        for k in members[1:]:
-            m |= masks[k]
-        out_m.append(m)
+    for root, members in groups.items():
+        out_m.append(union[root])
         # On garde la meilleure marge du groupe : c'est le membre le plus sûr
         # qui répond de l'étiquette commune.
         out_l.append(max((labels[k] for k in members), key=lambda x: x[1]))
@@ -346,6 +394,10 @@ def main():
     ap.add_argument("--max-area", type=float, default=0.85)
     ap.add_argument("--iou-max", type=float, default=0.75)
     ap.add_argument("--max-layers", type=int, default=24)
+    ap.add_argument("--max-merge", type=float, default=0.35,
+                    help="part maximale de l'image qu'un groupe "
+                         "fusionné peut occuper : au-delà, ce n'est "
+                         "plus un objet mais un fond")
     args = ap.parse_args()
 
     def log(msg):
@@ -387,7 +439,12 @@ def main():
                 "étiquetage ignoré.")
             labels = None
     if labels:
-        kept, labels = _merge_by_label(kept, labels, log)
+        # La marge sert deux fois : à écarter une zone sans nom (plus haut) et
+        # à interdire de FUSIONNER sur un nom incertain — propager un tirage au
+        # sort colle ensemble deux objets sans rapport.
+        kept, labels = _merge_by_label(kept, labels, log,
+                                       min_margin=args.junk_margin,
+                                       max_share=args.max_merge)
 
     order = _depth_order(args.depth_dir, img, kept, log)
     if order is None and labels:
@@ -406,10 +463,9 @@ def main():
     if labels:
         labels = [labels[i] for i in order][:args.max_layers]
     # Disjonction APRÈS le tri : elle dépend de qui est devant qui.
-    before = len(kept)
-    kept = _partition(kept, log)
-    if labels and len(kept) != before:
-        labels = labels[:len(kept)]
+    kept, alive = _partition(kept, log, min_area=int(args.min_area * total))
+    if labels:
+        labels = [labels[i] for i in alive]
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)

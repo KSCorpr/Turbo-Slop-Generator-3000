@@ -942,9 +942,23 @@ is in the thousands (18 ms on a 1200×900 mask).
   it means *in front*: the car on the road, the figure against a wall, the
   window on a façade. An earlier coverage filter deleted exactly those, and it
   was the single worst behaviour of the first version.
+- **Merge only what actually touches.** With CLIP installed, pieces sharing a
+  label are glued back into one object — body, door and wheel become a car.
+  Adjacency is measured **pixel to pixel**, on a reduced grid. It used to be
+  measured on *bounding boxes*, and that was catastrophic: on a wide photo a
+  car's box covers half the frame, so a chain of boxes linked the car, the
+  spray at the far end and the fence in the background into a single 25.7%
+  "vehicle" layer. Two more guards came with the fix — an uncertain label never
+  merges (propagating a coin toss glues unrelated things), and no merged group
+  may exceed 35% of the image, because at that size it is a background, not an
+  object.
 - **Disjoint layers.** Fronts are subtracted from backs, so showing every layer
   reproduces the source image exactly and no pixel is painted twice — verified
   in the tests by compositing the PSD back and comparing to the original.
+  Cutting drops layers from the *middle* of the list, so it now reports which
+  ones survived: the caller used to truncate its label list from the end, which
+  shifted every name after the first casualty — the car took the wall's name.
+  Layers reduced to a thin fringe by whatever sits in front are dropped too.
 - **Feathered edges** (1 px), because a binary mask pasted as-is has the
   staircase border that gives automatic cut-outs away.
 - **Names you can read.** "Zone 9 — 0.48%" teaches nobody anything; layers are

@@ -38,6 +38,14 @@ SCENE_VOCAB: list[tuple[str, list[str], float]] = [
                     0.45),
     ("eau",         ["a river", "a puddle", "water surface"], 0.4),
     ("mur",         ["a wall", "a fence", "a guardrail", "a barrier"], 0.5),
+    # Ajoutées après une photo de course : la gerbe d'eau derrière la voiture
+    # et le public derrière les grillages n'avaient aucune entrée où tomber, et
+    # se faisaient donc étiqueter comme le premier objet venu — puis fusionner
+    # avec lui.
+    ("fumée",       ["smoke", "steam", "a cloud of spray", "mist", "fog"],
+                    0.6),
+    ("foule",       ["a crowd of people", "spectators behind a fence",
+                     "a group of people standing"], 0.55),
     ("véhicule",    ["a car", "a racing car", "a truck", "a motorcycle",
                      "a vehicle"], 0.75),
     ("personne",    ["a person", "a man", "a woman", "a human face",

@@ -126,7 +126,11 @@ class PartitionTests(unittest.TestCase):
             "run_layers", settings.ROOT / "scripts" / "tools" / "run_layers.py")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        return mod._partition(ordered, lambda _m: None)
+        # _partition rend aussi les INDICES survivants : la découpe
+        # supprime des calques au milieu de la liste, et l'appelant doit
+        # pouvoir réaligner les étiquettes (cf. test_layer_merge.py).
+        masks, _alive = mod._partition(ordered, lambda _m: None)
+        return masks
 
     def test_layers_become_disjoint_and_cover_everything(self):
         H = W = 60

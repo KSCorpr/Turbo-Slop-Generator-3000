@@ -134,6 +134,76 @@ def _box_blur(a: np.ndarray, radius: int) -> np.ndarray:
     return (cs[:, k:] - cs[:, :-k]) / k
 
 
+# Côté maximal de la grille sur laquelle l'adjacence est évaluée. Tester le
+# voisinage à pleine résolution coûte cher pour rien : deux zones séparées de
+# quelques pixels sur une image de 4000 px de large sont voisines à toutes les
+# échelles utiles, et une grille de 256 px suffit à le voir.
+ADJACENCY_GRID = 256
+
+
+def _shrink(mask: np.ndarray, side: int = ADJACENCY_GRID) -> np.ndarray:
+    """Réduit un masque en gardant tout ce qui est non vide (OU par blocs)."""
+    h, w = mask.shape
+    step = max(1, int(np.ceil(max(h, w) / side)))
+    if step == 1:
+        return mask
+    ph, pw = (-h) % step, (-w) % step
+    if ph or pw:
+        mask = np.pad(mask, ((0, ph), (0, pw)))
+    return mask.reshape(mask.shape[0] // step, step,
+                        mask.shape[1] // step, step).any(axis=(1, 3))
+
+
+def dilate(mask: np.ndarray, radius: int) -> np.ndarray:
+    """Épaissit un masque de `radius` cases (voisinage carré, séparable).
+
+    Décalages avec REMPLISSAGE À ZÉRO, surtout pas `np.roll` : celui-ci fait
+    réapparaître à droite ce qui sort à gauche. Une zone collée au bord gauche
+    devenait donc voisine d'une zone collée au bord droit — l'inverse exact de
+    ce que cette fonction sert à établir.
+    """
+    if radius < 1:
+        return mask
+    out = mask
+    for axis in (0, 1):
+        acc = out
+        n = out.shape[axis]
+        for shift in range(1, radius + 1):
+            if shift >= n:
+                break
+            fwd = np.zeros_like(out)
+            bwd = np.zeros_like(out)
+            if axis == 0:
+                fwd[shift:, :] = out[:-shift, :]
+                bwd[:-shift, :] = out[shift:, :]
+            else:
+                fwd[:, shift:] = out[:, :-shift]
+                bwd[:, :-shift] = out[:, shift:]
+            acc = acc | fwd | bwd
+        out = acc
+    return out
+
+
+def touches(a: np.ndarray, b: np.ndarray, gap: int = 2) -> bool:
+    """Les deux zones se TOUCHENT-elles réellement (à `gap` cases près) ?
+
+    Cette fonction existe à cause d'un bug précis, et son intérêt est de
+    remplacer ce qu'on faisait avant : tester le chevauchement des BOÎTES
+    ENGLOBANTES. Sur une image large, la boîte d'un objet allongé couvre
+    presque tout le cadre ; deux zones aux extrémités opposées se retrouvaient
+    donc « voisines » alors qu'elles n'ont pas un pixel en commun. Résultat sur
+    une photo de course : la voiture, la fumée à l'autre bout et le grillage du
+    fond fusionnaient en un seul calque de 25 % de l'image.
+
+    On compare donc les PIXELS, sur une grille réduite pour que ça reste peu
+    coûteux.
+    """
+    sa, sb = _shrink(a), _shrink(b)
+    if not sa.any() or not sb.any():
+        return False
+    return bool((dilate(sa, max(1, gap)) & sb).any())
+
+
 def feather_alpha(mask: np.ndarray, radius: int = 1) -> np.ndarray:
     """Alpha 0-255 avec un bord adouci.
 

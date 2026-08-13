@@ -28,25 +28,31 @@ import importlib.util, sys
 spec = importlib.util.spec_from_file_location("runner_under_test", {path!r})
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-import {module}
+{statement}
 print("OK")
 """
 
 
 def _runners_importing_atelier() -> list[tuple[Path, list[str]]]:
-    """(runner, modules `atelier.*` qu'il importe) — relevé dans la source."""
+    """(runner, instructions d'import `atelier.*` qu'il contient).
+
+    On rejoue l'instruction TELLE QU'ÉCRITE plutôt que de reconstruire un nom
+    de module : `from atelier.engine.masks import touches` importe une
+    FONCTION, pas un sous-module, et la transformer en `import
+    atelier.engine.masks.touches` produit une erreur qui n'existe pas.
+    """
     import re
     out = []
     for path in sorted(TOOLS.glob("run_*.py")):
         src = path.read_text(encoding="utf-8")
-        mods = set()
+        stmts = set()
         for m in re.finditer(r"from (atelier[\w.]*) import ([\w, ]+)", src):
-            for name in m.group(2).split(","):
-                mods.add(f"{m.group(1)}.{name.strip()}")
+            names = ", ".join(n.strip() for n in m.group(2).split(","))
+            stmts.add(f"from {m.group(1)} import {names}")
         for m in re.finditer(r"^\s*import (atelier[\w.]*)", src, re.M):
-            mods.add(m.group(1))
-        if mods:
-            out.append((path, sorted(mods)))
+            stmts.add(f"import {m.group(1)}")
+        if stmts:
+            out.append((path, sorted(stmts)))
     return out
 
 
@@ -59,9 +65,9 @@ class RunnerBootstrapTests(unittest.TestCase):
     def test_every_runner_can_import_what_it_uses(self):
         failures = []
         with tempfile.TemporaryDirectory() as neutral:
-            for path, mods in _runners_importing_atelier():
-                for module in mods:
-                    code = _PROBE.format(path=str(path), module=module)
+            for path, stmts in _runners_importing_atelier():
+                for statement in stmts:
+                    code = _PROBE.format(path=str(path), statement=statement)
                     # cwd neutre + PYTHONPATH vide : exactement les conditions
                     # d'un sous-process lancé par l'application.
                     proc = subprocess.run(
@@ -70,7 +76,7 @@ class RunnerBootstrapTests(unittest.TestCase):
                         env={"PATH": "/usr/bin:/bin", "SYSTEMROOT": ""})
                     if proc.returncode != 0:
                         failures.append(
-                            f"{path.name} ne peut pas importer {module} :\n"
+                            f"{path.name} : « {statement} » échoue —\n"
                             f"{proc.stderr.strip().splitlines()[-1]}")
         self.assertEqual(failures, [], "\n".join(failures))
 
