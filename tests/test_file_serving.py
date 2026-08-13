@@ -48,13 +48,30 @@ class GradioCacheLocationTests(unittest.TestCase):
         import ast
         src = (settings.ROOT / "app.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
-        # On cherche l'appel `os.environ.setdefault("GRADIO_TEMP_DIR", ...)`.
+        # `os.environ["GRADIO_TEMP_DIR"] = …` : une AFFECTATION, pas un
+        # setdefault.
         found = [n for n in ast.walk(tree)
-                 if isinstance(n, ast.Call)
-                 and getattr(n.func, "attr", "") == "setdefault"
-                 and n.args and isinstance(n.args[0], ast.Constant)
-                 and n.args[0].value == "GRADIO_TEMP_DIR"]
+                 if isinstance(n, ast.Assign)
+                 for tgt in n.targets
+                 if isinstance(tgt, ast.Subscript)
+                 and isinstance(tgt.slice, ast.Constant)
+                 and tgt.slice.value == "GRADIO_TEMP_DIR"]
         self.assertTrue(found, "app.py ne fixe pas GRADIO_TEMP_DIR")
+
+    def test_the_environment_cannot_silently_win(self):
+        """Avec `setdefault`, une variable GRADIO_TEMP_DIR déjà posée dans
+        l'environnement (autre application Gradio, ancienne installation)
+        reprend la main sans bruit et remet le cache dans %TEMP% — soit
+        exactement le bug que cette ligne existe pour empêcher."""
+        import ast
+        src = (settings.ROOT / "app.py").read_text(encoding="utf-8")
+        setdefaults = [n for n in ast.walk(ast.parse(src))
+                       if isinstance(n, ast.Call)
+                       and getattr(n.func, "attr", "") == "setdefault"
+                       and n.args and isinstance(n.args[0], ast.Constant)
+                       and n.args[0].value == "GRADIO_TEMP_DIR"]
+        self.assertEqual(setdefaults, [],
+                         "GRADIO_TEMP_DIR doit être imposé, pas suggéré")
 
     def test_it_is_set_before_gradio_is_imported(self):
         """L'ordre est tout : la variable est lue au chargement du module."""

@@ -1,0 +1,116 @@
+"""Diagnostic « image cassée » : il doit dire vrai, surtout quand ça va mal.
+
+Un diagnostic qui se trompe est pire que pas de diagnostic : il envoie
+chercher au mauvais endroit. Ces tests vérifient donc surtout les VERDICTS —
+qu'un cache hors du projet soit signalé, qu'un dossier non inscriptible ne
+passe pas pour sain, et qu'aucun contrôle ne reste sans explication.
+"""
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from atelier import imgcheck, settings
+
+
+class TempDirTests(unittest.TestCase):
+    def test_the_environment_variable_wins(self):
+        """C'est ce que Gradio lit réellement : le diagnostic doit lire la
+        même chose, pas ce que l'application avait l'intention de poser."""
+        with mock.patch.dict(os.environ, {"GRADIO_TEMP_DIR": "/quelque/part"}):
+            self.assertEqual(imgcheck.temp_dir(), Path("/quelque/part"))
+
+    def test_falls_back_to_the_system_temp(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(imgcheck.temp_dir().name, "gradio")
+
+
+class WithinTests(unittest.TestCase):
+    def test_a_child_is_within(self):
+        self.assertTrue(imgcheck._is_within(settings.ROOT / "tmp" / "gradio",
+                                            settings.ROOT))
+
+    def test_a_sibling_is_not(self):
+        self.assertFalse(imgcheck._is_within(Path("/tmp/gradio"),
+                                             settings.ROOT))
+
+    def test_a_missing_path_answers_instead_of_raising(self):
+        # Le diagnostic tourne sur des machines cassées : un chemin qui
+        # n'existe pas doit donner une réponse, pas une exception.
+        self.assertFalse(imgcheck._is_within(Path("/nulle/part/ailleurs"),
+                                             settings.ROOT))
+        self.assertFalse(imgcheck._is_within(settings.ROOT,
+                                             Path("/nulle/part/ailleurs")))
+
+
+class TestImageTests(unittest.TestCase):
+    def test_it_writes_a_real_png_and_reads_it_back(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest, elapsed, err = imgcheck.write_test_image(Path(d) / "sub")
+            self.assertEqual(err, "")
+            self.assertIsNotNone(dest)
+            self.assertTrue(dest.is_file())
+            self.assertTrue(dest.read_bytes().startswith(b"\x89PNG"))
+            self.assertGreaterEqual(elapsed, 0.0)
+
+    def test_an_unwritable_folder_is_reported_not_raised(self):
+        with tempfile.TemporaryDirectory() as d:
+            locked = Path(d) / "verrouillé"
+            locked.mkdir()
+            os.chmod(locked, 0o500)          # lecture seule
+            try:
+                dest, _elapsed, err = imgcheck.write_test_image(locked / "x")
+                if os.getuid() == 0:         # root ignore les permissions
+                    self.skipTest("exécuté en root : les droits ne mordent pas")
+                self.assertIsNone(dest)
+                self.assertNotEqual(err, "")
+            finally:
+                os.chmod(locked, 0o700)
+
+
+class ReportTests(unittest.TestCase):
+    def test_a_healthy_setup_reports_nothing_wrong(self):
+        with mock.patch.dict(
+                os.environ,
+                {"GRADIO_TEMP_DIR": str(settings.ROOT / "tmp" / "gradio")}):
+            md, path = imgcheck.report()
+        self.assertIn("Rien d'anormal", md)
+        self.assertIsNotNone(path)
+        self.assertTrue(Path(path).is_file())
+
+    def test_a_cache_outside_the_project_is_flagged(self):
+        """Le cas qui explique les images cassées PAR INTERMITTENCE : dans le
+        dossier temporaire du système, le ménage passe quand il veut."""
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict(os.environ, {"GRADIO_TEMP_DIR": d}):
+                items, _dest = imgcheck.checks()
+        bad = [c for c in items if c.ok is False]
+        self.assertTrue(bad, "un cache hors du projet doit être signalé")
+        self.assertTrue(any("projet" in c.label for c in bad))
+
+    def test_every_failed_check_explains_what_to_do(self):
+        """Un ❌ sans explication laisse l'utilisateur exactement où il était."""
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict(os.environ, {"GRADIO_TEMP_DIR": d}):
+                items, _dest = imgcheck.checks()
+        for c in items:
+            if c.ok is False:
+                self.assertGreater(len(c.detail), 30, c.label)
+
+    def test_marks_are_readable(self):
+        self.assertEqual(imgcheck.Check(True, "x").mark, "✅")
+        self.assertEqual(imgcheck.Check(False, "x").mark, "❌")
+        self.assertEqual(imgcheck.Check(None, "x").mark, "•")
+
+
+class DriveKindTests(unittest.TestCase):
+    def test_it_stays_silent_outside_windows(self):
+        # Aucun type de lecteur à annoncer ailleurs : mieux vaut se taire que
+        # d'inventer une ligne qui ne veut rien dire.
+        with mock.patch("atelier.imgcheck.sys.platform", "linux"):
+            self.assertEqual(imgcheck.drive_kind(Path("/tmp")), "")
+
+
+if __name__ == "__main__":
+    unittest.main()

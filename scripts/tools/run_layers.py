@@ -35,6 +35,13 @@ except Exception:  # noqa: BLE001
     pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Ce runner est le SEUL des sous-process à utiliser du code de l'application
+# (atelier.engine.masks pour le nettoyage, atelier.engine.vocab pour CLIP).
+# Or un sous-process lancé par `python scripts/tools/run_layers.py` reçoit dans
+# sys.path le dossier du SCRIPT, jamais la racine du dépôt : sans cette ligne,
+# `from atelier...` lève ModuleNotFoundError une fois la segmentation faite,
+# c'est-à-dire après avoir attendu SAM pour rien.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _device import label, pick_device  # noqa: E402
 
 

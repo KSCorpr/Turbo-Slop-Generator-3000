@@ -257,6 +257,38 @@ def build_manage_tab():
                               outputs=[sel_picks, sel_log])
 
         # ------------------------------------------------------------------ #
+        #  Diagnostic « image cassée »
+        # ------------------------------------------------------------------ #
+        # Ce symptôme ne se reproduit pas depuis le code : sur la machine de
+        # développement, six noms de fichiers hostiles (accents, #, %,
+        # cyrillique, 120 caractères) s'affichent tous. Le problème est donc
+        # dans l'environnement, et demander d'ouvrir la console du navigateur
+        # pour lire un code HTTP n'est pas une réponse acceptable ici. Ce
+        # bouton refait le trajet exact d'une image importée et le raconte.
+        gr.Markdown("---\n### 🩺 Une image importée ne s'affiche pas ?")
+        with gr.Accordion("Diagnostiquer l'affichage des images", open=False):
+            gr.Markdown(
+                "Si une image que vous importez reste une **icône cassée**, "
+                "ce test refait tout son trajet : écriture dans le cache de "
+                "l'interface, puis affichage par le serveur web. **L'image de "
+                "test doit apparaître à droite** — si elle apparaît, la "
+                "chaîne fonctionne et le problème vient du fichier importé ; "
+                "sinon, le rapport dit quel maillon a lâché.",
+                elem_classes="hint")
+            diag_btn = gr.Button("🩺 Lancer le diagnostic", variant="primary")
+            with gr.Row():
+                diag_md = gr.Markdown("")
+                diag_img = gr.Image(label="Image de test", height=220,
+                                    interactive=False, show_download_button=False)
+
+            def _diagnose():
+                from .. import imgcheck
+                md, path = imgcheck.report()
+                return md, path
+
+            diag_btn.click(_diagnose, outputs=[diag_md, diag_img])
+
+        # ------------------------------------------------------------------ #
         #  Documentation des options
         # ------------------------------------------------------------------ #
         gr.Markdown("---\n### 📖 Aide — que fait chaque option ?")

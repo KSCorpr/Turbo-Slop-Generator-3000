@@ -32,8 +32,15 @@ sys.path.insert(0, _ROOT)
 #  Le placer sous tmp/ le met à l'abri de ces nettoyages, et le rend visible
 #  dans « Gestion & nettoyage » avec le reste. À définir AVANT d'importer
 #  gradio : la variable est lue au chargement du module.
+#
+#  Écriture FERME, pas setdefault : une variable GRADIO_TEMP_DIR déjà présente
+#  dans l'environnement (posée par une autre application Gradio, ou restée
+#  d'une ancienne installation) reprenait la main en silence et remettait le
+#  cache dans %TEMP% — c'est-à-dire qu'elle réintroduisait exactement le bug
+#  que cette ligne existe pour empêcher, sans que rien ne le signale. Le
+#  diagnostic de « Gestion & aide » affiche le dossier réellement utilisé.
 # --------------------------------------------------------------------------- #
-os.environ.setdefault("GRADIO_TEMP_DIR", os.path.join(_ROOT, "tmp", "gradio"))
+os.environ["GRADIO_TEMP_DIR"] = os.path.join(_ROOT, "tmp", "gradio")
 os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
 
 # Avertissements bénins de Gradio (paramètres déplacés en v6.0) : on les masque

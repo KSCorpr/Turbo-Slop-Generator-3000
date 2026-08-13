@@ -1169,11 +1169,22 @@ maintenance) — the fastest way to know what a slider actually does.
   generated image sent to a tool, a live preview, a mask — used to get a **403**,
   because `allowed_paths` was never declared at launch; `outputs/` and `tmp/` are
   now declared (and only those: on `--listen` that list is what the machine
-  exposes). If it still happens, press **F12 → Network**, reproduce, and read the
-  status of the red line — `403`, `404` and `ERR_CONNECTION_RESET` each point at
-  a different cause. Note that emptying `tmp/` from **Manage & clean** *while the
-  app is running* legitimately breaks already-displayed images until you reload
-  the page.
+  exposes). A third was closed off later: the cache was pinned with
+  `os.environ.setdefault`, so a `GRADIO_TEMP_DIR` already present in your
+  environment — left by another Gradio app or an old install — silently took
+  precedence and put the cache back in `%TEMP%`, reintroducing the exact bug the
+  line exists to prevent. It is now set outright.
+  **If it still happens, don't open the browser console** — go to
+  **⚙️ System → 🧹 Manage & help → 🩺 Diagnose image display** and press the
+  button. It redoes the full journey of an imported image (write to the cache,
+  then serve it over HTTP) and reports which link broke, naming the causes that
+  actually bite on Windows: a cache on a **network or removable drive**, a
+  **full disk**, an **unwritable folder**, a **path too long** for the Win32 API,
+  and an **antivirus** locking each new file (visible as an abnormal read-back
+  time). A test image is displayed next to the report — if you can see it, the
+  serving chain works and the problem is the imported file itself.
+  Note that emptying `tmp/` from **Manage & clean** *while the app is running*
+  legitimately breaks already-displayed images until you reload the page.
 - **Model shows “to download”** → Model Catalog tab → **Download**.
 - **Out of memory** → Settings: lower the quantization, enable offload/tiling, or
   reduce the resolution. For very tight setups, try a per-generation preset.
