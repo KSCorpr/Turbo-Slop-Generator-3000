@@ -134,24 +134,63 @@ def _box_blur(a: np.ndarray, radius: int) -> np.ndarray:
     return (cs[:, k:] - cs[:, :-k]) / k
 
 
-# Côté maximal de la grille sur laquelle l'adjacence est évaluée. Tester le
-# voisinage à pleine résolution coûte cher pour rien : deux zones séparées de
-# quelques pixels sur une image de 4000 px de large sont voisines à toutes les
-# échelles utiles, et une grille de 256 px suffit à le voir.
-ADJACENCY_GRID = 256
+# --------------------------------------------------------------------------- #
+#  Comparer des masques SANS les comparer pixel à pixel
+#
+#  Les deux opérations qui décident du découpage — « ces deux zones sont-elles
+#  la même ? » et « se touchent-elles ? » — sont QUADRATIQUES en nombre de
+#  zones. Menées à pleine résolution, elles rendent l'outil inutilisable dès
+#  qu'on sort du petit format : mesuré sur une image 4096×4096, un seul calcul
+#  d'IoU coûte 77 ms, soit 14 MINUTES pour 150 zones, auxquelles s'ajoutent
+#  70 s d'adjacence. Le tout pour des réponses qui ne dépendent pas du dernier
+#  pixel.
+#
+#  On calcule donc UNE FOIS par masque une grille de couverture — la fraction
+#  de pixels allumés dans chaque bloc — et toutes les comparaisons se font
+#  dessus. 256×256 blocs contre 16,8 millions de pixels : trois ordres de
+#  grandeur, et une grille pèse 262 Ko au lieu de 16,8 Mo.
+# --------------------------------------------------------------------------- #
+COMPARE_GRID = 256
 
 
-def _shrink(mask: np.ndarray, side: int = ADJACENCY_GRID) -> np.ndarray:
-    """Réduit un masque en gardant tout ce qui est non vide (OU par blocs)."""
+def coverage_grid(mask: np.ndarray, side: int = COMPARE_GRID) -> np.ndarray:
+    """Fraction de pixels allumés par bloc (float32, 0..1).
+
+    Volontairement une MOYENNE et pas un « ou » : la moyenne conserve les
+    surfaces, ce qu'exige l'IoU. Un « ou » ferait grossir les petites zones et
+    ferait passer pour identiques deux taches voisines mais distinctes.
+    """
     h, w = mask.shape
     step = max(1, int(np.ceil(max(h, w) / side)))
     if step == 1:
-        return mask
+        return mask.astype(np.float32)
     ph, pw = (-h) % step, (-w) % step
     if ph or pw:
         mask = np.pad(mask, ((0, ph), (0, pw)))
     return mask.reshape(mask.shape[0] // step, step,
-                        mask.shape[1] // step, step).any(axis=(1, 3))
+                        mask.shape[1] // step, step
+                        ).mean(axis=(1, 3), dtype=np.float32)
+
+
+def grid_iou(a: np.ndarray, b: np.ndarray) -> float:
+    """IoU approché à partir de deux grilles de couverture.
+
+    `min` et `max` bloc à bloc jouent le rôle de l'intersection et de l'union :
+    exact quand les blocs sont pleins ou vides, très proche sinon. Utilisé pour
+    reconnaître un QUASI-DOUBLON (seuil 0,75), pas pour mesurer une surface.
+    """
+    inter = float(np.minimum(a, b).sum())
+    if inter <= 0.0:
+        return 0.0
+    return inter / float(np.maximum(a, b).sum())
+
+
+def grid_touches(a: np.ndarray, b: np.ndarray, gap: int = 2) -> bool:
+    """Deux grilles de couverture se touchent-elles à `gap` blocs près ?"""
+    sa, sb = a > 0, b > 0
+    if not sa.any() or not sb.any():
+        return False
+    return bool((dilate(sa, max(1, gap)) & sb).any())
 
 
 def dilate(mask: np.ndarray, radius: int) -> np.ndarray:
@@ -197,11 +236,13 @@ def touches(a: np.ndarray, b: np.ndarray, gap: int = 2) -> bool:
 
     On compare donc les PIXELS, sur une grille réduite pour que ça reste peu
     coûteux.
+
+    Commodité pour un appel isolé : dans une boucle, calculez les grilles une
+    fois avec `coverage_grid()` et utilisez `grid_touches()` — sinon la
+    réduction est refaite à chaque paire, ce qui est exactement le coût qu'on
+    cherche à éviter.
     """
-    sa, sb = _shrink(a), _shrink(b)
-    if not sa.any() or not sb.any():
-        return False
-    return bool((dilate(sa, max(1, gap)) & sb).any())
+    return grid_touches(coverage_grid(a), coverage_grid(b), gap)
 
 
 def feather_alpha(mask: np.ndarray, radius: int = 1) -> np.ndarray:

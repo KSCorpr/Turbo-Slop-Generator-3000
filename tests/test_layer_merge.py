@@ -224,3 +224,92 @@ class PartitionKeepsLabelsAlignedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GridComparisonTests(unittest.TestCase):
+    """Comparer sur grilles plutôt qu'à pleine résolution.
+
+    Sans ça, l'outil est inutilisable au-delà du petit format : mesuré sur une
+    image 4096×4096, un seul IoU coûte 77 ms, soit 14 minutes pour 150 zones,
+    plus 70 s d'adjacence. Ces tests vérifient que le raccourci répond la même
+    chose que le calcul exact — sinon il ne raccourcit rien, il change le
+    résultat.
+    """
+
+    def test_identical_masks_score_one(self):
+        m = box(400, 400, 50, 300, 50, 300)
+        g = M.coverage_grid(m)
+        self.assertAlmostEqual(M.grid_iou(g, g), 1.0, places=5)
+
+    def test_disjoint_masks_score_zero(self):
+        a = M.coverage_grid(box(400, 400, 0, 100, 0, 100))
+        b = M.coverage_grid(box(400, 400, 300, 400, 300, 400))
+        self.assertEqual(M.grid_iou(a, b), 0.0)
+
+    def test_it_tracks_the_exact_iou(self):
+        """Le seuil de doublon est à 0,75 : l'approximation doit rester bien
+        en deçà de l'erreur qui ferait basculer une décision."""
+        H = W = 512
+        base = box(H, W, 100, 400, 100, 400)
+        for shift in (0, 20, 60, 120, 200):
+            other = box(H, W, 100, 400, 100 + shift, 400 + shift)
+            inter = float((base & other).sum())
+            exact = inter / float((base | other).sum()) if inter else 0.0
+            approx = M.grid_iou(M.coverage_grid(base),
+                                M.coverage_grid(other))
+            self.assertAlmostEqual(exact, approx, delta=0.02,
+                                   msg=f"décalage {shift}")
+
+    def test_a_near_duplicate_is_still_recognised(self):
+        H = W = 2048
+        a = box(H, W, 200, 1200, 200, 1200)
+        b = box(H, W, 208, 1208, 196, 1196)      # même zone, 8 px de décalage
+        self.assertGreater(M.grid_iou(M.coverage_grid(a),
+                                      M.coverage_grid(b)), 0.75)
+
+    def test_two_distinct_neighbours_are_not_duplicates(self):
+        H = W = 2048
+        a = box(H, W, 200, 1200, 200, 700)
+        b = box(H, W, 200, 1200, 700, 1200)      # collée, mais AUTRE zone
+        self.assertLess(M.grid_iou(M.coverage_grid(a),
+                                   M.coverage_grid(b)), 0.75)
+
+    def test_coverage_keeps_areas_not_just_presence(self):
+        """Un « ou » par blocs ferait grossir les petites zones et les ferait
+        passer pour identiques à leurs voisines."""
+        H = W = 1024
+        speck = box(H, W, 500, 505, 500, 505)
+        big = box(H, W, 400, 600, 400, 600)
+        self.assertLess(M.grid_iou(M.coverage_grid(speck),
+                                   M.coverage_grid(big)), 0.1)
+
+    def test_the_grid_is_small_whatever_the_image(self):
+        for side in (512, 4096):
+            g = M.coverage_grid(box(side, side, 0, side // 2, 0, side // 2))
+            self.assertLessEqual(max(g.shape), M.COMPARE_GRID)
+            self.assertLess(g.nbytes, 400_000)
+
+
+class RawDuplicateRejectionTests(unittest.TestCase):
+    """Dédoublonner AVANT de nettoyer : le nettoyage coûte 0,7 à 1,8 s par
+    masque en 4096×4096, et SAM en rend des dizaines d'identiques."""
+
+    def test_near_identical_raw_masks_are_dropped_before_cleaning(self):
+        H = W = 256
+        base = box(H, W, 40, 200, 40, 200)
+        raws = [base] + [box(H, W, 40 + d, 200 + d, 40 - d, 200 - d)
+                         for d in (1, 2, 3, 4)]
+        lines = []
+        kept = run_layers._filter_masks(raws, 0.004 * H * W, 0.85 * H * W,
+                                        0.75, lines.append)
+        self.assertEqual(len(kept), 1, "\n".join(lines))
+        self.assertTrue(any("avant nettoyage" in l for l in lines), lines)
+
+    def test_genuinely_different_masks_all_survive(self):
+        H = W = 256
+        raws = [box(H, W, 10, 100, 10, 100),
+                box(H, W, 140, 240, 10, 100),
+                box(H, W, 10, 100, 140, 240)]
+        kept = run_layers._filter_masks(raws, 0.004 * H * W, 0.85 * H * W,
+                                        0.75, lambda _m: None)
+        self.assertEqual(len(kept), 3)

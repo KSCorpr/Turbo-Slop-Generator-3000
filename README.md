@@ -926,6 +926,21 @@ from Depth Anything V2 when it is installed — median depth under each mask, fa
 to near. Without it, large areas go to the back, which is an approximation and is
 labelled as one rather than presented as a result.
 
+**Large images used to be the wall, and it was an ordering problem.** The two
+operations that decide the cut — *are these the same zone?* and *do they
+touch?* — are **quadratic** in the number of zones, and they were running at
+full resolution. Measured on a 4096×4096 image: one IoU costs **77 ms**, so 150
+zones spend **14 minutes** just de-duplicating, plus 70 s on adjacency. Two
+changes fixed it. Each mask is reduced **once** to a 256×256 *coverage grid*
+(the fraction of lit pixels per block, 262 KB instead of 16.8 MB) and every
+comparison happens there — 1770 IoU pairs drop from 136 s to **0.07 s**, and the
+approximation stays within 0.02 of the exact value, far from the 0.75 duplicate
+threshold. And near-duplicates are now dropped **before** cleaning rather than
+after: a 24-point sweep probes the image 576 times and returns the sky or the
+tarmac dozens of times over, while cleaning costs 0.7–1.8 s *per mask*. Filtering
+300 raw masks went from **3.4 minutes to 26 seconds**, and duplicates are
+rejected as SAM produces them, so memory stays near 400 MB instead of 5 GB.
+
 **Everything useful happens in the cleanup**, in `atelier/engine/masks.py` —
 written in plain numpy rather than pulling in scipy or OpenCV, since the
 segmentation add-on is heavy enough and these operations are a few dozen lines.

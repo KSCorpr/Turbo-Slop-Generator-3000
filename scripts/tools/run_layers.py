@@ -46,6 +46,8 @@ from _device import label, pick_device  # noqa: E402
 
 
 def _iou(a, b) -> float:
+    """IoU exact, à pleine résolution. Réservé aux cas isolés — pour comparer
+    N zones entre elles, passer par les grilles (voir `masks.grid_iou`)."""
     inter = (a & b).sum()
     if inter == 0:
         return 0.0
@@ -70,14 +72,43 @@ def _filter_masks(masks, min_area, max_area, iou_max, log):
     """
     from atelier.engine import masks as M
 
+    # ORDRE : dédoublonner AVANT de nettoyer, pas l'inverse.
+    #
+    # Une grille de 24 points par côté sonde 576 fois l'image ; sur les grandes
+    # zones uniformes (le ciel, le bitume), SAM renvoie des dizaines de masques
+    # quasi identiques. Les nettoyer tous puis jeter les doublons revient à
+    # payer le plus cher pour ce qu'on va supprimer : à 4096×4096, le nettoyage
+    # coûte 1,8 s PAR MASQUE — neuf minutes pour trois cents masques dont la
+    # plupart sont des copies. Le tri préalable se fait sur les grilles de
+    # couverture, à un coût négligeable.
+    raw: list = []
+    raw_grids: list = []
+    twins = 0
+    for m in sorted(masks, key=lambda x: int(x.sum()), reverse=True):
+        g = M.coverage_grid(m)
+        if any(M.grid_iou(g, k) > iou_max for k in raw_grids):
+            twins += 1
+            continue
+        raw.append(m)
+        raw_grids.append(g)
+    if twins:
+        log(f"[calques] {twins} masque(s) brut(s) quasi identiques écartés "
+            "avant nettoyage.")
+
     pieces: list = []
-    for m in masks:
+    for m in raw:
         for part in M.largest_components(M.fill_holes(m), int(min_area)):
             pieces.append(part)
-    log(f"[calques] {len(masks)} masque(s) bruts -> {len(pieces)} morceau(x) "
-        "connexes après nettoyage.")
+    log(f"[calques] {len(masks)} masque(s) bruts -> {len(raw)} distincts -> "
+        f"{len(pieces)} morceau(x) connexes après nettoyage.")
 
+    # Le dédoublonnage compare CHAQUE zone à toutes les précédentes : c'est
+    # quadratique. À pleine résolution sur une image 4096×4096, un seul IoU
+    # coûte 77 ms — soit 14 minutes pour 150 zones, avant même d'avoir commencé
+    # le reste. On réduit donc chaque masque UNE fois en grille de couverture,
+    # et les comparaisons se font dessus.
     kept: list = []
+    grids: list = []
     dropped = {"grand": 0, "doublon": 0}
     for m in sorted(pieces, key=lambda x: int(x.sum()), reverse=True):
         area = int(m.sum())
@@ -91,10 +122,12 @@ def _filter_masks(masks, min_area, max_area, iou_max, log):
         # façade : contenu ne veut pas dire redondant, ça veut dire DEVANT.
         # La disjonction qui suit règle le recouvrement en découpant l'arrière,
         # ce qui rend ce filtre non seulement inutile mais nuisible.
-        if any(_iou(m, k) > iou_max for k in kept):
+        g = M.coverage_grid(m)
+        if any(M.grid_iou(g, k) > iou_max for k in grids):
             dropped["doublon"] += 1
             continue
         kept.append(m)
+        grids.append(g)
     log(f"[calques] {len(kept)} zone(s) retenue(s) — écartées : "
         + (", ".join(f"{v} {k}" for k, v in dropped.items() if v) or "aucune"))
     return kept
@@ -144,11 +177,22 @@ def _partition(ordered, log, min_area=0):
     return kept, idx
 
 
-def _auto_masks(model_dir, img, points_per_side, batch, log):
-    """Masques SAM sans clic : grille de points sur toute l'image."""
+def _auto_masks(model_dir, img, points_per_side, batch, log, iou_max=0.75):
+    """Masques SAM sans clic : grille de points sur toute l'image.
+
+    Les quasi-doublons sont écartés À L'ARRIVÉE, pas à la fin. Sur une image
+    4096×4096, un masque booléen pèse 16,8 Mo ; une grille de 24 points par
+    côté sonde 576 fois l'image et rend surtout, sur les aplats — le ciel, le
+    bitume —, des dizaines de fois la même zone. Tout garder demandait
+    plusieurs gigaoctets avant même le premier filtre, pour finir par en jeter
+    la quasi-totalité. La comparaison se fait sur les grilles de couverture,
+    qui pèsent 262 Ko.
+    """
     import numpy as np
     import torch
     from transformers import SamModel, SamProcessor
+
+    from atelier.engine import masks as M
 
     device = pick_device(torch)
     log(f"[calques] chargement de SAM sur {label(device)}…")
@@ -163,6 +207,8 @@ def _auto_masks(model_dir, img, points_per_side, batch, log):
     log(f"[calques] {len(grid)} points de sondage sur {W}×{H}…")
 
     out: list = []
+    seen: list = []                     # grilles des masques déjà retenus
+    twins = 0
     for start in range(0, len(grid), batch):
         chunk = grid[start:start + batch]
         # [image][point][x, y] — un point par masque candidat.
@@ -178,8 +224,17 @@ def _auto_masks(model_dir, img, points_per_side, batch, log):
             best = int(scores[i].argmax())
             if float(scores[i][best]) < 0.80:
                 continue                            # candidat peu sûr
-            out.append(masks[i][best].numpy().astype(bool))
-        log(f"[calques]   {min(start + batch, len(grid))}/{len(grid)} points…")
+            m = masks[i][best].numpy().astype(bool)
+            if not m.any():
+                continue
+            g = M.coverage_grid(m)
+            if any(M.grid_iou(g, k) > iou_max for k in seen):
+                twins += 1
+                continue                            # déjà vu, à l'octet près
+            out.append(m)
+            seen.append(g)
+        log(f"[calques]   {min(start + batch, len(grid))}/{len(grid)} points "
+            f"— {len(out)} zone(s) distincte(s), {twins} doublon(s) écarté(s)…")
     return out
 
 
@@ -290,15 +345,21 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
       `max_share`, la fusion est refusée : un calque géant n'est plus un
       objet, c'est un fond.
     """
-    from atelier.engine.masks import touches
+    import numpy as np
+
+    from atelier.engine import masks as M
 
     total = float(masks[0].size) if masks else 1.0
     limit = max_share * total
     order = sorted(range(len(masks)), key=lambda i: int(masks[i].sum()),
                    reverse=True)
 
+    # Union-find sur les GRILLES, jamais sur les masques : garder une copie
+    # pleine taille par groupe doublait la mémoire (1 Go de plus pour 60 zones
+    # en 4096×4096) et refaisait la réduction à chaque comparaison. Les unions
+    # réelles ne sont assemblées qu'une fois, à la toute fin.
     parent = list(range(len(masks)))
-    union = {i: masks[i].copy() for i in range(len(masks))}
+    grid = {i: M.coverage_grid(masks[i]) for i in range(len(masks))}
     area = {i: int(masks[i].sum()) for i in range(len(masks))}
 
     def find(i):
@@ -319,15 +380,16 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
             if labels[i][1] < min_margin or labels[j][1] < min_margin:
                 refused["marge"] += 1
                 continue
-            if not touches(union[ri], union[rj], gap):
+            if not M.grid_touches(grid[ri], grid[rj], gap):
                 continue
             if area[ri] + area[rj] > limit:
                 refused["taille"] += 1
                 continue
             keep, gone = min(ri, rj), max(ri, rj)
             parent[gone] = keep
-            union[keep] = union[ri] | union[rj]
-            area[keep] = int(union[keep].sum())
+            grid[keep] = np.maximum(grid[ri], grid[rj])
+            area[keep] = area[ri] + area[rj]
+            del grid[gone]
 
     groups: dict[int, list[int]] = {}
     for i in range(len(masks)):
@@ -341,8 +403,14 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
         return masks, labels
 
     out_m, out_l = [], []
-    for root, members in groups.items():
-        out_m.append(union[root])
+    for _root, members in groups.items():
+        # L'union pleine taille n'est construite QU'ICI, une fois par groupe.
+        m = masks[members[0]]
+        if len(members) > 1:
+            m = m.copy()
+            for k in members[1:]:
+                m |= masks[k]
+        out_m.append(m)
         # On garde la meilleure marge du groupe : c'est le membre le plus sûr
         # qui répond de l'étiquette commune.
         out_l.append(max((labels[k] for k in members), key=lambda x: x[1]))
