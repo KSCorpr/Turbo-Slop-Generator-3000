@@ -8,40 +8,15 @@ import re
 
 import gradio as gr
 
-from .. import downloader, i18n, registry, settings, styles
+from .. import downloader, i18n, registry, sampling, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
 
-# (libellé affiché, valeur réelle sd-cli). Samplers supportés par sd.cpp.
-SAMPLERS = [
-    ("Euler", "euler"), ("Euler Ancestral", "euler_a"), ("Heun", "heun"),
-    ("DPM2", "dpm2"), ("DPM++ 2S Ancestral", "dpm++2s_a"), ("DPM++ 2M", "dpm++2m"),
-    ("DPM++ 2M v2", "dpm++2mv2"),
-    ("DPM++ 2M SDE", "dpm++2m_sde"),
-    ("DPM++ 2M SDE (Brownian)", "dpm++2m_sde_bt"),
-    ("iPNDM", "ipndm"), ("iPNDM v", "ipndm_v"),
-    ("LCM", "lcm"), ("DDIM Trailing", "ddim_trailing"), ("TCD", "tcd"),
-    ("Res Multistep", "res_multistep"), ("Res 2S", "res_2s"), ("ER SDE", "er_sde"),
-    ("Euler CFG++", "euler_cfg_pp"), ("Euler Ancestral CFG++", "euler_a_cfg_pp"),
-    # Ajoutés par sd.cpp après notre liste initiale. Réglage fin possible via
-    # --extra-sample-args (« gamma=… » pour euler_ge, « lms_divisions=… » pour
-    # lms, défaut 1000) — non exposé ici.
-    ("Euler GE", "euler_ge"),
-    ("LMS (linear multi-step)", "lms"),
-]
-# Schedulers (sigmas) supportés par sd.cpp.
-SCHEDULES = [
-    ("Auto (modèle)", "auto"), ("Discrete", "discrete"), ("Karras", "karras"),
-    ("Exponential", "exponential"), ("AYS", "ays"), ("GITS", "gits"),
-    ("Smoothstep", "smoothstep"), ("SGM Uniform", "sgm_uniform"),
-    ("Simple", "simple"), ("KL Optimal", "kl_optimal"), ("LCM", "lcm"),
-    ("Bong Tangent", "bong_tangent"),
-    # Schedulers récents sd.cpp. « Flux.2 » cible les modèles Flux.2 (recommandé
-    # pour Flux.2 Klein) ; « Flux » pour Flux.1 ; « Beta » / « Logit Normal » génériques.
-    ("Flux.2", "flux2"), ("Flux", "flux"), ("Beta", "beta"),
-    ("Logit Normal", "logit_normal"),
-]
+# Les listes de samplers/schedulers ET leur documentation vivent dans
+# atelier/sampling.py : un menu dont on ne sait pas quoi choisir n'est pas un
+# menu, et la réponse dépend du MODÈLE (distillé, CFG 1.0, peu de pas).
+
 # Préréglages de résolution PAR FAMILLE de modèle, alignés sur les résolutions
 # natives d'entraînement (le modèle rend mieux sur ces formats).
 #
@@ -449,12 +424,38 @@ def build_generative_tab(model_id: str, title: str,
                     value=(t(preset_list[0]["name"]) if preset_list else None),
                     label="Préréglage (sampler/scheduler/pas)",
                     visible=bool(preset_list))
+                # Menus ANNOTÉS (⭐ recommandé · △ peu adapté · ⚠️ déconseillé)
+                # et fiche qui suit la sélection. Le verdict dépend du MODÈLE :
+                # distillé à CFG 1.0, en flow matching, sur 4 à 8 pas — trois
+                # propriétés qui disqualifient la moitié du menu.
                 with gr.Row():
-                    sampler = gr.Dropdown(SAMPLERS, value=d.get("sampler", "euler"),
-                                          label="Sampler")
-                    schedule = gr.Dropdown(SCHEDULES,
-                                           value=d.get("scheduler", "auto"),
-                                           label="Scheduler (sigmas)")
+                    sampler = gr.Dropdown(
+                        sampling.choices("sampler", family),
+                        value=d.get("sampler", "euler"), label="Sampler",
+                        info="⭐ recommandé · △ peu adapté · ⚠️ déconseillé "
+                             "pour CE modèle")
+                    schedule = gr.Dropdown(
+                        sampling.choices("schedule", family),
+                        value=d.get("scheduler", "auto"),
+                        label="Scheduler (sigmas)",
+                        info="Répartition des pas de débruitage")
+                with gr.Row():
+                    sampler_doc = gr.Markdown(
+                        sampling.describe("sampler", d.get("sampler", "euler"),
+                                          family), elem_classes="hint")
+                    schedule_doc = gr.Markdown(
+                        sampling.describe("schedule",
+                                          d.get("scheduler", "auto"), family),
+                        elem_classes="hint")
+                sampler.change(
+                    lambda k: sampling.describe("sampler", k, family),
+                    inputs=[sampler], outputs=[sampler_doc])
+                schedule.change(
+                    lambda k: sampling.describe("schedule", k, family),
+                    inputs=[schedule], outputs=[schedule_doc])
+                with gr.Accordion("📖 Pourquoi la moitié du menu est inutile ici",
+                                  open=False):
+                    gr.Markdown(sampling.rationale(family))
                 flow_shift = gr.Slider(
                     0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
                     label="Flow shift",

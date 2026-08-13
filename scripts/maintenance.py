@@ -532,7 +532,11 @@ def check_orphan_modules() -> None:
         return ".".join(parts)
 
     files = {module_of(p): p for p in (ROOT / "atelier").rglob("*.py")}
-    roots = [ROOT / "app.py"] + sorted((ROOT / "scripts").glob("*.py"))
+    # RGLOB, pas glob : les runners d'outils vivent dans scripts/tools/ et sont
+    # eux aussi des points d'entrée. Les oublier faisait passer pour orphelin
+    # tout module importé uniquement par eux — un faux positif qui pousse à
+    # supprimer du code vivant, soit exactement l'inverse du but.
+    roots = [ROOT / "app.py"] + sorted((ROOT / "scripts").rglob("*.py"))
 
     def imports_of(path: Path) -> set[str]:
         try:

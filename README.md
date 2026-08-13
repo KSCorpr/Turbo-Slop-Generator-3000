@@ -293,7 +293,14 @@ its aspect.
 - **Preset** — vetted combos per model (e.g. Flux.2 Klein → 4 steps / CFG 1.0 /
   euler + simple). Selecting one fills sampler, scheduler, steps and CFG.
 - **Sampler** — all samplers supported by sd.cpp (euler, dpm++2m, res_multistep…).
+  Each entry is **annotated for the model of the current tab** — ⭐ recommended,
+  no mark = usable, △ poorly suited, ⚠️ discouraged — and the card below the menu
+  spells out what the selected one does, its ✅ upside and its ❌ downside.
 - **Scheduler (sigmas)** — auto (model default), karras, simple, exponential…
+  Annotated and documented the same way.
+- **📖 Why half of this menu is useless here** — a fold-out that explains the
+  verdicts from the model's own properties. See
+  [Samplers & schedulers](#samplers--schedulers) for the full reasoning.
 - **Steps** — diffusion steps. Distilled models need few (4–8).
 - **CFG** — guidance. **1.0 = no guidance** (normal for distilled Flux). Values
   other than 1.0 are experimental on distilled models.
@@ -395,11 +402,69 @@ The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
 `docs/krea2.md`): **Euler** sampler with the **scheduler left to the engine
 default** (the docs never force one), at each model's documented steps/CFG
 (Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0). The dropdowns
-still expose
-the full sd.cpp list for manual experimentation — newer samplers like **DPM++ 2M
-SDE** and schedulers like **Flux.2 / Flux / Beta** are there to try, but the
-presets stay on the documented defaults. New entries need a recent engine
-(`update-engine.bat`).
+still expose the full sd.cpp list for manual experimentation, **annotated per
+model** — with a description card and a fold-out rationale right in the tab.
+New entries need a recent engine (`update-engine.bat`).
+
+#### Why most of the menu does not apply here
+Three properties of our two models — read off sd.cpp itself, not guessed —
+decide almost every verdict, and they rule out whole families at once:
+
+1. **They are flow-matching models.** sd.cpp runs both in `FLUX_FLOW_PRED` /
+   `FluxFlowDenoiser` (Krea 2 with a flow shift of 1.15). **Karras** and
+   **Exponential**, which gain a lot on SD 1.5 / SDXL, were designed for EDM
+   epsilon-prediction diffusion: their sigma spread does not match this
+   trajectory.
+2. **They are distilled at CFG 1.0.** There is no guidance to correct, so the
+   whole **CFG++** family has nothing to do — and the negative prompt is ignored
+   whichever sampler you pick.
+3. **They run in very few steps** (4 for Flux.2 Klein, 8 for Krea 2 Turbo).
+   **Ancestral/stochastic** methods re-inject noise that never gets reconverged;
+   **multistep** methods need a history of evaluations that barely has time to
+   exist.
+
+**LCM** and **TCD** are not general-purpose options either: they are the
+samplers of models distilled *by those methods*, which neither of ours is.
+
+#### The verdicts, at a glance
+⭐ recommended · ✓ usable · △ poorly suited · ⚠️ discouraged
+*(in the menu itself, "usable" simply carries no mark)*
+
+| Sampler | Flux.2 Klein (4 steps) | Krea 2 Turbo (8 steps) |
+| --- | :---: | :---: |
+| `euler` | ⭐ | ⭐ |
+| `res_2s` · `euler_ge` | ✓ | ✓ |
+| `heun` · `dpm++2m` · `dpm++2mv2` · `ipndm` · `ipndm_v` · `res_multistep` | △ | ✓ |
+| `dpm2` · `ddim_trailing` · `lms` | △ | △ |
+| `dpm++2m_sde` · `dpm++2m_sde_bt` · `er_sde` | ⚠️ | △ |
+| `euler_a` · `dpm++2s_a` · `euler_cfg_pp` · `euler_a_cfg_pp` · `lcm` · `tcd` | ⚠️ | ⚠️ |
+
+| Scheduler | Flux.2 Klein | Krea 2 Turbo |
+| --- | :---: | :---: |
+| `auto` (engine default) | ⭐ | ⭐ |
+| `flux2` | ⭐ | △ |
+| `discrete` | ✓ | ⭐ |
+| `smoothstep` · `sgm_uniform` · `simple` · `logit_normal` | ✓ | ✓ |
+| `ays` · `gits` · `kl_optimal` | △ | ✓ |
+| `flux` · `beta` · `bong_tangent` | △ | △ |
+| `karras` · `exponential` | ⚠️ | △ |
+| `lcm` | ⚠️ | ⚠️ |
+
+`auto` means *don't pass `--scheduler`*, so the engine picks: `flux2` for
+Flux.2 Klein, `discrete` for Krea 2 — which is why those two are also marked ⭐
+on their own model.
+
+**What is worth actually trying:** on Flux.2 Klein, almost nothing beyond
+`euler` — 4 steps leave no room, and `res_2s` is the only other one accurate
+without a history to build. On Krea 2 Turbo the margin is wider: `res_multistep`,
+`dpm++2m` and the `ays` scheduler (designed for small step budgets) deserve a
+side-by-side run at a fixed seed.
+
+These verdicts are **reasoned from the models' properties, not measured on a
+benchmark**. They say where to aim your experiments, not what your eye will
+prefer. The source of truth is [`atelier/sampling.py`](atelier/sampling.py);
+`tests/test_sampling_docs.py` checks every key against the engine's own list so
+a typo can't reach the menu.
 
 ### Cache acceleration (experimental)
 **Settings → 🗃️ Cache acceleration** exposes sd.cpp's step-caching
