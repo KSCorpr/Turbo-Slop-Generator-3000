@@ -26,6 +26,7 @@ from ..engine import generate as gen_engine
 from ..engine import outpaint as op
 from ..engine import sdcpp
 from ..i18n import t
+from . import widgets
 
 PRESETS = [
     ("← Gauche", ["left"]),
@@ -105,7 +106,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         _choices, _first = _model_choices()
         with gr.Row():
             with gr.Column(scale=3):
-                image = gr.Image(label="Image à étendre", type="pil")
+                image = gr.Image(label="Image à étendre", type="pil",
+                                 buttons=widgets.IMAGE_VIEW_ONLY)
                 direction = gr.Radio(
                     [(lbl, "|".join(d)) for lbl, d in PRESETS],
                     value="|".join(PRESETS[-1][1]), label="Direction")
@@ -162,7 +164,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 status = gr.Markdown("")
             with gr.Column(scale=4):
                 result = gr.Image(label="Résultat", type="filepath",
-                                  show_download_button=True)
+                                  buttons=widgets.IMAGE_BUTTONS)
                 again = gr.Button("♻️ Ré-étendre le résultat", size="sm")
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")

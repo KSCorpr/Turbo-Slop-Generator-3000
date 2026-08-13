@@ -60,6 +60,7 @@ so the grouping is not decoration.)
 - [Distributing a portable package](#distributing-a-portable-package)
 - [Models & sources](#models--sources)
 - [Project layout](#project-layout)
+- [Gradio version](#gradio-version)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgments](#acknowledgments)
 
@@ -1150,6 +1151,37 @@ maintenance) — the fastest way to know what a slider actually does.
 
 ---
 
+## Gradio version
+
+The app targets **Gradio 6** (`gradio>=6.0,<7` in `requirements.txt`) and will
+not run on 5.x — the 6.0 release removed parameters it used. `maintenance.bat`
+names the problem if an old version is still installed, rather than letting it
+surface as a `TypeError` while the interface is being built.
+
+What the move changed, and why it is worth knowing:
+
+- **`show_download_button` / `show_copy_button` are gone**, replaced by a
+  `buttons=[…]` list. The catch is the new default for an image:
+  `["download", "share", "fullscreen"]`. That **share** button posts to Hugging
+  Face Spaces Discussions — meaningless in an app running on your own machine,
+  and it never appeared under Gradio 5 locally. Every image and gallery here
+  therefore declares its buttons explicitly, from the named lists in
+  [`atelier/ui/widgets.py`](atelier/ui/widgets.py); `tests/test_gradio6.py`
+  fails if a component is added without them.
+- **Theme, CSS and `<head>` moved** from the `Blocks(...)` constructor to
+  `launch(...)`. Forget them and nothing breaks — the interface simply renders
+  unstyled — so they are grouped in `app.presentation()` and a test checks they
+  reach `launch()`.
+- **`launch(show_api=…)` is gone**; API visibility is now set per event
+  listener. Nothing to expose here anyway.
+- The install is **118 MB lighter** (200 MB → 82 MB for the `gradio` package),
+  which matters for the portable Windows folder.
+
+What it did **not** change: the cross-volume upload race described below is
+present in Gradio 6 exactly as in 5.50 — same `os.rename`, same fallback to a
+background copy, just moved to another module. The fix in `app.py` is still
+required.
+
 ## Troubleshooting
 
 - **“sd-cli binary not found”** → re-run `install.bat`, or download the engine
@@ -1162,7 +1194,7 @@ maintenance) — the fastest way to know what a slider actually does.
   not an image.
   **The main cause, found and fixed, was self-inflicted.** Pinning the image
   cache inside the project (see below) put it on a different drive from
-  `%TEMP%` on any machine whose project does not live on `C:`. Gradio 5.50
+  `%TEMP%` on any machine whose project does not live on `C:`. Gradio
   moves an uploaded file with `os.rename`, which cannot cross volumes; it then
   falls back to copying **in a background task** — *after* already answering
   with the final path. The browser asks for the image immediately,
@@ -1280,7 +1312,7 @@ authors. Please read and respect each model's own license on its page.
 ### Engine & framework
 - **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** —
   **leejet** & contributors. The inference engine this whole project rests on.
-- **[Gradio](https://github.com/gradio-app/gradio)** — the web UI.
+- **[Gradio](https://github.com/gradio-app/gradio)** — the web UI (6.x).
 - **[PyTorch](https://pytorch.org)**, **[Hugging Face](https://huggingface.co)**
   `transformers` / `diffusers` / `huggingface_hub` — the optional Toolkit tools.
 

@@ -19,6 +19,7 @@ from .. import settings
 from ..engine import sdcpp
 from ..engine import trellis
 from ..i18n import t
+from . import widgets
 
 
 def _res_choices():
@@ -202,7 +203,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         with gr.Row():
             with gr.Column(scale=3):
                 image = gr.Image(label="Image d'entrée (objet unique)",
-                                 type="filepath")
+                                 type="filepath",
+                                 buttons=widgets.IMAGE_VIEW_ONLY)
                 with gr.Row():
                     square_pad = gr.Checkbox(
                         value=True, scale=2,
@@ -301,7 +303,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 with gr.Row():
                     seed_used = gr.Textbox(
                         label="Seed utilisé (pour rejouer cet objet)",
-                        interactive=False, show_copy_button=True, scale=2)
+                        interactive=False, buttons=widgets.TEXT_COPY, scale=2)
                     seed_reuse = gr.Button("♻️ Réutiliser ce seed", size="sm",
                                            scale=1)
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,

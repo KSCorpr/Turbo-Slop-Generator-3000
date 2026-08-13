@@ -340,7 +340,42 @@ def check_deps() -> None:
               "(ou install.sh).")
     else:
         print(OK + "présentes.")
+    check_gradio_major()
     check_diffusers()
+
+
+# Version de Gradio sous laquelle l'application est écrite. Une 5.x installée
+# ne « manque » pas — elle est là, elle s'importe, et elle plante à la
+# construction de la première image sur un argument inconnu. C'est le genre de
+# panne qu'on veut voir NOMMÉE ici plutôt qu'à travers un TypeError.
+GRADIO_MAJOR = 6
+
+
+def check_gradio_major() -> None:
+    print("• Version de Gradio…")
+    try:
+        import gradio
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"gradio introuvable : {exc}")
+        return
+    version = getattr(gradio, "__version__", "0")
+    try:
+        major = int(str(version).split(".")[0])
+    except ValueError:
+        _warn(f"version illisible : {version}")
+        return
+    if major < GRADIO_MAJOR:
+        _warn(f"gradio {version} installé — l'application demande la "
+              f"{GRADIO_MAJOR}.x.")
+        _warn("  Les composants image refuseront `buttons=` et l'interface "
+              "ne se construira pas.")
+        _warn("  Correctif : relancez install.bat (ou "
+              "`pip install -U -r requirements.txt`).")
+    elif major > GRADIO_MAJOR:
+        _warn(f"gradio {version} installé, l'application est écrite pour la "
+              f"{GRADIO_MAJOR}.x — à vérifier.")
+    else:
+        print(OK + f"gradio {version}.")
 
 
 def check_diffusers() -> None:

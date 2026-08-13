@@ -12,6 +12,7 @@ from .. import downloader, i18n, registry, sampling, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
+from . import widgets
 
 # Les listes de samplers/schedulers ET leur documentation vivent dans
 # atelier/sampling.py : un menu dont on ne sait pas quoi choisir n'est pas un
@@ -316,13 +317,16 @@ def build_generative_tab(model_id: str, title: str,
                                 "sur 11-12 Go) laisse la marge nécessaire.")
                     init_image = gr.Image(
                         label="Image à éditer" if is_edit else "Image de départ",
-                        type="pil")
+                        type="pil",
+                        buttons=widgets.IMAGE_VIEW_ONLY)
                     if is_edit:
                         with gr.Row():
-                            ref_image2 = gr.Image(label="Référence 2 (option)",
-                                                  type="pil")
-                            ref_image3 = gr.Image(label="Référence 3 (option)",
-                                                  type="pil")
+                            ref_image2 = gr.Image(
+                                label="Référence 2 (option)", type="pil",
+                                buttons=widgets.IMAGE_VIEW_ONLY)
+                            ref_image3 = gr.Image(
+                                label="Référence 3 (option)", type="pil",
+                                buttons=widgets.IMAGE_VIEW_ONLY)
                     else:
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
@@ -481,15 +485,16 @@ def build_generative_tab(model_id: str, title: str,
                 # c'est l'overlay de gr.Progress qui le faisait clignoter.)
                 preview_img = gr.Image(
                     label="Aperçu temps réel", visible=False, height=560,
-                    format="png", show_download_button=False,
+                    format="png", buttons=widgets.IMAGE_VIEW_ONLY,
                     show_label=True, interactive=False)
                 gallery = gr.Gallery(
                     label="Résultats (légende = seed)",
                     columns=2, height=560, object_fit="contain", show_label=True,
-                    format="png", show_download_button=True)
+                    format="png", buttons=widgets.IMAGE_BUTTONS)
                 with gr.Row():
                     seed_box = gr.Textbox(label="Seed de l'image sélectionnée",
-                                          interactive=False, show_copy_button=True,
+                                          interactive=False,
+                                          buttons=widgets.TEXT_COPY,
                                           scale=2)
                     seed_reuse = gr.Button("♻️ Réutiliser ce seed", size="sm",
                                            scale=1)

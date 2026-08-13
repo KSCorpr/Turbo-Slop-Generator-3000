@@ -7,6 +7,7 @@ from .. import downloader, hardware, registry, settings
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
+from . import widgets
 from . import preview
 
 # Préréglages de l'upscale créatif.
@@ -130,12 +131,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        d_image = gr.Image(label="Image source", type="pil")
+                        d_image = gr.Image(label="Image source", type="pil",
+                                           buttons=widgets.IMAGE_VIEW_ONLY)
                         d_run = gr.Button("🌐 Générer la profondeur",
                                           variant="primary", size="lg")
                     with gr.Column(scale=4):
                         d_result = gr.Image(label="Carte de profondeur", height=520,
-                                            format="png", show_download_button=True)
+                                            format="png",
+                                            buttons=widgets.IMAGE_BUTTONS)
                         d_log = gr.Textbox(label="Journal", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
@@ -168,13 +171,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        b_image = gr.Image(label="Image source", type="pil")
+                        b_image = gr.Image(label="Image source", type="pil",
+                                           buttons=widgets.IMAGE_VIEW_ONLY)
                         b_run = gr.Button("✂️ Détourer", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
                         b_result = gr.Image(label="Sujet détouré (PNG transparent)",
                                             height=520, format="png",
-                                            show_download_button=True,
+                                            buttons=widgets.IMAGE_BUTTONS,
                                             image_mode="RGBA")
                         b_log = gr.Textbox(label="Journal", lines=8,
                                            autoscroll=True, elem_classes="log-box")
@@ -210,16 +214,18 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Row():
                     with gr.Column(scale=3):
                         s_image = gr.Image(label="Image — cliquez sur l'objet",
-                                           type="pil")
+                                           type="pil",
+                                           buttons=widgets.IMAGE_VIEW_ONLY)
                         s_info = gr.Markdown("Cliquez un point sur l'image.")
                         s_overlay = gr.Image(label="Zone sélectionnée (aperçu)",
-                                             height=300, interactive=False)
+                                             height=300, interactive=False,
+                                             buttons=widgets.IMAGE_VIEW_ONLY)
                         s_run = gr.Button("🪄 Extraire l'objet", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
                         s_result = gr.Image(label="Objet extrait (PNG transparent)",
                                             height=520, format="png",
-                                            show_download_button=True,
+                                            buttons=widgets.IMAGE_BUTTONS,
                                             image_mode="RGBA")
                         s_log = gr.Textbox(label="Journal", lines=8,
                                            autoscroll=True, elem_classes="log-box")
@@ -296,7 +302,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        u_image = gr.Image(label="Image à agrandir", type="pil")
+                        u_image = gr.Image(
+                            label="Image à agrandir", type="pil",
+                            buttons=widgets.IMAGE_VIEW_ONLY)
                         u_model = gr.Dropdown(
                             registry.upscaler_choices(),
                             value=registry.default_upscaler(),
@@ -322,7 +330,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     with gr.Column(scale=4):
                         u_result = gr.Image(
                             label="Résultat (pleine résolution dans outputs/)",
-                            height=520, format="png", show_download_button=True)
+                            height=520, format="png",
+                            buttons=widgets.IMAGE_BUTTONS)
                         u_log = gr.Textbox(label="Journal", lines=10,
                                            autoscroll=True, elem_classes="log-box")
 
@@ -416,7 +425,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Row():
                     with gr.Column(scale=3):
                         lay_image = gr.Image(label="Image à décomposer",
-                                             type="pil")
+                                             type="pil",
+                                             buttons=widgets.IMAGE_VIEW_ONLY)
                         lay_mode = gr.Radio(
                             [(t("Automatique — SAM balaie l'image"), "auto"),
                              (t("Manuel — je clique les zones"), "manual")],
@@ -459,7 +469,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     with gr.Column(scale=4):
                         lay_preview = gr.Image(
                             label="Zones retenues (aperçu)", height=460,
-                            interactive=False, format="png")
+                            interactive=False, format="png",
+                            buttons=widgets.IMAGE_VIEW_ONLY)
                         lay_files = gr.File(label="Fichiers produits",
                                             file_count="multiple")
                         lay_log = gr.Textbox(label="Journal", lines=10,
@@ -611,7 +622,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Row():
                     with gr.Column(scale=3):
                         hd_image = gr.Image(label="Image à passer en HD",
-                                            type="pil")
+                                            type="pil",
+                                            buttons=widgets.IMAGE_VIEW_ONLY)
                         hd_model = gr.Dropdown(
                             choices=_hd_models,
                             value=(_hd_models[0][1] if _hd_models else None),
@@ -659,7 +671,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         hd_result = gr.Image(
                             label="Aperçu temps réel (pleine résolution dans "
                                   "outputs/)", height=520, format="png",
-                            show_download_button=True)
+                            buttons=widgets.IMAGE_BUTTONS)
                         hd_log = gr.Textbox(label="Journal", lines=12,
                                             autoscroll=True,
                                             elem_classes="log-box")
@@ -720,7 +732,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        seed_image = gr.Image(label="Image à restaurer", type="pil")
+                        seed_image = gr.Image(
+                            label="Image à restaurer", type="pil",
+                            buttons=widgets.IMAGE_VIEW_ONLY)
                         seed_model = gr.Radio(
                             [("Q8 — qualité recommandée (RTX 3060 12 Go)",
                               "seedvr2_ema_3b-Q8_0.gguf"),
@@ -759,7 +773,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     with gr.Column(scale=4):
                         seed_result = gr.Image(
                             label="Résultat SeedVR2", height=520, format="png",
-                            show_download_button=True)
+                            buttons=widgets.IMAGE_BUTTONS)
                         seed_log = gr.Textbox(label="Journal", lines=14,
                                               autoscroll=True,
                                               elem_classes="log-box")
@@ -830,7 +844,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        c_image = gr.Image(label="Image à agrandir", type="pil")
+                        c_image = gr.Image(
+                            label="Image à agrandir", type="pil",
+                            buttons=widgets.IMAGE_VIEW_ONLY)
                         _ckpts = tools.list_upscale_checkpoints()
                         c_model = gr.Dropdown(
                             choices=_ckpts,
@@ -910,7 +926,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         c_result = gr.Image(
                             label="Aperçu temps réel (pleine résolution dans "
                                   "outputs/)", height=520, format="png",
-                            show_download_button=True)
+                            buttons=widgets.IMAGE_BUTTONS)
                         c_log = gr.Textbox(label="Journal", lines=12,
                                            autoscroll=True, elem_classes="log-box")
 

@@ -43,8 +43,8 @@ sys.path.insert(0, _ROOT)
 os.environ["GRADIO_TEMP_DIR"] = os.path.join(_ROOT, "tmp", "gradio")
 os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
 
-# Avertissements bénins de Gradio (paramètres déplacés en v6.0) : on les masque
-# pour ne pas inquiéter inutilement au démarrage. L'usage actuel (5.x) est correct.
+# Avertissements de dépréciation de Gradio : masqués pour ne pas inquiéter au
+# démarrage. Ils annonçaient les retraits de la 6.0, désormais tous traités.
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="gradio")
 
 import gradio as gr
@@ -209,6 +209,19 @@ def _head_for(mode: str) -> str:
         "</script>")
 
 
+def presentation() -> dict:
+    """Thème, CSS et `<head>` — à passer à `launch()`, plus au constructeur.
+
+    Gradio 6 a déplacé ces trois paramètres de `Blocks(...)` vers `launch(...)`.
+    Les regrouper ici plutôt que de les recopier au point d'appel évite le
+    piège de la migration : oubliés, rien ne casse et rien ne prévient —
+    l'interface s'affiche simplement sans son thème.
+    """
+    prefs = settings.load_prefs()
+    return {"theme": theme(), "css": CSS,
+            "head": _head_for(prefs.get("theme", "light"))}
+
+
 def build_app() -> gr.Blocks:
     settings.ensure_dirs()
     # Langue de l'interface : lue dans les préférences. Les chaînes dynamiques
@@ -217,10 +230,9 @@ def build_app() -> gr.Blocks:
     first_run = not settings.PREFS_FILE.exists()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
-    head = _head_for(settings.load_prefs().get("theme", "light"))
-
-    with gr.Blocks(title=f"{APP_NAME} {__version__}", theme=theme(), css=CSS,
-                   head=head) as demo:
+    # Thème / CSS / <head> ne se posent plus ici : voir presentation(),
+    # passé à launch().
+    with gr.Blocks(title=f"{APP_NAME} {__version__}") as demo:
         # En-tête sur une ligne : titre, sous-titre, puis une pastille qui dit
         # sur QUOI ça tourne. C'est l'information qu'on veut avoir sous les yeux
         # en permanence quand on choisit une résolution ou un facteur d'upscale
@@ -366,9 +378,12 @@ def main():
     if args.listen:
         _print_lan_banner(port, auth is not None)
 
+    # `show_api` n'existe plus dans Gradio 6 : la visibilité de la page d'API
+    # se règle écouteur par écouteur (`api_visibility`). Sans intérêt ici —
+    # l'application est locale et ne publie rien.
     demo.launch(server_name=host, server_port=port, share=args.share,
-                auth=auth, inbrowser=not args.listen, show_api=False,
-                allowed_paths=settings.served_paths())
+                auth=auth, inbrowser=not args.listen,
+                allowed_paths=settings.served_paths(), **presentation())
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import gradio as gr
 
 from .. import inventory, settings, storage
 from ..i18n import t
+from . import widgets
 
 CATEGORIES = ["Moteurs", "Modèles", "Add-ons Toolkit", "Vos données"]
 
@@ -281,17 +282,17 @@ def build_manage_tab():
                 with gr.Column():
                     diag_img = gr.Image(label="Image de test", height=200,
                                         interactive=False,
-                                        show_download_button=False)
+                                        buttons=widgets.IMAGE_VIEW_ONLY)
                     # Une tuile par format : celle qui casse DÉSIGNE la cause,
                     # là où un contrôle général ne peut que dire « tout va
                     # bien » — ce qu'il disait, pendant que les imports
                     # cassaient.
                     diag_tiles = gr.Gallery(label="Un format par tuile",
                                             height=200, columns=5,
-                                            show_download_button=False)
+                                            buttons=widgets.IMAGE_VIEW_ONLY)
                     diag_last = gr.Image(
                         label="Dernier fichier importé (le vôtre)", height=220,
-                        interactive=False, show_download_button=False)
+                        interactive=False, buttons=widgets.IMAGE_VIEW_ONLY)
 
             def _diagnose():
                 from .. import imgcheck

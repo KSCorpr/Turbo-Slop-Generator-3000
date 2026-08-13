@@ -25,6 +25,7 @@ from .. import registry, settings
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
+from . import widgets
 
 # --------------------------------------------------------------------------- #
 #  LE STYLE — fixe, non négociable, non exposé dans l'interface.
@@ -188,7 +189,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                                       "même photo.")
             with gr.Column(scale=4):
                 result = gr.Image(label="Photo", type="filepath", height=460,
-                                  format="png", show_download_button=True)
+                                  format="png", buttons=widgets.IMAGE_BUTTONS)
                 used_md = gr.Markdown("", elem_classes="hint")
                 log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
                                  elem_classes="log-box")
