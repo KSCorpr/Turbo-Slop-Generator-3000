@@ -432,7 +432,7 @@ def masks_to_layers(image, masks: list, names: list[str] | None = None,
     return _layers_to_files(src, masks, names, stamp, want_psd, want_png, log)
 
 
-ENHANCE_STYLES = ("generic", "krea2")
+ENHANCE_STYLES = ("generic", "krea2", "xanax")
 
 
 # --------------------------------------------------------------------------- #

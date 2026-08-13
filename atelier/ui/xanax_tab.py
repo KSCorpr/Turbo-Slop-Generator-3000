@@ -43,6 +43,56 @@ XANAX_STYLE = (
 # pour Flux.2, 64 px pour Krea 2 — sortir de la grille dégrade le rendu).
 XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896)}
 
+# --------------------------------------------------------------------------- #
+#  DE QUOI ON PART : une phrase de la vie courante, pas une description
+# --------------------------------------------------------------------------- #
+# Décrire une image (« un homme qui attend le bus devant un supermarché ») et
+# raconter sa journée (« j'ai attendu le bus une plombe ») ne donnent pas le
+# même résultat, et ce n'est pas une question de formulation. Une description
+# est déjà cadrée : elle dit quoi montrer, donc le modèle met le sujet au
+# milieu et compose. Une phrase de journal intime ne dit PAS ce qu'il faut
+# montrer — il faut aller chercher le lieu, l'heure, les gens autour ; ce qui
+# en sort ressemble à une photo prise en passant, ce que vise cet onglet.
+#
+# C'est pourquoi l'améliorateur reçoit ici son propre system prompt (style
+# « xanax ») : les deux autres réclament un éclairage travaillé, un objectif
+# nommé et une composition — la photo RÉUSSIE d'un photographe, alors qu'on
+# veut la photo RATÉE d'un oncle.
+ANECDOTES = [
+    "j'ai mangé chez Flunch avec Mamie",
+    "journée pas terrible mais j'ai pu aller acheter des clopes",
+    "on a fait les courses au Leclerc, y'avait la queue à la caisse",
+    "anniversaire de Papy, on était tous dans la véranda",
+    "j'ai attendu le bus vingt minutes sous la pluie",
+    "réveillon chez ma tante, on a mangé de la bûche",
+    "j'ai lavé la voiture dans l'allée",
+    "on est allés à la kermesse de l'école de mon fils",
+    "j'ai poireauté à la CAF toute la matinée",
+    "barbecue chez les voisins, il a commencé à pleuvoir",
+    "j'ai repeint la chambre, c'est pas fini",
+    "on a mangé au routier sur la nationale",
+    "j'ai emmené le chien chez le véto",
+    "communion de ma cousine, photo devant l'église",
+    "on a bu un café au bar-tabac après le marché",
+    "j'ai déménagé le canapé de ma sœur",
+    "vide-grenier dimanche matin, j'ai rien vendu",
+    "on a regardé le match chez Kévin",
+    "j'ai passé l'après-midi à la laverie",
+    "on est allés voir la mer, il faisait gris",
+    "j'ai monté le meuble Ikea de la cuisine",
+    "pot de départ au boulot dans la salle de pause",
+    "j'ai fait la queue à la poste pour un colis",
+    "on a pris l'apéro dans le jardin, rien de spécial",
+    "j'ai gagné trois euros au PMU",
+    "on a mangé une pizza devant la télé",
+    "j'ai attendu ma fille à la sortie du collège",
+    "on a fait une pause sur l'aire d'autoroute",
+    "j'ai réparé le vélo dans le garage",
+    "mariage de mon collègue, salle des fêtes",
+    "j'ai tondu la pelouse avant qu'il pleuve",
+    "on a fêté ça au kebab en bas de chez moi",
+]
+
 # Barres de progression de sd.cpp : converties en ligne de statut, jamais
 # écrites dans le journal (elles arrivent par centaines et le noient).
 _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
@@ -88,7 +138,12 @@ def build_xanax_tab(title: str = "💊 Xanax"):
         # Texte SÉPARÉ du titre : une f-string composée ne peut pas servir de
         # clé de traduction (elle ne correspondrait jamais au dictionnaire).
         gr.Markdown(
-            "### Une phrase, une photo\n"
+            "### Racontez votre journée, on en fait une photo\n"
+            "N'écrivez **pas une description d'image** mais une phrase de la "
+            "vie courante, comme dans un carnet : *« j'ai mangé chez Flunch "
+            "avec Mamie »*, *« journée pas terrible mais j'ai pu aller acheter "
+            "des clopes »*. C'est ce décalage qui donne la photo prise en "
+            "passant plutôt que la photo posée.\n\n"
             "**Le style est figé et non modifiable** : photo amateur, France "
             "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
             "format 4:3 sur la grille native du modèle. C'est le principe de "
@@ -103,9 +158,12 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                 model_state = gr.Markdown(_recap_for(XANAX_MODELS[0][1]),
                                           elem_classes="hint")
                 prompt = gr.Textbox(
-                    label="Votre phrase ou thème", lines=3,
-                    placeholder="un homme qui attend le bus devant un "
-                                "supermarché…")
+                    label="Ce que vous avez fait", lines=3,
+                    placeholder="j'ai mangé chez Flunch avec Mamie…",
+                    info="Une phrase de votre journée, à la première personne. "
+                         "Pas « un homme attend le bus » mais « j'ai attendu "
+                         "le bus une plombe ».")
+                dice = gr.Button("🎲 Une journée au hasard", size="sm")
                 with gr.Row(elem_classes="go-row"):
                     run = gr.Button("📷 Générer", variant="primary",
                                     size="lg", scale=4)
@@ -115,13 +173,15 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                 enhance = gr.Checkbox(
                     value=tools.enhance_is_installed(),
                     interactive=tools.enhance_is_installed(),
-                    label="✨ Traduire et étoffer ma phrase (améliorateur IA)",
-                    info=("Traduit le français en anglais et enrichit la "
-                          "description, en respectant le style imposé."
+                    label="✨ Transformer ma phrase en photo (améliorateur IA)",
+                    info=("Cherche ce qu'on VERRAIT sur la photo : le lieu, "
+                          "les gens, l'heure. Traduit au passage, et sait ce "
+                          "qu'est un Flunch — le modèle d'image, non."
                           if tools.enhance_is_installed() else
                           "Améliorateur non installé — installez-le depuis un "
-                          "onglet de génération. Sans lui, écrivez en ANGLAIS : "
-                          "le style est un préfixe anglais, il ne traduit rien."))
+                          "onglet de génération. Sans lui votre phrase part "
+                          "TELLE QUELLE : écrivez alors en anglais et dites ce "
+                          "qu'on voit, pas ce que vous avez fait."))
                 seed = gr.Number(value=-1, precision=0,
                                  label="Seed (-1 = aléatoire)",
                                  info="Une graine fixe rejoue exactement la "
@@ -135,12 +195,18 @@ def build_xanax_tab(title: str = "💊 Xanax"):
 
         model_pick.change(_recap_for, inputs=[model_pick],
                           outputs=[model_state])
+        # Le dé ne sert pas qu'à dépanner l'inspiration : il montre le REGISTRE
+        # attendu. Un exemple qu'on peut lire, modifier et relancer explique
+        # mieux qu'un paragraphe ce que veut dire « pas une description ».
+        dice.click(lambda: random.choice([t(a) for a in ANECDOTES]),
+                   outputs=[prompt])
 
         def do_xanax(model_id, subject, use_enhance, seed_v):
             if not (subject or "").strip():
-                raise gr.Error(t("Écrivez une phrase ou un thème."))
+                raise gr.Error(t("Racontez d'abord quelque chose — "
+                                 "une phrase suffit."))
             settings.ensure_dirs()
-            model, family, d, width, height, steps = _model_info(model_id)
+            model, _family, d, width, height, steps = _model_info(model_id)
             if model is None:
                 raise gr.Error(t("Modèle indisponible."))
             try:
@@ -154,12 +220,15 @@ def build_xanax_tab(title: str = "💊 Xanax"):
             text = subject.strip()
 
             if use_enhance and tools.enhance_is_installed():
-                yield (t("⏳ Traduction et mise en forme de la phrase…"),
+                yield (t("⏳ On cherche à quoi ressemblait ce moment…"),
                        gr.update(), gr.update(), "\n".join(logs))
                 try:
+                    # style « xanax » : le seul des trois qui parte d'une
+                    # phrase de journal au lieu d'une description, et le seul
+                    # qui n'ajoute PAS d'objectif, d'éclairage ni de
+                    # composition — ici, une belle photo serait ratée.
                     out = tools.enhance_prompt_variants(
-                        text, style=("krea2" if family == "krea2" else "generic"),
-                        level="medium", variants=1,
+                        text, style="xanax", level="medium", variants=1,
                         style_constraint=XANAX_STYLE, log=logs.append)
                     if out and out[0].strip():
                         text = out[0].strip()

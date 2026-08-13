@@ -50,7 +50,7 @@ so the grouping is not decoration.)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Generation options](#generation-options)
-- [Xanax tabs](#xanax-tabs)
+- [Xanax tab](#xanax-tab)
 - [Hardware & optimization](#hardware--optimization)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
@@ -323,24 +323,51 @@ its aspect.
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
 
-## Xanax tabs
+## Xanax tab
 
-**💊 Krea 2 — Xanax** and **💊 Flux.2 Klein — Xanax** are the same idea on the
-two models: **one sentence in, one photo out**. There is no style dropdown, no
-system-prompt box, no preset menu — **the style is compiled into the tab** and
-cannot be changed. That is the point of these tabs; the normal generation tabs
-are there when you want to tune something.
+**💊 Xanax** takes **one sentence about your day and returns one photo**. Pick
+the model with a radio button (Krea 2 Turbo or Flux.2 Klein); everything else is
+compiled in. No style dropdown, no system-prompt box, no preset menu — **the
+style cannot be changed**. That is the point of the tab; the normal generation
+tabs are there when you want to tune something.
 
 The fixed style: amateur snapshot, provincial France, 1995–2005, cheap
 point-and-shoot, ordinary people, unstaged, always overcast, no grain, no filter,
 no post-processing, **4:3** on each model's native grid (1184×880 for Flux.2,
 1152×896 for Krea 2).
 
-One detail is less obvious than it looks: **translation needs the prompt
-enhancer.** The style is an English prefix glued in front of your text — on its
-own it translates nothing. With the enhancer installed, the checkbox translates
-and fleshes out your sentence *with the style as a constraint*. Without it, the
-tab says so and you should write in English.
+### Write a diary line, not an image description
+This is the part that decides whether the result works:
+
+> **not** *"a man waiting for the bus outside a supermarket"*
+> **but** *"j'ai mangé chez Flunch avec Mamie"*, *"journée pas terrible mais
+> j'ai pu aller acheter des clopes"*
+
+A description is already framed — it says what to show, so the model centres the
+subject and composes it. A diary line does not say what to show: the place, the
+hour and the bystanders have to be worked out from it, and what comes back looks
+like a photo taken in passing. Which is the whole aesthetic.
+
+The **🎲 A random day** button fills the box from a bank of ready-made banal
+sentences — as much to show the register expected as to unblock you. Edit the
+line it gives you and generate.
+
+### Why the enhancer matters more here
+The style is an English prefix glued in front of your text — on its own it
+translates nothing, and the image model has never heard of Flunch. With the
+enhancer installed, the checkbox turns your sentence into *what the photo would
+show*: the self-service cafeteria with its plastic trays and fluorescent
+ceiling, the tobacconist's red sign.
+
+It runs on **its own system prompt** (`xanax`), separate from the two used by
+the normal tabs. Those ask for a named lens, a lighting setup and a composition —
+applied here they would produce a *good* photograph, which is exactly this tab's
+failure mode. The Xanax one bans photographic craft outright, forbids
+beautifying, and keeps the output to two or three flat sentences: a long prompt
+makes the model compose.
+
+Without the enhancer the tab says so, and your sentence is sent **as is** —
+write in English then, and say what is visible rather than what you did.
 
 The exact prompt that produced the image is shown under it, a fixed seed replays
 the same photo, and the usual `.txt` sidecar lands next to it in `outputs/`.

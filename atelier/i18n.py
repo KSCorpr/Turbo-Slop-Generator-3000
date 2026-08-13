@@ -187,33 +187,109 @@ _EN: dict[str, str] = {
     "💊 Xanax": "💊 Xanax",
     "Modèle": "Model",
     "Modèle indisponible.": "Model unavailable.",
-    "### Une phrase, une photo\n"
+    "### Racontez votre journée, on en fait une photo\n"
+    "N'écrivez **pas une description d'image** mais une phrase de la "
+    "vie courante, comme dans un carnet : *« j'ai mangé chez Flunch "
+    "avec Mamie »*, *« journée pas terrible mais j'ai pu aller acheter "
+    "des clopes »*. C'est ce décalage qui donne la photo prise en "
+    "passant plutôt que la photo posée.\n\n"
     "**Le style est figé et non modifiable** : photo amateur, France "
     "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
     "format 4:3 sur la grille native du modèle. C'est le principe de "
     "cet onglet — pour régler quoi que ce soit, utilisez un onglet de "
     "génération normal.":
-        "### One sentence, one photo\n"
+        "### Tell us about your day, we make a photo of it\n"
+        "Do **not** write an image description — write a plain sentence about "
+        "your day, the way you would in a diary: *“had lunch at the cafeteria "
+        "with Gran”*, *“rubbish day but at least I got my cigarettes”*. That "
+        "gap is what produces a photo taken in passing rather than a posed "
+        "one.\n\n"
         "**The style is fixed and cannot be changed**: amateur snapshot, "
         "provincial France, 1995-2005, overcast, no post-processing, 4:3 on "
         "the model's native grid. That is the point of this tab — to tune "
         "anything at all, use a normal generation tab.",
-    "Votre phrase ou thème": "Your sentence or theme",
-    "un homme qui attend le bus devant un supermarché…":
-        "a man waiting for the bus outside a supermarket…",
+    "Ce que vous avez fait": "What you did",
+    "j'ai mangé chez Flunch avec Mamie…":
+        "had lunch at the motorway cafeteria with Gran…",
+    "Une phrase de votre journée, à la première personne. Pas « un homme attend le bus » mais « j'ai attendu le bus une plombe ».":
+        "One sentence about your day, in the first person. Not “a man waits for the bus” but “waited ages for the bus”.",
+    "🎲 Une journée au hasard": "🎲 A random day",
     "📷 Générer": "📷 Generate",
-    "Écrivez une phrase ou un thème.": "Write a sentence or a theme.",
-    "✨ Traduire et étoffer ma phrase (améliorateur IA)":
-        "✨ Translate and flesh out my sentence (AI enhancer)",
-    "Traduit le français en anglais et enrichit la description, en respectant le style imposé.":
-        "Translates French to English and enriches the description, while respecting the fixed style.",
-    "Améliorateur non installé — installez-le depuis un onglet de génération. Sans lui, écrivez en ANGLAIS : le style est un préfixe anglais, il ne traduit rien.":
-        "Enhancer not installed — install it from a generation tab. Without it, write in ENGLISH: the style is an English prefix, it translates nothing.",
+    "Racontez d'abord quelque chose — une phrase suffit.":
+        "Tell us something first — one sentence is enough.",
+    "✨ Transformer ma phrase en photo (améliorateur IA)":
+        "✨ Turn my sentence into a photo (AI enhancer)",
+    "Cherche ce qu'on VERRAIT sur la photo : le lieu, les gens, l'heure. Traduit au passage, et sait ce qu'est un Flunch — le modèle d'image, non.":
+        "Works out what the photo would SHOW: the place, the people, the time of day. Translates along the way, and knows what a French cafeteria chain is — the image model does not.",
+    "Améliorateur non installé — installez-le depuis un onglet de génération. Sans lui votre phrase part TELLE QUELLE : écrivez alors en anglais et dites ce qu'on voit, pas ce que vous avez fait.":
+        "Enhancer not installed — install it from a generation tab. Without it your sentence is sent AS IS: write in English then, and say what is visible rather than what you did.",
     "Une graine fixe rejoue exactement la même photo.":
         "A fixed seed replays exactly the same photo.",
     "Photo": "Photo",
-    "⏳ Traduction et mise en forme de la phrase…":
-        "⏳ Translating and shaping the sentence…",
+    "⏳ On cherche à quoi ressemblait ce moment…":
+        "⏳ Working out what that moment looked like…",
+
+    # ---- onglet Xanax : banque d'anecdotes (bouton 🎲) ----
+    # Traduites, mais gardées dans leur décor : le style impose la France
+    # provinciale, une anecdote délocalisée ne collerait pas à l'image.
+    "j'ai mangé chez Flunch avec Mamie":
+        "had lunch at the motorway cafeteria with Gran",
+    "journée pas terrible mais j'ai pu aller acheter des clopes":
+        "rubbish day but at least I got my cigarettes",
+    "on a fait les courses au Leclerc, y'avait la queue à la caisse":
+        "did the shopping at the hypermarket, long queue at the till",
+    "anniversaire de Papy, on était tous dans la véranda":
+        "Grandad's birthday, we were all crammed in the conservatory",
+    "j'ai attendu le bus vingt minutes sous la pluie":
+        "waited twenty minutes for the bus in the rain",
+    "réveillon chez ma tante, on a mangé de la bûche":
+        "New Year's Eve at my aunt's, we had the yule log",
+    "j'ai lavé la voiture dans l'allée": "washed the car in the driveway",
+    "on est allés à la kermesse de l'école de mon fils":
+        "went to the school fête with my son",
+    "j'ai poireauté à la CAF toute la matinée":
+        "hung around the benefits office all morning",
+    "barbecue chez les voisins, il a commencé à pleuvoir":
+        "barbecue at the neighbours', then it started raining",
+    "j'ai repeint la chambre, c'est pas fini":
+        "repainted the bedroom, not finished yet",
+    "on a mangé au routier sur la nationale":
+        "ate at the truck stop on the main road",
+    "j'ai emmené le chien chez le véto": "took the dog to the vet",
+    "communion de ma cousine, photo devant l'église":
+        "my cousin's communion, photo outside the church",
+    "on a bu un café au bar-tabac après le marché":
+        "had a coffee at the corner café after the market",
+    "j'ai déménagé le canapé de ma sœur": "moved my sister's sofa",
+    "vide-grenier dimanche matin, j'ai rien vendu":
+        "car boot sale on Sunday morning, sold nothing",
+    "on a regardé le match chez Kévin": "watched the match round at Kev's",
+    "j'ai passé l'après-midi à la laverie":
+        "spent the afternoon at the launderette",
+    "on est allés voir la mer, il faisait gris":
+        "went to see the sea, it was grey",
+    "j'ai monté le meuble Ikea de la cuisine":
+        "assembled the flat-pack kitchen unit",
+    "pot de départ au boulot dans la salle de pause":
+        "leaving drinks at work in the break room",
+    "j'ai fait la queue à la poste pour un colis":
+        "queued at the post office for a parcel",
+    "on a pris l'apéro dans le jardin, rien de spécial":
+        "had drinks in the garden, nothing special",
+    "j'ai gagné trois euros au PMU": "won three euros at the betting shop",
+    "on a mangé une pizza devant la télé":
+        "had pizza in front of the telly",
+    "j'ai attendu ma fille à la sortie du collège":
+        "waited for my daughter outside the school gates",
+    "on a fait une pause sur l'aire d'autoroute":
+        "stopped at the motorway services",
+    "j'ai réparé le vélo dans le garage": "fixed the bike in the garage",
+    "mariage de mon collègue, salle des fêtes":
+        "a colleague's wedding, in the village hall",
+    "j'ai tondu la pelouse avant qu'il pleuve":
+        "mowed the lawn before the rain",
+    "on a fêté ça au kebab en bas de chez moi":
+        "celebrated at the kebab shop downstairs",
     "✅ Photo générée (seed {s})": "✅ Photo generated (seed {s})",
     "⬆️ Mettre à jour le binaire (sans les modèles)":
         "⬆️ Update the binary (models untouched)",

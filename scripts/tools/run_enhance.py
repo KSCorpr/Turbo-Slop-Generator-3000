@@ -119,7 +119,60 @@ SYSTEM_GENERIC = (
     + _CORE
 )
 
-STYLES = {"generic": SYSTEM_GENERIC, "krea2": SYSTEM_KREA2}
+# Système XANAX : l'entrée n'est PAS une description d'image, c'est une phrase
+# de la vie courante, écrite à la première personne, souvent en français et
+# souvent banale (« j'ai mangé chez Flunch avec Mamie »). Le travail n'est donc
+# pas d'enrichir un prompt mais de RÉPONDRE À UNE QUESTION : qu'est-ce qu'on
+# verrait sur la photo que quelqu'un aurait prise à ce moment-là ?
+#
+# Les deux autres system prompts font ici exactement le contraire de ce qu'on
+# veut : ils réclament un éclairage travaillé, un objectif nommé, une
+# composition, des couleurs choisies — soit la photo réussie d'un photographe,
+# alors que tout l'onglet vise la photo ratée d'un oncle. D'où un prompt à part
+# entière plutôt qu'une consigne ajoutée aux autres.
+SYSTEM_XANAX = (
+    "The user writes ONE sentence about a moment of their ordinary life, often "
+    "in French, often dull, sometimes barely worth telling ('j'ai mangé chez "
+    "Flunch avec Mamie', 'journée pas terrible mais j'ai pu aller acheter des "
+    "clopes'). It is a diary line, NOT an image description.\n"
+    "\n"
+    "Your job: say, in plain English, what a BAD AMATEUR SNAPSHOT taken at that "
+    "exact moment would show. Someone pulled a cheap camera out of a pocket, "
+    "pointed it roughly, and pressed the button.\n"
+    "\n"
+    "HOW TO WORK (internally, never reveal it):\n"
+    "1. Understand the sentence, including French words, slang and brand names. "
+    "Translate the PLACE and the OBJECTS into what they physically look like — "
+    "a French chain or product is unknown to the image model, so describe the "
+    "thing itself: 'Flunch' → a self-service cafeteria with plastic trays, "
+    "fluorescent ceiling lights and laminate tables; 'clopes' → a pack of "
+    "cigarettes, a tobacconist's counter with its red sign.\n"
+    "2. Decide WHO is visible (age, build, ordinary clothes), WHERE, and what "
+    "they are doing at that second. Keep the people plain and unremarkable: no "
+    "models, no beauty, no interesting faces.\n"
+    "3. Write it as one short, flat paragraph of concrete visible facts.\n"
+    "\n"
+    "HARD RULES:\n"
+    "• NEVER add photographic craft: no camera body, no lens or focal length, "
+    "no aperture, no depth of field, no lighting setup, no golden hour, no "
+    "bokeh, no 'perfectly composed', no 'award-winning', no 'cinematic'. The "
+    "photo is meant to look mediocre.\n"
+    "• NEVER beautify: no 'beautiful', 'stunning', 'elegant', 'serene', "
+    "'majestic'. If the moment is sad or boring, keep it sad or boring.\n"
+    "• NEVER turn it into a story or add drama, symbolism or emotion the "
+    "sentence does not contain. No invented events.\n"
+    "• Stay in ONE mundane place, at ONE moment. No montage, no 'meanwhile'.\n"
+    "• Keep it SHORT — two or three sentences at most. A long prompt makes the "
+    "model compose and beautify, which is exactly what we are avoiding.\n"
+    "• Keep the awkwardness: someone half out of frame, a back turned, a badly "
+    "centred subject, clutter on the table, is welcome — it is the point.\n"
+    "\n"
+    "OUTPUT: only that short English description, plain text, no preamble, no "
+    "labels, no markdown, no quotes around the whole thing."
+)
+
+STYLES = {"generic": SYSTEM_GENERIC, "krea2": SYSTEM_KREA2,
+          "xanax": SYSTEM_XANAX}
 
 
 # Intensité de l'amélioration (ajoutée au system prompt) + budget de tokens.
@@ -178,6 +231,12 @@ def main():
     level_text, level_tokens = LEVELS.get(args.level, LEVELS["medium"])
     max_new = int(args.max_new_tokens) or level_tokens
     system = STYLES.get(args.style, SYSTEM_GENERIC) + "\n\n" + level_text
+    if args.style == "xanax":
+        # Les niveaux disent « enrichis », « développe chaque pilier » : c'est
+        # l'inverse de la consigne Xanax. On ne les ajoute pas, et on coupe
+        # court en tokens — un budget large est une invitation à broder.
+        system = SYSTEM_XANAX
+        max_new = int(args.max_new_tokens) or 160
     n = max(1, min(8, int(args.variants)))
     if n > 1:
         system += ("\n\nYou will be sampled several times for the same idea. "
