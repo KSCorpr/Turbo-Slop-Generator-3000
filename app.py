@@ -47,6 +47,25 @@ os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
 # démarrage. Ils annonçaient les retraits de la 6.0, désormais tous traités.
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="gradio")
 
+# Gradio appelle des constantes Starlette dépréciées à CHAQUE requête mise en
+# file (`HTTP_422_UNPROCESSABLE_ENTITY`), ce qui noie la console sous des
+# dizaines de lignes identiques pendant une génération. Rien à corriger de
+# notre côté : c'est du code de Gradio, et ça disparaîtra avec une mise à jour.
+#
+# Le filtre précédent ne pouvait pas l'attraper : `StarletteDeprecationWarning`
+# hérite de **UserWarning**, pas de DeprecationWarning. D'où un filtre séparé,
+# et volontairement ÉTROIT — masquer tous les UserWarning de Gradio aurait
+# aussi caché « A function returned too many output values », qui vient de
+# signaler un vrai défaut chez nous (des boutons Stop qui calculaient un
+# message puis le jetaient).
+try:
+    from starlette.exceptions import StarletteDeprecationWarning as _SDW
+
+    warnings.filterwarnings("ignore", category=_SDW, module="gradio")
+except Exception:  # noqa: BLE001 - la classe peut disparaître en amont
+    warnings.filterwarnings(
+        "ignore", message=r".*HTTP_\d{3}_\w+.* is deprecated", module="gradio")
+
 import gradio as gr
 
 

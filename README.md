@@ -1292,6 +1292,17 @@ required.
   `CUDA: True/False`; if False, fix NVIDIA drivers and reinstall the tool.
 - **Creative SDXL upscale OOM** → lower the scale or tile size (it auto-offloads
   under 12 GB, but a huge target can still exceed memory).
+- **The console fills with `StarletteDeprecationWarning: 'HTTP_422_...' is
+  deprecated`** → noise from Gradio's own code, one line per queued request, so
+  a single generation buries the console. Nothing to fix on our side and it will
+  go away with a Gradio update; it is filtered out. It escaped the existing
+  filter for a precise reason: `StarletteDeprecationWarning` subclasses
+  **`UserWarning`**, not `DeprecationWarning`. The new filter is deliberately
+  narrow — silencing every `UserWarning` from Gradio would also have hidden
+  *"A function returned too many output values"*, which is exactly what revealed
+  that nine **Stop** buttons computed a cancellation message and threw it away
+  (`outputs=None`). Pressing Stop now writes that message where you can see it:
+  the status line, or appended to the log rather than replacing it.
 - **`ConnectionResetError [WinError 10054]` in the console** → harmless, and
   silenced since. It is a known Python bug on Windows (bpo-39010): when the
   browser drops a connection (F5, tab closed, cancelled image load), asyncio's

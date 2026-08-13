@@ -15,6 +15,7 @@ from .. import settings
 from ..engine import generate as gen_engine
 from ..engine import sdcpp
 from ..i18n import t
+from . import widgets
 
 # (valeur sd.cpp, libellé). Du plus lourd/fidèle au plus léger/agressif.
 # Les k-quants (q*_k) demandent un moteur récent ; en cas de refus, le journal
@@ -148,4 +149,4 @@ def build_convert_tab():
 
         evt = run.click(do_convert, inputs=[src, qtype, out_name],
                         outputs=[status, log])
-        stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])
+        widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])

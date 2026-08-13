@@ -321,7 +321,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             inputs=[image, direction, amount, model, prompt, fill, strength,
                     feather, tone, steps, seed],
             outputs=[status, result, log])
-        stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])
+        widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])
 
         # Enchaîner : le résultat redevient l'image d'entrée (extensions
         # successives, comme dans Midjourney).

@@ -1030,8 +1030,8 @@ def build_generative_tab(model_id: str, title: str,
         # et faire l'aller-retour jusqu'au bouton à chaque essai est le geste
         # qu'on répète le plus dans cette application.
         prompt.submit(**_gen_io)
-        stop.click(lambda: gen_engine.cancel(), outputs=None,
-                   cancels=[gen_evt])
+        widgets.stop_into_status(stop, gen_engine.cancel, status_md,
+                                 [gen_evt])
 
         # --- Seed : vidé -> -1 ; sélection -> affichage copiable ; réutiliser ---
         def _seed_default(v):

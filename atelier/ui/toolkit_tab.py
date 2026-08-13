@@ -373,8 +373,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 u_evt = u_run.click(do_upscale,
                                     inputs=[u_image, u_model, u_repeats],
                                     outputs=[u_result, u_log])
-                u_stop.click(lambda: gen_engine.cancel(), outputs=None,
-                             cancels=[u_evt])
+                widgets.stop_into_log(u_stop, gen_engine.cancel, u_log,
+                                      [u_evt])
 
             # ---------- Décomposition en calques (PSD) ----------------------
             with gr.Tab("🧩 Calques", id="layers"):
@@ -582,8 +582,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     inputs=[lay_image, lay_mode, lay_masks, lay_points,
                             lay_minarea, lay_max, lay_psd, lay_png],
                     outputs=[lay_files, lay_log])
-                lay_stop.click(lambda: tools.cancel(), outputs=None,
-                               cancels=[lay_evt])
+                widgets.stop_into_log(lay_stop, tools.cancel, lay_log,
+                                      [lay_evt])
 
             # ---------- HD natif sd.cpp (highres fix) -----------------------
             with gr.Tab("🚀 HD", id="hd"):
@@ -713,8 +713,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     inputs=[hd_image, hd_model, hd_scale, hd_denoise,
                             hd_upscaler, hd_prompt, hd_seed],
                     outputs=[hd_result, hd_log])
-                hd_stop.click(lambda: gen_engine.cancel(), outputs=None,
-                              cancels=[hd_evt])
+                widgets.stop_into_log(hd_stop, gen_engine.cancel, hd_log,
+                                      [hd_evt])
 
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
             with gr.Tab("🌱 Restaurer", id="seedvr2"):
@@ -824,8 +824,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     inputs=[seed_image, seed_res, seed_model, seed_blocks,
                             seed_tile, seed_overlap, seed_offload, seed_color],
                     outputs=[seed_result, seed_log])
-                seed_stop.click(lambda: tools.cancel(), outputs=None,
-                                cancels=[seed_evt])
+                widgets.stop_into_log(seed_stop, tools.cancel, seed_log,
+                                      [seed_evt])
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("✨ Upscale SDXL", id="creative"):
@@ -1115,7 +1115,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             c_steps, c_cfg, c_tile, c_controlnet, c_cnscale,
                             c_model, c_vae, c_esrgan],
                     outputs=[c_result, c_log])
-                c_stop.click(lambda: tools.cancel(), outputs=None, cancels=[c_evt])
+                widgets.stop_into_log(c_stop, tools.cancel, c_log, [c_evt])
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:

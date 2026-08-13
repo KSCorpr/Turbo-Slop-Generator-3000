@@ -27,3 +27,34 @@ GALLERY_BUTTONS: list[str] = ["download", "fullscreen"]
 
 # Champs texte : le bouton « copier » quand le contenu est fait pour être repris.
 TEXT_COPY: list[str] = ["copy"]
+
+
+# --------------------------------------------------------------------------- #
+#  Bouton « Stop »
+# --------------------------------------------------------------------------- #
+# Tous les boutons d'arrêt appelaient `cancel()`, qui RENVOIE un message
+# (« ⏹️ Génération annulée. »), avec `outputs=None`. Le message était donc
+# calculé puis jeté : on appuyait sur Stop et rien ne le confirmait à l'écran.
+# Gradio 6 le dit maintenant tout haut — « A function returned too many output
+# values (needed: 0, returned: 1) » — mais le défaut est plus ancien que
+# l'avertissement, et la bonne réponse n'est pas de le taire : c'est d'afficher
+# le message.
+
+def stop_into_status(button, cancel_fn, status, cancels) -> None:
+    """Arrêt dont la confirmation va dans une zone d'état (elle est remplacée)."""
+    button.click(lambda: cancel_fn(), outputs=[status], cancels=cancels)
+
+
+def stop_into_log(button, cancel_fn, log, cancels) -> None:
+    """Arrêt dont la confirmation s'AJOUTE au journal.
+
+    Écrire dans un journal, c'est le remplacer : on relit donc son contenu en
+    entrée pour poser la ligne à la suite, au lieu d'effacer la trace de ce
+    qu'on vient d'interrompre — c'est précisément ce qu'on veut consulter après
+    avoir appuyé sur Stop.
+    """
+    def _append(current):
+        msg = cancel_fn()
+        return f"{current}\n{msg}" if current else msg
+
+    button.click(_append, inputs=[log], outputs=[log], cancels=cancels)

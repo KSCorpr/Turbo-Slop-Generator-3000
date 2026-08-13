@@ -298,4 +298,4 @@ def build_xanax_tab(title: str = "💊 Xanax"):
         # QOL : Ctrl+Entrée depuis le champ de saisie lance la génération.
         prompt.submit(do_xanax, inputs=[model_pick, prompt, enhance, seed],
                       outputs=[status, result, used_md, log])
-        stop.click(lambda: gen_engine.cancel(), outputs=None, cancels=[evt])
+        widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])

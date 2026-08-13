@@ -404,8 +404,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     decim, atlas, no_texture,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
             outputs=[status, model3d, glb_file, log, res_status, seed_used])
-        stop.click(lambda: sdcpp.cancel_active(), outputs=None,
-                   cancels=[gen_evt])
+        widgets.stop_into_status(stop, sdcpp.cancel_active, status, [gen_evt])
 
         def _reuse_seed(v):
             try:
