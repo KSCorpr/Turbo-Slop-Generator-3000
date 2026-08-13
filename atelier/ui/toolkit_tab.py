@@ -7,6 +7,7 @@ from .. import downloader, hardware, registry, settings
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
+from . import preview
 
 # Préréglages de l'upscale créatif.
 #
@@ -78,6 +79,11 @@ UPSCALE_PRESETS = [
                "no artifacts, no grain",
      "denoise": 0.25},
 ]
+
+
+# Titre de l'aperçu de secours, partagé par les outils où l'on CLIQUE sur
+# l'image : c'est là que ne pas la voir est bloquant, pas seulement gênant.
+_FALLBACK_TITLE = "🖼️ Aperçu de secours (si l'image ne s'affiche pas)"
 
 
 def _installer_block(title: str, note: str, stream_fn, installed: bool):
@@ -237,6 +243,16 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 s_image.select(_on_click, inputs=[s_image],
                                outputs=[s_overlay, s_cut, s_info])
+
+                # Aperçu de secours : si la vignette du composant reste une
+                # icône cassée, l'image est quand même visible ici — les
+                # pixels sont dans la page, aucune requête n'est faite (voir
+                # atelier/ui/preview.py). Replié : doublon inutile quand
+                # l'aperçu normal fonctionne.
+                with gr.Accordion(_FALLBACK_TITLE, open=False):
+                    s_fallback = gr.HTML(preview.html(None))
+                s_image.change(preview.html, inputs=[s_image],
+                               outputs=[s_fallback])
 
                 def do_sam(cut):
                     if not cut:
@@ -457,6 +473,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 lay_mode.change(_lay_mode, inputs=[lay_mode],
                                 outputs=[lay_manual_box, lay_auto_box])
+
+                # Même aperçu de secours qu'en détourage : c'est ici qu'il
+                # manque le plus, le mode manuel consistant à cliquer sur ce
+                # qu'on ne voit pas.
+                with gr.Accordion(_FALLBACK_TITLE, open=False):
+                    lay_fallback = gr.HTML(preview.html(None))
+                lay_image.change(preview.html, inputs=[lay_image],
+                                 outputs=[lay_fallback])
 
                 def _lay_overlay(img, masks):
                     """Teinte les zones choisies, pour voir ce qu'on a."""

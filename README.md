@@ -1196,6 +1196,14 @@ maintenance) — the fastest way to know what a slider actually does.
      is listed, the report calls out a **truncated file**, an **extension that
      does not match the content** (a `.png` that is really a JPEG), and images
      so large the browser gives up decoding them.
+
+  Meanwhile, the two tools you drive by **clicking on the image** — 🪄 Cut out
+  (SAM) and 🧩 Layers in manual mode — carry a **🖼️ Fallback preview** panel
+  (folded, so it costs nothing when the normal thumbnail works). It shows the
+  same image as a `data:` URI: the pixels travel inside the page, so there is
+  no request, no path, no MIME type and no filename involved — it cannot fail
+  for any of the reasons above. It is for *seeing*, not for clicking: the click
+  still happens on the component itself.
   Note that emptying `tmp/` from **Manage & clean** *while the app is running*
   legitimately breaks already-displayed images until you reload the page.
 - **Model shows “to download”** → Model Catalog tab → **Download**.
