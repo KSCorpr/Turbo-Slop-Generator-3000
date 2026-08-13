@@ -114,10 +114,19 @@ class PatchIsWiredTests(unittest.TestCase):
                       "vérifier _upload_on_the_same_volume() dans app.py")
 
     def test_gradio_still_falls_back_to_a_background_copy(self):
-        """Le comportement amont qui rend le correctif nécessaire."""
+        """Le comportement amont qui rend le correctif nécessaire.
+
+        Cherché dans les DEUX modules : Gradio 6 a déplacé ce code de
+        `routes.py` vers `route_utils.py` sans rien changer au comportement.
+        Vérifier le fichier plutôt que le comportement faisait échouer le test
+        sur un simple déménagement — un faux blocage à la mise à jour.
+        """
+        import gradio.route_utils as ru
         import gradio.routes as gr_routes
-        src = Path(gr_routes.__file__).read_text(encoding="utf-8")
+        src = "\n".join(Path(m.__file__).read_text(encoding="utf-8")
+                        for m in (gr_routes, ru))
         self.assertIn("os.rename(temp_file.file.name, dest)", src)
+        self.assertIn("files_to_copy.append", src)
         self.assertIn("move_uploaded_files_to_cache", src)
 
 
