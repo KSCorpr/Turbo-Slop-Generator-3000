@@ -61,6 +61,7 @@ so the grouping is not decoration.)
 - [Models & sources](#models--sources)
 - [Project layout](#project-layout)
 - [Gradio version](#gradio-version)
+- [Trying MiniMax-H3 video (probe)](#trying-minimax-h3-video-probe)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgments](#acknowledgments)
 
@@ -1210,6 +1211,39 @@ What it did **not** change: the cross-volume upload race described below is
 present in Gradio 6 exactly as in 5.50 — same `os.rename`, same fallback to a
 background copy, just moved to another module. The fix in `app.py` is still
 required.
+
+## Trying MiniMax-H3 video (probe)
+
+sd.cpp gained **day-one MiniMax-H3 support on 4 August 2026** — video *and*
+synchronised audio, natively, no ComfyUI. Whether it is usable on an 11–12 GB
+card is a different question, so there is a probe rather than a feature:
+
+```
+update-engine.bat          :: the engine must be newer than 4 Aug 2026
+try-minimax.bat            :: checks engine, GPU and disk — downloads nothing
+try-minimax.bat --download :: the lightest published set, ~26 GB
+try-minimax.bat --run      :: two passes, timed
+```
+
+It adds nothing to the interface and writes nothing to the model catalog. It
+answers the only two questions that decide whether a video tab is worth
+building: **does the model fit in this card's VRAM**, and **does the 4-step
+Turbo LoRA apply**. The second is the real unknown — sd.cpp documents applying
+lightx2v turbo LoRAs to Wan 2.2 with `--steps 4`, but not to MiniMax-H3, and
+without it you are at the full step count.
+
+The weights: diffusion `ref2va_pruned-Q2_K_M` (6.7 GB), text encoder
+**Qwen3-VL 32B** `Q2_K_M` (13.1 GB — this is the real obstacle), video VAE
+(5.2 GB), audio VAE (0.6 GB), Turbo LoRA (~1 GB). They land in `models/` and are
+removable from **Manage & clean** like everything else.
+
+`ref2va` is a *reference*-to-video model, so it needs a source image: the probe
+takes the most recent one in `outputs/`, or `--ref path/to/image.png`. The two
+passes run the same generation with and without the LoRA and write two separate
+`.webm` files so you can compare them. Community reports put a 3060 12 GB at
+roughly 7–19 minutes for a 5–10 s clip, so the probe deliberately asks for
+22 frames (~0.9 s) — the point is to learn whether it starts and how fast, not
+to produce a clip.
 
 ## Troubleshooting
 
