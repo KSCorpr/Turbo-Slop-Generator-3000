@@ -100,6 +100,12 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _size_for(family: str) -> tuple[int, int]:
+    # startswith et non == : « krea2raw » partage la grille native du Turbo.
+    # Cet onglet ne le propose pas (52 pas, c'est l'inverse de son propos),
+    # mais un repli silencieux sur la grille Flux.2 serait faux le jour où on
+    # l'ajoute — et ne se verrait qu'à l'image produite.
+    if family.startswith("krea2"):
+        return XANAX_SIZE["krea2"]
     return XANAX_SIZE.get(family, (1184, 880))
 
 

@@ -979,28 +979,28 @@ _EN: dict[str, str] = {
         "📖 Why half of this menu is useless here",
     "La méthode de base : un pas, une évaluation, aucun ajout de bruit.":
         "The baseline method: one step, one evaluation, no added noise.",
-    "Prévisible, reproductible, et la seule qui n'a rien à « rattraper » sur un budget de 4 à 8 pas. C'est le défaut des deux modèles.":
-        "Predictable, reproducible, and the only one with nothing to “catch up” on a 4-to-8-step budget. It is the default for both models.",
+    "Prévisible, reproductible, et la seule qui n'a rien à « rattraper » quand les pas sont comptés. C'est le défaut de tous nos modèles.":
+        "Predictable, reproducible, and the only one with nothing to “catch up” when steps are scarce. It is the default on every one of our models.",
     "Aucun raffinement : sur BEAUCOUP de pas, d'autres méthodes la dépassent — mais on n'est pas dans ce régime.":
         "No refinement: over MANY steps other methods beat it — but that is not the regime we are in.",
     "Euler + réinjection de bruit frais à chaque pas.":
         "Euler plus a fresh injection of noise at every step.",
     "Sur des modèles non distillés et beaucoup de pas, apporte de la variété et du micro-détail.":
         "On non-distilled models with many steps, it adds variety and micro-detail.",
-    "Le bruit réinjecté doit être reconvergé — impossible en 4 à 8 pas. Résultat mou ou bruité, et deux rendus jamais identiques.":
-        "The injected noise has to be reconverged — impossible in 4 to 8 steps. Result: soft or noisy, and never twice the same render.",
+    "Le bruit réinjecté doit ensuite être reconvergé, ce qui demande un budget de pas confortable. Trop court : rendu mou ou bruité. Et deux rendus ne sont jamais identiques.":
+        "The injected noise then has to be reconverged, which takes a comfortable step budget. Too short: a soft or noisy render. And no two renders are ever alike.",
     "Euler avec une correction : deux évaluations par pas.":
         "Euler with a correction: two evaluations per step.",
     "Trajectoire plus juste par pas.":
         "A more accurate trajectory per step.",
-    "**Deux fois plus lent** à nombre de pas égal. À 4 pas, mieux vaut dépenser ce budget en pas supplémentaires d'Euler.":
-        "**Twice as slow** for the same step count. At 4 steps, that budget is better spent on extra Euler steps.",
+    "**Deux fois plus lent** à nombre de pas égal. Quand les pas sont comptés, ce budget est mieux dépensé en pas supplémentaires d'Euler.":
+        "**Twice as slow** for the same step count. When steps are scarce, that budget is better spent on extra Euler steps.",
     "Méthode d'ordre 2, deux évaluations par pas.":
         "A second-order method, two evaluations per step.",
     "Bonne précision par pas sur les modèles classiques.":
         "Good per-step accuracy on classic models.",
-    "Même coût double que Heun, pour un gain que le peu de pas ne laisse pas s'exprimer.":
-        "Same doubled cost as Heun, for a gain that so few steps never let show.",
+    "Même coût double que Heun ; il faut assez de pas pour que le gain s'exprime.":
+        "The same doubled cost as Heun; it takes enough steps for the gain to show.",
     "Ordre 2, à un seul pas de mémoire, avec bruit ancestral.":
         "Second order, single-step memory, with ancestral noise.",
     "Réputée sur SD1.5/SDXL en 20-30 pas.":
@@ -1011,8 +1011,8 @@ _EN: dict[str, str] = {
         "Multistep: it reuses the previous evaluation instead of computing a new one.",
     "Le meilleur rapport qualité/temps du lot… à partir d'une quinzaine de pas.":
         "The best quality/time ratio of the lot… from about fifteen steps up.",
-    "Son historique n'existe qu'après le 2ᵉ pas : sur 4 pas, la moitié du parcours se fait sans lui.":
-        "Its history only exists after the 2nd step: over 4 steps, half the run happens without it.",
+    "Son historique n'existe qu'après le 2ᵉ pas : sur un parcours très court, une bonne part se fait sans lui.":
+        "Its history only exists after the 2nd step: on a very short run, a good part of it happens without one.",
     "Variante de DPM++ 2M au calcul de pas révisé.":
         "A DPM++ 2M variant with a revised step computation.",
     "Corrige des artefacts de la v1 sur les premiers pas.":
@@ -1023,14 +1023,14 @@ _EN: dict[str, str] = {
         "DPM++ 2M in stochastic form (noise at every step).",
     "Texture plus riche sur les longs échantillonnages.":
         "Richer texture on long sampling runs.",
-    "Stochastique = même problème que l'ancestral sur un budget court, et rendu non reproductible.":
-        "Stochastic = the same problem as ancestral on a short budget, and a non-reproducible render.",
+    "Stochastique : même exigence de pas que l'ancestral, et rendu non reproductible.":
+        "Stochastic: the same step requirement as the ancestral ones, and a non-reproducible render.",
     "Variante à arbre brownien : le bruit devient reproductible.":
         "A Brownian-tree variant: the noise becomes reproducible.",
     "Retrouve la reproductibilité que la version SDE perd.":
         "Recovers the reproducibility the plain SDE version loses.",
-    "Reste stochastique dans son principe, donc mal servi par 4 à 8 pas.":
-        "Still stochastic in principle, so poorly served by 4 to 8 steps.",
+    "Reste stochastique dans son principe : il lui faut des pas.":
+        "Still stochastic in principle: it needs steps.",
     "Pseudo-multi-pas amélioré, sans bruit ajouté.":
         "Improved pseudo-multistep, with no added noise.",
     "Sobre et déterministe ; monte en qualité dès une dizaine de pas.":
@@ -1065,20 +1065,20 @@ _EN: dict[str, str] = {
         "An exponential multistep integrator.",
     "Très bonne précision sur les modèles de flow, à pas moyens.":
         "Very good accuracy on flow models, at medium step counts.",
-    "Multi-pas, donc bridé à 4 pas. Le candidat le plus crédible pour essayer autre chose sur Krea 2.":
-        "Multistep, so hobbled at 4 steps. The most credible candidate for trying something other than Euler on Krea 2.",
+    "Multi-pas : bridé quand les pas manquent. Le candidat le plus crédible pour essayer autre chose dès qu'il y en a.":
+        "Multistep: hobbled when steps are missing. The most credible candidate for trying something other than Euler as soon as there are some.",
     "Intégrateur exponentiel à un pas, ordre 2.":
         "A single-step, second-order exponential integrator.",
-    "Précis dès les premiers pas, sans historique à constituer — ce qui le rend, lui, compatible avec un budget court.":
-        "Accurate from the very first steps, with no history to build — which makes this one compatible with a short budget.",
+    "Précis dès les premiers pas, sans historique à constituer — ce qui le rend, lui, compatible avec un budget serré.":
+        "Accurate from the very first steps, with no history to build — which makes this one compatible with a tight budget.",
     "Deux évaluations par pas : à durée égale, Euler en fait deux fois plus.":
         "Two evaluations per step: for the same wall time, Euler does twice as many.",
     "Solveur SDE à réversibilité exacte.":
         "An exactly reversible SDE solver.",
     "Le plus rigoureux des stochastiques.":
         "The most rigorous of the stochastic methods.",
-    "Stochastique : mauvais usage d'un budget de 4 à 8 pas.":
-        "Stochastic: a poor use of a 4-to-8-step budget.",
+    "Stochastique : il lui faut des pas pour donner sa mesure.":
+        "Stochastic: it needs steps to show what it can do.",
     "Euler avec la correction de guidage « CFG++ ».":
         "Euler with the “CFG++” guidance correction.",
     "Enlève les sur-saturations dues à un CFG élevé.":
@@ -1089,20 +1089,20 @@ _EN: dict[str, str] = {
         "The ancestral version of the above: CFG++ correction plus a noise injection at every step.",
     "Aucun ici : la correction CFG++ est neutre à CFG 1.0, il ne reste que le bruit ancestral, qu'Euler Ancestral fournit déjà.":
         "None here: the CFG++ correction is a no-op at CFG 1.0, leaving only the ancestral noise, which Euler Ancestral already provides.",
-    "Cumule l'inutilité du CFG++ à CFG 1.0 et le bruit ancestral, qui n'a pas le temps de se résorber en 4 à 8 pas.":
-        "It stacks the uselessness of CFG++ at CFG 1.0 with ancestral noise, which has no time to settle in 4 to 8 steps.",
+    "Cumule l'inutilité du CFG++ à CFG 1.0 et le bruit ancestral, qui demande un budget de pas confortable pour se résorber.":
+        "It stacks the uselessness of CFG++ at CFG 1.0 with ancestral noise, which needs a comfortable step budget to settle.",
     "Euler à extrapolation de gradient (paramètre `gamma`).":
         "Euler with gradient extrapolation (the `gamma` parameter).",
-    "Peut resserrer le trait à très peu de pas — le seul du lot à viser explicitement ce régime.":
-        "Can tighten the result at very few steps — the only one of the lot explicitly aimed at this regime.",
+    "Peut resserrer le trait quand les pas sont très comptés — le seul du lot à viser explicitement ce régime.":
+        "Can tighten the result when steps are very scarce — the only one of the lot explicitly aimed at that regime.",
     "Non exposé ici : `gamma` se règle via `--extra-sample-args`, et sans lui l'effet est marginal.":
         "Not exposed here: `gamma` is set through `--extra-sample-args`, and without it the effect is marginal.",
     "Multi-pas linéaire classique (`lms_divisions`, défaut 1000).":
         "Classic linear multistep (`lms_divisions`, default 1000).",
     "Ajout récent de sd.cpp ; méthode éprouvée sur de longs parcours.":
         "A recent sd.cpp addition; a method proven on long runs.",
-    "Multi-pas : c'est exactement ce que 4 à 8 pas ne permettent pas.":
-        "Multistep: this is exactly what 4 to 8 steps do not allow.",
+    "Multi-pas : sans un vrai budget de pas, l'historique n'existe pas.":
+        "Multistep: without a real step budget, the history never exists.",
     "Auto (modèle)":
         "Auto (model)",
     "Laisse le moteur choisir d'après le modèle chargé.":
@@ -1163,8 +1163,8 @@ _EN: dict[str, str] = {
         "A spread minimising a KL divergence along the trajectory.",
     "Bien fondée théoriquement, correcte à pas moyens.":
         "Theoretically well founded, correct at medium step counts.",
-    "Gain non démontré sur un budget de 4 à 8 pas.":
-        "No demonstrated gain on a 4-to-8-step budget.",
+    "Gain non démontré quand les pas sont comptés.":
+        "No demonstrated gain when steps are scarce.",
     "Répartition des modèles Latent Consistency.":
         "The spread for Latent Consistency models.",
     "Indispensable — avec l'échantillonneur LCM.":
@@ -1215,6 +1215,10 @@ _EN: dict[str, str] = {
         "Over 4 steps there is virtually nothing to gain elsewhere; if you want to experiment, `Res 2S` is the only other one that is accurate without a history to build.",
     "Sur 8 pas, la marge est un peu plus large : `Res Multistep`, `DPM++ 2M` et le scheduler `AYS` (pensé pour les petits budgets de pas) valent un essai comparatif à seed fixe.":
         "Over 8 steps the margin is a little wider: `Res Multistep`, `DPM++ 2M` and the `AYS` scheduler (designed for small step budgets) are worth a side-by-side try at a fixed seed.",
+    "Sur **{model}**, le menu redevient un vrai menu — et c'est l'exception dans\ncette application.\n\nUne seule des trois propriétés qui restreignent les autres modèles s'applique\nencore ici :\n\n**1. C'est un modèle de *flow matching*.** Comme les autres. Les schedulers\n**Karras** et **Exponential** ont été conçus pour une autre mécanique (diffusion\nEDM à prédiction d'epsilon) : leur répartition de sigmas ne correspond toujours\npas au parcours suivi.\n\n**2. Il n'est PAS distillé.** Il tourne à **CFG {cfg}**, un vrai guidage. Deux\nconséquences directes : le **prompt négatif fonctionne enfin**, et la famille\n**CFG++** (`Euler CFG++`, `Euler Ancestral CFG++`) a de nouveau quelque chose à\ncorriger — elle passe de « déconseillée » à « utilisable ».\n\n**3. Il tourne en {steps} pas.** C'est confortable, et ça réhabilite les deux\nfamilles que les modèles distillés écartaient :\n\n- les méthodes **ancestrales** et **stochastiques** ont le temps de reconverger\n  le bruit qu'elles réinjectent ;\n- les méthodes **multi-pas** (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) ont\n  largement de quoi constituer leur historique — c'est leur terrain.\n\nEn sens inverse, ce qui visait explicitement le très-peu-de-pas perd son\nintérêt : `Euler GE`, et les schedulers **AYS** et **GITS**, calibrés pour les\npetits budgets de pas.\n\n**LCM** et **TCD** restent hors-jeu : ce sont les échantillonneurs de modèles\ndistillés *par ces méthodes-là*, et celui-ci ne l'est pas du tout.\n\n---\n\n**Ce qu'il reste, en pratique :** presque tout. {advice}\n\n*Ces verdicts sont raisonnés à partir des propriétés du modèle, pas tirés d'un\nbanc d'essai — ils disent où porter vos essais, pas ce que votre œil va\npréférer.*":
+        "On **{model}**, the menu becomes a real menu again — and that is the exception\nin this application.\n\nOnly one of the three properties that constrain the other models still applies\nhere:\n\n**1. It is a *flow matching* model.** Like the others. The **Karras** and\n**Exponential** schedulers were designed for another mechanism (EDM\nepsilon-prediction diffusion): their sigma spread still does not match the\ntrajectory followed.\n\n**2. It is NOT distilled.** It runs at **CFG {cfg}**, real guidance. Two direct\nconsequences: the **negative prompt finally works**, and the **CFG++** family\n(`Euler CFG++`, `Euler Ancestral CFG++`) has something to correct again — it\ngoes from “discouraged” to “usable”.\n\n**3. It runs in {steps} steps.** That is comfortable, and it rehabilitates the\ntwo families the distilled models ruled out:\n\n- the **ancestral** and **stochastic** methods have time to reconverge the noise\n  they inject;\n- the **multistep** methods (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) have\n  ample room to build their history — this is their home ground.\n\nThe other way round, whatever explicitly targeted very-few-steps loses its\npoint: `Euler GE`, and the **AYS** and **GITS** schedulers, calibrated for small\nstep budgets.\n\n**LCM** and **TCD** stay out: they are the samplers of models distilled *by\nthose very methods*, and this one is not distilled at all.\n\n---\n\n**What is left, in practice:** almost everything. {advice}\n\n*These verdicts are reasoned from the model's properties, not drawn from a\nbenchmark — they say where to aim your experiments, not what your eye will\nprefer.*",
+    "`DPM++ 2M` et `Res Multistep` sont ici sur leur terrain, et `Euler CFG++` mérite un essai si vos rendus paraissent sur-saturés. Le vrai levier reste ailleurs : c'est le seul modèle où le **prompt négatif** change quelque chose.":
+        "`DPM++ 2M` and `Res Multistep` are on home ground here, and `Euler CFG++` is worth a try if your renders look oversaturated. The real lever is elsewhere though: this is the only model where the **negative prompt** changes anything.",
 }
 
 _EN_INV: dict[str, str] = {v: k for k, v in _EN.items()}

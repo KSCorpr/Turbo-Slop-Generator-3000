@@ -66,7 +66,10 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
-    return RATIOS_KREA2 if family == "krea2" else RATIOS_FLUX2
+    # startswith et non == : « krea2raw » partage l'architecture du Turbo,
+    # donc ses résolutions natives. Une égalité stricte lui aurait donné la
+    # grille de Flux.2, hors de sa grille d'entraînement.
+    return RATIOS_KREA2 if family.startswith("krea2") else RATIOS_FLUX2
 
 
 def _defaults(model_id: str) -> dict:
@@ -674,7 +677,9 @@ def build_generative_tab(model_id: str, title: str,
 
         # --- Améliorateur de prompt (LLM) ---
         # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
-        _enh_auto = "krea2" if family == "krea2" else "generic"
+        # Même guide de prompt pour Raw que pour le Turbo : c'est le même
+        # modèle, seule la distillation les sépare.
+        _enh_auto = "krea2" if family.startswith("krea2") else "generic"
 
         def _enhance(sys_prompt, text, level, variants):
             if not (text or "").strip():

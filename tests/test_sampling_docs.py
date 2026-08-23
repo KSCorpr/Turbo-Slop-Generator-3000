@@ -28,7 +28,11 @@ ENGINE_SCHEDULERS = {
     "logit_normal", "flux2", "flux", "beta",
 }
 
-FAMILIES = ("flux2", "krea2")
+FAMILIES = ("flux2", "krea2", "krea2raw")
+# Les modèles distillés à CFG 1.0. Plusieurs verdicts découlent de CETTE
+# propriété et pas du modèle lui-même : les isoler évite d'écrire « partout »
+# là où on veut dire « sur les distillés ».
+DISTILLED = ("flux2", "krea2")
 
 
 class KeysMatchTheEngineTests(unittest.TestCase):
@@ -79,13 +83,23 @@ class DocumentationCompletenessTests(unittest.TestCase):
 class VerdictsFollowTheModelTests(unittest.TestCase):
     """Les verdicts doivent découler des propriétés vérifiées du modèle."""
 
-    def test_cfgpp_is_discouraged_everywhere(self):
-        # Les deux modèles tournent à CFG 1.0 : il n'y a aucun guidage à
-        # corriger, donc rien à attendre de cette famille.
-        for fam in FAMILIES:
-            for key in ("euler_cfg_pp", "euler_a_cfg_pp"):
+    _CFGPP = ("euler_cfg_pp", "euler_a_cfg_pp")
+
+    def test_cfgpp_is_discouraged_on_the_distilled_models(self):
+        # Ils tournent à CFG 1.0 : il n'y a aucun guidage à corriger, donc
+        # rien à attendre de cette famille.
+        for fam in DISTILLED:
+            for key in self._CFGPP:
                 self.assertEqual(sampling.level("sampler", key, fam),
                                  sampling.BAD, f"{key}/{fam}")
+
+    def test_cfgpp_is_not_discouraged_on_the_open_model(self):
+        """Le pendant du précédent, et la raison d'être de la 3e colonne :
+        Krea 2 Raw tourne à CFG 3,5, donc CFG++ a de nouveau quelque chose à
+        corriger. Recopier le verdict des distillés serait un contresens."""
+        for key in self._CFGPP:
+            self.assertNotEqual(sampling.level("sampler", key, "krea2raw"),
+                                sampling.BAD, key)
 
     def test_lcm_and_tcd_are_discouraged_everywhere(self):
         # Réservés aux modèles distillés PAR ces méthodes ; aucun des deux.
@@ -105,16 +119,32 @@ class VerdictsFollowTheModelTests(unittest.TestCase):
     def test_flux2_scheduler_is_best_on_flux2_only(self):
         self.assertEqual(sampling.level("schedule", "flux2", "flux2"),
                          sampling.BEST)
-        self.assertNotEqual(sampling.level("schedule", "flux2", "krea2"),
-                            sampling.BEST)
+        for fam in ("krea2", "krea2raw"):
+            self.assertNotEqual(sampling.level("schedule", "flux2", fam),
+                                sampling.BEST, fam)
 
-    def test_krea2_has_more_room_than_flux2(self):
-        """8 pas laissent plus de marge que 4 : le classement doit s'en ressentir."""
-        def usable(fam):
-            return sum(1 for k in sampling.SAMPLERS
-                       if sampling.level("sampler", k, fam)
-                       in (sampling.BEST, sampling.OK))
-        self.assertGreater(usable("krea2"), usable("flux2"))
+    @staticmethod
+    def _usable(fam):
+        return sum(1 for k in sampling.SAMPLERS
+                   if sampling.level("sampler", k, fam)
+                   in (sampling.BEST, sampling.OK))
+
+    def test_more_steps_open_more_samplers(self):
+        """4 pas < 8 pas < 52 pas : le classement doit suivre ce budget, sinon
+        les trois colonnes ne disent pas ce qu'elles prétendent dire."""
+        self.assertGreater(self._usable("krea2"), self._usable("flux2"))
+        self.assertGreater(self._usable("krea2raw"), self._usable("krea2"))
+
+    def test_the_open_model_penalises_the_few_steps_specialists(self):
+        """L'inverse doit être vrai aussi : ce qui visait explicitement le
+        très-peu-de-pas perd son intérêt quand le budget est large. Sans ça,
+        la 3e colonne serait un simple « tout est mieux »."""
+        for kind, key in (("sampler", "euler_ge"), ("schedule", "ays"),
+                          ("schedule", "gits")):
+            self.assertEqual(sampling.level(kind, key, "krea2"), sampling.OK,
+                             f"{kind}/{key}")
+            self.assertEqual(sampling.level(kind, key, "krea2raw"),
+                             sampling.MEH, f"{kind}/{key}")
 
 
 class EnglishCoverageTests(unittest.TestCase):
@@ -135,7 +165,8 @@ class EnglishCoverageTests(unittest.TestCase):
                     if txt not in i18n._EN:
                         missing.append(f"{kind}/{key} : {txt[:50]}…")
         for txt in list(sampling._VERDICT.values()) + \
-                list(sampling._ADVICE.values()) + [sampling._RATIONALE]:
+                list(sampling._ADVICE.values()) + \
+                [sampling._RATIONALE, sampling._RATIONALE_OPEN]:
             if txt not in i18n._EN:
                 missing.append(txt[:50] + "…")
         self.assertEqual(missing, [], "\n".join(missing))
@@ -186,11 +217,26 @@ class RenderingTests(unittest.TestCase):
     def test_rationale_is_model_specific(self):
         flux = sampling.rationale("flux2")
         krea = sampling.rationale("krea2")
+        raw = sampling.rationale("krea2raw")
         self.assertIn("Flux.2 Klein", flux)
         self.assertIn("4 pas", flux)
         self.assertIn("Krea 2 Turbo", krea)
         self.assertIn("8 pas", krea)
-        self.assertNotEqual(flux, krea)
+        self.assertIn("Krea 2 Raw", raw)
+        self.assertIn("52 pas", raw)
+        self.assertEqual(len({flux, krea, raw}), 3)
+
+    def test_the_open_model_gets_its_own_argument(self):
+        """Le dépliant du non-distillé n'est pas le même texte avec d'autres
+        chiffres : il dit l'inverse sur deux points. Les vérifier tous les deux,
+        parce que se tromper de gabarit passerait sinon inaperçu."""
+        raw = sampling.rationale("krea2raw")
+        self.assertIn("prompt négatif fonctionne", raw)
+        self.assertNotIn("prompt négatif est\nignoré", raw)
+        self.assertIn("CFG 3,5", raw)
+        for distilled in ("flux2", "krea2"):
+            txt = sampling.rationale(distilled)
+            self.assertIn("prompt négatif est\nignoré", txt)
 
 
 class ReadmeStaysInSyncTests(unittest.TestCase):
@@ -200,9 +246,13 @@ class ReadmeStaysInSyncTests(unittest.TestCase):
     _MARK_TO_LEVEL = {"⭐": sampling.BEST, "✓": sampling.OK,
                       "△": sampling.MEH, "⚠️": sampling.BAD}
 
-    def _readme_tables(self) -> dict[str, dict[str, tuple[str, str]]]:
+    # Une colonne par famille documentée, dans l'ordre des tableaux du README.
+    _COLUMNS = FAMILIES
+
+    def _readme_tables(self) -> dict[str, dict[str, tuple[str, ...]]]:
         readme = (Path(__file__).resolve().parent.parent / "README.md")
         kind, out = None, {"sampler": {}, "schedule": {}}
+        width = 1 + len(self._COLUMNS)
         for line in readme.read_text(encoding="utf-8").splitlines():
             if line.startswith("| Sampler |"):
                 kind = "sampler"
@@ -214,12 +264,15 @@ class ReadmeStaysInSyncTests(unittest.TestCase):
                 kind = None
                 continue
             cells = [c.strip() for c in line.strip("|").split("|")]
-            if kind is None or len(cells) != 3 or set(cells[0]) <= {"-", ":"}:
+            if kind is None or set(cells[0]) <= {"-", ":"}:
                 continue
+            # Une ligne large ou étroite est une colonne oubliée, pas une ligne
+            # à ignorer : l'ancienne version sautait en silence.
+            self.assertEqual(len(cells), width, f"tableau {kind} : {line}")
             keys = re.findall(r"`([^`]+)`", cells[0])
             self.assertTrue(keys, line)
             for key in keys:
-                out[kind][key] = (cells[1], cells[2])
+                out[kind][key] = tuple(cells[1:])
         return out
 
     def test_every_option_appears_exactly_once(self):
@@ -233,8 +286,8 @@ class ReadmeStaysInSyncTests(unittest.TestCase):
         tables = self._readme_tables()
         wrong = []
         for kind in ("sampler", "schedule"):
-            for key, (flux, krea) in tables[kind].items():
-                for mark, fam in ((flux, "flux2"), (krea, "krea2")):
+            for key, marks in tables[kind].items():
+                for mark, fam in zip(marks, self._COLUMNS):
                     got = self._MARK_TO_LEVEL.get(mark)
                     self.assertIsNotNone(got, f"marqueur inconnu : {mark!r}")
                     if got != sampling.level(kind, key, fam):
