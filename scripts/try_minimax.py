@@ -276,7 +276,8 @@ def pick_reference(explicit: str | None) -> Path | None:
 
 def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
               out_file: Path, ref: Path,
-              placement: list[str] | None = None) -> list[str]:
+              placement: list[str] | None = None,
+              cache: bool = False) -> list[str]:
     prompt = PROMPT
     extra: list[str] = []
     if turbo:
@@ -285,6 +286,8 @@ def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
         lora = paths["LoRA Turbo"]
         prompt = f"{PROMPT}<lora:{lora.stem}:1>"
         extra = ["--lora-model-dir", str(lora.parent), "--steps", "4"]
+    cache_args = (["--cache-mode", "easycache", "--cache-option",
+                   "threshold=0.15,start=0.15,end=0.9"] if cache else [])
     return [
         str(sd_cli),
         "--diffusion-model", str(paths["diffusion"]),
@@ -293,7 +296,7 @@ def build_cmd(sd_cli: Path, paths: dict[str, Path], turbo: bool,
         "--llm", str(paths["encodeur"]),
         "-p", prompt,
         "-r", str(ref),
-        *BASE_ARGS, *extra,
+        *BASE_ARGS, *extra, *cache_args,
         *(placement or []),
         "-o", str(out_file),
     ]
@@ -330,7 +333,8 @@ def _launch(cmd: list[str]) -> tuple[int, float, bool]:
 
 
 def run_pass(sd_cli: Path, paths: dict[str, Path], turbo: bool,
-             ref: Path, ladder: list[tuple[str, list[str]]]) -> str | None:
+             ref: Path, ladder: list[tuple[str, list[str]]],
+             cache: bool = False) -> str | None:
     """Essaie les placements jusqu'à ce que l'un passe. Rend celui qui a marché.
 
     On descend l'échelle SEULEMENT sur un manque de mémoire : sur une autre
@@ -341,7 +345,8 @@ def run_pass(sd_cli: Path, paths: dict[str, Path], turbo: bool,
     out_file = out_path(turbo)
 
     for i, (label, extra) in enumerate(ladder, 1):
-        cmd = build_cmd(sd_cli, paths, turbo, out_file, ref, placement=extra)
+        cmd = build_cmd(sd_cli, paths, turbo, out_file, ref, placement=extra,
+                        cache=cache)
         log()
         log(f"── {name} · placement {i}/{len(ladder)} : {label} ──")
         log(" ".join(f'"{c}"' if " " in c else c for c in cmd))
@@ -384,6 +389,8 @@ def main() -> int:
                     help="ne faire que la passe sans LoRA")
     ap.add_argument("--ref", default=None,
                     help="image de référence (défaut : la dernière de outputs/)")
+    ap.add_argument("--cache", action="store_true",
+                    help="teste EasyCache prudent (opt-in, qualité à comparer)")
     args = ap.parse_args()
     if not (args.check or args.download or args.run):
         args.check = True
@@ -408,6 +415,9 @@ def main() -> int:
         return 0
 
     sd_cli = settings.find_sd_cli()
+    if args.cache and "--cache-mode" not in sdcpp.supported_options(sd_cli):
+        log("✗ ce moteur ne connaît pas --cache-mode → update-engine.bat")
+        return 1
     ref = pick_reference(args.ref)
     if ref is None:
         log()
@@ -417,12 +427,14 @@ def main() -> int:
         return 1
     log(f"  référence : {ref}")
     ladder = placements(hardware.detect_gpus())
-    base_ok = run_pass(sd_cli, paths, turbo=False, ref=ref, ladder=ladder)
+    base_ok = run_pass(sd_cli, paths, turbo=False, ref=ref, ladder=ladder,
+                       cache=args.cache)
     turbo_ok = None if args.no_turbo else run_pass(
         sd_cli, paths, turbo=True, ref=ref,
         # Une fois un placement trouvé, on ne recommence pas l'escalade : la
         # seconde passe teste la LoRA, pas la mémoire.
-        ladder=[(l, e) for l, e in ladder if l == base_ok] or ladder)
+        ladder=[(l, e) for l, e in ladder if l == base_ok] or ladder,
+        cache=args.cache)
 
     log()
     log("── Verdict ────────────────────────────────────────────────")

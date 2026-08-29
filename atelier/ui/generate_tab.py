@@ -120,6 +120,20 @@ def build_generative_tab(model_id: str, title: str,
         gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
             title=title, mode=_mode, status=status))
 
+        # Une variante de moteur, pas un nouvel onglet : le workflow et tous les
+        # réglages Krea restent identiques. GGUF demeure le défaut tant que le
+        # test A/B local n'a pas démontré que l'INT8 vaut mieux sur cette carte.
+        if model_id == "krea2-turbo":
+            variant_model = gr.Radio(
+                [("GGUF — recommandé et éprouvé", "krea2-turbo"),
+                 ("INT8 ConvRot — expérimental RTX 30xx",
+                  "krea2-turbo-int8")],
+                value="krea2-turbo", label="Format du modèle de diffusion",
+                info="Téléchargez la variante INT8 dans le Catalogue, puis "
+                     "comparez-la avec le bouton A/B des Réglages.")
+        else:
+            variant_model = gr.State(model_id)
+
         with gr.Row():
             # ----- Entrées -----
             with gr.Column(scale=3):
@@ -795,7 +809,8 @@ def build_generative_tab(model_id: str, title: str,
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
 
-        def do_generate(system_prompt, prompt, negative, photo_styles, art_styles,
+        def do_generate(selected_model_id, system_prompt, prompt, negative,
+                        photo_styles, art_styles,
                         init_image,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
@@ -915,7 +930,7 @@ def build_generative_tab(model_id: str, title: str,
             def worker():
                 try:
                     outs = gen_engine.generate(
-                        model_id=model_id, prompt=full_prompt,
+                        model_id=selected_model_id or model_id, prompt=full_prompt,
                         negative=neg_text or "", steps=int(steps),
                         cfg_scale=float(cfg), width=int(width), height=int(height),
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
@@ -1020,7 +1035,8 @@ def build_generative_tab(model_id: str, title: str,
 
         _gen_io = dict(
             fn=do_generate,
-            inputs=[system_prompt, prompt, negative, photo_pick, art_pick,
+            inputs=[variant_model, system_prompt, prompt, negative,
+                    photo_pick, art_pick,
                     init_image,
                     ref_image2, ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,

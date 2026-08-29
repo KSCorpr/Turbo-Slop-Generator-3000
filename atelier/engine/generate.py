@@ -140,8 +140,10 @@ def generate(
     # laisse la génération ordinaire tranquille).
     max_vram: str | None = None,
     log: Callable[[str], None] | None = None,
+    # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
+    prefs_override: dict | None = None,
 ) -> list[Path]:
-    prefs = settings.load_prefs()
+    prefs = prefs_override if prefs_override is not None else settings.load_prefs()
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
@@ -207,16 +209,57 @@ def generate(
     split_gpu = (not auto_fit) and enc_gpu is not None and enc_gpu != gpu_index
     all_gpus = auto_fit or split_gpu
     if auto_fit:
-        # Harmonisation : auto-fit gère lui-même le placement et IGNORE
-        # --offload-to-cpu (le forcer en même temps ne fait qu'ajouter de la
-        # confusion : sd.cpp met tout en VRAM). On le retire, et on force le VAE
-        # tiling pour réduire le pic mémoire du décodage VAE — principale cause
-        # d'OOM quand DiT + VAE atterrissent sur la même carte.
+        # Auto-fit gère lui-même la résidence : VRAM si ça tient, puis partage
+        # temporel, RAM/disque et découpe des modules si nécessaire. On retire
+        # les anciens raccourcis CPU pour ne pas court-circuiter cet arbitrage,
+        # et on garde le VAE tiling comme garde-fou au décodage.
         flags = {**flags, "offload_to_cpu": False, "vae_tiling": True}
 
     # LoRA : via tags <lora:…> dans le prompt + --lora-model-dir (mode sd-cli).
     final_prompt = _apply_loras(prompt, loras)
     lora_dir = settings.LORA_DIR if loras else None
+
+    raw_params_backend = prefs.get("params_backend") or ""
+    params_backend = "" if auto_fit else raw_params_backend
+    # Si l'utilisateur choisit le split d'encodeur et que le moteur moderne est
+    # installé, le placement attendu est la valeur sûre : poids ET calcul sur
+    # la même carte. L'ancien mode global RAM reste mesuré par le benchmark.
+    if split_gpu and not params_backend:
+        # En mono-GPU, CUDA_VISIBLE_DEVICES remappe la carte choisie en cuda0.
+        # En split, toutes les cartes restent visibles et gardent leurs index.
+        g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
+        params_backend = f"diffusion=cuda{g},vae=cuda{g},te=cuda{enc_gpu}"
+
+    stream_layers = bool(prefs.get("stream_layers"))
+    if model.defaults.get("memory_preset") == "int8_stream":
+        # Le checkpoint INT8 ConvRot fait ~13 Go : sur une 3060 12 Go, tenter
+        # de le rendre entièrement résident est un OOM certain. Les poids de
+        # diffusion restent en RAM et sd.cpp charge chaque couche pour la
+        # calculer sur Ampere. VAE et encodeur restent sur leurs cartes quand
+        # le split mesuré est disponible.
+        if "--params-backend" not in sdcpp.supported_options(sd_cli):
+            raise sdcpp.EngineError(
+                "Krea 2 INT8 ConvRot exige un moteur sd.cpp récent "
+                "(--params-backend). Lancez update-engine.bat.")
+        # Le streaming INT8 impose déjà sa résidence. Ne jamais lui ajouter
+        # --auto-fit, qui tenterait de décider une seconde fois où vont les
+        # mêmes paramètres.
+        auto_fit = False
+        split_gpu = enc_gpu is not None and enc_gpu != gpu_index
+        all_gpus = split_gpu
+        g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
+        te = f"cuda{enc_gpu}" if split_gpu else "cpu"
+        params_backend = f"diffusion=cpu,vae=cuda{g},te={te}"
+        flags = {**flags, "offload_to_cpu": False,
+                 "clip_on_cpu": False, "vae_on_cpu": False}
+        stream_layers = True
+
+    cache_mode = prefs.get("cache_mode") or ""
+    cache_option = prefs.get("cache_option") or ""
+    targeted = (prefs.get("cache_by_model") or {}).get(model_id) or {}
+    if not cache_mode and isinstance(targeted, dict):
+        cache_mode = targeted.get("mode") or ""
+        cache_option = targeted.get("option") or ""
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
@@ -234,13 +277,13 @@ def generate(
         lora_dir=lora_dir, preview_path=preview_path,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
+        params_backend=params_backend,
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
-        cache_mode=prefs.get("cache_mode") or "",
-        cache_option=prefs.get("cache_option") or "",
+        cache_mode=cache_mode, cache_option=cache_option,
         hires=hires,
         max_vram=(max_vram if max_vram is not None
                   else sdcpp.max_vram_arg(prefs.get("max_vram") or "")),
-        stream_layers=bool(prefs.get("stream_layers")),
+        stream_layers=stream_layers,
     )
     out = sdcpp.unique_output(model.family)
     cmd = sdcpp.build_gen_cmd(sd_cli, req, out)

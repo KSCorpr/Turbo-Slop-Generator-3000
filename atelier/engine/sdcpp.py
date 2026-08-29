@@ -118,6 +118,9 @@ class GenRequest:
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
     # via --backend te=cudaX. None = encodeur sur le GPU principal / RAM.
     encoder_gpu_index: int | None = None
+    # Backend de RÉSIDENCE des poids, distinct du backend de CALCUL ci-dessus.
+    # Ex. "diffusion=cuda0,vae=cuda0,te=cuda1".
+    params_backend: str = ""
     # EXPÉRIMENTAL : répartition auto du modèle sur tous les GPU (--auto-fit).
     # Prioritaire sur le split d'encodeur (auto-fit remplace --backend).
     auto_fit: bool = False
@@ -360,12 +363,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
-    if req.max_vram and max_vram_supported(sd_cli):
+    known = supported_options(sd_cli)
+    if req.max_vram and "--max-vram" in known:
         cmd += ["--max-vram", req.max_vram]
-        # `--stream-layers` n'a aucun effet sans `--max-vram` : le lier ici
-        # évite d'envoyer une option inerte.
-        if req.stream_layers and "--stream-layers" in supported_options(sd_cli):
-            cmd.append("--stream-layers")
     if req.hires and hires_supported(sd_cli):
         cmd += hires_args(req.hires)
     if req.preview_path:
@@ -377,7 +377,29 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
-    cmd += _flag_args(req.flags, sd_cli)
+    # Résidence explicite des poids. `--offload-to-cpu` est un ancien raccourci
+    # équivalent à params *=cpu : l'envoyer en même temps rendrait le résultat
+    # dépendant de l'ordre de parsing. Quand l'option moderne existe, elle est
+    # seule à décider de la résidence.
+    params_supported = "--params-backend" in known
+    effective_flags = dict(req.flags)
+    if req.params_backend and params_supported:
+        cmd += ["--params-backend", req.params_backend]
+        for legacy in ("offload_to_cpu", "clip_on_cpu", "vae_on_cpu"):
+            effective_flags[legacy] = False
+
+    # Le streaming ne dépend pas de --max-vram. Il dépend de poids de diffusion
+    # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
+    params_low = (req.params_backend or "").lower().replace(" ", "")
+    diffusion_on_cpu = (
+        bool(effective_flags.get("offload_to_cpu"))
+        or (params_supported and (
+            "diffusion=cpu" in params_low or "*=cpu" in params_low))
+    )
+    if req.stream_layers and diffusion_on_cpu and "--stream-layers" in known:
+        cmd.append("--stream-layers")
+
+    cmd += _flag_args(effective_flags, sd_cli)
     # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
     # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
     # principal, encodeur (te) sur l'autre. Ordre CUDA par bus PCI forcé via env.

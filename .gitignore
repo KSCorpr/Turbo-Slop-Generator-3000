@@ -2,6 +2,10 @@
 models/
 loras/
 bin/
+.engine-previous/
+.engine-broken/
+.engine-swap/
+.engine-stage-*/
 vendor/
 tools_repo/
 

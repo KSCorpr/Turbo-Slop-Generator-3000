@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import hardware, settings
+from .. import benchmark, diagnostics, hardware, settings
 from ..i18n import t
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
@@ -36,6 +36,8 @@ def _gpu_strategy(prefs) -> str:
         return "autofit"
     eg = prefs.get("encoder_gpu_index")
     if eg is not None and eg != prefs.get("gpu_index"):
+        if (prefs.get("params_backend") or "").replace(" ", "") == "*=cpu":
+            return "encoder-staged"
         return "encoder"
     return "single"
 
@@ -130,13 +132,20 @@ def build_settings_tab():
                     "RAM par défaut). Le plus fiable.\n"
                     "- **Encodeur sur la 2e carte** : l'encodeur de texte va sur "
                     "l'autre GPU, la diffusion reste sur le principal.\n"
-                    "- **Auto-fit** : sd.cpp répartit diffusion/encodeur/VAE sur "
-                    "toutes les cartes. ⚠️ force tout en VRAM (désactive l'offload) "
-                    "→ risque d'OOM sur les modèles à gros encodeur (Flux.2 Klein). "
-                    "À réserver aux modèles qui tiennent dans la VRAM cumulée.")
+                    "- **Encodeur calculé sur la 2e carte, poids en RAM** : repli "
+                    "mesurable pour un ancien moteur ou si la résidence GPU est "
+                    "plus lente sur votre topologie.\n"
+                    "- **Auto-fit** : sd.cpp choisit la résidence selon la mémoire "
+                    "libre. Si tout ne tient pas, il peut partager les modules dans "
+                    "le temps, utiliser RAM/disque et retenter le VAE en tuiles. "
+                    "Sur deux cartes très différentes ou reliées par un port x4, "
+                    "ce choix reste à mesurer : il connaît la mémoire, pas le coût "
+                    "réel du lien PCIe.")
                 gpu_strategy = gr.Radio(
                     [(t("Une seule carte (recommandé)"), "single"),
                      (t("Encodeur de texte sur la 2e carte"), "encoder"),
+                     (t("Encodeur sur la 2e carte, poids en RAM"),
+                      "encoder-staged"),
                      (t("Auto-fit : répartir sur toutes les cartes"), "autofit")],
                     value=_gpu_strategy(prefs), label="Stratégie multi-GPU")
                 tools_gpu = gr.Dropdown(
@@ -151,7 +160,8 @@ def build_settings_tab():
                         variant="primary")
                     combo_msg = gr.Markdown(
                         "La RTX 3060 calcule diffusion/VAE ; la GTX 1080 Ti "
-                        "prend l'encodeur et l'améliorateur de prompt. "
+                        "prend l'encodeur **et garde ses poids en VRAM** grâce à "
+                        "`--params-backend`. "
                         "Auto-fit et row split restent désactivés.")
         else:
             gpu_strategy = gr.State(_gpu_strategy(prefs))
@@ -177,6 +187,11 @@ def build_settings_tab():
                 cache_opt = gr.Textbox(
                     value=prefs.get("cache_option", ""),
                     label="Option (vide = défauts)", placeholder="ex. threshold=0.2")
+            _targeted = prefs.get("cache_by_model") or {}
+            raw_cache = gr.Checkbox(
+                value="krea2-raw" in _targeted,
+                label="Preset prudent uniquement pour Krea 2 Raw",
+                info="EasyCache threshold=0.15. Ne touche ni Krea Turbo ni Flux.2.")
 
             gr.Markdown(
                 "---\n"
@@ -227,10 +242,79 @@ def build_settings_tab():
                          "sur une machine multi-cartes.")
                 stream_layers = gr.Checkbox(
                     value=bool(prefs.get("stream_layers")),
-                    label="Streaming des couches (sans effet sans budget)",
-                    info="Précharge les couches à la demande. Encore plus "
-                         "dépendant du PCIe : à n'essayer que si le budget seul "
-                         "ne suffit pas.")
+                    label="Streaming des couches depuis la RAM",
+                    info="Requiert les poids de diffusion en RAM, mais pas de "
+                         "budget --max-vram. Très dépendant du PCIe.")
+
+        # ------------------------------------------------------------------ #
+        #  Mesure reproductible + rapport partageable
+        # ------------------------------------------------------------------ #
+        with gr.Accordion("🧪 Mesurer cette machine", open=False):
+            gr.Markdown(
+                "Le test génère la même image en **512×512, 4 pas, seed 424242** "
+                "avec chaque placement disponible. Il mesure le temps et le pic "
+                "VRAM, conserve les images pour comparaison et ne modifie aucun "
+                "réglage tant que vous ne cliquez pas sur **Appliquer**.")
+            system_md = gr.Markdown(diagnostics.summary_markdown())
+            with gr.Row():
+                report_btn = gr.Button("📋 Exporter le rapport système")
+                bench_btn = gr.Button("⏱️ Tester les placements GPU",
+                                      variant="primary")
+                krea_btn = gr.Button("A/B Krea GGUF ↔ INT8")
+            with gr.Row():
+                apply_bench = gr.Button("Appliquer le profil le plus rapide")
+            bench_status = gr.Markdown("")
+            bench_file = gr.File(label="Rapport JSON", interactive=False)
+            bench_log = gr.Textbox(label="Journal du test", lines=10,
+                                   autoscroll=True, elem_classes="log-box")
+
+            def _system_report():
+                path = diagnostics.write_system_report()
+                return diagnostics.summary_markdown(), str(path), \
+                    f"✅ Rapport créé : `{path.name}`"
+
+            report_btn.click(_system_report,
+                             outputs=[system_md, bench_file, bench_status])
+
+            def _run_hardware_bench():
+                logs: list[str] = []
+                try:
+                    path = benchmark.run_hardware_benchmark(log=logs.append)
+                    data = __import__("json").loads(path.read_text(encoding="utf-8"))
+                    winner = data.get("recommended_mode") or "aucun"
+                    return (f"✅ Test terminé · profil le plus rapide : "
+                            f"**{winner}**", str(path), "\n".join(logs[-500:]))
+                except Exception as exc:  # noqa: BLE001
+                    return f"❌ {exc}", None, "\n".join(logs[-500:])
+
+            bench_btn.click(_run_hardware_bench,
+                            outputs=[bench_status, bench_file, bench_log])
+
+            def _run_krea_bench():
+                logs: list[str] = []
+                try:
+                    path = benchmark.compare_krea_variants(log=logs.append)
+                    return ("✅ Comparaison terminée. Regardez les deux images : "
+                            "la vitesse seule ne décide pas de la qualité.",
+                            str(path), "\n".join(logs[-500:]))
+                except Exception as exc:  # noqa: BLE001
+                    return f"❌ {exc}", None, "\n".join(logs[-500:])
+
+            krea_btn.click(_run_krea_bench,
+                           outputs=[bench_status, bench_file, bench_log])
+
+            def _apply_report(raw):
+                if not raw:
+                    return "❌ Lancez d'abord le test des placements."
+                path = getattr(raw, "name", raw)
+                try:
+                    mode = benchmark.apply_recommendation(path)
+                    return f"✅ Profil mesuré appliqué : **{mode}**."
+                except Exception as exc:  # noqa: BLE001
+                    return f"❌ {exc}"
+
+            apply_bench.click(_apply_report, inputs=[bench_file],
+                              outputs=[bench_status])
 
         # ------------------------------------------------------------------ #
         #  Réseau & comptes
@@ -248,7 +332,7 @@ def build_settings_tab():
 
         def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
                     offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
-                    conv_diff, conv_vae, max_vram, stream_layers,
+                    raw_cache, conv_diff, conv_vae, max_vram, stream_layers,
                     hf_ep, civitai_tok):
             p = settings.load_prefs()
             # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
@@ -264,9 +348,25 @@ def build_settings_tab():
                 max(gpus, key=lambda x: x.vram_gb).index if gpus else None)
             other = next((g.index for g in gpus if g.index != sel), None)
             p["auto_fit"] = (gpu_strategy == "autofit")
-            p["encoder_gpu_index"] = other if gpu_strategy == "encoder" else None
+            split_encoder = gpu_strategy in {"encoder", "encoder-staged"}
+            p["encoder_gpu_index"] = other if split_encoder else None
+            if split_encoder and sel is not None and other is not None:
+                p["params_backend"] = (
+                    "*=cpu" if gpu_strategy == "encoder-staged" else
+                    f"diffusion=cuda{sel},vae=cuda{sel},te=cuda{other}")
+            else:
+                p["params_backend"] = ""
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
+            by_model = dict(p.get("cache_by_model") or {})
+            if raw_cache:
+                by_model["krea2-raw"] = {
+                    "mode": "easycache",
+                    "option": "threshold=0.15,start=0.15,end=0.9",
+                }
+            else:
+                by_model.pop("krea2-raw", None)
+            p["cache_by_model"] = by_model
             # Hors de « flags » : voir settings.DEFAULT_PREFS.
             p["conv_direct_diffusion"] = bool(conv_diff)
             p["conv_direct_vae"] = bool(conv_vae)
@@ -289,7 +389,7 @@ def build_settings_tab():
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
                            enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
-                           cache_mode, cache_opt, conv_diff, conv_vae,
+                           cache_mode, cache_opt, raw_cache, conv_diff, conv_vae,
                            max_vram, stream_layers, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 

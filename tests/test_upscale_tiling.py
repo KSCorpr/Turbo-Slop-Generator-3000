@@ -225,15 +225,27 @@ class MaxVramTests(unittest.TestCase):
             cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
         self.assertNotIn("--max-vram", cmd)
 
-    def test_stream_layers_never_sent_alone(self):
-        # `--stream-layers` est sans effet sans `--max-vram` : l'envoyer seul
-        # serait une option inerte de plus dans la ligne de commande.
+    def test_stream_layers_does_not_require_max_vram(self):
+        # Le prérequis réel est la résidence CPU des poids de diffusion, pas un
+        # budget de graphe. Les deux options peuvent être utilisées séparément.
         req = sdcpp.GenRequest(diffusion_model=Path("d.gguf"), max_vram="",
-                               stream_layers=True)
+                               stream_layers=True,
+                               flags={"offload_to_cpu": True})
         with patch.object(sdcpp, "_require", lambda *a, **k: None), \
              patch.object(sdcpp, "supported_options",
                           return_value=frozenset({"--max-vram",
                                                   "--stream-layers"})):
+            cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
+        self.assertIn("--stream-layers", cmd)
+
+    def test_stream_layers_is_not_sent_for_gpu_resident_weights(self):
+        req = sdcpp.GenRequest(
+            diffusion_model=Path("d.gguf"), stream_layers=True,
+            params_backend="diffusion=cuda0,vae=cuda0,te=cuda1")
+        with patch.object(sdcpp, "_require", lambda *a, **k: None), \
+             patch.object(sdcpp, "supported_options",
+                          return_value=frozenset({"--stream-layers",
+                                                  "--params-backend"})):
             cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("o.png"))
         self.assertNotIn("--stream-layers", cmd)
 

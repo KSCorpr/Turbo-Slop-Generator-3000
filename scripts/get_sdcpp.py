@@ -14,16 +14,21 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.util
 import io
 import json
+import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -35,6 +40,12 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
+PREVIOUS_DIR = ROOT / ".engine-previous"
+ENGINE_MANIFEST = "engine-manifest.json"
+# Les correctifs de découpe du graphe et de re-clamp du budget VRAM sont dans
+# les builds officiels 823+. Refuser un build plus ancien évite une régression
+# comportementale que la simple détection de flags ne peut pas voir.
+MIN_OFFICIAL_BUILD = 823
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
 # Build MAISON (CI GitHub Actions du projet) : release au tag mouvant, binaire
 # compilé pour les archis des cartes du projet (2080 Ti=75, 3060=86).
@@ -43,32 +54,33 @@ OUR_TAG = "engine-latest"
 _UA = {"User-Agent": "atelier"}
 
 
-def _has_sd_cli() -> bool:
+def _has_sd_cli(root: Path = BIN_DIR) -> bool:
     names = ("sd-cli.exe", "sd.exe") if platform.system() == "Windows" \
         else ("sd-cli", "sd")
-    return any(any(BIN_DIR.rglob(n)) for n in names) if BIN_DIR.exists() else False
+    return any(any(root.rglob(n)) for n in names) if root.exists() else False
 
 
 # DLL du runtime CUDA 12 nécessaires à la build CUDA de stable-diffusion.cpp.
 _CUDA_DLLS = ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll")
 
 
-def _cuda_runtime_present() -> bool:
-    return all((BIN_DIR / d).is_file() for d in _CUDA_DLLS) or \
-        bool(list(BIN_DIR.rglob("cudart64_12.dll")))
+def _cuda_runtime_present(root: Path = BIN_DIR) -> bool:
+    return all((root / d).is_file() for d in _CUDA_DLLS) or \
+        bool(list(root.rglob("cudart64_12.dll")))
 
 
 def _pip(*args: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", *args])
 
 
-def _copy_dlls_from(root: Path) -> int:
-    """Copie les DLL CUDA trouvées sous `root` (récursif) vers bin/."""
+def _copy_dlls_from(root: Path, target: Path = BIN_DIR) -> int:
+    """Copie les DLL CUDA trouvées sous `root` vers le dossier cible."""
+    target.mkdir(parents=True, exist_ok=True)
     n = 0
     wanted = {d.lower() for d in _CUDA_DLLS}
     for dll in root.rglob("*.dll"):
-        if dll.name.lower() in wanted and not (BIN_DIR / dll.name).exists():
-            shutil.copy(dll, BIN_DIR / dll.name)
+        if dll.name.lower() in wanted and not (target / dll.name).exists():
+            shutil.copy(dll, target / dll.name)
             print(f"     + {dll.name}", flush=True)
             n += 1
     return n
@@ -90,23 +102,23 @@ def _nvidia_pkg_dir() -> Path | None:
     return None
 
 
-def ensure_cuda_runtime() -> bool:
+def ensure_cuda_runtime(target: Path = BIN_DIR) -> bool:
     """Met les DLL du runtime CUDA dans bin/ via des sources qui marchent
     partout (PyPI), SANS dépendre du CDN des releases GitHub.
 
     Ordre : déjà présent -> torch/lib (si torch CUDA installé) -> wheels NVIDIA
     PyPI -> en dernier recours, torch CUDA puis copie.
     """
-    BIN_DIR.mkdir(parents=True, exist_ok=True)
-    if _cuda_runtime_present():
-        print("Runtime CUDA déjà présent dans bin/.")
+    target.mkdir(parents=True, exist_ok=True)
+    if _cuda_runtime_present(target):
+        print("Runtime CUDA déjà présent.")
         return True
 
     # 1) Réutiliser les DLL embarquées par un torch CUDA déjà installé.
     lib = _torch_lib_dir()
     if lib and (lib / "cudart64_12.dll").is_file():
         print("Copie des DLL CUDA depuis torch/lib…")
-        if _copy_dlls_from(lib) >= 2:
+        if _copy_dlls_from(lib, target) >= 2:
             return True
 
     # 2) Wheels NVIDIA depuis PyPI (léger, et PyPI fonctionne sur votre réseau).
@@ -114,7 +126,7 @@ def ensure_cuda_runtime() -> bool:
         print("Récupération du runtime CUDA via PyPI (nvidia-*-cu12)…")
         _pip("nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12")
         nv = _nvidia_pkg_dir()
-        if nv and _copy_dlls_from(nv) >= 2:
+        if nv and _copy_dlls_from(nv, target) >= 2:
             return True
     except Exception as exc:  # noqa: BLE001
         print(f"   (wheels NVIDIA indisponibles : {exc})", flush=True)
@@ -129,12 +141,12 @@ def ensure_cuda_runtime() -> bool:
         _pip("--no-cache-dir", "torch==2.3.0", "torchvision==0.18.0",
              "--index-url", "https://download.pytorch.org/whl/cu121")
         lib = _torch_lib_dir()
-        if lib and _copy_dlls_from(lib) >= 2:
+        if lib and _copy_dlls_from(lib, target) >= 2:
             return True
     except Exception as exc:  # noqa: BLE001
         print(f"   (échec torch : {exc})", flush=True)
 
-    return _cuda_runtime_present()
+    return _cuda_runtime_present(target)
 
 
 def _force_ipv4():
@@ -349,7 +361,7 @@ def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
     return data
 
 
-def _restore_exec_bits() -> None:
+def _restore_exec_bits(root: Path = BIN_DIR) -> None:
     """Rend le binaire exécutable après extraction (macOS / Linux).
 
     `zipfile.extractall` ne restitue PAS les permissions Unix : le sd-cli sorti
@@ -360,7 +372,7 @@ def _restore_exec_bits() -> None:
         return
     import stat
     for name in ("sd-cli", "sd"):
-        for p in BIN_DIR.rglob(name):
+        for p in root.rglob(name):
             if not p.is_file():
                 continue
             try:
@@ -371,15 +383,172 @@ def _restore_exec_bits() -> None:
                 pass
 
 
-def _extract(blob: bytes, name: str) -> None:
-    BIN_DIR.mkdir(parents=True, exist_ok=True)
+def _inside(root: Path, candidate: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(root.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _extract_to(blob: bytes, name: str, target: Path) -> None:
+    """Extraction sûre : refuse les chemins qui sortent du dossier cible."""
+    target.mkdir(parents=True, exist_ok=True)
     if name.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(blob)) as z:
-            z.extractall(BIN_DIR)
+            if any(not _inside(target, target / member.filename)
+                   for member in z.infolist()):
+                raise RuntimeError("archive ZIP dangereuse (chemin hors dossier)")
+            z.extractall(target)
     else:
         with tarfile.open(fileobj=io.BytesIO(blob)) as t:
-            t.extractall(BIN_DIR)
-    _restore_exec_bits()
+            if any(not _inside(target, target / member.name)
+                   for member in t.getmembers()):
+                raise RuntimeError("archive TAR dangereuse (chemin hors dossier)")
+            t.extractall(target, filter="data")
+    _restore_exec_bits(target)
+
+
+def _extract(blob: bytes, name: str) -> None:
+    """Compatibilité interne : extraction directe, hors chemin de mise à jour."""
+    _extract_to(blob, name, BIN_DIR)
+
+
+def _find_sd_cli(root: Path) -> Path | None:
+    names = ("sd-cli.exe", "sd.exe") if platform.system() == "Windows" \
+        else ("sd-cli", "sd")
+    for name in names:
+        found = next((p for p in root.rglob(name) if p.is_file()), None)
+        if found:
+            return found
+    return None
+
+
+def _co_locate_cuda_runtime(root: Path) -> None:
+    """Place les DLL à côté du .exe si l'archive utilise un sous-dossier."""
+    cli = _find_sd_cli(root)
+    if cli is None or platform.system() != "Windows":
+        return
+    for dll_name in _CUDA_DLLS:
+        source = next((p for p in root.rglob(dll_name) if p.is_file()), None)
+        dest = cli.parent / dll_name
+        if source and source != dest and not dest.exists():
+            shutil.copy2(source, dest)
+
+
+def _validate_staged(root: Path) -> tuple[Path, list[str]]:
+    """Smoke-test du nouveau binaire avant de remplacer le moteur courant."""
+    cli = _find_sd_cli(root)
+    if cli is None:
+        raise RuntimeError("archive invalide : aucun sd-cli / sd trouvé")
+    _restore_exec_bits(root)
+    try:
+        proc = subprocess.run([str(cli), "-h"], cwd=str(cli.parent),
+                              capture_output=True, text=True, timeout=45,
+                              encoding="utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"le nouveau moteur ne démarre pas : {exc}") from exc
+    text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    options = sorted(set(re.findall(r"--[A-Za-z][A-Za-z0-9_-]*", text)))
+    if "--mode" not in options and "--diffusion-model" not in options:
+        tail = "\n".join(text.splitlines()[-10:])
+        raise RuntimeError(
+            "le smoke-test sd-cli -h n'a pas reconnu le moteur\n" + tail)
+    return cli, options
+
+
+def _read_embedded_metadata(root: Path) -> dict:
+    path = next((p for p in root.rglob("engine-build.json") if p.is_file()), None)
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
+                           needs_cuda_runtime: bool = False) -> None:
+    """Installe après validation, garde l'ancien moteur pour rollback manuel."""
+    stage = Path(tempfile.mkdtemp(prefix=".engine-stage-", dir=str(ROOT)))
+    moved_old = False
+    try:
+        _extract_to(blob, archive_name, stage)
+        if needs_cuda_runtime and platform.system() == "Windows" \
+                and not _cuda_runtime_present(stage):
+            print("Runtime CUDA absent du nouveau moteur — préparation en staging…")
+            if not ensure_cuda_runtime(stage):
+                raise RuntimeError("runtime CUDA 12 impossible à préparer")
+        _co_locate_cuda_runtime(stage)
+        cli, options = _validate_staged(stage)
+        embedded = _read_embedded_metadata(stage)
+        manifest = {
+            "schema": 1,
+            "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "archive": archive_name,
+            "archive_sha256": hashlib.sha256(blob).hexdigest(),
+            "cli": str(cli.relative_to(stage)),
+            "supported_options": options,
+            **metadata,
+            **embedded,
+        }
+        (stage / ENGINE_MANIFEST).write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # Une seule sauvegarde, celle qui précède immédiatement la mise à jour.
+        if PREVIOUS_DIR.exists():
+            shutil.rmtree(PREVIOUS_DIR)
+        if BIN_DIR.exists():
+            os.replace(BIN_DIR, PREVIOUS_DIR)
+            moved_old = True
+        os.replace(stage, BIN_DIR)
+        try:
+            _validate_staged(BIN_DIR)
+        except Exception:
+            # La validation finale couvre aussi les erreurs liées au changement
+            # de chemin. L'ancien moteur revient automatiquement.
+            broken = ROOT / ".engine-broken"
+            if broken.exists():
+                shutil.rmtree(broken)
+            os.replace(BIN_DIR, broken)
+            if moved_old and PREVIOUS_DIR.exists():
+                os.replace(PREVIOUS_DIR, BIN_DIR)
+            shutil.rmtree(broken, ignore_errors=True)
+            raise
+        print("Mise à jour validée. L'ancien moteur reste disponible pour rollback.")
+    except Exception:
+        # Avant le swap, BIN_DIR n'a pas bougé. Après un échec de swap, le bloc
+        # ci-dessus l'a déjà restauré. Dans les deux cas, on ne purge rien.
+        if moved_old and not BIN_DIR.exists() and PREVIOUS_DIR.exists():
+            os.replace(PREVIOUS_DIR, BIN_DIR)
+        raise
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _rollback() -> None:
+    if not PREVIOUS_DIR.exists():
+        raise RuntimeError("aucun moteur précédent disponible")
+    _validate_staged(PREVIOUS_DIR)
+    swap = ROOT / ".engine-swap"
+    if swap.exists():
+        shutil.rmtree(swap)
+    if BIN_DIR.exists():
+        os.replace(BIN_DIR, swap)
+    try:
+        os.replace(PREVIOUS_DIR, BIN_DIR)
+        _validate_staged(BIN_DIR)
+        if swap.exists():
+            os.replace(swap, PREVIOUS_DIR)
+    except Exception:
+        if BIN_DIR.exists():
+            os.replace(BIN_DIR, PREVIOUS_DIR)
+        if swap.exists():
+            os.replace(swap, BIN_DIR)
+        raise
+    print("Rollback terminé : le moteur précédent est de nouveau actif.")
 
 
 def _purge_old_binaries() -> None:
@@ -422,19 +591,18 @@ def _install_from_ours(args) -> None:
             print(" ", a["name"])
         sys.exit("Rien à installer.")
 
-    if args.force:
-        _purge_old_binaries()
     if _has_sd_cli() and not args.force:
         print("Binaire sd-cli déjà présent, on saute (utilisez --force pour MAJ).")
         return
     print(f"Téléchargement (build maison) : {asset['name']}")
-    _extract(_download(asset["browser_download_url"]), asset["name"])
-
-    # L'archive CI embarque déjà les DLL CUDA ; repli PyPI si jamais absentes.
-    if platform.system().lower() == "windows" and not _cuda_runtime_present():
-        print("Runtime CUDA absent de l'archive — repli via PyPI…")
-        ensure_cuda_runtime()
-    print(f"Décompressé dans {BIN_DIR}. Moteur CI (archis ciblées) prêt.")
+    blob = _download(asset["browser_download_url"])
+    _transactional_install(
+        blob, asset["name"],
+        {"source": "ours", "tag": rel.get("tag_name"),
+         "release_url": rel.get("html_url"), "asset_id": asset.get("id"),
+         "published_at": rel.get("published_at")},
+        needs_cuda_runtime=True)
+    print(f"Installé dans {BIN_DIR}. Moteur CI (archis ciblées) prêt.")
 
 
 def main():
@@ -455,7 +623,15 @@ def main():
                          "(pour METTRE À JOUR le moteur)")
     ap.add_argument("--allow-ipv6", action="store_true",
                     help="ne pas forcer l'IPv4 (par défaut on force l'IPv4)")
+    ap.add_argument("--rollback", action="store_true",
+                    help="réactive le moteur sauvegardé avant la dernière MAJ")
     args = ap.parse_args()
+    if args.rollback:
+        try:
+            _rollback()
+        except Exception as exc:  # noqa: BLE001
+            sys.exit(f"Rollback impossible : {exc}")
+        return
     if args.variant is None:
         args.variant = default_variant()
         print(f"Variante retenue pour cette machine : {args.variant}")
@@ -471,6 +647,14 @@ def main():
     rel = _latest_release_with_assets()
     assets = rel["assets"]
     print(f"Release : {rel.get('tag_name')}")
+    # N'applique la borne qu'au format de build officiel connu. Un éventuel tag
+    # sémantique futur (v1.2.3) ne doit pas être pris pour la build « 1 ».
+    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?",
+                         rel.get("tag_name") or "", re.IGNORECASE)
+    if match and int(match.group(1)) < MIN_OFFICIAL_BUILD:
+        sys.exit(
+            f"Release trop ancienne ({rel.get('tag_name')}) : build "
+            f"{MIN_OFFICIAL_BUILD}+ requis pour les correctifs VRAM.")
     if args.list:
         for a in assets:
             print(" ", a["name"])
@@ -484,25 +668,19 @@ def main():
         sys.exit("Téléchargez-en une manuellement dans ./bin.")
 
     # Binaire principal (skip si déjà présent, utile en cas de relance).
-    if args.force:
-        _purge_old_binaries()   # MAJ : retirer les anciens binaires pour re-DL
     if _has_sd_cli() and not args.force:
         print("Binaire sd-cli déjà présent, on saute le téléchargement.")
     else:
         print(f"Téléchargement (binaire) : {best['name']}")
-        _extract(_download(best["browser_download_url"]), best["name"])
+        blob = _download(best["browser_download_url"])
+        _transactional_install(
+            blob, best["name"],
+            {"source": "official", "tag": rel.get("tag_name"),
+             "release_url": rel.get("html_url"), "asset_id": best.get("id"),
+             "published_at": rel.get("published_at")},
+            needs_cuda_runtime=(args.variant == "cuda"))
 
-    # Runtime CUDA (Windows) : récupéré via PyPI (pas le CDN GitHub, qui est
-    # peu fiable sur certains réseaux).
-    if args.variant == "cuda" and platform.system().lower() == "windows":
-        if ensure_cuda_runtime():
-            print("Runtime CUDA en place.")
-        else:
-            print("⚠️ Runtime CUDA non installé. Si sd-cli ne démarre pas, "
-                  "installez le CUDA Toolkit 12, ou un upscaler (qui installe "
-                  "PyTorch CUDA) depuis l'onglet Upscale.")
-
-    print(f"Décompressé dans {BIN_DIR}. Binaire sd-cli prêt.")
+    print(f"Installé dans {BIN_DIR}. Binaire sd-cli prêt.")
 
 
 if __name__ == "__main__":

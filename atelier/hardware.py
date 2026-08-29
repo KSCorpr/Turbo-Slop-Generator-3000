@@ -33,6 +33,9 @@ class Gpu:
     # c'est ce chiffre — pas le nom — qui décide si un binaire CUDA tournera.
     compute_cap: str = ""
     driver: str = ""
+    bus_id: str = ""
+    pcie_gen: str = ""
+    pcie_width: str = ""
 
     @property
     def is_apple(self) -> bool:
@@ -52,6 +55,15 @@ class Gpu:
         if self.sm:
             bits.append(self.sm)
         return f"{self.name} ({', '.join(bits)})"
+
+    @property
+    def pcie_label(self) -> str:
+        """Lien PCIe courant, quand le pilote NVIDIA sait le rapporter."""
+        if not (self.pcie_gen or self.pcie_width):
+            return ""
+        gen = f"Gen{self.pcie_gen}" if self.pcie_gen else "PCIe"
+        width = f" x{self.pcie_width}" if self.pcie_width else ""
+        return gen + width
 
 
 # Capacité de calcul -> architecture. Table officielle NVIDIA ; c'est elle qui
@@ -189,6 +201,21 @@ def detect_gpus() -> tuple[Gpu, ...]:
         out, has_cc = _nvidia_smi("index,name,memory.total"), False
     if out is None:
         return ()
+    # Le lien PCIe est interrogé séparément : certains pilotes anciens ne
+    # connaissent pas ces champs. Une requête combinée ferait alors perdre
+    # aussi compute_cap et driver_version, pourtant disponibles.
+    pci: dict[int, tuple[str, str, str]] = {}
+    pci_out = _nvidia_smi(
+        "index,pci.bus_id,pcie.link.gen.current,pcie.link.width.current")
+    if pci_out:
+        for row in pci_out.strip().splitlines():
+            cols = [p.strip() for p in row.split(",")]
+            if len(cols) >= 4:
+                try:
+                    pci[int(cols[0])] = (cols[1], cols[2], cols[3])
+                except ValueError:
+                    pass
+
     gpus: list[Gpu] = []
     for line in out.strip().splitlines():
         parts = [p.strip() for p in line.split(",")]
@@ -213,8 +240,10 @@ def detect_gpus() -> tuple[Gpu, ...]:
             # cores. Le nom est ici la seule façon de les distinguer.
             if re.search(r"GTX\s?16\d\d", name.upper()):
                 tc = False
+        bus, gen, width = pci.get(idx, ("", "", ""))
         gpus.append(Gpu(idx, name, round(vram, 1), arch, tc,
-                        compute_cap=cc, driver=driver))
+                        compute_cap=cc, driver=driver, bus_id=bus,
+                        pcie_gen=gen, pcie_width=width))
     return tuple(gpus)
 
 
@@ -245,6 +274,23 @@ def free_vram_gb(index: int | None = None) -> float:
         elif idx == index:
             return round(free, 1)
     return round(best, 1)
+
+
+def used_vram_gb() -> dict[int, float]:
+    """Mémoire GPU utilisée à l'instant T, pour le banc d'essai matériel."""
+    out = _nvidia_smi("index,memory.used")
+    if out is None:
+        return {}
+    used: dict[int, float] = {}
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            used[int(parts[0])] = round(float(parts[1]) / 1024.0, 2)
+        except ValueError:
+            pass
+    return used
 
 
 @lru_cache(maxsize=1)
@@ -542,6 +588,9 @@ def rtx3060_1080ti_prefs() -> dict:
         "gpu_index": main.index,
         "text_gpu_index": secondary.index,
         "encoder_gpu_index": secondary.index,
+        "params_backend": (
+            f"diffusion=cuda{main.index},vae=cuda{main.index},"
+            f"te=cuda{secondary.index}"),
         "auto_fit": False,
         "split_mode": "layer",
         "quant": "Q5_K_M",
@@ -550,7 +599,9 @@ def rtx3060_1080ti_prefs() -> dict:
         "cache_option": "",
         "flags": {
             "diffusion_fa": True,
-            "offload_to_cpu": True,
+            # Les poids résident sur les cartes indiquées ci-dessus. Le mode
+            # RAM reste disponible dans le benchmark comme solution de repli.
+            "offload_to_cpu": False,
             "vae_tiling": True,
             "clip_on_cpu": False,
             "vae_on_cpu": False,
@@ -579,6 +630,8 @@ def summary_text() -> str:
              t("**GPU détectés :**")]
     for g in gpus:
         tc = t("tensor cores") if g.tensor_cores else t("sans tensor cores")
+        link = f" · {g.pcie_label}" if g.pcie_label else ""
+        bus = f" · bus {g.bus_id}" if g.bus_id else ""
         lines.append(f"- #{g.index} — {g.name} · {g.vram_gb:.0f} Go · "
-                     f"{g.arch} ({tc})")
+                     f"{g.arch} ({tc}){link}{bus}")
     return "\n".join(lines)

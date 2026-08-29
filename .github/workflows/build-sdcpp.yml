@@ -120,10 +120,12 @@ jobs:
         working-directory: sdcpp
         run: |
           $sha = (git rev-parse --short HEAD).Trim()
+          $fullSha = (git rev-parse HEAD).Trim()
           $desc = (git describe --tags --always 2>$null)
           if (-not $desc) { $desc = $sha } else { $desc = $desc.Trim() }
           $date = [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'")
           "sha=$sha"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_sha=$fullSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "describe=$desc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "date=$date"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "build $date · commit $sha ($desc)"
@@ -187,6 +189,19 @@ jobs:
             if (Test-Path $p) { Copy-Item $p $out -Force }
             else { Write-Host "⚠️ DLL manquante : $d" }
           }
+
+          # Lu par l'updater transactionnel : provenance exacte, même si le tag
+          # engine-latest est mouvant et conserve sa date GitHub historique.
+          @{
+            schema = 1
+            source = "custom-ci"
+            sd_commit = "${{ steps.meta.outputs.full_sha }}"
+            sd_describe = "${{ steps.meta.outputs.describe }}"
+            built_at = "${{ steps.meta.outputs.date }}"
+            cuda_version = "${{ inputs.cuda_version }}"
+            cuda_arch = "${{ inputs.cuda_arch }}"
+            force_mmq = "${{ inputs.force_mmq }}" -eq "true"
+          } | ConvertTo-Json | Out-File "$out/engine-build.json" -Encoding utf8
 
           Get-ChildItem $out | Format-Table Name,Length -AutoSize
           Compress-Archive -Path "$out/*" -DestinationPath "sd-cuda-windows-x64.zip" -Force

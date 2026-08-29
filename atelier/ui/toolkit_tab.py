@@ -827,6 +827,74 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 widgets.stop_into_log(seed_stop, tools.cancel, seed_log,
                                       [seed_evt])
 
+                with gr.Accordion("📁 Restaurer un dossier en une fois", open=False):
+                    gr.Markdown(
+                        "Sélectionnez un dossier d'images. SeedVR2 charge le modèle "
+                        "**une seule fois**, le garde en cache et traite tous les "
+                        "fichiers sans modifier les originaux. Les résultats vont "
+                        "dans un sous-dossier horodaté de `outputs/`.")
+                    seed_batch_files = gr.File(
+                        label="Dossier d'images", file_count="directory",
+                        file_types=["image"], type="filepath")
+                    with gr.Row():
+                        seed_batch_run = gr.Button(
+                            "🌱 Restaurer tout le dossier", variant="primary")
+                        seed_batch_stop = gr.Button("⏹️ Annuler", variant="stop")
+                    seed_batch_gallery = gr.Gallery(
+                        label="Résultats du lot", columns=4, height=420,
+                        buttons=widgets.GALLERY_BUTTONS)
+                    seed_batch_log = gr.Textbox(
+                        label="Journal du lot", lines=12, autoscroll=True,
+                        elem_classes="log-box")
+
+                    def do_seedvr2_batch(files, resolution, model, blocks,
+                                         tile, overlap, offload, color):
+                        import queue
+                        import threading
+                        if not files:
+                            raise gr.Error(t("Sélectionnez un dossier d'images."))
+                        if not tools.seedvr2_is_installed():
+                            raise gr.Error(t("Installez d'abord SeedVR2."))
+                        q: "queue.Queue[str | None]" = queue.Queue()
+                        state: dict = {}
+
+                        def worker():
+                            try:
+                                state["outs"] = tools.seedvr2_batch(
+                                    files, resolution=int(resolution), model=model,
+                                    blocks_to_swap=int(blocks), tile=int(tile),
+                                    overlap=int(overlap), offload=offload,
+                                    color_correction=color, log=q.put)
+                            except Exception as exc:  # noqa: BLE001
+                                state["err"] = str(exc)
+                            finally:
+                                q.put(None)
+
+                        threading.Thread(target=worker, daemon=True).start()
+                        logs: list[str] = []
+                        while True:
+                            line = q.get()
+                            if line is None:
+                                break
+                            logs.append(line)
+                            yield gr.update(), "\n".join(logs[-500:])
+                        if "err" in state:
+                            logs.append(f"\n[ERREUR] {state['err']}")
+                            yield gr.update(), "\n".join(logs[-500:])
+                            return
+                        outs = [str(p) for p in state.get("outs", [])]
+                        logs.append(f"\n✅ {len(outs)} image(s) restaurée(s).")
+                        yield outs, "\n".join(logs[-500:])
+
+                    seed_batch_evt = seed_batch_run.click(
+                        do_seedvr2_batch,
+                        inputs=[seed_batch_files, seed_res, seed_model,
+                                seed_blocks, seed_tile, seed_overlap,
+                                seed_offload, seed_color],
+                        outputs=[seed_batch_gallery, seed_batch_log])
+                    widgets.stop_into_log(seed_batch_stop, tools.cancel,
+                                          seed_batch_log, [seed_batch_evt])
+
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("✨ Upscale SDXL", id="creative"):
                 gr.Markdown(

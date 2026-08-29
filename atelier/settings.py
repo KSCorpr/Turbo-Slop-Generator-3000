@@ -62,6 +62,11 @@ DEFAULT_PREFS: dict[str, Any] = {
     # EXPÉRIMENTAL : GPU dédié à l'encodeur de texte dans sd.cpp (--backend te=).
     # None = comportement normal (encodeur sur le GPU principal / déchargé RAM).
     "encoder_gpu_index": None,
+    # Résidence explicite des POIDS sd.cpp (`--params-backend`). Le calcul est
+    # réglé séparément par `--backend`. Cette séparation évite qu'un encodeur
+    # annoncé « sur la 2e carte » soit en réalité relu depuis la RAM à travers
+    # un port PCIe lent. Vide = laisser le moteur / le profil décider.
+    "params_backend": "",
     # EXPÉRIMENTAL : répartit AUTOMATIQUEMENT le modèle (diffusion/encodeur/VAE)
     # sur TOUS les GPU visibles selon leur VRAM (sd.cpp --auto-fit). Permet
     # d'utiliser la VRAM d'une 2e carte (ex. 1080 Ti) pour la DIFFUSION elle-même,
@@ -94,6 +99,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
+    # Presets ciblés : contrairement au cache global ci-dessus, ils ne touchent
+    # que le modèle nommé. Krea Raw (beaucoup de pas) peut ainsi profiter du
+    # cache sans dégrader les modèles Turbo à 4-8 pas.
+    "cache_by_model": {},
     # Exécution SEGMENTÉE (sd.cpp --max-vram) : autorise le moteur à découper
     # son graphe de calcul pour tenir dans un budget, au lieu d'allouer d'un
     # bloc et d'échouer si ça ne rentre pas.
@@ -102,8 +111,9 @@ DEFAULT_PREFS: dict[str, Any] = {
     #   "6" / "cuda0=6,cuda1=4" -> plafond ferme
     # La passe HD l'utilise de toute façon : c'est là que le tout-ou-rien casse.
     "max_vram": "",
-    # Résidence + préchargement des couches, par-dessus --max-vram (sans effet
-    # sans lui). Coûteux en bande passante PCIe : opt-in.
+    # Streaming des couches depuis leur backend de paramètres. Requiert les
+    # poids de diffusion en RAM (`--offload-to-cpu` ou params diffusion=cpu),
+    # mais PAS `--max-vram`. Coûteux en bande passante PCIe : opt-in.
     "stream_layers": False,
 }
 

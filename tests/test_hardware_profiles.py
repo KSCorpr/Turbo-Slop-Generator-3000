@@ -21,6 +21,10 @@ class Rtx3060ComboTests(unittest.TestCase):
         self.assertEqual(prefs["text_gpu_index"], 4)
         self.assertFalse(prefs["auto_fit"])
         self.assertEqual(prefs["split_mode"], "layer")
+        self.assertEqual(
+            prefs["params_backend"],
+            "diffusion=cuda1,vae=cuda1,te=cuda4")
+        self.assertFalse(prefs["flags"]["offload_to_cpu"])
 
     def test_does_not_confuse_3060_ti_with_12gb_3060(self):
         cards = (

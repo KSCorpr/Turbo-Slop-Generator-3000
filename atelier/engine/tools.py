@@ -671,3 +671,108 @@ def seedvr2_upscale(image, resolution: int = 2048,
     if not output.is_file() or output.stat().st_size == 0:
         raise ToolError("SeedVR2 n'a produit aucune image.")
     return output
+
+
+def seedvr2_batch(images, resolution: int = 2048,
+                  model: str = "seedvr2_ema_3b-Q8_0.gguf",
+                  blocks_to_swap: int = 16, tile: int = 1024,
+                  overlap: int = 128, offload: str = "secondary",
+                  color_correction: str = "wavelet",
+                  log: Callable[[str], None] | None = None) -> list[Path]:
+    """Restaure plusieurs images dans UNE invocation SeedVR2.
+
+    Le CLI amont sait traiter un dossier avec `--cache_dit --cache_vae` : le
+    modèle est chargé une fois puis réutilisé, au lieu de payer son chargement
+    pour chaque image. Les originaux ne sont jamais modifiés.
+    """
+    if not seedvr2_is_installed():
+        raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
+    allowed = {"seedvr2_ema_3b-Q8_0.gguf", "seedvr2_ema_3b-Q4_K_M.gguf"}
+    if model not in allowed:
+        raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
+    if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
+        color_correction = "wavelet"
+
+    raw = list(images or [])
+    sources: list[Path] = []
+    for item in raw:
+        # pathlib.Path possède lui aussi un attribut ``name`` (le basename) :
+        # ne pas le confondre avec le chemin temporaire porté par UploadedFile.
+        p = item if isinstance(item, Path) else Path(getattr(item, "name", item))
+        if p.is_file() and p.suffix.lower() in {
+                ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}:
+            sources.append(p)
+    if not sources:
+        raise ToolError("Aucune image compatible dans le lot.")
+
+    settings.ensure_dirs()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    batch_root = settings.TMP_DIR / f"seedvr2-batch-{stamp}-{int(time.time()*1000)%1000:03d}"
+    input_dir = batch_root / "input"
+    output_dir = settings.OUTPUT_DIR / f"seedvr2-batch-{stamp}"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    import shutil
+    for index, src in enumerate(sources, 1):
+        # Préfixe stable : deux dossiers peuvent contenir le même nom de fichier.
+        shutil.copy2(src, input_dir / f"{index:04d}-{src.name}")
+
+    py = _seedvr2_python()
+    cli = SEEDVR2_SOURCE_DIR / "inference_cli.py"
+    SEEDVR2_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    prefs = settings.load_prefs()
+    main_gpu = _gen_gpu_index()
+    secondary = prefs.get("encoder_gpu_index")
+    if secondary is None or secondary == main_gpu:
+        candidate = prefs.get("text_gpu_index")
+        secondary = candidate if candidate != main_gpu else None
+
+    run_env = settings.child_env()
+    offload_device = "cpu"
+    if offload == "secondary" and main_gpu is not None and secondary is not None:
+        run_env["CUDA_VISIBLE_DEVICES"] = f"{main_gpu},{secondary}"
+        run_env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        offload_device = "1"
+        if log:
+            log(f"SeedVR2 lot : calcul GPU #{main_gpu}, réserve GPU #{secondary}.")
+    elif main_gpu is not None:
+        run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
+        offload_device = "none" if offload == "none" else "cpu"
+    # Les caches de modèle du mode dossier exigent un backend d'offload.
+    if offload_device == "none":
+        offload_device = "cpu"
+        if log:
+            log("SeedVR2 lot : offload RAM activé pour garder le modèle en cache.")
+
+    blocks = max(0, min(32, int(blocks_to_swap)))
+    cmd = [
+        str(py), str(cli), str(input_dir), "--output", str(output_dir),
+        "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
+        "--dit_model", model, "--resolution", str(max(512, int(resolution))),
+        "--max_resolution", str(max(512, int(resolution))), "--batch_size", "1",
+        "--color_correction", color_correction,
+        "--dit_offload_device", offload_device,
+        "--vae_offload_device", offload_device,
+        "--tensor_offload_device", offload_device,
+        "--blocks_to_swap", str(blocks), "--cache_dit", "--cache_vae",
+        "--vae_encode_tiled", "--vae_decode_tiled",
+        "--vae_encode_tile_size", str(max(512, int(tile))),
+        "--vae_decode_tile_size", str(max(512, int(tile))),
+        "--vae_encode_tile_overlap", str(max(64, int(overlap))),
+        "--vae_decode_tile_overlap", str(max(64, int(overlap))),
+        "--attention_mode", "sdpa", "--debug",
+    ]
+    if blocks:
+        cmd.append("--swap_io_components")
+    try:
+        if log:
+            log(f"SeedVR2 : {len(sources)} image(s), un seul chargement du modèle.")
+        _run_tool(cmd, log, "SeedVR2 lot a échoué (voir le journal).",
+                  cwd=SEEDVR2_SOURCE_DIR, env=run_env)
+    finally:
+        shutil.rmtree(batch_root, ignore_errors=True)
+    outputs = sorted(p for p in output_dir.rglob("*")
+                     if p.is_file() and p.suffix.lower() == ".png")
+    if not outputs:
+        raise ToolError("SeedVR2 n'a produit aucune image pour ce lot.")
+    return outputs

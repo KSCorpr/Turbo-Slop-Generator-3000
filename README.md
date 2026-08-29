@@ -143,9 +143,12 @@ nobody anything; "the HD tab will not work" does). To fix everything in one go:
 maintenance.bat --all    ::  purge + engine update  (./maintenance.sh --all)
 ```
 
-`--update-engine` alone does just the engine. The engine download runs as a
-subprocess, so a network failure is reported rather than taking maintenance down
-with it.
+`--update-engine` alone does just the engine. Updates are transactional: the
+archive is unpacked into a staging directory, checked with `sd-cli -h`, and only
+then swapped into `bin/`. The last known-good engine stays in
+`.engine-previous/`; use `rollback-engine.bat` (or `./rollback-engine.sh`) to
+restore it immediately. A failed download, unsafe archive or failed smoke test
+leaves the installed engine untouched.
 
 **Orphan modules are found generically.** Beyond the hand-declared
 `REMOVED_FEATURES`, maintenance walks the import graph from `app.py` and
@@ -394,8 +397,11 @@ Multi-GPU: the largest card is used by default, changeable in **Settings**
 (uncheck auto-optimization).
 
 These map to stable-diffusion.cpp flags: `--diffusion-fa` (CUDA: faster + less
-VRAM), `--offload-to-cpu` (saves VRAM with no speed loss), `--vae-tiling`,
-`--clip-on-cpu`, `--vae-on-cpu`, plus GGUF quantization.
+VRAM), `--offload-to-cpu`, `--vae-tiling`, plus GGUF quantization. On a recent
+engine the app also separates **where computation runs** (`--backend`) from
+**where weights live** (`--params-backend`). This matters on a second GPU behind
+a slow PCIe link: an encoder can keep its weights on that GPU instead of staging
+them from RAM. The old CLIP/VAE-on-CPU flags remain compatibility fallbacks.
 
 ### Manual settings
 With auto unchecked you control quant (diffusion / encoder), the GPU, and each
@@ -417,12 +423,18 @@ single mutually-exclusive strategy:
 - **Single card (recommended)** — everything on the generation GPU, text encoder
   offloaded to RAM. The most reliable.
 - **Text encoder on the 2nd card** — diffusion + VAE stay on the main GPU, the
-  text encoder runs on the other card (`--backend …,te=cudaN`). Frees VRAM on the
-  main card for the diffusion model.
+  text encoder runs **and keeps its weights** on the other card (`--backend` +
+  `--params-backend …,te=cudaN`). Frees VRAM on the main card without repeatedly
+  staging the encoder through system RAM.
+- **Text encoder computed on the 2nd card, weights in RAM** — a compatibility
+  fallback kept as a measurable option. It can win on unusual topologies, but
+  normally loses to resident weights because it crosses PCIe repeatedly.
 - **Auto-fit** — sd.cpp spreads diffusion / encoder / VAE across all cards
-  (`--auto-fit`). ⚠️ forces everything into VRAM (disables CPU offload) → can OOM
-  on big-encoder models (Flux.2 Klein); reserve it for models that fit in the
-  combined VRAM.
+  (`--auto-fit`). Current sd.cpp can time-share modules, use RAM/disk parameter
+  residency, split oversized modules and retry VAE decoding with tiling when a
+  full-VRAM placement does not fit. It is memory-aware, not topology-aware: on a
+  mismatched pair or a PCIe x4 secondary slot, benchmark it instead of assuming
+  that more aggregate VRAM means more speed.
 
 A separate **prompt-enhancer GPU** can also be chosen (the text LLM runs there;
 image generation and SDXL upscale always stay on the generation GPU). The GPU
@@ -520,6 +532,24 @@ diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-st
 distilled models the gain is small and artifacts are possible, hence **off by
 default**. Requires a recent engine (`update-engine.bat`).
 
+The **Krea 2 Raw** checkbox is deliberately model-scoped: it applies a prudent
+EasyCache threshold only to Raw's long 28/52-step runs. Turbo and Flux.2 keep
+their cache off. MiniMax-H3 exposes the same experiment through
+`try-minimax.bat --cache`; it is never enabled silently.
+
+### Measured hardware profile and Krea INT8 probe
+**Settings → Measure this machine** runs a fixed 512×512 / 4-step / seed 424242
+generation through every sensible placement: main GPU with RAM staging, encoder
+resident on the second GPU, and the old staged dual-GPU path. It records wall
+time, peak VRAM, exact engine provenance and output images in a JSON report. The
+fastest successful profile can then be applied explicitly; running the test does
+not alter preferences.
+
+The same block compares the normal **Krea 2 Turbo GGUF** with the optional
+**INT8 ConvRot** checkpoint from `Comfy-Org/Krea-2`. The RTX 3060 executes the
+INT8 kernels while the oversized checkpoint is streamed from RAM. GGUF remains
+the default because the two outputs still require a visual quality decision.
+
 ### Direct convolution (memory)
 
 **⚡ Acceleration (advanced)** also exposes `--diffusion-conv-direct` and
@@ -593,10 +623,13 @@ default.
 | `update-engine-ci.bat` | **sd.cpp** — our own CI build (arch-tuned, can carry PRs) |
 | `update-trellis.bat` | **trellis.cpp** — latest official Windows CUDA build (Image → 3D) |
 
-Each one replaces only the **engine binary** (the previous version is removed
-first, so DLLs from two releases never mix). **Models are never
-re-downloaded** — including the ~16 GB trellis 3D set; reinstall those from the
-**Image → 3D** tab if ever needed.
+Each one replaces only the **engine binary**. sd.cpp updates are first validated
+outside `bin/`, then swapped atomically; the previous working build is retained
+for one-command rollback and an `engine-manifest.json` records its exact commit,
+archive checksum and supported options. DLLs from two releases therefore never
+mix, while a broken download can never destroy the working install. **Models are
+never re-downloaded** — including the ~16 GB trellis 3D set; reinstall those
+from the **Image → 3D** tab if ever needed.
 
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
@@ -715,8 +748,14 @@ HD is where all-or-nothing allocation breaks; when it is active the pixel budget
 above is **dropped rather than half-relaxed**, since keeping it would throttle
 exactly what was just made possible. Cutting the graph costs memory round-trips,
 so it is **slower** — which is why ordinary generation leaves it off by default
-and Settings exposes it (auto / hard cap / per-device, plus `--stream-layers`)
-for people who would rather wait than not get the image at all.
+and Settings exposes the budget (auto / hard cap / per-device) for people who
+would rather wait than not get the image at all.
+
+`--stream-layers` is a separate mechanism, not another VRAM budget. It streams
+diffusion layers from system RAM and therefore only applies when the diffusion
+parameters are CPU-resident (for example `diffusion=cpu`). Setting
+`--max-vram` while keeping all parameters on the GPU does not make layer
+streaming valid; the interface now enforces that distinction.
 
 Neither the budget nor the segmentation is the safety net. **An out-of-memory
 failure is caught, the factor is stepped down 20% and the run is retried** (twice
@@ -743,6 +782,11 @@ RTX 3060 and uses the GTX 1080 Ti as an offload device. This is deliberate on a
 PCIe x4 secondary slot: it avoids continuously splitting matrix operations
 between mismatched GPUs. Start with **Q8, 2048 px, 16 swapped blocks, 1024 px
 VAE tiles**. If memory runs out, try 24 then 32 blocks, or switch to Q4.
+
+For a folder of images, use **Batch folder** in the same Restore tab. The app
+passes the directory to SeedVR2 once, keeps its DiT and VAE caches warm across
+the whole queue, and writes new PNGs without touching the originals. This avoids
+paying model startup cost again for every image.
 
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
