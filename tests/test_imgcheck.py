@@ -56,17 +56,14 @@ class TestImageTests(unittest.TestCase):
 
     def test_an_unwritable_folder_is_reported_not_raised(self):
         with tempfile.TemporaryDirectory() as d:
-            locked = Path(d) / "verrouillé"
-            locked.mkdir()
-            os.chmod(locked, 0o500)          # lecture seule
-            try:
-                dest, _elapsed, err = imgcheck.write_test_image(locked / "x")
-                if os.getuid() == 0:         # root ignore les permissions
-                    self.skipTest("exécuté en root : les droits ne mordent pas")
-                self.assertIsNone(dest)
-                self.assertNotEqual(err, "")
-            finally:
-                os.chmod(locked, 0o700)
+            # chmod ne protège pas un dossier de la même manière sous Windows,
+            # et root ignore les bits POSIX. Simuler l'erreur au point d'écriture
+            # teste exactement le contrat sans dépendre de l'OS du runner.
+            with mock.patch("PIL.Image.Image.save",
+                            side_effect=PermissionError("accès refusé")):
+                dest, _elapsed, err = imgcheck.write_test_image(Path(d) / "x")
+            self.assertIsNone(dest)
+            self.assertIn("accès refusé", err)
 
 
 class ReportTests(unittest.TestCase):
@@ -126,9 +123,8 @@ class FormatProbeTests(unittest.TestCase):
                 self.assertGreater(Path(path).stat().st_size, 0)
 
     def test_a_missing_mime_is_flagged(self):
-        """Sous Windows, `mimetypes` s'initialise depuis la base de registre :
-        une extension non reconnue s'y voit servir en téléchargement, et le
-        navigateur n'affiche rien. Le rapport doit le dire."""
+        """Si même après nos associations explicites Python ne rend aucun MIME,
+        le rapport doit le signaler au lieu de prétendre que tout va bien."""
         with mock.patch("mimetypes.guess_type", return_value=(None, None)):
             with tempfile.TemporaryDirectory() as d:
                 _tiles, lines = imgcheck.format_probe(Path(d))

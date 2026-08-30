@@ -146,19 +146,32 @@ def write_test_image(dest_dir: Path) -> tuple[Path | None, float, str]:
 TEST_FORMATS = [("PNG", ".png"), ("JPEG", ".jpg"), ("WEBP", ".webp"),
                 ("GIF", ".gif"), ("BMP", ".bmp")]
 
+_IMAGE_MIMES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+}
+
 
 def mime_of(suffix: str) -> str:
     """Type MIME que Python associe à une extension.
 
-    Sous Windows, `mimetypes` s'initialise depuis la BASE DE REGISTRE. Une
-    entrée absente ou détournée (un logiciel qui s'est approprié `.webp`, par
-    exemple) fait renvoyer autre chose qu'un `image/…`, et Gradio sert alors
-    le fichier en `application/octet-stream` avec une en-tête de
-    téléchargement — le navigateur ne l'affiche plus. C'est invisible partout
-    ailleurs, et ça ne touche QUE certaines extensions : exactement le profil
-    d'un bug qui frappe les imports et épargne l'image de test.
+    Sous Windows, `mimetypes` consulte aussi la BASE DE REGISTRE. Le runner
+    Windows de GitHub, comme certaines installations utilisateur, n'y déclare
+    pas `.webp`. On enregistre donc explicitement les formats que l'application
+    sait produire avant d'interroger Python : une association système absente
+    ou détournée ne doit pas casser l'affichage dans notre serveur local.
     """
     import mimetypes
+    canonical = _IMAGE_MIMES.get(suffix.lower())
+    if canonical:
+        # Les deux tables sont utilisées selon la valeur de `strict` du code
+        # appelant ; les renseigner toutes les deux rend le résultat stable.
+        mimetypes.add_type(canonical, suffix.lower(), strict=True)
+        mimetypes.add_type(canonical, suffix.lower(), strict=False)
     return mimetypes.guess_type(f"x{suffix}")[0] or ""
 
 

@@ -64,16 +64,16 @@ class CommandLineTests(unittest.TestCase):
         for flag in ("--diffusion-model", "--vae", "--audio-vae", "--llm"):
             self.assertIn(flag, cmd)
         self.assertEqual(cmd[cmd.index("--audio-vae") + 1],
-                         "/m/minimax_h3_audio_vae_fp32.safetensors")
+                         str(self.paths["VAE audio"]))
         self.assertEqual(cmd[cmd.index("--vae") + 1],
-                         "/m/minimax_h3_video_vae_fp16.safetensors")
+                         str(self.paths["VAE vidéo"]))
 
     def test_the_reference_image_is_always_passed(self):
         """ref2va EXIGE une référence. Les deux passes doivent la porter."""
         for turbo in (False, True):
             cmd = self._cmd(turbo)
             self.assertIn("-r", cmd)
-            self.assertEqual(cmd[cmd.index("-r") + 1], "/ref.png")
+            self.assertEqual(cmd[cmd.index("-r") + 1], str(Path("/ref.png")))
 
     def test_the_mode_and_documented_flags_are_kept(self):
         cmd = self._cmd(False)
@@ -103,7 +103,8 @@ class CommandLineTests(unittest.TestCase):
         prompt = cmd[cmd.index("-p") + 1]
         self.assertIn("<lora:minimax_h3_ref2v_turbo_4step_v0.1_bf16:1>", prompt)
         self.assertNotIn(".safetensors", prompt)
-        self.assertEqual(cmd[cmd.index("--lora-model-dir") + 1], "/m")
+        self.assertEqual(cmd[cmd.index("--lora-model-dir") + 1],
+                         str(self.paths["LoRA Turbo"].parent))
         self.assertEqual(cmd[cmd.index("--steps") + 1], "4")
 
     def test_the_prompt_refers_to_the_reference_picture(self):

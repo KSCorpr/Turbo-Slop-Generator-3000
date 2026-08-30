@@ -93,7 +93,8 @@ class HiresArgsTests(unittest.TestCase):
             tile_size=832))
         self.assertEqual(args[args.index("--hires-upscaler") + 1],
                          "4x_anime.gguf")
-        self.assertEqual(args[args.index("--hires-upscalers-dir") + 1], "/ups")
+        self.assertEqual(args[args.index("--hires-upscalers-dir") + 1],
+                         str(Path("/ups")))
         self.assertEqual(args[args.index("--hires-upscale-tile-size") + 1],
                          "832")
 
