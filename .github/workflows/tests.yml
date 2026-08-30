@@ -2,7 +2,7 @@ name: Tests application
 
 on:
   push:
-    branches: [main, "codex/**", "agent/**"]
+    branches: [main]
   pull_request:
 
 permissions:
