@@ -1216,7 +1216,7 @@ Quantization tokens (`{quant}` for diffusion, `{enc_quant}` for the encoder) are
 resolved from your hardware; the downloader picks the closest matching file.
 
 **Flux.2 Klein 9B** (family `flux2`, edit model)
-- diffusion — [`leejet/FLUX.2-klein-9B-GGUF`](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF) (distilled, 4 steps, CFG 1.0)
+- diffusion — [`unsloth/FLUX.2-klein-9B-GGUF`](https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF) (distilled, 4 steps, CFG 1.0)
 - VAE — [`Comfy-Org/flux2-klein-9B`](https://huggingface.co/Comfy-Org/flux2-klein-9B) (`flux2-vae.safetensors`)
 - text encoder — [`unsloth/Qwen3-8B-GGUF`](https://huggingface.co/unsloth/Qwen3-8B-GGUF) (official Qwen3-8B, via `--llm`, offloaded to RAM)
 
@@ -1225,6 +1225,15 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
+
+> Why the Klein source changed too: the previous repo
+> (`leejet/FLUX.2-klein-9B-GGUF`) publishes **only Q4_0 and Q8_0**. Measured
+> against the real fallback logic, *every* card ended up on Q4_0 (5.6 GB) — a
+> 12 GB RTX 3060 asking for `Q5_K_M` and a 16 GB RTX 4080 asking for `Q6_K`
+> alike. The current repo carries `Q2_K` → `Q8_0` with genuinely distinct sizes
+> (`Q5_K_S` 6.94 GB ≠ `Q5_K_M` 7.02 GB), same base model and same filenames, so
+> the targeted quant actually exists. On 12 GB that is a whole quality tier
+> recovered: 7.02 GB instead of 5.62 GB.
 
 > Why the Turbo source changed: the previous repo (`realrebelai/KREA-2_GGUFs`,
 > `TURBO/` folder) had no `Q5_K_M` and no `Q2_K`. On a 12 GB card the auto

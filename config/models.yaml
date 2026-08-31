@@ -25,10 +25,25 @@ base_models:
       dans le prompt.
     sources:
       diffusion:
-        repo: leejet/FLUX.2-klein-9B-GGUF
+        # Dépôt CHANGÉ, même défaut que Krea 2 Turbo avant lui : l'ancien
+        # (leejet/FLUX.2-klein-9B-GGUF) ne publie QUE Q4_0 et Q8_0. Mesuré :
+        # quelle que soit la carte, le profil auto retombait sur Q4_0 (5,6 Go)
+        # — une 3060 12 Go qui demandait Q5_K_M comme une 4080 qui demandait
+        # Q6_K. Ici l'échelle va de Q2_K à Q8_0 et les tailles sont bien
+        # DISTINCTES (Q5_K_S 6,94 Go ≠ Q5_K_M 7,02 Go), donc le quant visé
+        # existe vraiment. Même base (black-forest-labs/FLUX.2-klein-9B) et
+        # mêmes noms de fichiers : le motif ci-dessous ne bouge pas, et les
+        # fichiers déjà téléchargés ne sont pas retouchés.
+        repo: unsloth/FLUX.2-klein-9B-GGUF
         match: "*klein-9b*{quant}.gguf"
         quantizable: true
       vae:
+        # Ce dépôt a été RENOMMÉ en « vae-text-encorder-for-flux-klein-9b »,
+        # et l'ancien identifiant redirige. On garde volontairement l'ancien :
+        # le dossier local est dérivé du nom du dépôt (models/<owner>__<nom>),
+        # donc écrire le nom neuf ferait re-télécharger 336 Mo et laisserait un
+        # dossier orphelin, pour zéro gain. À corriger le jour où la redirection
+        # tombe — pas avant.
         repo: Comfy-Org/flux2-klein-9B
         match: "split_files/vae/flux2-vae.safetensors"
       text_encoder:
