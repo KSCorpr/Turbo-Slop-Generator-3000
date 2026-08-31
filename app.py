@@ -311,6 +311,12 @@ def build_app() -> gr.Blocks:
         pending_3d = gr.State(None)
         # Image en attente d'envoi vers l'onglet « Outpaint » (chemin).
         pending_outpaint = gr.State(None)
+        # Champs « Prompt » des onglets de génération, indexés par modèle.
+        # « 📝 Image → prompt » y écrit DIRECTEMENT : c'est le seul flux qui
+        # remonte des Outils vers la génération, et il ne peut pas passer par
+        # un State consommé au changement d'onglet — une sélection
+        # programmatique ne déclenche pas `Tabs.select`.
+        prompt_boxes: dict = {}
         # Six onglets racine, pas onze. Au-delà, Gradio replie la barre dans un
         # menu « … » : sur la version précédente, « Gestion » et « Réglages »
         # étaient littéralement invisibles au premier coup d'œil. Le regroupement
@@ -320,14 +326,14 @@ def build_app() -> gr.Blocks:
         # ce qui la RETOUCHE va dans « Outils » ; ce qui administre la machine
         # va dans « Système ».
         with gr.Tabs() as tabs:
-            build_generative_tab("flux2-klein-9b", "🟣 Flux.2 Klein 9B",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d,
-                                 pending_outpaint=pending_outpaint)
-            build_generative_tab("krea2-turbo", "⚡ Krea 2 Turbo",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d,
-                                 pending_outpaint=pending_outpaint)
+            prompt_boxes["flux2-klein-9b"] = build_generative_tab(
+                "flux2-klein-9b", "🟣 Flux.2 Klein 9B",
+                pending_toolkit=pending_toolkit, tabs=tabs,
+                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+            prompt_boxes["krea2-turbo"] = build_generative_tab(
+                "krea2-turbo", "⚡ Krea 2 Turbo",
+                pending_toolkit=pending_toolkit, tabs=tabs,
+                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
             # « Xanax » : style figé, aucun réglage de style exposé. Un seul
             # onglet pour les deux modèles — ils partagent tout sauf le moteur.
             build_xanax_tab("💊 Xanax")
@@ -339,7 +345,8 @@ def build_app() -> gr.Blocks:
             with gr.Tab("🧰 Outils", id="tools"):
                 with gr.Tabs() as tool_tabs:
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
-                                      tabs=tabs, parent_tabs=tool_tabs)
+                                      tabs=tabs, parent_tabs=tool_tabs,
+                                      prompt_boxes=prompt_boxes)
                     build_outpaint_tab(pending_outpaint=pending_outpaint,
                                        tabs=tabs, parent_tabs=tool_tabs)
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,

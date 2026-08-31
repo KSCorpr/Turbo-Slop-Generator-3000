@@ -1437,6 +1437,50 @@ _EN: dict[str, str] = {
         "Test log",
     "Rapport JSON":
         "JSON report",
+    "📝 Image → prompt":
+        "📝 Image → prompt",
+    "Image → prompt":
+        "Image → prompt",
+    "Donnez une image, récupérez le **prompt** qui permettrait de la refaire. Ce n'est pas une légende : un modèle de vision dirait « une photo d'un chat sur un canapé », ce qui, collé dans le champ Prompt, donne une image plate. Ici on nomme le **médium**, la **lumière**, l'**objectif**, la **palette** et le **cadrage** — les mots qui pilotent réellement la diffusion. Toujours en **anglais** : c'est la langue des modèles.":
+        "Hand it an image, get back the **prompt** that would recreate it. This is not a caption: a vision model would say “a photo of a cat on a sofa”, which pasted into the Prompt field gives a flat image. Here we name the **medium**, the **light**, the **lens**, the **palette** and the **framing** — the words that actually steer diffusion. Always in **English**: that is the models' language.",
+    "Modèle de vision-langage **Qwen2.5-VL-3B** (~7,5 Go), même famille que l'améliorateur de prompt. Chargé puis déchargé à chaque appel : **aucun conflit de VRAM** avec la génération. ⚠️ Licence *Qwen Research* — usage non commercial, comme l'améliorateur déjà installé.":
+        "**Qwen2.5-VL-3B** vision-language model (~7.5 GB), same family as the prompt enhancer. Loaded then unloaded on each call: **no VRAM conflict** with generation. ⚠️ *Qwen Research* licence — non-commercial, like the enhancer already installed.",
+    "Image à lire":
+        "Image to read",
+    "Ce que vous voulez en tirer":
+        "What you want out of it",
+    "📸 Refaire cette image — sujet ET style":
+        "📸 Recreate this image — subject AND style",
+    "🎨 Juste le style — à appliquer à autre chose":
+        "🎨 Style only — to apply to something else",
+    "🔍 Décrire simplement — ce qu'il y a dedans":
+        "🔍 Plain description — what is in it",
+    "Sujet, décor, lumière, couleurs, médium — de quoi refaire une image proche sur un autre modèle.":
+        "Subject, setting, light, colours, medium — enough to recreate a close image on another model.",
+    "**Aucun mot sur le sujet** : ni le chat, ni la voiture, ni le lieu. Seulement le rendu, à coller devant votre propre sujet.":
+        "**Not a word about the subject**: not the cat, not the car, not the place. Only the look, to paste in front of your own subject.",
+    "Deux ou trois phrases, sans vocabulaire de prompt. Pour savoir ce qu'il y a dans l'image, pas pour la regénérer.":
+        "Two or three sentences, no prompt vocabulary. To know what is in the image, not to regenerate it.",
+    "📝 Lire l'image":
+        "📝 Read the image",
+    "Prompt obtenu":
+        "Resulting prompt",
+    "Le texte apparaîtra ici — relisez-le avant de l'envoyer, c'est un point de départ, pas un verdict.":
+        "The text will appear here — read it before sending, it is a starting point, not a verdict.",
+    "**L'envoyer directement dans un onglet de génération** — le prompt y remplace le champ, vous générez ensuite quand vous voulez.":
+        "**Send it straight to a generation tab** — the prompt replaces the field there, and you generate whenever you like.",
+    "→ ⚡ Krea 2 Turbo":
+        "→ ⚡ Krea 2 Turbo",
+    "→ 🟣 Flux.2 Klein":
+        "→ 🟣 Flux.2 Klein",
+    "Journal":
+        "Log",
+    "Chargez d'abord une image.":
+        "Load an image first.",
+    "Installez d'abord « Image → prompt ».":
+        "Install “Image → prompt” first.",
+    "Lisez d'abord une image.":
+        "Read an image first.",
 }
 
 _EN_INV: dict[str, str] = {v: k for k, v in _EN.items()}

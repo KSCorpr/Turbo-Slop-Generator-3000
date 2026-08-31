@@ -210,6 +210,11 @@ button[role=tab][aria-selected=true] {{
 .feedback:not(:empty) {{ border-left:3px solid var(--tsg-accent);
     background:rgba(0,184,230,.06); border-radius:0 8px 8px 0;
     padding:7px 11px; margin:6px 0; }}
+/* `:not(:empty)` ci-dessus ne mord JAMAIS : Gradio pose la classe sur le
+   conteneur, qui garde un enfant même quand le Markdown est vide. Résultat,
+   une bande bleue permanente qui ressemble à un message illisible. On teste
+   donc la présence d'un paragraphe RENDU, ce qui est le vrai critère. */
+.feedback:not(:has(p)) {{ display:none; }}
 .feedback p {{ margin:.15rem 0 !important; font-size:.83rem; line-height:1.5; }}
 
 /* Bandeau d'alerte au démarrage : compact, replié sur une ligne. */

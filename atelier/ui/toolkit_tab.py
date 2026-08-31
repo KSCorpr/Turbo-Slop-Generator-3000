@@ -1,6 +1,9 @@
 """Onglet Toolkit : profondeur, détourage, SAM et upscale ESRGAN."""
 from __future__ import annotations
 
+import queue
+import threading
+
 import gradio as gr
 
 from .. import downloader, hardware, registry, settings
@@ -128,7 +131,7 @@ def _installer_block(title: str, note: str, stream_fn, installed: bool):
 
 
 def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
-                      parent_tabs=None):
+                      parent_tabs=None, prompt_boxes=None):
     """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet.
 
     Depuis le regroupement des onglets, atteindre un outil demande DEUX
@@ -142,6 +145,140 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             "**agrandissement ESRGAN** (simple, 100% GPU).")
 
         with gr.Tabs() as sub_tabs:
+            # ---------- Image -> prompt ----------
+            # Placé EN TÊTE : c'est le seul outil du Toolkit qui ne transforme
+            # pas l'image mais qui alimente la génération. Il vient donc avant
+            # ceux qui la retouchent, dans l'ordre où on s'en sert.
+            with gr.Tab("📝 Image → prompt", id="describe"):
+                gr.Markdown(
+                    "Donnez une image, récupérez le **prompt** qui permettrait "
+                    "de la refaire. Ce n'est pas une légende : un modèle de "
+                    "vision dirait « une photo d'un chat sur un canapé », ce "
+                    "qui, collé dans le champ Prompt, donne une image plate. "
+                    "Ici on nomme le **médium**, la **lumière**, l'**objectif**, "
+                    "la **palette** et le **cadrage** — les mots qui pilotent "
+                    "réellement la diffusion. Toujours en **anglais** : c'est "
+                    "la langue des modèles.")
+                _installer_block(
+                    "Image → prompt",
+                    "Modèle de vision-langage **Qwen2.5-VL-3B** (~7,5 Go), même "
+                    "famille que l'améliorateur de prompt. Chargé puis déchargé "
+                    "à chaque appel : **aucun conflit de VRAM** avec la "
+                    "génération. ⚠️ Licence *Qwen Research* — usage non "
+                    "commercial, comme l'améliorateur déjà installé.",
+                    tools.install_describe_stream, tools.describe_is_installed())
+
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        p_image = gr.Image(label="Image à lire", type="pil",
+                                           height=340,
+                                           buttons=widgets.IMAGE_BUTTONS)
+                        p_mode = gr.Radio(
+                            [(t("📸 Refaire cette image — sujet ET style"),
+                              "full"),
+                             (t("🎨 Juste le style — à appliquer à autre chose"),
+                              "style"),
+                             (t("🔍 Décrire simplement — ce qu'il y a dedans"),
+                              "plain")],
+                            value="full", label="Ce que vous voulez en tirer")
+                        p_hint = gr.Markdown("", elem_classes="hint")
+                        with gr.Row():
+                            p_run = gr.Button("📝 Lire l'image",
+                                              variant="primary")
+                            p_stop = gr.Button("⏹️ Annuler", variant="stop")
+                    with gr.Column(scale=3):
+                        p_out = gr.Textbox(
+                            label="Prompt obtenu", lines=9,
+                            buttons=widgets.TEXT_COPY,
+                            placeholder="Le texte apparaîtra ici — relisez-le "
+                                        "avant de l'envoyer, c'est un point de "
+                                        "départ, pas un verdict.")
+                        gr.Markdown(t(
+                            "**L'envoyer directement dans un onglet de "
+                            "génération** — le prompt y remplace le champ, "
+                            "vous générez ensuite quand vous voulez."))
+                        with gr.Row():
+                            p_to_krea = gr.Button("→ ⚡ Krea 2 Turbo")
+                            p_to_flux = gr.Button("→ 🟣 Flux.2 Klein")
+                        p_log = gr.Textbox(label="Journal", lines=6,
+                                           autoscroll=True,
+                                           elem_classes="log-box")
+
+                # Ce que le mode va faire, écrit AVANT le clic : « juste le
+                # style » et « refaire cette image » ne se devinent pas d'après
+                # leur libellé seul, et se tromper coûte une minute de calcul.
+                _MODE_HINT = {
+                    "full": "Sujet, décor, lumière, couleurs, médium — de quoi "
+                            "refaire une image proche sur un autre modèle.",
+                    "style": "**Aucun mot sur le sujet** : ni le chat, ni la "
+                             "voiture, ni le lieu. Seulement le rendu, à coller "
+                             "devant votre propre sujet.",
+                    "plain": "Deux ou trois phrases, sans vocabulaire de "
+                             "prompt. Pour savoir ce qu'il y a dans l'image, "
+                             "pas pour la regénérer.",
+                }
+
+                def _mode_hint(mode):
+                    return t(_MODE_HINT.get(mode, ""))
+
+                p_mode.change(_mode_hint, inputs=[p_mode], outputs=[p_hint])
+
+                def do_describe(image, mode):
+                    if image is None:
+                        raise gr.Error(t("Chargez d'abord une image."))
+                    if not tools.describe_is_installed():
+                        raise gr.Error(t("Installez d'abord « Image → prompt »."))
+                    q: "queue.Queue[str | None]" = queue.Queue()
+                    state: dict = {}
+
+                    def worker():
+                        try:
+                            state["out"] = tools.image_to_prompt(
+                                image, mode=mode, log=q.put)
+                        except Exception as exc:  # noqa: BLE001
+                            state["err"] = str(exc)
+                        finally:
+                            q.put(None)
+
+                    threading.Thread(target=worker, daemon=True).start()
+                    logs: list[str] = []
+                    while True:
+                        line = q.get()
+                        if line is None:
+                            break
+                        logs.append(line)
+                        yield gr.update(), "\n".join(logs[-500:])
+                    if "err" in state:
+                        logs.append(f"\n[ERREUR] {state['err']}")
+                        yield gr.update(), "\n".join(logs[-500:])
+                        return
+                    yield state["out"][0], "\n".join(logs[-500:])
+
+                p_evt = p_run.click(do_describe, inputs=[p_image, p_mode],
+                                    outputs=[p_out, p_log])
+                widgets.stop_into_log(p_stop, tools.cancel, p_log, [p_evt])
+
+                # Envoi vers un onglet de génération. On écrit DIRECTEMENT
+                # dans son champ Prompt (l'appelant nous l'a passé) puis on
+                # bascule. Le détour par un State consommé au changement
+                # d'onglet ne marche pas : une sélection programmatique ne
+                # déclenche pas `Tabs.select`, le texte n'arrivait jamais.
+                def _send_to(model_id, button):
+                    box = (prompt_boxes or {}).get(model_id)
+                    if box is None or tabs is None:
+                        button.visible = False
+                        return
+
+                    def _go(text):
+                        if not (text or "").strip():
+                            raise gr.Error(t("Lisez d'abord une image."))
+                        return text.strip(), gr.Tabs(selected=model_id)
+
+                    button.click(_go, inputs=[p_out], outputs=[box, tabs])
+
+                _send_to("krea2-turbo", p_to_krea)
+                _send_to("flux2-klein-9b", p_to_flux)
+
             # ---------- Profondeur ----------
             with gr.Tab("🌐 Profondeur", id="depth"):
                 gr.Markdown(
@@ -804,8 +941,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def do_seedvr2(img, resolution, model, blocks, tile, overlap,
                                offload, color, progress=gr.Progress()):
-                    import queue
-                    import threading
                     if img is None:
                         raise gr.Error(t("Fournissez une image."))
                     if not tools.seedvr2_is_installed():
@@ -873,8 +1008,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                     def do_seedvr2_batch(files, resolution, model, blocks,
                                          tile, overlap, offload, color):
-                        import queue
-                        import threading
                         if not files:
                             raise gr.Error(t("Sélectionnez un dossier d'images."))
                         if not tools.seedvr2_is_installed():

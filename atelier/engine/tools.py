@@ -24,6 +24,7 @@ BG_MODEL_DIR = TOOLS_DIR / "bg" / "model"
 SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
 CLIP_MODEL_DIR = TOOLS_DIR / "clip" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
+DESCRIBE_MODEL_DIR = TOOLS_DIR / "describe" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
 SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
@@ -78,6 +79,10 @@ def sam_is_installed() -> bool:
 
 def clip_is_installed() -> bool:
     return _model_present(CLIP_MODEL_DIR)
+
+
+def describe_is_installed() -> bool:
+    return _model_present(DESCRIBE_MODEL_DIR)
 
 
 def enhance_is_installed() -> bool:
@@ -158,6 +163,10 @@ def install_clip_stream():
 
 def install_enhance_stream():
     yield from _install_stream("enhance")
+
+
+def install_describe_stream():
+    yield from _install_stream("describe")
 
 
 def install_upscale_stream():
@@ -482,6 +491,55 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
             out = [raw]           # repli : ancien format texte brut
     if not out:
         raise ToolError("L'améliorateur n'a renvoyé aucun texte (voir le journal).")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Image → prompt (modèle de vision-langage)
+# --------------------------------------------------------------------------- #
+# Trois intentions RÉELLEMENT différentes, pas trois réglages du même curseur :
+#   full  -> refaire cette image ailleurs (sujet + style)
+#   style -> appliquer CE rendu à un AUTRE sujet (style seul, sujet interdit)
+#   plain -> savoir ce qu'il y a dedans, en français courant côté lecture
+DESCRIBE_MODES = ("full", "style", "plain")
+
+
+def image_to_prompt(image, mode: str = "full", variants: int = 1,
+                    log: Callable[[str], None] | None = None) -> list[str]:
+    """Lit une image et en écrit un PROMPT (pas une légende).
+
+    Tourne en sous-process, comme l'améliorateur : le modèle est chargé puis
+    déchargé, donc rien ne reste en VRAM pendant la génération sd.cpp. Et comme
+    l'améliorateur, c'est du TEXTE : il part sur le GPU dédié au texte quand il
+    y en a un (la 1080 Ti, par exemple), ce qui laisse la carte de génération
+    tranquille.
+    """
+    if not describe_is_installed():
+        raise ToolError("Le module « Image → prompt » n'est pas installé "
+                        "(bouton d'installation dans son onglet).")
+    src = _to_src(image, "describe")
+    settings.ensure_dirs()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_file = settings.TMP_DIR / f"describe_{stamp}.json"
+    runner = settings.ROOT / "scripts" / "tools" / "run_describe.py"
+    cmd = [sys.executable, str(runner), "--model-dir", str(DESCRIBE_MODEL_DIR),
+           "--image", str(src), "--output", str(out_file),
+           "--mode", mode if mode in DESCRIBE_MODES else "full",
+           "--variants", str(max(1, min(4, int(variants or 1))))]
+    _run_tool(cmd, log, "La lecture de l'image a échoué (voir le journal).",
+              gpu_index=_text_gpu_index())
+    try:
+        raw = out_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        raw = ""
+    out: list[str] = []
+    if raw:
+        try:
+            out = [str(x).strip() for x in json.loads(raw) if str(x).strip()]
+        except (ValueError, TypeError):
+            out = [raw]
+    if not out:
+        raise ToolError("Aucun texte n'est revenu du modèle (voir le journal).")
     return out
 
 

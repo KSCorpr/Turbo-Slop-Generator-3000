@@ -100,7 +100,10 @@ def build_generative_tab(model_id: str, title: str,
                          pending_outpaint=None, outpaint_tab_id="tools"):
     d = _defaults(model_id)
 
-    with gr.Tab(title):
+    # `id` EXPLICITE : « 📝 Image → prompt » renvoie son texte vers un onglet
+    # nommé. Sans identifiant stable, la cible serait le libellé affiché, qui
+    # change avec la langue — le retour tomberait à côté en anglais.
+    with gr.Tab(title, id=model_id):
         m = registry.get_base_model(model_id, settings.load_prefs())
         ready = m is not None and registry.model_is_ready(m)
         family = m.family if m else "flux2"
@@ -1125,3 +1128,11 @@ def build_generative_tab(model_id: str, title: str,
 
             send_op.click(_send_outpaint, inputs=[last_paths, sel_index],
                           outputs=[pending_outpaint, tabs])
+
+        # Le champ Prompt est RENVOYÉ à l'appelant. C'est ce qui permet à
+        # « 📝 Image → prompt » d'y déposer son texte directement, au clic,
+        # plutôt que d'attendre un événement de changement d'onglet : une
+        # sélection programmatique ne déclenche pas `Tabs.select`, donc le
+        # texte n'arrivait jamais (vérifié dans le navigateur avant de câbler
+        # autrement).
+        return prompt

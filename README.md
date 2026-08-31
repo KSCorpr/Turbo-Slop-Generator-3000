@@ -40,7 +40,7 @@ so the grouping is not decoration.)
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, in-app documentation of every option) · **Convert to GGUF** |
 
 ---
@@ -55,6 +55,7 @@ so the grouping is not decoration.)
 - [Upscaling](#upscaling)
 - [Outpaint](#outpaint)
 - [Toolkit](#toolkit)
+  - [Image → prompt](#-image--prompt)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
 - [Distributing a portable package](#distributing-a-portable-package)
@@ -986,6 +987,7 @@ sidecar recording model, seed and settings. Generation tabs have a
 One-click installable utilities (models pulled from Hugging Face, run as
 subprocesses so torch DLLs never lock the UI process):
 
+- **📝 Image → prompt** — hand it an image, get the prompt back. See below.
 - **Depth** — *Depth Anything V2* (depth map).
 - **Background removal** — *RMBG-1.4* (cutout → transparent PNG; non-commercial
   license).
@@ -994,6 +996,43 @@ subprocesses so torch DLLs never lock the UI process):
 - **Layers (PSD)** — decompose an image into layers, see below.
 - **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**
   and **Creative upscale (SDXL)** — see [Upscaling](#upscaling).
+
+### 📝 Image → prompt
+Give it an image, get back the prompt that would recreate it — then send that
+prompt straight into a generation tab with one button.
+
+**This is not captioning, and the difference is the whole point.** A vision
+model left to itself says *"a photo of a cat on a sofa"*. That is a sentence
+*about* the image; pasted into the Prompt field it produces something flat.
+A prompt is an *instruction*: it names the medium, the light, the lens, the
+palette and the framing, because those are the words a diffusion model actually
+responds to. The system prompt therefore bans caption formulas outright, and the
+lead-ins the model emits anyway ("This image shows…", "Sure, here is a
+prompt:…") are stripped from the answer — the instruction lowers their
+frequency, it does not reach zero, and one is enough to pollute the field.
+
+Output is always **English**, whatever the interface language: that is what the
+models were trained on.
+
+Three modes, which ask for genuinely different things:
+
+| Mode | What it writes | What it is for |
+|---|---|---|
+| 📸 **Recreate this image** | subject, setting, light, composition, colours, medium — 60–110 words | reproducing or varying an image on your own models |
+| 🎨 **Style only** | medium, technique, light, palette, contrast, grain — **and not one word about the subject** | applying that look to a completely different subject |
+| 🔍 **Plain description** | two or three sentences, no prompt jargon | knowing what is in an image |
+
+The style mode's rule is strict on purpose: if the image is a red car in Rome,
+neither "car" nor "Rome" may appear. A style that names its subject is not
+transposable, and the mode would have no reason to exist.
+
+**Model**: **Qwen2.5-VL-3B-Instruct** (~7.5 GB), the same family as the prompt
+enhancer, loaded then unloaded per call so nothing stays in VRAM during
+generation. Like the enhancer, it is *text* work, so it runs on the secondary
+text GPU when you have one. It needs `transformers>=4.49` — the
+`Qwen2_5_VLForConditionalGeneration` class does not exist in 4.48, verified —
+so the installer pins that range for this add-on only. ⚠️ **Qwen Research
+licence: non-commercial**, the same condition as the already-shipped enhancer.
 
 ### Layers → PSD
 
@@ -1511,6 +1550,9 @@ authors. Please read and respect each model's own license on its page.
   ([briaai/RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4), **non-commercial** license).
 - **Segment Anything** — **Meta AI**
   ([facebook/sam-vit-base](https://huggingface.co/facebook/sam-vit-base)).
+- **Image → prompt** — **Qwen2.5-VL-3B-Instruct** by **Alibaba / Qwen team**
+  ([Qwen/Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)),
+  Qwen Research licence (non-commercial).
 - **Prompt enhancer** — **Qwen2.5-3B-Instruct** by **Alibaba / Qwen team**
   ([Qwen/Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct)).
 - The **Krea prompting guide** informed the Krea 2 enhancer system prompt.

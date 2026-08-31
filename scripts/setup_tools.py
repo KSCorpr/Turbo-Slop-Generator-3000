@@ -45,6 +45,16 @@ SAM_REPO = "facebook/sam-vit-base"
 CLIP_REPO = "openai/clip-vit-base-patch32"
 # Améliorateur de prompt : petit LLM instruct (~6 Go fp16), tourne en sous-process.
 ENHANCE_REPO = "Qwen/Qwen2.5-3B-Instruct"
+# « Image → prompt » : modèle de VISION-langage, même famille que l'améliorateur
+# ci-dessus (mêmes gabarits de chat, même licence Qwen Research). 3B, ~7,5 Go en
+# bf16, chargé puis déchargé comme lui — donc aucune VRAM retenue pendant la
+# génération. Le support natif (`Qwen2_5_VLForConditionalGeneration`) est arrivé
+# dans transformers 4.49 : vérifié, la classe n'existe pas en 4.48.
+DESCRIBE_REPO = "Qwen/Qwen2.5-VL-3B-Instruct"
+# Épinglage PROPRE à cet outil, plus serré que le pin global : 4.45 suffirait
+# aux autres add-ons mais ne connaît pas ce modèle, et l'échec serait un
+# « KeyError: qwen2_5_vl » incompréhensible au premier clic.
+DESCRIBE_TRANSFORMERS_PIN = "transformers>=4.49,<4.50"
 # Upscale créatif tuilé : SDXL base (1 fichier) + VAE fp16-fix + ControlNet Tile
 # (optionnel, verrouille la structure pour pousser la créativité sans dériver).
 SDXL_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -166,6 +176,24 @@ def install_enhance():
     print("\n[OK] Améliorateur de prompt installé. Bouton « ✨ Améliorer ».")
 
 
+def install_describe():
+    model_dir = settings.ROOT / "tools_repo" / "describe" / "model"
+    ensure_torch_cuda()
+    print("Installation de transformers + accelerate…")
+    sh([sys.executable, "-m", "pip", "install",
+        DESCRIBE_TRANSFORMERS_PIN, NUMPY_PIN, "accelerate", "safetensors",
+        "pillow"])
+    print(f"\nTéléchargement du modèle image → prompt ({DESCRIBE_REPO}, "
+          f"~7,5 Go)…")
+    from huggingface_hub import snapshot_download
+    snapshot_download(repo_id=DESCRIBE_REPO, local_dir=str(model_dir),
+                      allow_patterns=["*.json", "*.safetensors", "*.txt",
+                                      "tokenizer*", "vocab*", "merges*",
+                                      "preprocessor*", "chat_template*"])
+    pin_numpy()
+    print("\n[OK] Image → prompt installé. Onglet Outils → « 📝 Image → prompt ».")
+
+
 def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
     """Téléchargement HF avec 3 tentatives + diagnostic réseau actionnable.
 
@@ -267,7 +295,7 @@ def install_upscale():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tool", choices=["depth", "bg", "sam", "clip", "enhance",
-                                     "upscale"])
+                                     "describe", "upscale"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -280,6 +308,8 @@ def main():
         install_clip()
     elif args.tool == "enhance":
         install_enhance()
+    elif args.tool == "describe":
+        install_describe()
     elif args.tool == "upscale":
         install_upscale()
 
