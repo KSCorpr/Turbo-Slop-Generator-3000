@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -48,6 +49,10 @@ _COMMON = (
     "single flowing block of comma-separated phrases.\n"
     "• Describe ONLY what is visible. Never invent a brand, a place, a name or "
     "a date you cannot actually see.\n"
+    "• NEVER repeat yourself. Each comma-separated fragment must add something "
+    "the previous ones did not. Once you have said 'wet', 'high heels' or "
+    "'fashion', that idea is spent — do not restate it in another form. When "
+    "you have nothing left to add, STOP; a short prompt beats a padded one.\n"
     "• Name the MEDIUM explicitly (photograph, oil painting, anime cel, 3D "
     "render, vector illustration, pencil sketch…) and then use ONLY that "
     "medium's vocabulary. A photograph gets lens, aperture, depth of field and "
@@ -113,8 +118,59 @@ _LEAD_INS = (
 )
 
 
-def _clean(text: str) -> str:
-    """Retire les amorces de légende et les guillemets d'encadrement."""
+# Mots vides d'un fragment : « wet pavement » et « the wet pavement » sont le
+# même segment pour nous, et un prompt n'a aucun besoin des deux.
+_FILLER = {"a", "an", "the", "of", "with", "and", "in", "on", "at", "to"}
+
+
+def _key(fragment: str) -> str:
+    """Forme canonique d'un fragment, pour comparer deux segments."""
+    words = [w for w in re.findall(r"[a-z0-9+]+", fragment.lower())
+             if w not in _FILLER]
+    return " ".join(words)
+
+
+def _dedupe(text: str) -> str:
+    """Retire les segments répétés d'une liste séparée par des virgules.
+
+    LE bug observé en vrai : après un bon début, le modèle s'enferme dans une
+    boucle et répète « high heels, fashion, modern, wet, rain » jusqu'à épuiser
+    son budget de jetons. Les pénalités de répétition passées au générateur
+    réduisent le phénomène ; elles ne le suppriment pas, parce qu'une liste de
+    mots-clés est précisément le format où boucler est le plus tentant.
+
+    Ici on ne parie pas : la sortie EST une liste séparée par des virgules, donc
+    on peut la dédupliquer sans rien perdre. L'ordre est conservé — le début est
+    la partie utile — et un fragment déjà dit, sous quelque forme que ce soit,
+    ne repasse pas.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for raw in text.split(","):
+        frag = raw.strip()
+        key = _key(frag)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        kept.append(frag)
+    return ", ".join(kept)
+
+
+def _drop_dangling(text: str) -> str:
+    """Coupe le dernier fragment d'une génération ARRÊTÉE par la limite.
+
+    On ne devine pas si la fin est tronquée — « shallow dep » et « shallow »
+    sont indiscernables sans dictionnaire, et couper un fragment légitime est
+    pire que laisser un moignon. L'appelant SAIT : si le modèle n'a pas émis
+    son jeton de fin, c'est la limite de jetons qui l'a arrêté, donc le dernier
+    segment est coupé au milieu. Cette fonction n'est appelée que dans ce cas.
+    """
+    head, sep, _tail = text.rpartition(",")
+    return (head if sep else text).rstrip(" ,;-")
+
+
+def _clean(text: str, truncated: bool = False) -> str:
+    """Retire les amorces de légende, les guillemets, puis les répétitions."""
     out = (text or "").strip()
     # Certains modèles encadrent leur réponse de guillemets ou de ```.
     if out.startswith("```"):
@@ -130,6 +186,13 @@ def _clean(text: str) -> str:
                 out = out[len(lead):].lstrip(" :,-—").lstrip()
                 changed = True
                 break
+    # La déduplication ne s'applique qu'aux LISTES. Le mode « décrire
+    # simplement » rend des phrases, où une virgule ne sépare pas des segments
+    # interchangeables — y couper des morceaux casserait la grammaire.
+    if out.count(",") >= 4 and out.count(".") <= 1:
+        out = _dedupe(out)
+        if truncated:
+            out = _drop_dangling(out)
     # Une majuscule initiale perdue en coupant l'amorce se rattrape.
     return (out[:1].upper() + out[1:]) if out else out
 
@@ -185,19 +248,38 @@ def main() -> None:
     inputs = inputs.to(device)
 
     n = max(1, min(4, int(args.variants or 1)))
-    budget = {"full": 320, "style": 160, "plain": 200}[args.mode]
+    # Budget CADRÉ sur la longueur demandée (~1,7 jeton par mot, virgules
+    # comprises). L'ancien budget de 320 jetons pour 110 mots laissait 65 % de
+    # marge, et cette marge, le modèle la remplit : c'est là qu'il se met à
+    # répéter « high heels, fashion, modern, wet » jusqu'à la fin.
+    budget = {"full": 200, "style": 110, "plain": 150}[args.mode]
     max_new = int(args.max_new_tokens) or budget
     print(f"[image→prompt] rédaction ({args.mode}, {n} proposition(s))…",
           flush=True)
     with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=max_new,
-                             do_sample=True, temperature=0.7, top_p=0.9,
-                             num_return_sequences=n)
+        out = model.generate(
+            **inputs, max_new_tokens=max_new,
+            do_sample=True, temperature=0.7, top_p=0.9,
+            # Une liste de mots-clés est le format où boucler est le plus
+            # tentant : rien ne signale au modèle qu'il a fini. Deux garde-fous
+            # complémentaires — la pénalité décourage de réemployer un jeton
+            # déjà sorti, le n-gramme interdit carrément de redire une suite de
+            # six jetons. Le motif observé en vrai (« high heels, fashion,
+            # modern, wet, rain ») en fait une dizaine : il est couvert.
+            repetition_penalty=1.1, no_repeat_ngram_size=6,
+            num_return_sequences=n)
     start = inputs["input_ids"].shape[1]
+    eos = model.generation_config.eos_token_id
+    eos_ids = set(eos if isinstance(eos, (list, tuple)) else [eos])
     results, seen = [], set()
     for row in out:
-        cand = _clean(processor.tokenizer.decode(row[start:],
-                                                 skip_special_tokens=True))
+        body = row[start:]
+        # Pas de jeton de fin = c'est max_new_tokens qui a arrêté le modèle,
+        # donc le dernier fragment est coupé au milieu d'un mot.
+        cut = len(body) >= max_new and int(body[-1]) not in eos_ids
+        cand = _clean(processor.tokenizer.decode(body,
+                                                 skip_special_tokens=True),
+                      truncated=cut)
         key = cand.lower()
         if cand and key not in seen:
             seen.add(key)

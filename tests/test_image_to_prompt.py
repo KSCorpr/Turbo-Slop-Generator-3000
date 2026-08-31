@@ -175,5 +175,113 @@ class EngineLayerTests(unittest.TestCase):
         self.assertIn("pas installé", str(ctx.exception))
 
 
+# Sortie RÉELLE remontée par l'utilisateur : bon début, puis le modèle s'enferme
+# dans une boucle et répète « high heels, fashion, modern, wet, rain » jusqu'à
+# épuiser son budget de jetons. C'est la panne à couvrir, avec ses vraies
+# données — pas un exemple reconstitué qui aurait pu être plus commode.
+LOOPED_OUTPUT = (
+    "Shiny black high heels, woman's legs, mid-length, slim figure, wearing form-fitting dress, metallic finish, wet street, puddle, rainy night, city lights, bokeh effect, warm yellow-orange light, low angle, close-up, shallow depth of field, vivid colors, high contrast, glossy surface, urban scene, photograph, real texture, wet pavement, raindrops, shiny heels, splash, dark background, wet surface, reflection, high heels, fashion, evening, night, cityscape, street, sidewalk, wet, reflective, bokeh, night lights, vibrant, glossy, modern, sleek, high fashion, urban, rain, close-up, wet street, puddle, rain, splash, shiny, close-up, detail, wet, rain, dark, rainy, wet pavement, glossy, reflective, puddle, splash, shine, high heels, fashion, modern, sleek, wet, fashion, modern, wet, fashion, modern, high heels, wet, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet, rain, high heels, fashion, modern, wet")
+
+
+class RepetitionLoopTests(unittest.TestCase):
+    """Un modèle qui boucle est la panne NORMALE de ce format.
+
+    Une liste de mots-clés séparés par des virgules ne dit jamais au modèle
+    qu'il a fini : rien dans la grammaire ne signale la fin. Les pénalités
+    passées au générateur réduisent le phénomène ; elles ne le suppriment pas,
+    donc le nettoyage doit garantir le résultat plutôt que l'espérer.
+    """
+
+    def setUp(self):
+        self.run = _runner()
+
+    def test_the_real_looped_output_is_cleaned_up(self):
+        out = self.run._clean(LOOPED_OUTPUT)
+        before = LOOPED_OUTPUT.count(",") + 1
+        after = out.count(",") + 1
+        self.assertLess(after, before / 2,
+                        f"{before} segments -> {after}, la boucle survit")
+
+    def test_no_fragment_appears_twice(self):
+        out = self.run._clean(LOOPED_OUTPUT)
+        keys = [self.run._key(f) for f in out.split(",") if self.run._key(f)]
+        self.assertEqual(len(keys), len(set(keys)),
+                         "un fragment est encore présent deux fois")
+
+    def test_the_useful_beginning_survives_intact(self):
+        """Dédupliquer ne doit pas coûter la partie utile : c'est le DÉBUT qui
+        porte le sujet, la lumière et l'objectif."""
+        out = self.run._clean(LOOPED_OUTPUT)
+        for kept in ("Shiny black high heels", "wearing form-fitting dress",
+                     "warm yellow-orange light", "shallow depth of field",
+                     "bokeh effect", "low angle", "photograph"):
+            self.assertIn(kept, out, kept)
+
+    def test_order_is_preserved(self):
+        """L'ordre porte du sens : le sujet d'abord, les modificateurs après."""
+        out = self.run._clean(LOOPED_OUTPUT)
+        self.assertLess(out.index("high heels"), out.index("bokeh"))
+
+    def test_variants_of_the_same_fragment_collapse(self):
+        """« wet pavement » et « the wet pavement » sont le même segment."""
+        got = self.run._dedupe("wet pavement, city lights, the wet pavement")
+        self.assertEqual(got, "wet pavement, city lights")
+
+    def test_a_sentence_is_never_deduplicated(self):
+        """Le mode « décrire simplement » rend des PHRASES. Y couper des
+        segments entre virgules casserait la grammaire, donc le nettoyage ne
+        s'applique qu'aux listes."""
+        prose = ("A woman walks through a puddle at night, her heels splashing "
+                 "water, and the street lights glow behind her, warm and "
+                 "diffuse, while the rain keeps falling.")
+        self.assertEqual(self.run._clean(prose), prose)
+
+    def test_a_truncated_tail_is_dropped_only_when_it_really_is(self):
+        """On ne DEVINE pas la troncature : « shallow dep » et « shallow » sont
+        indiscernables sans dictionnaire, et couper un fragment légitime est
+        pire que laisser un moignon. Le runner sait si le modèle a été arrêté
+        par la limite de jetons ; il le dit."""
+        txt = "cinematic photograph, warm light, low angle, bokeh, shallow dep"
+        self.assertEqual(self.run._clean(txt, truncated=True),
+                         "Cinematic photograph, warm light, low angle, bokeh")
+        # Sans le signal, on ne touche à rien.
+        self.assertTrue(self.run._clean(txt).endswith("shallow dep"))
+
+    def test_the_runner_detects_truncation_from_the_end_token(self):
+        """Le signal vient de l'absence de jeton de fin, pas d'une heuristique
+        sur le texte."""
+        src = (ROOT / "scripts" / "tools"
+               / "run_describe.py").read_text(encoding="utf-8")
+        self.assertIn("eos_token_id", src)
+        self.assertIn("truncated=cut", src)
+
+
+class GenerationGuardTests(unittest.TestCase):
+    """Les garde-fous côté génération, lus dans le code du runner.
+
+    Ils ne sont pas testables sans GPU, mais leur ABSENCE est ce qui a produit
+    la boucle : les vérifier statiquement vaut mieux que de les croire acquis.
+    """
+
+    def setUp(self):
+        self.src = (ROOT / "scripts" / "tools"
+                    / "run_describe.py").read_text(encoding="utf-8")
+
+    def test_repetition_penalties_are_passed_to_generate(self):
+        self.assertIn("repetition_penalty=", self.src)
+        self.assertIn("no_repeat_ngram_size=", self.src)
+
+    def test_the_token_budget_matches_the_requested_length(self):
+        """320 jetons pour 110 mots laissaient 65 % de marge — et cette marge,
+        le modèle la remplit de redites."""
+        import re as _re
+        m = _re.search(r'budget = \{([^}]*)\}', self.src)
+        self.assertIsNotNone(m)
+        budgets = {k: int(v) for k, v in
+                   _re.findall(r'"(\w+)": (\d+)', m.group(1))}
+        self.assertLessEqual(budgets["full"], 220, budgets)
+        self.assertLess(budgets["style"], budgets["full"])
+
+
 if __name__ == "__main__":
     unittest.main()

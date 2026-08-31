@@ -1014,6 +1014,31 @@ frequency, it does not reach zero, and one is enough to pollute the field.
 Output is always **English**, whatever the interface language: that is what the
 models were trained on.
 
+**Repetition is the normal failure of this format, and it is handled in three
+places.** A comma-separated keyword list never tells the model it is finished —
+nothing in the grammar signals an end — so it loops: a real run produced a good
+opening and then repeated *"high heels, fashion, modern, wet, rain"* until the
+token budget ran out, 130 fragments for 50 useful ones. The fixes, in order of
+how much they can be relied on:
+
+1. the token budget is **matched to the requested length** (200 tokens for
+   110 words, not 320 — that 65% of slack is exactly what the model fills with
+   restatements);
+2. `repetition_penalty` and `no_repeat_ngram_size=6` are passed to the
+   generator, and the system prompt forbids restating an idea already written;
+3. **the answer is deduplicated afterwards.** This is the one that guarantees
+   the result rather than hoping for it: the output *is* a comma-separated
+   list, so identical fragments can be dropped without losing anything. Order
+   is preserved (the opening carries the subject, the light, the lens), and
+   `wet pavement` collapses with `the wet pavement`. Prose answers — the plain
+   description mode — are never deduplicated, since a comma there is grammar,
+   not a separator.
+
+A tail cut off by the token limit is dropped too, but only when the runner
+*knows* it was cut — the model emitted no end token. It is never guessed from
+the text: `shallow dep` and `shallow` are indistinguishable without a
+dictionary, and trimming a legitimate fragment is worse than leaving a stub.
+
 Three modes, which ask for genuinely different things:
 
 | Mode | What it writes | What it is for |
