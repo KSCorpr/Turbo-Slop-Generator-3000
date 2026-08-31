@@ -88,19 +88,43 @@ _FALLBACK_TITLE = "🖼️ Aperçu de secours (si l'image ne s'affiche pas)"
 
 
 def _installer_block(title: str, note: str, stream_fn, installed: bool):
-    """Accordéon d'installation 1 clic commun aux outils."""
-    with gr.Accordion(t("⚙️ Installer {title} (en 1 clic)").format(title=title),
-                      open=not installed):
+    """Installation 1 clic, commune aux outils.
+
+    Un bloc d'installation ne sert QU'UNE FOIS. Le laisser en permanence dans
+    l'onglet, c'est faire payer à vie un accordéon de plus à quelqu'un qui a
+    déjà tout installé — et ils sont sept. Quand l'outil est là, le bloc
+    disparaît ; quand il ne l'est pas, il est déplié d'emblée, parce qu'à ce
+    moment-là c'est la seule chose à faire dans cet onglet.
+
+    On garde `visible=` plutôt qu'un `if` : le bloc doit exister dans l'arbre
+    pour pouvoir réapparaître si l'installation échoue plus tard.
+    """
+    # Déjà installé : une seule petite ligne, qui redonne accès au bloc si
+    # l'installation est à refaire. Sans elle, « réparer » deviendrait
+    # impossible depuis l'interface.
+    # `title` est un nom d'outil français fourni par l'appelant : il se traduit
+    # séparément, sinon seule l'enveloppe passerait en anglais.
+    repair = gr.Button(
+        t("⚙️ Réinstaller / réparer {title}").format(title=t(title)),
+        size="sm", variant="secondary", visible=installed)
+    with gr.Accordion(
+            t("⚙️ Installer {title} (en 1 clic)").format(title=t(title)),
+            open=not installed, visible=not installed) as box:
         gr.Markdown(note)
         log = gr.Textbox(label="Journal d'installation", lines=10,
                          autoscroll=True, elem_classes="log-box")
-        btn = gr.Button(t("⬇️ Installer {title}").format(title=title))
+        btn = gr.Button(t("⬇️ Installer {title}").format(title=t(title)))
 
         def _install():
             for msg in stream_fn():
                 yield msg
 
         btn.click(_install, outputs=[log])
+
+    repair.click(lambda: (gr.update(visible=True, open=True),
+                          gr.update(visible=False)),
+                 outputs=[box, repair])
+    return box
 
 
 def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,

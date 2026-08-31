@@ -100,8 +100,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     "cache_mode": "",
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
     # Presets ciblés : contrairement au cache global ci-dessus, ils ne touchent
-    # que le modèle nommé. Krea Raw (beaucoup de pas) peut ainsi profiter du
-    # cache sans dégrader les modèles Turbo à 4-8 pas.
+    # que le modèle nommé — { "<id>": {"mode": ..., "option": ...} }. Plus
+    # exposé dans l'interface depuis que tous les modèles du catalogue tournent
+    # en 4 à 8 pas, régime où le cache ne gagne rien ; se règle à la main pour
+    # un modèle qu'on ferait tourner avec beaucoup plus de pas.
     "cache_by_model": {},
     # Exécution SEGMENTÉE (sd.cpp --max-vram) : autorise le moteur à découper
     # son graphe de calcul pour tenir dans un budget, au lieu d'allouer d'un

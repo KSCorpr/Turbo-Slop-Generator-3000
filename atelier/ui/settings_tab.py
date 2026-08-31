@@ -1,10 +1,15 @@
 """Onglet Réglages : matériel détecté, optimisations auto/manuelles, quant."""
 from __future__ import annotations
 
+import json
+import queue
+import threading
+
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
 from ..i18n import t
+from . import widgets
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
@@ -50,19 +55,316 @@ def build_settings_tab():
         prefs = settings.load_prefs()
         multi_gpu = len(_gpu_choices()) > 1
 
-        # ------------------------------------------------------------------ #
-        #  Interface
-        # ------------------------------------------------------------------ #
-        with gr.Accordion("🌍 Interface (langue, thème)", open=False):
-            with gr.Row():
-                lang_dd = gr.Dropdown(
-                    LANGS, value=prefs.get("lang", "fr"),
-                    label="🌐 Langue / Language (redémarrage requis)")
-                theme_dd = gr.Dropdown(
-                    [(t("Clair"), "light"), (t("Sombre"), "dark")],
-                    value=prefs.get("theme", "light"),
-                    label="🎨 Thème (redémarrage requis)")
-            lang_msg = gr.Markdown("")
+        # Les réglages tenaient dans une pile de six accordéons : pour
+        # comparer deux options il fallait en ouvrir deux, et rien ne disait
+        # ce que contenaient les quatre autres. Des ONGLETS montrent les
+        # rubriques en permanence, n'en cachent aucune derrière un clic, et
+        # gardent la hauteur de page constante quoi qu'on regarde.
+        with gr.Tabs():
+            with gr.Tab("🎛️ Matériel & optimisation"):
+                # ------------------------------------------------------------------ #
+                #  Optimisation (l'essentiel, visible)
+                # ------------------------------------------------------------------ #
+                gr.Markdown("### 🎛️ Optimisation")
+                with gr.Row():
+                    auto = gr.Checkbox(value=prefs.get("auto_optimize", True),
+                                       label="Automatique (recommandé — selon GPU + RAM)")
+                    gpu = gr.Dropdown(label="GPU de génération",
+                                      choices=_gpu_choices(),
+                                      value=prefs.get("gpu_index"))
+                gr.Markdown(
+                    "**Ou : optimiser pour ma carte en 1 clic** — applique quant + offload "
+                    "+ tiling selon la VRAM réelle (désactive l'automatique).")
+                with gr.Row():
+                    gen_btns = {key: gr.Button(spec["label"], size="sm")
+                                for key, spec in hardware.GENERATIONS.items()}
+
+                with gr.Accordion("Réglages manuels avancés (quant + flags)", open=False):
+                    gr.Markdown("Utilisés uniquement si **l'automatique est décoché**.")
+                    with gr.Row():
+                        quant = gr.Dropdown(label="Quant. diffusion (vide = auto)",
+                                            choices=["auto"] + QUANTS,
+                                            value=prefs.get("quant") or "auto")
+                        enc_quant = gr.Dropdown(label="Quant. encodeur (vide = auto)",
+                                                choices=["auto"] + QUANTS,
+                                                value=prefs.get("enc_quant") or "auto")
+                    f = prefs.get("flags", {})
+                    with gr.Row():
+                        fa = gr.Checkbox(value=f.get("diffusion_fa", True), label="Flash attention")
+                        offload = gr.Checkbox(value=f.get("offload_to_cpu", True), label="Offload CPU")
+                        tiling = gr.Checkbox(value=f.get("vae_tiling", True), label="VAE tiling")
+                    with gr.Row():
+                        clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False), label="CLIP sur CPU")
+                        vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False), label="VAE sur CPU")
+
+                # ------------------------------------------------------------------ #
+                #  Multi-GPU : UN seul choix (mutuellement exclusif) + carte texte
+                # ------------------------------------------------------------------ #
+                combo_btn = None
+                combo_msg = None
+                if multi_gpu:
+                    with gr.Accordion("🧮 Multi-GPU (2 cartes détectées)", open=False):
+                        gr.Markdown(
+                            "**Une seule stratégie à la fois** (elles s'excluent) :\n"
+                            "- **Une seule carte** : tout sur le GPU de génération (offload "
+                            "RAM par défaut). Le plus fiable.\n"
+                            "- **Encodeur sur la 2e carte** : l'encodeur de texte va sur "
+                            "l'autre GPU, la diffusion reste sur le principal.\n"
+                            "- **Encodeur calculé sur la 2e carte, poids en RAM** : repli "
+                            "mesurable pour un ancien moteur ou si la résidence GPU est "
+                            "plus lente sur votre topologie.\n"
+                            "- **Auto-fit** : sd.cpp choisit la résidence selon la mémoire "
+                            "libre. Si tout ne tient pas, il peut partager les modules dans "
+                            "le temps, utiliser RAM/disque et retenter le VAE en tuiles. "
+                            "Sur deux cartes très différentes ou reliées par un port x4, "
+                            "ce choix reste à mesurer : il connaît la mémoire, pas le coût "
+                            "réel du lien PCIe.")
+                        gpu_strategy = gr.Radio(
+                            [(t("Une seule carte (recommandé)"), "single"),
+                             (t("Encodeur de texte sur la 2e carte"), "encoder"),
+                             (t("Encodeur sur la 2e carte, poids en RAM"),
+                              "encoder-staged"),
+                             (t("Auto-fit : répartir sur toutes les cartes"), "autofit")],
+                            value=_gpu_strategy(prefs), label="Stratégie multi-GPU")
+                        tools_gpu = gr.Dropdown(
+                            label="GPU pour l'améliorateur de prompt (texte, séparé)",
+                            choices=[(t("Auto (même que génération)"), None)]
+                                    + _gpu_choices(),
+                            value=prefs.get("text_gpu_index"))
+                        combo = hardware.rtx3060_1080ti_combo()
+                        if combo:
+                            combo_btn = gr.Button(
+                                "⚡ Appliquer le profil RTX 3060 12 Go + GTX 1080 Ti",
+                                variant="primary")
+                            combo_msg = gr.Markdown(
+                                "La RTX 3060 calcule diffusion/VAE ; la GTX 1080 Ti "
+                                "prend l'encodeur **et garde ses poids en VRAM** grâce à "
+                                "`--params-backend`. "
+                                "Auto-fit et row split restent désactivés.")
+                else:
+                    gpu_strategy = gr.State(_gpu_strategy(prefs))
+                    tools_gpu = gr.State(prefs.get("text_gpu_index"))
+
+            with gr.Tab("⚡ Accélération (avancé)"):
+                # ------------------------------------------------------------------ #
+                #  Accélération par cache (avancé)
+                # ------------------------------------------------------------------ #
+                gr.Markdown(
+                    "**Cache entre les pas** (`caching.md`) — réutilise des calculs "
+                    "d'un pas à l'autre. Utile surtout > ~10 pas ; sur les modèles "
+                    "distillés (4–8 pas) le gain est faible et des artefacts sont "
+                    "possibles. Laisser désactivé en général.")
+                with gr.Row():
+                    cache_mode = gr.Dropdown(
+                        [(t("Désactivé (recommandé)"), ""),
+                         ("easycache", "easycache"), ("dbcache", "dbcache"),
+                         ("taylorseer", "taylorseer"), ("cache-dit", "cache-dit"),
+                         ("spectrum", "spectrum")],
+                        value=prefs.get("cache_mode", ""),
+                        label="Mode de cache (Flux/Krea = DiT)")
+                    cache_opt = gr.Textbox(
+                        value=prefs.get("cache_option", ""),
+                        label="Option (vide = défauts)", placeholder="ex. threshold=0.2")
+
+                gr.Markdown(
+                    "---\n"
+                    "**Convolution directe** — remplace l'algorithme de convolution "
+                    "(im2col) par un calcul direct. im2col déplie l'image en une "
+                    "grande matrice avant de multiplier : c'est rapide, mais ce "
+                    "tampon intermédiaire pèse lourd. En direct, il disparaît.\n\n"
+                    "👉 Ce qu'on peut promettre : **moins de mémoire**. La vitesse, "
+                    "elle, dépend de la forme des tenseurs — parfois mieux, parfois "
+                    "moins bien. **À essayer et à chronométrer**, pas à cocher les "
+                    "yeux fermés. Utile surtout si vous frôlez la saturation "
+                    "mémoire.\n\n"
+                    "*Options récentes de sd.cpp : si votre moteur ne les connaît "
+                    "pas, elles sont simplement ignorées (aucun risque de plantage). "
+                    "`update-engine.bat` pour l'avoir.*")
+                with gr.Row():
+                    conv_diff = gr.Checkbox(
+                        value=bool(prefs.get("conv_direct_diffusion")),
+                        label="Convolution directe — modèle de diffusion")
+                    conv_vae = gr.Checkbox(
+                        value=bool(prefs.get("conv_direct_vae")),
+                        label="Convolution directe — VAE")
+
+                gr.Markdown(
+                    "---\n"
+                    "**Exécution segmentée** (`--max-vram`) — par défaut, le moteur "
+                    "réserve son graphe de calcul **d'un seul bloc** : si le bloc ne "
+                    "tient pas, la génération s'arrête sur une erreur mémoire. Avec "
+                    "un budget, il a le droit de **découper le graphe** pour tenir "
+                    "dedans.\n\n"
+                    "👉 « Auto » ne fixe rien en dur : le moteur mesure la VRAM "
+                    "**libre** au lancement et s'en réserve une marge — il s'adapte "
+                    "donc à votre carte *et* à ce qui l'occupe déjà.\n\n"
+                    "⚠️ Découper coûte des allers-retours mémoire : **c'est plus lent**. "
+                    "À activer pour les résolutions qui ne passent pas autrement, pas "
+                    "par défaut. L'onglet **🚀 HD** s'en sert de toute façon — c'est "
+                    "là que le tout-ou-rien casse.")
+                with gr.Row():
+                    max_vram = gr.Dropdown(
+                        [(t("Désactivé (recommandé pour la génération)"), ""),
+                         (t("Auto — VRAM libre moins 1 Go"), "auto"),
+                         (t("Plafond ferme : 6 Go"), "6"),
+                         (t("Plafond ferme : 8 Go"), "8"),
+                         (t("Plafond ferme : 10 Go"), "10")],
+                        value=prefs.get("max_vram", ""), allow_custom_value=True,
+                        label="Budget VRAM du graphe",
+                        info="Valeur libre acceptée : « 6 », ou « cuda0=6,cuda1=4 » "
+                             "sur une machine multi-cartes.")
+                    stream_layers = gr.Checkbox(
+                        value=bool(prefs.get("stream_layers")),
+                        label="Streaming des couches depuis la RAM",
+                        info="Requiert les poids de diffusion en RAM, mais pas de "
+                             "budget --max-vram. Très dépendant du PCIe.")
+
+            with gr.Tab("🧪 Mesurer cette machine"):
+                # ------------------------------------------------------------------ #
+                #  Mesure reproductible + rapport partageable
+                # ------------------------------------------------------------------ #
+                gr.Markdown(
+                    "Le test génère la même image en **512×512, 4 pas, seed 424242** "
+                    "avec chaque placement disponible. Il mesure le temps et le pic "
+                    "VRAM, conserve les images pour comparaison et ne modifie aucun "
+                    "réglage tant que vous ne cliquez pas sur **Appliquer**.")
+                system_md = gr.Markdown(diagnostics.summary_markdown())
+                with gr.Row():
+                    report_btn = gr.Button("📋 Exporter le rapport système")
+                    bench_btn = gr.Button("⏱️ Tester les placements GPU",
+                                          variant="primary")
+                    krea_btn = gr.Button("A/B Krea GGUF ↔ INT8")
+                with gr.Row():
+                    apply_bench = gr.Button("Appliquer le profil le plus rapide")
+                    bench_stop = gr.Button("⏹️ Arrêter le test", variant="stop")
+                bench_status = gr.Markdown("")
+                bench_file = gr.File(label="Rapport JSON", interactive=False)
+                bench_log = gr.Textbox(label="Journal du test", lines=10,
+                                       autoscroll=True, elem_classes="log-box")
+
+                def _system_report():
+                    path = diagnostics.write_system_report()
+                    return diagnostics.summary_markdown(), str(path), \
+                        f"✅ Rapport créé : `{path.name}`"
+
+                report_btn.click(_system_report,
+                                 outputs=[system_md, bench_file, bench_status])
+
+                # Le test enchaîne (1 chauffe + 3 mesures) × placements : sur une
+                # 3060 ça dure plusieurs minutes. Rendre le résultat d'un bloc à
+                # la fin laisserait l'interface muette tout ce temps, sans dire
+                # si ça avance ni comment l'arrêter. On diffuse donc le journal
+                # au fil de l'eau, comme partout ailleurs dans l'application.
+                _bench_stop = threading.Event()
+
+                def _stream_benchmark(runner):
+                    """Lance `runner` dans un fil et diffuse son journal."""
+                    _bench_stop.clear()
+                    q: "queue.Queue[str | None]" = queue.Queue()
+                    state: dict = {}
+
+                    def worker():
+                        try:
+                            state["path"] = runner(log=q.put,
+                                                   cancel=_bench_stop.is_set)
+                        except Exception as exc:  # noqa: BLE001
+                            state["err"] = exc
+                        finally:
+                            q.put(None)
+
+                    threading.Thread(target=worker, daemon=True).start()
+                    logs: list[str] = []
+                    yield "⏳ Test en cours…", gr.update(), ""
+                    while True:
+                        line = q.get()
+                        if line is None:
+                            break
+                        logs.append(line)
+                        yield gr.update(), gr.update(), "\n".join(logs[-500:])
+                    if isinstance(state.get("err"), benchmark.Cancelled):
+                        yield ("⏹️ Test interrompu — aucun réglage modifié.",
+                               gr.update(), "\n".join(logs[-500:]))
+                        return
+                    if "err" in state:
+                        yield (f"❌ {state['err']}", gr.update(),
+                               "\n".join(logs[-500:]))
+                        return
+                    path = state["path"]
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    yield _verdict(data), str(path), "\n".join(logs[-500:])
+
+                def _verdict(data: dict) -> str:
+                    """Dire ce qui a été mesuré, pas seulement qui gagne."""
+                    rows = [r for r in data.get("results", []) if r.get("ok")]
+                    if not rows:
+                        return "❌ Aucun profil n'a pu être mesuré (voir le journal)."
+                    lines = [f"- **{r['label']}** — {r['seconds']:.2f} s "
+                             f"(± {r.get('spread_seconds', 0):.2f} s)" for r in rows]
+                    best = data.get("recommended_mode") or data.get("fastest_model")
+                    head = (f"✅ Médiane sur {data.get('measured_runs', '?')} tirs "
+                            f"par profil · retenu : **{best}**")
+                    return head + "\n" + "\n".join(lines)
+
+                def _do_placement_bench():
+                    yield from _stream_benchmark(benchmark.run_hardware_benchmark)
+
+                def _do_krea_bench():
+                    yield from _stream_benchmark(benchmark.compare_krea_variants)
+
+                _bench_evt = bench_btn.click(
+                    _do_placement_bench,
+                    outputs=[bench_status, bench_file, bench_log])
+                _krea_evt = krea_btn.click(
+                    _do_krea_bench,
+                    outputs=[bench_status, bench_file, bench_log])
+
+                def _cancel_bench() -> str:
+                    # On POSE le drapeau au lieu de tuer le fil : une génération
+                    # sd-cli en cours va jusqu'au bout de son image, et le test
+                    # s'arrête proprement à la mesure suivante. Couper au milieu
+                    # laisserait un tir à moitié chronométré dans le rapport.
+                    _bench_stop.set()
+                    return "⏹️ Arrêt demandé — le test s'arrête après la mesure en cours."
+
+                widgets.stop_into_log(bench_stop, _cancel_bench, bench_log,
+                                      [_bench_evt, _krea_evt])
+
+                def _apply_report(raw):
+                    if not raw:
+                        return "❌ Lancez d'abord le test des placements."
+                    path = getattr(raw, "name", raw)
+                    try:
+                        mode = benchmark.apply_recommendation(path)
+                        return f"✅ Profil mesuré appliqué : **{mode}**."
+                    except Exception as exc:  # noqa: BLE001
+                        return f"❌ {exc}"
+
+                apply_bench.click(_apply_report, inputs=[bench_file],
+                                  outputs=[bench_status])
+
+            with gr.Tab("🌍 Interface, réseau & comptes"):
+                # ------------------------------------------------------------------ #
+                #  Interface
+                # ------------------------------------------------------------------ #
+                with gr.Row():
+                    lang_dd = gr.Dropdown(
+                        LANGS, value=prefs.get("lang", "fr"),
+                        label="🌐 Langue / Language (redémarrage requis)")
+                    theme_dd = gr.Dropdown(
+                        [(t("Clair"), "light"), (t("Sombre"), "dark")],
+                        value=prefs.get("theme", "light"),
+                        label="🎨 Thème (redémarrage requis)")
+                lang_msg = gr.Markdown("")
+
+                # ------------------------------------------------------------------ #
+                #  Réseau & comptes
+                # ------------------------------------------------------------------ #
+                hf_ep = gr.Textbox(
+                    value=prefs.get("hf_endpoint", "https://huggingface.co"),
+                    label="Endpoint Hugging Face (miroir éventuel)")
+                civitai_tok = gr.Textbox(
+                    value=prefs.get("civitai_token", ""),
+                    label="Jeton Civitai (optionnel — LoRA protégés)", type="password")
 
         def _save_lang(lang):
             p = settings.load_prefs()
@@ -84,255 +386,12 @@ def build_settings_tab():
 
         theme_dd.change(_save_theme, inputs=[theme_dd], outputs=[lang_msg])
 
-        # ------------------------------------------------------------------ #
-        #  Optimisation (l'essentiel, visible)
-        # ------------------------------------------------------------------ #
-        gr.Markdown("### 🎛️ Optimisation")
-        with gr.Row():
-            auto = gr.Checkbox(value=prefs.get("auto_optimize", True),
-                               label="Automatique (recommandé — selon GPU + RAM)")
-            gpu = gr.Dropdown(label="GPU de génération",
-                              choices=_gpu_choices(),
-                              value=prefs.get("gpu_index"))
-        gr.Markdown(
-            "**Ou : optimiser pour ma carte en 1 clic** — applique quant + offload "
-            "+ tiling selon la VRAM réelle (désactive l'automatique).")
-        with gr.Row():
-            gen_btns = {key: gr.Button(spec["label"], size="sm")
-                        for key, spec in hardware.GENERATIONS.items()}
-
-        with gr.Accordion("Réglages manuels avancés (quant + flags)", open=False):
-            gr.Markdown("Utilisés uniquement si **l'automatique est décoché**.")
-            with gr.Row():
-                quant = gr.Dropdown(label="Quant. diffusion (vide = auto)",
-                                    choices=["auto"] + QUANTS,
-                                    value=prefs.get("quant") or "auto")
-                enc_quant = gr.Dropdown(label="Quant. encodeur (vide = auto)",
-                                        choices=["auto"] + QUANTS,
-                                        value=prefs.get("enc_quant") or "auto")
-            f = prefs.get("flags", {})
-            with gr.Row():
-                fa = gr.Checkbox(value=f.get("diffusion_fa", True), label="Flash attention")
-                offload = gr.Checkbox(value=f.get("offload_to_cpu", True), label="Offload CPU")
-                tiling = gr.Checkbox(value=f.get("vae_tiling", True), label="VAE tiling")
-            with gr.Row():
-                clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False), label="CLIP sur CPU")
-                vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False), label="VAE sur CPU")
-
-        # ------------------------------------------------------------------ #
-        #  Multi-GPU : UN seul choix (mutuellement exclusif) + carte texte
-        # ------------------------------------------------------------------ #
-        combo_btn = None
-        combo_msg = None
-        if multi_gpu:
-            with gr.Accordion("🧮 Multi-GPU (2 cartes détectées)", open=False):
-                gr.Markdown(
-                    "**Une seule stratégie à la fois** (elles s'excluent) :\n"
-                    "- **Une seule carte** : tout sur le GPU de génération (offload "
-                    "RAM par défaut). Le plus fiable.\n"
-                    "- **Encodeur sur la 2e carte** : l'encodeur de texte va sur "
-                    "l'autre GPU, la diffusion reste sur le principal.\n"
-                    "- **Encodeur calculé sur la 2e carte, poids en RAM** : repli "
-                    "mesurable pour un ancien moteur ou si la résidence GPU est "
-                    "plus lente sur votre topologie.\n"
-                    "- **Auto-fit** : sd.cpp choisit la résidence selon la mémoire "
-                    "libre. Si tout ne tient pas, il peut partager les modules dans "
-                    "le temps, utiliser RAM/disque et retenter le VAE en tuiles. "
-                    "Sur deux cartes très différentes ou reliées par un port x4, "
-                    "ce choix reste à mesurer : il connaît la mémoire, pas le coût "
-                    "réel du lien PCIe.")
-                gpu_strategy = gr.Radio(
-                    [(t("Une seule carte (recommandé)"), "single"),
-                     (t("Encodeur de texte sur la 2e carte"), "encoder"),
-                     (t("Encodeur sur la 2e carte, poids en RAM"),
-                      "encoder-staged"),
-                     (t("Auto-fit : répartir sur toutes les cartes"), "autofit")],
-                    value=_gpu_strategy(prefs), label="Stratégie multi-GPU")
-                tools_gpu = gr.Dropdown(
-                    label="GPU pour l'améliorateur de prompt (texte, séparé)",
-                    choices=[(t("Auto (même que génération)"), None)]
-                            + _gpu_choices(),
-                    value=prefs.get("text_gpu_index"))
-                combo = hardware.rtx3060_1080ti_combo()
-                if combo:
-                    combo_btn = gr.Button(
-                        "⚡ Appliquer le profil RTX 3060 12 Go + GTX 1080 Ti",
-                        variant="primary")
-                    combo_msg = gr.Markdown(
-                        "La RTX 3060 calcule diffusion/VAE ; la GTX 1080 Ti "
-                        "prend l'encodeur **et garde ses poids en VRAM** grâce à "
-                        "`--params-backend`. "
-                        "Auto-fit et row split restent désactivés.")
-        else:
-            gpu_strategy = gr.State(_gpu_strategy(prefs))
-            tools_gpu = gr.State(prefs.get("text_gpu_index"))
-
-        # ------------------------------------------------------------------ #
-        #  Accélération par cache (avancé)
-        # ------------------------------------------------------------------ #
-        with gr.Accordion("⚡ Accélération (avancé)", open=False):
-            gr.Markdown(
-                "**Cache entre les pas** (`caching.md`) — réutilise des calculs "
-                "d'un pas à l'autre. Utile surtout > ~10 pas ; sur les modèles "
-                "distillés (4–8 pas) le gain est faible et des artefacts sont "
-                "possibles. Laisser désactivé en général.")
-            with gr.Row():
-                cache_mode = gr.Dropdown(
-                    [(t("Désactivé (recommandé)"), ""),
-                     ("easycache", "easycache"), ("dbcache", "dbcache"),
-                     ("taylorseer", "taylorseer"), ("cache-dit", "cache-dit"),
-                     ("spectrum", "spectrum")],
-                    value=prefs.get("cache_mode", ""),
-                    label="Mode de cache (Flux/Krea = DiT)")
-                cache_opt = gr.Textbox(
-                    value=prefs.get("cache_option", ""),
-                    label="Option (vide = défauts)", placeholder="ex. threshold=0.2")
-            _targeted = prefs.get("cache_by_model") or {}
-            raw_cache = gr.Checkbox(
-                value="krea2-raw" in _targeted,
-                label="Preset prudent uniquement pour Krea 2 Raw",
-                info="EasyCache threshold=0.15. Ne touche ni Krea Turbo ni Flux.2.")
-
-            gr.Markdown(
-                "---\n"
-                "**Convolution directe** — remplace l'algorithme de convolution "
-                "(im2col) par un calcul direct. im2col déplie l'image en une "
-                "grande matrice avant de multiplier : c'est rapide, mais ce "
-                "tampon intermédiaire pèse lourd. En direct, il disparaît.\n\n"
-                "👉 Ce qu'on peut promettre : **moins de mémoire**. La vitesse, "
-                "elle, dépend de la forme des tenseurs — parfois mieux, parfois "
-                "moins bien. **À essayer et à chronométrer**, pas à cocher les "
-                "yeux fermés. Utile surtout si vous frôlez la saturation "
-                "mémoire.\n\n"
-                "*Options récentes de sd.cpp : si votre moteur ne les connaît "
-                "pas, elles sont simplement ignorées (aucun risque de plantage). "
-                "`update-engine.bat` pour l'avoir.*")
-            with gr.Row():
-                conv_diff = gr.Checkbox(
-                    value=bool(prefs.get("conv_direct_diffusion")),
-                    label="Convolution directe — modèle de diffusion")
-                conv_vae = gr.Checkbox(
-                    value=bool(prefs.get("conv_direct_vae")),
-                    label="Convolution directe — VAE")
-
-            gr.Markdown(
-                "---\n"
-                "**Exécution segmentée** (`--max-vram`) — par défaut, le moteur "
-                "réserve son graphe de calcul **d'un seul bloc** : si le bloc ne "
-                "tient pas, la génération s'arrête sur une erreur mémoire. Avec "
-                "un budget, il a le droit de **découper le graphe** pour tenir "
-                "dedans.\n\n"
-                "👉 « Auto » ne fixe rien en dur : le moteur mesure la VRAM "
-                "**libre** au lancement et s'en réserve une marge — il s'adapte "
-                "donc à votre carte *et* à ce qui l'occupe déjà.\n\n"
-                "⚠️ Découper coûte des allers-retours mémoire : **c'est plus lent**. "
-                "À activer pour les résolutions qui ne passent pas autrement, pas "
-                "par défaut. L'onglet **🚀 HD** s'en sert de toute façon — c'est "
-                "là que le tout-ou-rien casse.")
-            with gr.Row():
-                max_vram = gr.Dropdown(
-                    [(t("Désactivé (recommandé pour la génération)"), ""),
-                     (t("Auto — VRAM libre moins 1 Go"), "auto"),
-                     (t("Plafond ferme : 6 Go"), "6"),
-                     (t("Plafond ferme : 8 Go"), "8"),
-                     (t("Plafond ferme : 10 Go"), "10")],
-                    value=prefs.get("max_vram", ""), allow_custom_value=True,
-                    label="Budget VRAM du graphe",
-                    info="Valeur libre acceptée : « 6 », ou « cuda0=6,cuda1=4 » "
-                         "sur une machine multi-cartes.")
-                stream_layers = gr.Checkbox(
-                    value=bool(prefs.get("stream_layers")),
-                    label="Streaming des couches depuis la RAM",
-                    info="Requiert les poids de diffusion en RAM, mais pas de "
-                         "budget --max-vram. Très dépendant du PCIe.")
-
-        # ------------------------------------------------------------------ #
-        #  Mesure reproductible + rapport partageable
-        # ------------------------------------------------------------------ #
-        with gr.Accordion("🧪 Mesurer cette machine", open=False):
-            gr.Markdown(
-                "Le test génère la même image en **512×512, 4 pas, seed 424242** "
-                "avec chaque placement disponible. Il mesure le temps et le pic "
-                "VRAM, conserve les images pour comparaison et ne modifie aucun "
-                "réglage tant que vous ne cliquez pas sur **Appliquer**.")
-            system_md = gr.Markdown(diagnostics.summary_markdown())
-            with gr.Row():
-                report_btn = gr.Button("📋 Exporter le rapport système")
-                bench_btn = gr.Button("⏱️ Tester les placements GPU",
-                                      variant="primary")
-                krea_btn = gr.Button("A/B Krea GGUF ↔ INT8")
-            with gr.Row():
-                apply_bench = gr.Button("Appliquer le profil le plus rapide")
-            bench_status = gr.Markdown("")
-            bench_file = gr.File(label="Rapport JSON", interactive=False)
-            bench_log = gr.Textbox(label="Journal du test", lines=10,
-                                   autoscroll=True, elem_classes="log-box")
-
-            def _system_report():
-                path = diagnostics.write_system_report()
-                return diagnostics.summary_markdown(), str(path), \
-                    f"✅ Rapport créé : `{path.name}`"
-
-            report_btn.click(_system_report,
-                             outputs=[system_md, bench_file, bench_status])
-
-            def _run_hardware_bench():
-                logs: list[str] = []
-                try:
-                    path = benchmark.run_hardware_benchmark(log=logs.append)
-                    data = __import__("json").loads(path.read_text(encoding="utf-8"))
-                    winner = data.get("recommended_mode") or "aucun"
-                    return (f"✅ Test terminé · profil le plus rapide : "
-                            f"**{winner}**", str(path), "\n".join(logs[-500:]))
-                except Exception as exc:  # noqa: BLE001
-                    return f"❌ {exc}", None, "\n".join(logs[-500:])
-
-            bench_btn.click(_run_hardware_bench,
-                            outputs=[bench_status, bench_file, bench_log])
-
-            def _run_krea_bench():
-                logs: list[str] = []
-                try:
-                    path = benchmark.compare_krea_variants(log=logs.append)
-                    return ("✅ Comparaison terminée. Regardez les deux images : "
-                            "la vitesse seule ne décide pas de la qualité.",
-                            str(path), "\n".join(logs[-500:]))
-                except Exception as exc:  # noqa: BLE001
-                    return f"❌ {exc}", None, "\n".join(logs[-500:])
-
-            krea_btn.click(_run_krea_bench,
-                           outputs=[bench_status, bench_file, bench_log])
-
-            def _apply_report(raw):
-                if not raw:
-                    return "❌ Lancez d'abord le test des placements."
-                path = getattr(raw, "name", raw)
-                try:
-                    mode = benchmark.apply_recommendation(path)
-                    return f"✅ Profil mesuré appliqué : **{mode}**."
-                except Exception as exc:  # noqa: BLE001
-                    return f"❌ {exc}"
-
-            apply_bench.click(_apply_report, inputs=[bench_file],
-                              outputs=[bench_status])
-
-        # ------------------------------------------------------------------ #
-        #  Réseau & comptes
-        # ------------------------------------------------------------------ #
-        with gr.Accordion("🔗 Réseau & comptes", open=False):
-            hf_ep = gr.Textbox(
-                value=prefs.get("hf_endpoint", "https://huggingface.co"),
-                label="Endpoint Hugging Face (miroir éventuel)")
-            civitai_tok = gr.Textbox(
-                value=prefs.get("civitai_token", ""),
-                label="Jeton Civitai (optionnel — LoRA protégés)", type="password")
-
         save = gr.Button("💾 Enregistrer", variant="primary")
         saved = gr.Markdown("")
 
         def do_save(auto, gpu, tools_gpu, gpu_strategy, quant, enc_quant, fa,
                     offload, tiling, clip_cpu, vae_cpu, cache_mode, cache_opt,
-                    raw_cache, conv_diff, conv_vae, max_vram, stream_layers,
+                    conv_diff, conv_vae, max_vram, stream_layers,
                     hf_ep, civitai_tok):
             p = settings.load_prefs()
             # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
@@ -358,15 +417,11 @@ def build_settings_tab():
                 p["params_backend"] = ""
             p["cache_mode"] = cache_mode or ""
             p["cache_option"] = (cache_opt or "").strip()
-            by_model = dict(p.get("cache_by_model") or {})
-            if raw_cache:
-                by_model["krea2-raw"] = {
-                    "mode": "easycache",
-                    "option": "threshold=0.15,start=0.15,end=0.9",
-                }
-            else:
-                by_model.pop("krea2-raw", None)
-            p["cache_by_model"] = by_model
+            # `cache_by_model` n'est plus exposé : la case ne visait que Krea 2
+            # Raw et ses 52 pas. Les modèles restants tournent en 4 à 8 pas, où
+            # le cache ne gagne rien. La préférence survit pour qui veut viser
+            # un modèle à la main (voir settings.DEFAULT_PREFS) ; on ne
+            # l'écrase donc pas ici.
             # Hors de « flags » : voir settings.DEFAULT_PREFS.
             p["conv_direct_diffusion"] = bool(conv_diff)
             p["conv_direct_vae"] = bool(conv_vae)
@@ -389,7 +444,7 @@ def build_settings_tab():
         save.click(do_save,
                    inputs=[auto, gpu, tools_gpu, gpu_strategy, quant,
                            enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
-                           cache_mode, cache_opt, raw_cache, conv_diff, conv_vae,
+                           cache_mode, cache_opt, conv_diff, conv_vae,
                            max_vram, stream_layers, hf_ep, civitai_tok],
                    outputs=[profile_md, saved])
 

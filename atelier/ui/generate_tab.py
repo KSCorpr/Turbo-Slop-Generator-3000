@@ -66,9 +66,10 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
-    # startswith et non == : « krea2raw » partage l'architecture du Turbo,
-    # donc ses résolutions natives. Une égalité stricte lui aurait donné la
-    # grille de Flux.2, hors de sa grille d'entraînement.
+    # startswith et non == : toute variante Krea (INT8 ConvRot aujourd'hui,
+    # une autre demain) partage l'architecture du Turbo, donc ses résolutions
+    # natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
+    # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
     return RATIOS_KREA2 if family.startswith("krea2") else RATIOS_FLUX2
 
 
@@ -120,17 +121,26 @@ def build_generative_tab(model_id: str, title: str,
         gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
             title=title, mode=_mode, status=status))
 
-        # Une variante de moteur, pas un nouvel onglet : le workflow et tous les
+        # Variante de moteur, pas un nouvel onglet : le workflow et tous les
         # réglages Krea restent identiques. GGUF demeure le défaut tant que le
         # test A/B local n'a pas démontré que l'INT8 vaut mieux sur cette carte.
-        if model_id == "krea2-turbo":
+        #
+        # Le sélecteur n'apparaît QUE si la variante est réellement installée.
+        # Proposer un choix dont une branche n'existe pas, c'est un piège :
+        # l'utilisateur clique, la génération échoue. Et sur l'onglet le plus
+        # utilisé de l'application, un réglage expérimental n'a rien à faire
+        # au-dessus du prompt tant qu'il ne concerne personne.
+        _variant = registry.get_base_model("krea2-turbo-int8",
+                                           settings.load_prefs())
+        _variant_ready = (model_id == "krea2-turbo" and _variant is not None
+                          and registry.model_is_ready(_variant))
+        if _variant_ready:
             variant_model = gr.Radio(
-                [("GGUF — recommandé et éprouvé", "krea2-turbo"),
-                 ("INT8 ConvRot — expérimental RTX 30xx",
+                [(t("GGUF — recommandé et éprouvé"), "krea2-turbo"),
+                 (t("INT8 ConvRot — expérimental RTX 30xx"),
                   "krea2-turbo-int8")],
                 value="krea2-turbo", label="Format du modèle de diffusion",
-                info="Téléchargez la variante INT8 dans le Catalogue, puis "
-                     "comparez-la avec le bouton A/B des Réglages.")
+                info="Comparez les deux avec le test A/B des Réglages.")
         else:
             variant_model = gr.State(model_id)
 
@@ -180,85 +190,86 @@ def build_generative_tab(model_id: str, title: str,
                 # Prompt d'avant amélioration, pour pouvoir revenir en arrière.
                 prompt_before = gr.State("")
 
-                # ----- 🎨 Styles : les trois banques sous UN seul repli -----
-                # Trois mécanismes distincts mais un seul but (habiller le
-                # prompt), donc un seul accordéon de premier niveau : replié, il
-                # ne prend qu'une ligne au lieu de trois.
+                # ----- 🎨 Styles : UN repli, puis des ONGLETS -----
+                # Il y avait ici trois accordéons dans un quatrième : choisir
+                # un style photo demandait deux dépliages, et rien ne montrait
+                # que les deux autres banques existaient. Des onglets à
+                # l'intérieur du repli coûtent le même espace une fois fermés,
+                # mais ouverts ils montrent les trois pistes d'un coup d'œil.
                 _photo_labels = styles.photo_style_labels()
                 _art_labels = styles.bank_labels(styles.ART_STYLES_FILE)
                 _photo_neg_note = ("" if d.get("supports_negative", False) else
                                    " · négatifs sans effet ici (CFG 1.0)")
+                # Libellé traduit AVANT interpolation : une f-string composée
+                # ne peut pas servir de clé de traduction (le nombre change).
                 with gr.Accordion(
-                        "🎨 Styles — préréglages, photo, artistiques "
-                        f"({len(_photo_labels) + len(_art_labels)} styles)",
+                        t("🎨 Styles — préréglages, photo, artistiques "
+                          "({n} styles)").format(
+                              n=len(_photo_labels) + len(_art_labels)),
                         open=False):
                     gr.Markdown(
                         "Les trois se **cumulent** : le préréglage est ajouté en "
                         "tête, les styles photo et artistiques habillent votre "
                         "sujet. Détail de chacun dans « 🧹 Gestion & aide ».")
 
-                    with gr.Accordion("🎭 Préréglage perso (préfixe de prompt)",
-                                      open=False):
-                        system_prompt = gr.Textbox(
-                            label="Appliqué en tête de chaque génération",
-                            lines=2,
-                            placeholder="ex. : style aquarelle, palette pastel, "
-                                        "éclairage doux")
-                        with gr.Row():
-                            style_pick = gr.Dropdown(
-                                _style_choices(), value=_NONE_STYLE, scale=3,
-                                label="Préréglages enregistrés",
-                                info="« — Aucun — » retire le style appliqué.",
+                    with gr.Tabs():
+                        with gr.Tab("🎭 Préréglage perso"):
+                            system_prompt = gr.Textbox(
+                                label="Appliqué en tête de chaque génération",
+                                lines=2,
+                                placeholder="ex. : style aquarelle, palette pastel, "
+                                            "éclairage doux")
+                            with gr.Row():
+                                style_pick = gr.Dropdown(
+                                    _style_choices(), value=_NONE_STYLE, scale=3,
+                                    label="Préréglages enregistrés",
+                                    info="« — Aucun — » retire le style appliqué.",
+                                    allow_custom_value=False)
+                                style_name = gr.Textbox(
+                                    label="Nom du préréglage à enregistrer", scale=2,
+                                    placeholder="ex. : Aquarelle pastel")
+                            with gr.Row():
+                                # NE PAS APPLIQUER ≠ SUPPRIMER. Le bouton rouge
+                                # efface le préréglage du disque ; c'est rarement ce
+                                # qu'on veut, donc l'action courante — juste ne plus
+                                # l'appliquer — a son propre bouton, en premier.
+                                style_off = gr.Button("✖️ Ne plus appliquer",
+                                                      size="sm")
+                                style_save = gr.Button("💾 Enregistrer", size="sm")
+                                style_refresh = gr.Button("↻ Rafraîchir", size="sm")
+                            with gr.Row():
+                                style_del = gr.Button(
+                                    "🗑️ Supprimer ce préréglage (définitif)",
+                                    size="sm", variant="stop")
+                            style_msg = gr.Markdown("", elem_classes="feedback")
+                            # Suppression en DEUX temps : le 1er clic arme, le 2e
+                            # confirme. Un clic distrait ne détruit plus rien.
+                            style_armed = gr.State(None)
+
+                        # Banque photo (© ghleg, MIT) : le sujet du prompt est
+                        # inséré dans chaque style coché ; les négatifs des styles ne
+                        # sont repris que si le modèle en tient compte (CFG > 1).
+                        with gr.Tab(t("📷 Photo ({n})").format(n=len(_photo_labels))):
+                            photo_pick = gr.Dropdown(
+                                _photo_labels, value=[], multiselect=True,
+                                label="Styles à combiner (par catégorie)",
+                                info="Qualité, lumière, objectif, pellicule, "
+                                     "ambiance… Votre sujet est inséré dans chaque "
+                                     "style coché." + _photo_neg_note
+                                     + " · Banque © ghleg, MIT.",
                                 allow_custom_value=False)
-                            style_name = gr.Textbox(
-                                label="Nom du préréglage à enregistrer", scale=2,
-                                placeholder="ex. : Aquarelle pastel")
-                        with gr.Row():
-                            # NE PAS APPLIQUER ≠ SUPPRIMER. Le bouton rouge
-                            # efface le préréglage du disque ; c'est rarement ce
-                            # qu'on veut, donc l'action courante — juste ne plus
-                            # l'appliquer — a son propre bouton, en premier.
-                            style_off = gr.Button("✖️ Ne plus appliquer",
-                                                  size="sm")
-                            style_save = gr.Button("💾 Enregistrer", size="sm")
-                            style_refresh = gr.Button("↻ Rafraîchir", size="sm")
-                        with gr.Row():
-                            style_del = gr.Button(
-                                "🗑️ Supprimer ce préréglage (définitif)",
-                                size="sm", variant="stop")
-                        style_msg = gr.Markdown("", elem_classes="feedback")
-                        # Suppression en DEUX temps : le 1er clic arme, le 2e
-                        # confirme. Un clic distrait ne détruit plus rien.
-                        style_armed = gr.State(None)
 
-                    # Banque photo (© ghleg, MIT) : le sujet du prompt est
-                    # inséré dans chaque style coché ; les négatifs des styles ne
-                    # sont repris que si le modèle en tient compte (CFG > 1).
-                    with gr.Accordion(
-                            f"📷 Styles photo ({len(_photo_labels)})",
-                            open=False):
-                        photo_pick = gr.Dropdown(
-                            _photo_labels, value=[], multiselect=True,
-                            label="Styles à combiner (par catégorie)",
-                            info="Qualité, lumière, objectif, pellicule, "
-                                 "ambiance… Votre sujet est inséré dans chaque "
-                                 "style coché." + _photo_neg_note
-                                 + " · Banque © ghleg, MIT.",
-                            allow_custom_value=False)
-
-                    # Banque artistique : sans négatifs, la description du style
-                    # est simplement ajoutée après le sujet. 🎲 = wildcard.
-                    with gr.Accordion(
-                            f"🖍️ Styles artistiques ({len(_art_labels)})",
-                            open=False):
-                        art_pick = gr.Dropdown(
-                            _art_labels, value=[], multiselect=True,
-                            label="Styles à combiner (par catégorie)",
-                            info="Anime, cartoon, BD, dessin, design, "
-                                 "peinture… Ajoutés après votre sujet. "
-                                 "Provenance de la collection à confirmer.",
-                            allow_custom_value=False)
-                        art_dice = gr.Button("🎲 Aléatoire (wildcard)", size="sm")
+                        # Banque artistique : sans négatifs, la description du style
+                        # est simplement ajoutée après le sujet. 🎲 = wildcard.
+                        with gr.Tab(t("🖍️ Artistiques ({n})").format(n=len(_art_labels))):
+                            art_pick = gr.Dropdown(
+                                _art_labels, value=[], multiselect=True,
+                                label="Styles à combiner (par catégorie)",
+                                info="Anime, cartoon, BD, dessin, design, "
+                                     "peinture… Ajoutés après votre sujet. "
+                                     "Provenance de la collection à confirmer.",
+                                allow_custom_value=False)
+                            art_dice = gr.Button("🎲 Aléatoire (wildcard)", size="sm")
 
                 # ----- ✨ Améliorateur : réglages ET installation ensemble -----
                 # C'était éclaté en deux accordéons séparés par le champ négatif.
@@ -278,14 +289,19 @@ def build_generative_tab(model_id: str, title: str,
                                  "seul chargement du modèle : 4 coûtent presque "
                                  "le même temps qu'1.")
 
+                    # Ce repli n'a d'objet que tant que l'add-on manque. Une
+                    # fois installé, « ⬇️ Installation ✅ déjà installé » est un
+                    # accordéon qui ne dit rien et qu'on ouvre pour rien : il
+                    # disparaît. La réinstallation passe par « 🧹 Gestion &
+                    # aide », qui est l'endroit prévu pour réparer.
                     with gr.Accordion("⬇️ Installation (1 clic)",
-                                      open=not _enh_ready):
+                                      open=not _enh_ready,
+                                      visible=not _enh_ready):
                         gr.Markdown(
                             "Petit LLM (**Qwen2.5-3B-Instruct**, PyTorch ~6 Go) "
                             "chargé puis déchargé à chaque appel : **aucun "
                             "conflit de VRAM** avec la génération. Aucune "
-                            "commande à taper."
-                            + ("  \n✅ **Déjà installé.**" if _enh_ready else ""))
+                            "commande à taper.")
                         enh_log = gr.Textbox(
                             label="Journal d'installation", lines=6,
                             autoscroll=True, elem_classes="log-box")

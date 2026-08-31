@@ -70,6 +70,13 @@ REMOVED_FEATURES = [
     {"name": "Génération vidéo (LTX-2.3, MiniMax-H3)",
      "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
      "dirs": []},
+    # La sonde MiniMax-H3 a répondu à sa question (l'encodeur ne tient pas sur
+    # une carte de 12 Go) ; elle est retirée avec le reste de MiniMax. Déclarée
+    # ici pour que les copies déjà installées soient nettoyées à la maintenance.
+    {"name": "Sonde MiniMax-H3",
+     "files": ["scripts/try_minimax.py", "try-minimax.bat", "try-minimax.sh",
+               "tests/test_try_minimax.py"],
+     "dirs": []},
 ]
 
 # Dossiers de données à NE JAMAIS toucher.

@@ -160,54 +160,6 @@ base_models:
       - {name: "Qualité (12 pas)",    sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 12
 
-  # --------------------------------------------------------------------------
-  - id: krea2-raw
-    name: "Krea 2 Raw"
-    family: krea2raw
-    tags: [krea, non distillé, prompt négatif]
-    description: >
-      Krea 2 **Raw** en GGUF : le checkpoint de base, **non distillé**. C'est
-      l'inverse du Turbo sur les trois points qui comptent — **52 pas** au lieu
-      de 8, un **CFG réel de 3,5** au lieu de 1,0 désactivé, et donc un
-      **prompt négatif qui sert enfin à quelque chose**. Réglages officiels de
-      la fiche krea/Krea-2-Raw. Même encodeur Qwen3-VL-4B et même VAE WAN 2.1
-      que le Turbo : si vous avez déjà le Turbo, seule la diffusion est à
-      télécharger. ⚠️ **Six à sept fois plus lent** que le Turbo, et Krea
-      elle-même écrit qu'il « **n'est pas recommandé pour l'inférence** » : sa
-      raison d'être est l'entraînement de LoRA, qu'on applique ensuite sur le
-      Turbo. Prenez-le pour le prompt négatif et le CFG, pas pour la vitesse.
-    sources:
-      diffusion:
-        repo: vantagewithai/Krea-2-Raw-GGUF
-        match: "krea2_raw-{quant}.gguf"
-        quantizable: true
-      text_encoder:
-        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
-        quantizable: true
-      vae:
-        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
-        match: "*wan_2.1_vae.safetensors"
-    defaults:
-      # Réglages OFFICIELS, relevés sur la fiche krea/Krea-2-Raw, qui donne les
-      # trois mêmes valeurs par trois chemins différents (codebase officiel :
-      # « --steps 52 --cfg 3.5 --width 1024 --height 1024 » ; diffusers :
-      # « num_inference_steps=52, guidance_scale=3.5 » ; SGLang : idem). 1024 et
-      # non les 2K du Turbo, donc : c'est la taille des exemples officiels.
-      steps: 52
-      cfg_scale: 3.5
-      sampler: euler
-      scheduler: auto
-      width: 1024
-      height: 1024
-      supports_negative: true   # non distillé : le CFG existe, le négatif agit
-      edit: false               # pas de variante édition pour Raw
-    presets:
-      - {name: "🎯 Officiel (52 pas · CFG 3,5)", sampler: euler, scheduler: auto, steps: 52, cfg_scale: 3.5}
-      - {name: "Rapide (28 pas)",                sampler: euler, scheduler: auto, steps: 28, cfg_scale: 3.5}
-      - {name: "Qualité multi-pas (52 · DPM++ 2M)", sampler: "dpm++2m", scheduler: auto, steps: 52, cfg_scale: 3.5}
-    vram_min_gb: 10
-
 
 # ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)

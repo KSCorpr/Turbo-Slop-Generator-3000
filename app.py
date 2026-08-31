@@ -328,13 +328,6 @@ def build_app() -> gr.Blocks:
                                  pending_toolkit=pending_toolkit, tabs=tabs,
                                  pending_3d=pending_3d,
                                  pending_outpaint=pending_outpaint)
-            # Krea 2 Raw — non distillé. Il PRODUIT une image, donc il reste à
-            # la racine selon la règle ci-dessus. Libellé court exprès : c'est
-            # le septième onglet, et la largeur de la barre est comptée.
-            build_generative_tab("krea2-raw", "🎛️ Krea 2 Raw",
-                                 pending_toolkit=pending_toolkit, tabs=tabs,
-                                 pending_3d=pending_3d,
-                                 pending_outpaint=pending_outpaint)
             # « Xanax » : style figé, aucun réglage de style exposé. Un seul
             # onglet pour les deux modèles — ils partagent tout sauf le moteur.
             build_xanax_tab("💊 Xanax")

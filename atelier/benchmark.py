@@ -99,8 +99,53 @@ def _monitor_peak(stop: threading.Event, peak: dict[int, float]) -> None:
             peak[idx] = max(peak.get(idx, 0.0), used)
 
 
+class Cancelled(RuntimeError):
+    """Le test a été interrompu à la demande de l'utilisateur."""
+
+
+# Un tir de chauffe JETÉ, puis N tirs mesurés. Le premier tir d'un profil lit
+# ~9 Go de GGUF sur un disque froid ; les suivants tapent le cache du système.
+# Sans chauffe, c'est le PREMIER profil testé qui est pénalisé, pas le plus
+# lent — et le classement dit alors dans quel ordre on a lancé les tests.
+WARMUP_RUNS = 1
+MEASURED_RUNS = 3
+
+
+def _one_run(model_id: str, prefs: dict, defaults: dict,
+             log: Callable[[str], None] | None) -> tuple[float, list, dict]:
+    """Un tir chronométré, avec le pic VRAM observé pendant CE tir."""
+    # La ligne de base est relevée AVANT le tir et retranchée ensuite : ce qui
+    # nous intéresse est ce que le tir consomme, pas ce que le bureau occupait
+    # déjà. Sans ça, deux machines identiques donnent des chiffres différents
+    # selon ce qui tourne à côté.
+    baseline = hardware.used_vram_gb()
+    peak = dict(baseline)
+    stop = threading.Event()
+    watcher = threading.Thread(target=_monitor_peak, args=(stop, peak), daemon=True)
+    watcher.start()
+    started = time.perf_counter()
+    try:
+        outputs = generate.generate(
+            model_id=model_id, prompt=BENCHMARK_PROMPT, negative="",
+            steps=min(4, int(defaults.get("steps", 4))),
+            cfg_scale=float(defaults.get("cfg_scale", 1.0)),
+            width=512, height=512, seed=BENCHMARK_SEED, batch_count=1,
+            sampler=defaults.get("sampler", "euler"),
+            schedule=defaults.get("scheduler", "auto"),
+            flow_shift=float(defaults.get("flow_shift", 0.0) or 0.0),
+            save_prompt=False, prefs_override=prefs, log=log)
+        elapsed = time.perf_counter() - started
+    finally:
+        stop.set()
+        watcher.join(timeout=1)
+    delta = {idx: round(max(0.0, used - baseline.get(idx, 0.0)), 2)
+             for idx, used in peak.items()}
+    return elapsed, outputs, delta
+
+
 def _run_case(model_id: str, prefs: dict, label: str,
-              log: Callable[[str], None] | None = None) -> dict:
+              log: Callable[[str], None] | None = None,
+              cancel: Callable[[], bool] | None = None) -> dict:
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         return {"label": label, "ok": False, "error": f"Modèle inconnu : {model_id}"}
@@ -109,37 +154,49 @@ def _run_case(model_id: str, prefs: dict, label: str,
         return {"label": label, "ok": False,
                 "error": "Fichiers manquants : " + ", ".join(missing)}
     d = model.defaults
-    peak = hardware.used_vram_gb()
-    stop = threading.Event()
-    watcher = threading.Thread(target=_monitor_peak, args=(stop, peak), daemon=True)
-    watcher.start()
     started = time.perf_counter()
-    if log:
-        log(f"[benchmark] {label}")
+    times: list[float] = []
+    outputs: list = []
+    peak: dict[int, float] = {}
+    total = WARMUP_RUNS + MEASURED_RUNS
     try:
-        outputs = generate.generate(
-            model_id=model_id, prompt=BENCHMARK_PROMPT, negative="",
-            steps=min(4, int(d.get("steps", 4))), cfg_scale=float(d.get("cfg_scale", 1.0)),
-            width=512, height=512, seed=BENCHMARK_SEED, batch_count=1,
-            sampler=d.get("sampler", "euler"), schedule=d.get("scheduler", "auto"),
-            flow_shift=float(d.get("flow_shift", 0.0) or 0.0),
-            save_prompt=False, prefs_override=prefs, log=log)
-        elapsed = time.perf_counter() - started
-        return {"label": label, "ok": True, "seconds": round(elapsed, 3),
-                "peak_used_vram_gb": peak,
-                "outputs": [str(p) for p in outputs]}
+        for i in range(1, total + 1):
+            if cancel and cancel():
+                raise Cancelled("test interrompu")
+            kind = "chauffe" if i <= WARMUP_RUNS else f"mesure {i - WARMUP_RUNS}"
+            if log:
+                log(f"[benchmark] {label} — {kind} ({i}/{total})")
+            elapsed, outs, delta = _one_run(model_id, prefs, d, log)
+            if i <= WARMUP_RUNS:
+                continue
+            times.append(elapsed)
+            outputs = [str(p) for p in outs]
+            for idx, val in delta.items():
+                peak[idx] = max(peak.get(idx, 0.0), val)
+        # MÉDIANE et non moyenne : un ralentissement ponctuel (le système qui
+        # fait autre chose) déplace la moyenne, pas la médiane.
+        times.sort()
+        median = times[len(times) // 2]
+        if log:
+            log(f"[benchmark] {label} — médiane {median:.2f} s "
+                f"(min {times[0]:.2f} · max {times[-1]:.2f})")
+        return {"label": label, "ok": True, "seconds": round(median, 3),
+                "runs_seconds": [round(x, 3) for x in times],
+                "spread_seconds": round(times[-1] - times[0], 3),
+                "peak_vram_gb_over_baseline": peak,
+                "outputs": outputs}
+    except Cancelled:
+        raise
     except Exception as exc:  # noqa: BLE001
         return {"label": label, "ok": False,
                 "seconds": round(time.perf_counter() - started, 3),
-                "peak_used_vram_gb": peak, "error": str(exc)}
-    finally:
-        stop.set()
-        watcher.join(timeout=1)
+                "runs_seconds": [round(x, 3) for x in times],
+                "peak_vram_gb_over_baseline": peak, "error": str(exc)}
 
 
 def _pick_model(prefs: dict) -> str | None:
     models = {m.id: m for m in registry.load_base_models(prefs)}
-    for wanted in ("krea2-turbo", "flux2-klein-9b", "krea2-raw"):
+    for wanted in ("krea2-turbo", "flux2-klein-9b"):
         model = models.get(wanted)
         if model and registry.model_is_ready(model):
             return wanted
@@ -155,8 +212,27 @@ def _write_report(prefix: str, payload: dict) -> Path:
     return dest
 
 
+def _winner(results: list[dict]) -> dict | None:
+    """Le plus rapide — mais SEULEMENT si l'écart dépasse le bruit mesuré.
+
+    Chaque profil rapporte sa dispersion (max - min sur les tirs mesurés). Si
+    deux profils sont séparés par moins que ça, les départager serait tirer à
+    pile ou face avec l'air sérieux. On garde alors le premier de la liste,
+    c'est-à-dire le plus simple : `placement_candidates` les range du plus sûr
+    au plus exotique.
+    """
+    ok = [r for r in results if r.get("ok")]
+    if not ok:
+        return None
+    best = min(ok, key=lambda r: r["seconds"])
+    noise = max(r.get("spread_seconds", 0.0) for r in ok)
+    close = [r for r in ok if r["seconds"] - best["seconds"] <= noise]
+    return close[0] if len(close) > 1 else best
+
+
 def run_hardware_benchmark(model_id: str | None = None,
-                           log: Callable[[str], None] | None = None) -> Path:
+                           log: Callable[[str], None] | None = None,
+                           cancel: Callable[[], bool] | None = None) -> Path:
     base = settings.load_prefs()
     selected = model_id or _pick_model(base)
     if not selected:
@@ -167,14 +243,14 @@ def run_hardware_benchmark(model_id: str | None = None,
     results = []
     for mode in modes:
         prefs = _benchmark_prefs(base, mode.prefs_patch)
-        result = _run_case(selected, prefs, mode.label, log)
+        result = _run_case(selected, prefs, mode.label, log, cancel)
         result.update({"key": mode.key, "prefs_patch": mode.prefs_patch})
         results.append(result)
-    successes = [r for r in results if r.get("ok")]
-    winner = min(successes, key=lambda r: r["seconds"]) if successes else None
+    winner = _winner(results)
     payload = {
-        "schema": 1, "kind": "hardware-placement", "seed": BENCHMARK_SEED,
+        "schema": 2, "kind": "hardware-placement", "seed": BENCHMARK_SEED,
         "model_id": selected, "system": diagnostics.system_report(),
+        "warmup_runs": WARMUP_RUNS, "measured_runs": MEASURED_RUNS,
         "results": results,
         "recommended_mode": winner.get("key") if winner else None,
         "recommended_prefs_patch": winner.get("prefs_patch") if winner else None,
@@ -182,18 +258,20 @@ def run_hardware_benchmark(model_id: str | None = None,
     return _write_report("hardware-benchmark", payload)
 
 
-def compare_krea_variants(log: Callable[[str], None] | None = None) -> Path:
+def compare_krea_variants(log: Callable[[str], None] | None = None,
+                          cancel: Callable[[], bool] | None = None) -> Path:
     base = settings.load_prefs()
     results = []
     for model_id, label in (("krea2-turbo", "Krea 2 Turbo GGUF"),
                             ("krea2-turbo-int8", "Krea 2 Turbo INT8 ConvRot")):
         results.append({"model_id": model_id,
-                        **_run_case(model_id, base, label, log)})
-    successes = [r for r in results if r.get("ok")]
-    fastest = min(successes, key=lambda r: r["seconds"]) if successes else None
+                        **_run_case(model_id, base, label, log, cancel)})
+    fastest = _winner(results)
     payload = {
-        "schema": 1, "kind": "krea-quant-comparison", "seed": BENCHMARK_SEED,
-        "system": diagnostics.system_report(), "results": results,
+        "schema": 2, "kind": "krea-quant-comparison", "seed": BENCHMARK_SEED,
+        "system": diagnostics.system_report(),
+        "warmup_runs": WARMUP_RUNS, "measured_runs": MEASURED_RUNS,
+        "results": results,
         "fastest_model": fastest.get("model_id") if fastest else None,
         "quality_review_required": True,
     }

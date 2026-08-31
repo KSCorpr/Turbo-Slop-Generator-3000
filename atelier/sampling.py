@@ -20,12 +20,6 @@ elles suffisent à classer tout le reste :
    doivent d'abord accumuler un historique d'évaluations, qui n'existe presque
    pas sur un budget aussi court.
 
-**Krea 2 Raw est l'exception, et elle vaut d'être comprise** : non distillé, il
-tourne à CFG 3,5 sur 52 pas. Deux des trois propriétés ci-dessus tombent, donc
-son classement diffère vraiment — 16 échantillonneurs utilisables contre 8 sur
-le Turbo, et la famille CFG++ qui redevient pertinente. C'est aussi le seul
-modèle où le prompt négatif agit.
-
 Ces verdicts sont donc RAISONNÉS à partir des propriétés des modèles, pas tirés
 d'un banc d'essai. Ils disent où porter ses essais, pas ce que vous allez
 préférer : sur du rendu, l'œil tranche mieux qu'un principe.
@@ -56,7 +50,7 @@ SAMPLERS: dict[str, tuple] = {
         "quand les pas sont comptés. C'est le défaut de tous nos modèles.",
         "Aucun raffinement : sur BEAUCOUP de pas, d'autres méthodes la "
         "dépassent — mais on n'est pas dans ce régime.",
-        {"flux2": BEST, "krea2": BEST, "krea2raw": BEST}),
+        {"flux2": BEST, "krea2": BEST}),
     "euler_a": (
         "Euler Ancestral",
         "Euler + réinjection de bruit frais à chaque pas.",
@@ -65,28 +59,28 @@ SAMPLERS: dict[str, tuple] = {
         "Le bruit réinjecté doit ensuite être reconvergé, ce qui demande un "
         "budget de pas confortable. Trop court : rendu mou ou bruité. Et deux "
         "rendus ne sont jamais identiques.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": BAD}),
     "heun": (
         "Heun",
         "Euler avec une correction : deux évaluations par pas.",
         "Trajectoire plus juste par pas.",
         "**Deux fois plus lent** à nombre de pas égal. Quand les pas sont "
         "comptés, ce budget est mieux dépensé en pas supplémentaires d'Euler.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "dpm2": (
         "DPM2",
         "Méthode d'ordre 2, deux évaluations par pas.",
         "Bonne précision par pas sur les modèles classiques.",
         "Même coût double que Heun ; il faut assez de pas pour que le gain "
         "s'exprime.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": MEH}),
     "dpm++2s_a": (
         "DPM++ 2S Ancestral",
         "Ordre 2, à un seul pas de mémoire, avec bruit ancestral.",
         "Réputée sur SD1.5/SDXL en 20-30 pas.",
         "Cumule les deux défauts qui comptent ici : coût double ET bruit "
         "ancestral non reconvergé.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": BAD}),
     "dpm++2m": (
         "DPM++ 2M",
         "Multi-pas : réutilise l'évaluation précédente au lieu d'en refaire une.",
@@ -94,84 +88,84 @@ SAMPLERS: dict[str, tuple] = {
         "de pas.",
         "Son historique n'existe qu'après le 2ᵉ pas : sur un parcours très "
         "court, une bonne part se fait sans lui.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "dpm++2mv2": (
         "DPM++ 2M v2",
         "Variante de DPM++ 2M au calcul de pas révisé.",
         "Corrige des artefacts de la v1 sur les premiers pas.",
         "Même limite : le multi-pas a besoin de pas.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "dpm++2m_sde": (
         "DPM++ 2M SDE",
         "DPM++ 2M en formulation stochastique (bruit à chaque pas).",
         "Texture plus riche sur les longs échantillonnages.",
         "Stochastique : même exigence de pas que l'ancestral, et rendu non "
         "reproductible.",
-        {"flux2": BAD, "krea2": MEH, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": MEH}),
     "dpm++2m_sde_bt": (
         "DPM++ 2M SDE (Brownian)",
         "Variante à arbre brownien : le bruit devient reproductible.",
         "Retrouve la reproductibilité que la version SDE perd.",
         "Reste stochastique dans son principe : il lui faut des pas.",
-        {"flux2": BAD, "krea2": MEH, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": MEH}),
     "ipndm": (
         "iPNDM",
         "Pseudo-multi-pas amélioré, sans bruit ajouté.",
         "Sobre et déterministe ; monte en qualité dès une dizaine de pas.",
         "Historique à construire, comme toute méthode multi-pas.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "ipndm_v": (
         "iPNDM v",
         "iPNDM à coefficients variables.",
         "Un peu plus stable qu'iPNDM sur les schedules irréguliers.",
         "Même réserve sur le nombre de pas.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "lcm": (
         "LCM",
         "Échantillonneur des modèles distillés **par Latent Consistency**.",
         "Excellent — sur un modèle LCM.",
         "Ni Flux.2 Klein ni Krea 2 Turbo ne sont distillés en LCM. Leur "
         "appliquer son parcours donne un rendu délavé.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": BAD}),
+        {"flux2": BAD, "krea2": BAD}),
     "ddim_trailing": (
         "DDIM Trailing",
         "DDIM avec alignement des timesteps « trailing ».",
         "Utile sur les modèles où la fin du parcours est mal échantillonnée.",
         "Pensé pour la diffusion classique ; sans objet sur du flow matching.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": MEH}),
     "tcd": (
         "TCD",
         "Comme LCM : réservé aux modèles distillés **en TCD**.",
         "Très peu de pas — sur un modèle TCD.",
         "Nos modèles ne le sont pas.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": BAD}),
+        {"flux2": BAD, "krea2": BAD}),
     "res_multistep": (
         "Res Multistep",
         "Intégrateur exponentiel multi-pas.",
         "Très bonne précision sur les modèles de flow, à pas moyens.",
         "Multi-pas : bridé quand les pas manquent. Le candidat le plus "
         "crédible pour essayer autre chose dès qu'il y en a.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "res_2s": (
         "Res 2S",
         "Intégrateur exponentiel à un pas, ordre 2.",
         "Précis dès les premiers pas, sans historique à constituer — ce qui "
         "le rend, lui, compatible avec un budget serré.",
         "Deux évaluations par pas : à durée égale, Euler en fait deux fois plus.",
-        {"flux2": OK, "krea2": OK, "krea2raw": OK}),
+        {"flux2": OK, "krea2": OK}),
     "er_sde": (
         "ER SDE",
         "Solveur SDE à réversibilité exacte.",
         "Le plus rigoureux des stochastiques.",
         "Stochastique : il lui faut des pas pour donner sa mesure.",
-        {"flux2": BAD, "krea2": MEH, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": MEH}),
     "euler_cfg_pp": (
         "Euler CFG++",
         "Euler avec la correction de guidage « CFG++ ».",
         "Enlève les sur-saturations dues à un CFG élevé.",
         "**Nos deux modèles tournent à CFG 1.0** : il n'y a aucun guidage à "
         "corriger. Cette variante n'a rien à faire ici.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": BAD}),
     "euler_a_cfg_pp": (
         "Euler Ancestral CFG++",
         "La version ancestrale de la précédente : correction CFG++ plus "
@@ -180,7 +174,7 @@ SAMPLERS: dict[str, tuple] = {
         "que le bruit ancestral, qu'Euler Ancestral fournit déjà.",
         "Cumule l'inutilité du CFG++ à CFG 1.0 et le bruit ancestral, qui "
         "demande un budget de pas confortable pour se résorber.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": OK}),
+        {"flux2": BAD, "krea2": BAD}),
     "euler_ge": (
         "Euler GE",
         "Euler à extrapolation de gradient (paramètre `gamma`).",
@@ -188,13 +182,13 @@ SAMPLERS: dict[str, tuple] = {
         "lot à viser explicitement ce régime.",
         "Non exposé ici : `gamma` se règle via `--extra-sample-args`, et sans "
         "lui l'effet est marginal.",
-        {"flux2": OK, "krea2": OK, "krea2raw": MEH}),
+        {"flux2": OK, "krea2": OK}),
     "lms": (
         "LMS (linear multi-step)",
         "Multi-pas linéaire classique (`lms_divisions`, défaut 1000).",
         "Ajout récent de sd.cpp ; méthode éprouvée sur de longs parcours.",
         "Multi-pas : sans un vrai budget de pas, l'historique n'existe pas.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": MEH}),
 }
 
 # clé -> (libellé, résumé, avantage, inconvénient, {famille: niveau})
@@ -205,82 +199,82 @@ SCHEDULES: dict[str, tuple] = {
         "Toujours cohérent avec le modèle : `flux2` pour Flux.2 Klein, "
         "`discrete` pour Krea 2. C'est le réglage documenté par sd.cpp.",
         "Aucun — sauf si vous voulez expérimenter en connaissance de cause.",
-        {"flux2": BEST, "krea2": BEST, "krea2raw": BEST}),
+        {"flux2": BEST, "krea2": BEST}),
     "discrete": (
         "Discrete",
         "Répartition uniforme sur les sigmas du modèle.",
         "Neutre et sans surprise. C'est ce que « Auto » choisit sur Krea 2.",
         "Rien de particulier ; simplement pas optimisé pour un modèle donné.",
-        {"flux2": OK, "krea2": BEST, "krea2raw": BEST}),
+        {"flux2": OK, "krea2": BEST}),
     "karras": (
         "Karras",
         "Répartition concentrant les pas vers les bas sigmas.",
         "La référence sur SD1.5 / SDXL, où elle gagne beaucoup.",
         "Conçue pour la diffusion **EDM à prédiction d'epsilon**. Nos modèles "
         "sont en flow matching : la courbe ne correspond pas au parcours.",
-        {"flux2": BAD, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": BAD, "krea2": MEH}),
     "exponential": (
         "Exponential",
         "Décroissance exponentielle des sigmas.",
         "Simple, parfois utile sur les modèles à v-prediction.",
         "Même inadéquation que Karras vis-à-vis du flow matching.",
-        {"flux2": BAD, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": BAD, "krea2": MEH}),
     "ays": (
         "AYS (Align Your Steps)",
         "Répartition optimisée par NVIDIA pour les **petits budgets de pas**.",
         "Pensée exactement pour le régime 8-12 pas — l'idée est bonne ici.",
         "Ses tables sont calibrées sur SD1.5/SDXL, pas sur nos modèles : le "
         "transfert est plausible mais non garanti. À essayer sur Krea 2.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": OK}),
     "gits": (
         "GITS",
         "Répartition issue d'une recherche sur graphe.",
         "Bons résultats publiés à faible nombre de pas.",
         "Même réserve qu'AYS : calibrée ailleurs.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": OK}),
     "smoothstep": (
         "Smoothstep",
         "Courbe lissée aux deux extrémités.",
         "Transitions douces, peu d'à-coups en début de parcours.",
         "Effet discret ; rien qui compense un scheduler adapté au modèle.",
-        {"flux2": OK, "krea2": OK, "krea2raw": OK}),
+        {"flux2": OK, "krea2": OK}),
     "sgm_uniform": (
         "SGM Uniform",
         "Uniforme, à la façon des implémentations SGM.",
         "Proche de Discrete, comportement prévisible.",
         "Aucun avantage identifié sur nos modèles.",
-        {"flux2": OK, "krea2": OK, "krea2raw": OK}),
+        {"flux2": OK, "krea2": OK}),
     "simple": (
         "Simple",
         "Répartition linéaire élémentaire.",
         "Robuste, sans paramètre. Défaut de DDIM Trailing.",
         "Grossière quand les pas sont peu nombreux.",
-        {"flux2": OK, "krea2": OK, "krea2raw": OK}),
+        {"flux2": OK, "krea2": OK}),
     "kl_optimal": (
         "KL Optimal",
         "Répartition minimisant une divergence KL le long du parcours.",
         "Bien fondée théoriquement, correcte à pas moyens.",
         "Gain non démontré quand les pas sont comptés.",
-        {"flux2": MEH, "krea2": OK, "krea2raw": OK}),
+        {"flux2": MEH, "krea2": OK}),
     "lcm": (
         "LCM",
         "Répartition des modèles Latent Consistency.",
         "Indispensable — avec l'échantillonneur LCM.",
         "Hors de ce couple, elle écrase le parcours et délave le rendu.",
-        {"flux2": BAD, "krea2": BAD, "krea2raw": BAD}),
+        {"flux2": BAD, "krea2": BAD}),
     "bong_tangent": (
         "Bong Tangent",
         "Courbe en tangente, très marquée.",
         "Effet stylistique parfois intéressant.",
         "Empirique, sans fondement pour nos modèles.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": MEH}),
     "flux2": (
         "Flux.2",
         "Répartition **taillée pour Flux.2**.",
         "Ce que « Auto » sélectionne sur Flux.2 Klein : le bon choix, "
         "explicitement.",
         "Sur Krea 2, rien ne dit qu'elle transfère.",
-        {"flux2": BEST, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": BEST, "krea2": MEH}),
     "flux": (
         "Flux",
         "Répartition des sigmas taillée pour les modèles **Flux.1**, avec le "
@@ -289,13 +283,13 @@ SCHEDULES: dict[str, tuple] = {
         "et donne un rendu légèrement plus contrasté sur les gros plans.",
         "Flux.2 a la sienne ; utiliser celle de Flux.1 revient à prendre "
         "l'ancienne version d'un réglage taillé sur mesure.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": MEH}),
     "beta": (
         "Beta",
         "Répartition suivant une loi Beta (paramètres `alpha`, `beta`).",
         "Très modulable — via `--extra-sample-args`.",
         "Sans réglage de ses paramètres, aucun intérêt par rapport à Discrete.",
-        {"flux2": MEH, "krea2": MEH, "krea2raw": MEH}),
+        {"flux2": MEH, "krea2": MEH}),
     "logit_normal": (
         "Logit Normal",
         "Répartition logit-normale, celle utilisée à l'entraînement de "
@@ -303,14 +297,14 @@ SCHEDULES: dict[str, tuple] = {
         "Cohérente avec la façon dont ces modèles ont été entraînés — la "
         "piste la plus défendable après « Auto ».",
         "Ses paramètres (`mu`, `std`) ne sont pas exposés ici.",
-        {"flux2": OK, "krea2": OK, "krea2raw": OK}),
+        {"flux2": OK, "krea2": OK}),
 }
 
 
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "krea2raw")
+FAMILIES = ("flux2", "krea2")
 
 
 def _family(model_family: str) -> str:
@@ -376,49 +370,6 @@ pas ; les appliquer délave le rendu.
 banc d'essai — ils disent où porter vos essais, pas ce que votre œil va
 préférer.*"""
 
-# Le dépliant du modèle NON DISTILLÉ. Ce n'est pas une variante du précédent :
-# deux de ses trois arguments sont retournés. Paramétrer un seul texte aurait
-# produit des phrases qui se contredisent — autant en écrire deux.
-_RATIONALE_OPEN = """\
-Sur **{model}**, le menu redevient un vrai menu — et c'est l'exception dans
-cette application.
-
-Une seule des trois propriétés qui restreignent les autres modèles s'applique
-encore ici :
-
-**1. C'est un modèle de *flow matching*.** Comme les autres. Les schedulers
-**Karras** et **Exponential** ont été conçus pour une autre mécanique (diffusion
-EDM à prédiction d'epsilon) : leur répartition de sigmas ne correspond toujours
-pas au parcours suivi.
-
-**2. Il n'est PAS distillé.** Il tourne à **CFG {cfg}**, un vrai guidage. Deux
-conséquences directes : le **prompt négatif fonctionne enfin**, et la famille
-**CFG++** (`Euler CFG++`, `Euler Ancestral CFG++`) a de nouveau quelque chose à
-corriger — elle passe de « déconseillée » à « utilisable ».
-
-**3. Il tourne en {steps} pas.** C'est confortable, et ça réhabilite les deux
-familles que les modèles distillés écartaient :
-
-- les méthodes **ancestrales** et **stochastiques** ont le temps de reconverger
-  le bruit qu'elles réinjectent ;
-- les méthodes **multi-pas** (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) ont
-  largement de quoi constituer leur historique — c'est leur terrain.
-
-En sens inverse, ce qui visait explicitement le très-peu-de-pas perd son
-intérêt : `Euler GE`, et les schedulers **AYS** et **GITS**, calibrés pour les
-petits budgets de pas.
-
-**LCM** et **TCD** restent hors-jeu : ce sont les échantillonneurs de modèles
-distillés *par ces méthodes-là*, et celui-ci ne l'est pas du tout.
-
----
-
-**Ce qu'il reste, en pratique :** presque tout. {advice}
-
-*Ces verdicts sont raisonnés à partir des propriétés du modèle, pas tirés d'un
-banc d'essai — ils disent où porter vos essais, pas ce que votre œil va
-préférer.*"""
-
 _ADVICE = {
     "flux2": "Sur 4 pas, il n'y a pratiquement rien à gagner ailleurs ; si vous "
              "voulez expérimenter, `Res 2S` est le seul autre à être précis "
@@ -426,10 +377,6 @@ _ADVICE = {
     "krea2": "Sur 8 pas, la marge est un peu plus large : `Res Multistep`, "
              "`DPM++ 2M` et le scheduler `AYS` (pensé pour les petits budgets "
              "de pas) valent un essai comparatif à seed fixe.",
-    "krea2raw": "`DPM++ 2M` et `Res Multistep` sont ici sur leur terrain, et "
-                "`Euler CFG++` mérite un essai si vos rendus paraissent "
-                "sur-saturés. Le vrai levier reste ailleurs : c'est le seul "
-                "modèle où le **prompt négatif** change quelque chose.",
 }
 
 
@@ -437,20 +384,16 @@ _ADVICE = {
 _MODEL = {
     "flux2": ("Flux.2 Klein", "4", "1.0"),
     "krea2": ("Krea 2 Turbo", "8", "1.0"),
-    "krea2raw": ("Krea 2 Raw", "52", "3,5"),
 }
 
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
     name, steps, cfg = _MODEL[fam]
-    # Deux textes et non un seul paramétré : sur un modèle non distillé, deux
-    # des trois arguments s'inversent. Un gabarit unique aurait menti.
-    template = _RATIONALE_OPEN if fam == "krea2raw" else _RATIONALE
     # Traduire AVANT de formater : les placeholders survivent (garanti par
     # tests/test_i18n.py), et le texte inséré est traduit séparément.
-    return i18n.t(template).format(model=name, steps=steps, cfg=cfg,
-                                   advice=i18n.t(_ADVICE[fam]))
+    return i18n.t(_RATIONALE).format(model=name, steps=steps, cfg=cfg,
+                                     advice=i18n.t(_ADVICE[fam]))
 
 
 def describe(kind: str, key: str, model_family: str) -> str:

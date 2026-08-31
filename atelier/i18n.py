@@ -1215,10 +1215,68 @@ _EN: dict[str, str] = {
         "Over 4 steps there is virtually nothing to gain elsewhere; if you want to experiment, `Res 2S` is the only other one that is accurate without a history to build.",
     "Sur 8 pas, la marge est un peu plus large : `Res Multistep`, `DPM++ 2M` et le scheduler `AYS` (pensé pour les petits budgets de pas) valent un essai comparatif à seed fixe.":
         "Over 8 steps the margin is a little wider: `Res Multistep`, `DPM++ 2M` and the `AYS` scheduler (designed for small step budgets) are worth a side-by-side try at a fixed seed.",
-    "Sur **{model}**, le menu redevient un vrai menu — et c'est l'exception dans\ncette application.\n\nUne seule des trois propriétés qui restreignent les autres modèles s'applique\nencore ici :\n\n**1. C'est un modèle de *flow matching*.** Comme les autres. Les schedulers\n**Karras** et **Exponential** ont été conçus pour une autre mécanique (diffusion\nEDM à prédiction d'epsilon) : leur répartition de sigmas ne correspond toujours\npas au parcours suivi.\n\n**2. Il n'est PAS distillé.** Il tourne à **CFG {cfg}**, un vrai guidage. Deux\nconséquences directes : le **prompt négatif fonctionne enfin**, et la famille\n**CFG++** (`Euler CFG++`, `Euler Ancestral CFG++`) a de nouveau quelque chose à\ncorriger — elle passe de « déconseillée » à « utilisable ».\n\n**3. Il tourne en {steps} pas.** C'est confortable, et ça réhabilite les deux\nfamilles que les modèles distillés écartaient :\n\n- les méthodes **ancestrales** et **stochastiques** ont le temps de reconverger\n  le bruit qu'elles réinjectent ;\n- les méthodes **multi-pas** (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) ont\n  largement de quoi constituer leur historique — c'est leur terrain.\n\nEn sens inverse, ce qui visait explicitement le très-peu-de-pas perd son\nintérêt : `Euler GE`, et les schedulers **AYS** et **GITS**, calibrés pour les\npetits budgets de pas.\n\n**LCM** et **TCD** restent hors-jeu : ce sont les échantillonneurs de modèles\ndistillés *par ces méthodes-là*, et celui-ci ne l'est pas du tout.\n\n---\n\n**Ce qu'il reste, en pratique :** presque tout. {advice}\n\n*Ces verdicts sont raisonnés à partir des propriétés du modèle, pas tirés d'un\nbanc d'essai — ils disent où porter vos essais, pas ce que votre œil va\npréférer.*":
-        "On **{model}**, the menu becomes a real menu again — and that is the exception\nin this application.\n\nOnly one of the three properties that constrain the other models still applies\nhere:\n\n**1. It is a *flow matching* model.** Like the others. The **Karras** and\n**Exponential** schedulers were designed for another mechanism (EDM\nepsilon-prediction diffusion): their sigma spread still does not match the\ntrajectory followed.\n\n**2. It is NOT distilled.** It runs at **CFG {cfg}**, real guidance. Two direct\nconsequences: the **negative prompt finally works**, and the **CFG++** family\n(`Euler CFG++`, `Euler Ancestral CFG++`) has something to correct again — it\ngoes from “discouraged” to “usable”.\n\n**3. It runs in {steps} steps.** That is comfortable, and it rehabilitates the\ntwo families the distilled models ruled out:\n\n- the **ancestral** and **stochastic** methods have time to reconverge the noise\n  they inject;\n- the **multistep** methods (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) have\n  ample room to build their history — this is their home ground.\n\nThe other way round, whatever explicitly targeted very-few-steps loses its\npoint: `Euler GE`, and the **AYS** and **GITS** schedulers, calibrated for small\nstep budgets.\n\n**LCM** and **TCD** stay out: they are the samplers of models distilled *by\nthose very methods*, and this one is not distilled at all.\n\n---\n\n**What is left, in practice:** almost everything. {advice}\n\n*These verdicts are reasoned from the model's properties, not drawn from a\nbenchmark — they say where to aim your experiments, not what your eye will\nprefer.*",
-    "`DPM++ 2M` et `Res Multistep` sont ici sur leur terrain, et `Euler CFG++` mérite un essai si vos rendus paraissent sur-saturés. Le vrai levier reste ailleurs : c'est le seul modèle où le **prompt négatif** change quelque chose.":
-        "`DPM++ 2M` and `Res Multistep` are on home ground here, and `Euler CFG++` is worth a try if your renders look oversaturated. The real lever is elsewhere though: this is the only model where the **negative prompt** changes anything.",
+    "🎛️ Matériel & optimisation":
+        "🎛️ Hardware & optimization",
+    "⚡ Accélération (avancé)":
+        "⚡ Acceleration (advanced)",
+    "🧪 Mesurer cette machine":
+        "🧪 Measure this machine",
+    "🌍 Interface, réseau & comptes":
+        "🌍 Interface, network & accounts",
+    "Le test génère la même image en **512×512, 4 pas, seed 424242** avec chaque placement disponible. Il mesure le temps et le pic VRAM, conserve les images pour comparaison et ne modifie aucun réglage tant que vous ne cliquez pas sur **Appliquer**.":
+        "The test generates the same image at **512×512, 4 steps, seed 424242** through every available placement. It measures time and peak VRAM, keeps the images for comparison, and changes no setting until you click **Apply**.",
+    "📋 Exporter le rapport système":
+        "📋 Export the system report",
+    "⏱️ Tester les placements GPU":
+        "⏱️ Test the GPU placements",
+    "Appliquer le profil le plus rapide":
+        "Apply the fastest profile",
+    "⏹️ Arrêter le test":
+        "⏹️ Stop the test",
+    "Rapport JSON":
+        "JSON report",
+    "Journal du test":
+        "Test log",
+    "Streaming des couches depuis la RAM":
+        "Layer streaming from RAM",
+    "Requiert les poids de diffusion en RAM, mais pas de budget --max-vram. Très dépendant du PCIe.":
+        "Requires the diffusion weights in RAM, but no --max-vram budget. Very PCIe-dependent.",
+    "Encodeur sur la 2e carte, poids en RAM":
+        "Encoder on the 2nd card, weights in RAM",
+    "Format du modèle de diffusion":
+        "Diffusion model format",
+    "GGUF — recommandé et éprouvé":
+        "GGUF — recommended and proven",
+    "INT8 ConvRot — expérimental RTX 30xx":
+        "INT8 ConvRot — experimental, RTX 30xx",
+    "Comparez les deux avec le test A/B des Réglages.":
+        "Compare the two with the A/B test in Settings.",
+    "📁 Restaurer un dossier en une fois":
+        "📁 Restore a whole folder at once",
+    "Sélectionnez un dossier d'images. SeedVR2 charge le modèle **une seule fois**, le garde en cache et traite tous les fichiers sans modifier les originaux. Les résultats vont dans un sous-dossier horodaté de `outputs/`.":
+        "Pick a folder of images. SeedVR2 loads the model **once**, keeps it cached and processes every file without touching the originals. Results go to a timestamped subfolder of `outputs/`.",
+    "Dossier d'images":
+        "Image folder",
+    "🌱 Restaurer tout le dossier":
+        "🌱 Restore the whole folder",
+    "Résultats du lot":
+        "Batch results",
+    "Journal du lot":
+        "Batch log",
+    "Sélectionnez un dossier d'images.":
+        "Pick a folder of images.",
+    "Installez d'abord SeedVR2.":
+        "Install SeedVR2 first.",
+    "🎭 Préréglage perso":
+        "🎭 Custom preset",
+    "⚙️ Réinstaller / réparer {title}":
+        "⚙️ Reinstall / repair {title}",
+    "🎨 Styles — préréglages, photo, artistiques ({n} styles)":
+        "🎨 Styles — presets, photo, artistic ({n} styles)",
+    "📷 Photo ({n})":
+        "📷 Photo ({n})",
+    "🖍️ Artistiques ({n})":
+        "🖍️ Artistic ({n})",
 }
 
 _EN_INV: dict[str, str] = {v: k for k, v in _EN.items()}

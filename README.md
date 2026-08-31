@@ -10,10 +10,10 @@
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Krea 2 Turbo** and **Krea 2
-Raw**, with an on-demand model catalog, automatic optimization for your RTX card,
-LoRA, native resolution presets, saved styles, an AI prompt enhancer,
-multi-reference image editing, three upscalers, and a utility toolkit.
+CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
+on-demand model catalog, automatic optimization for your RTX card, LoRA, native
+resolution presets, saved styles, an AI prompt enhancer, multi-reference image
+editing, three upscalers, and a utility toolkit.
 
 No ComfyUI, no node spaghetti — just a clean web UI.
 
@@ -38,7 +38,6 @@ so the grouping is not decoration.)
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🎛️ **Krea 2 Raw** | the same model **not distilled** — 52 steps, CFG 3.5, and the only one that reads the **negative prompt** |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Tools** | **Toolkit** (depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
@@ -62,7 +61,6 @@ so the grouping is not decoration.)
 - [Models & sources](#models--sources)
 - [Project layout](#project-layout)
 - [Gradio version](#gradio-version)
-- [Trying MiniMax-H3 video (probe)](#trying-minimax-h3-video-probe)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgments](#acknowledgments)
 
@@ -218,10 +216,10 @@ Every generation tab exposes the same controls.
   active preset as a constraint**: it describes the subject without adding
   camera, lens, lighting or processing wording that would contradict the style.
   Pick the preset first, then enhance.
-- **Negative prompt** — shown only for models that support it (CFG > 1). The
-  distilled models (Flux.2 Klein, Krea 2 Turbo) run at CFG 1.0 and ignore it;
-  **Krea 2 Raw** is the one tab where it does something.
-- **System / style prefix** (accordion) — a prefix prepended to every prompt. Save
+- **Negative prompt** — shown only for models that support it (CFG > 1). Both
+  our models are distilled at CFG 1.0 and ignore it, so the field stays hidden.
+- **System / style prefix** (🎨 Styles → *Custom preset*) — a prefix prepended
+  to every prompt. Save
   reusable styles to a dropdown (persisted in `userdata/`). Styles are **global**:
   saved once, available in every generation tab. A few are **bundled** with the
   app in `config/style_presets.json` — they survive updates and cannot be
@@ -233,7 +231,7 @@ Every generation tab exposes the same controls.
   **📷 France provinciale 1995-2005 (amateur)**, a transcription of a
   "mundane amateur snapshot, provincial France, always overcast, no
   post-processing" brief.
-- **📷 Krea 2 photo styles** (accordion) — a bundled bank of **139 stackable
+- **📷 Krea 2 photo styles** (🎨 Styles → *Photo*) — a bundled bank of **139 stackable
   photographic styles** (quality, lighting, lens, film stock, mood…), grouped by
   category in a **multi-select** dropdown. Your prompt subject is inserted into
   each selected style (`{prompt}` template), and multiple styles chain their
@@ -242,7 +240,7 @@ Every generation tab exposes the same controls.
   on distilled CFG 1.0 models they are dropped. Bank © *ghleg* — MIT
   ([aoleg/Photographic-styles-and-wildcards-for-Krea-2](https://github.com/aoleg/Photographic-styles-and-wildcards-for-Krea-2)),
   shipped as `config/krea2_styles.csv`.
-- **🎨 Krea artistic styles** (accordion) — a bundled bank of **397 stackable
+- **🎨 Krea artistic styles** (🎨 Styles → *Artistic*) — a bundled bank of **397 stackable
   artistic styles** (anime, cartoon, comics, drawing, photography, design,
   digital painting, painting), grouped by category in a **multi-select**
   dropdown. These have no `{prompt}` and no negatives: the style description is
@@ -444,78 +442,64 @@ picker and these strategies live in **Settings**.
 The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
 `docs/krea2.md`): **Euler** sampler with the **scheduler left to the engine
 default** (the docs never force one), at each model's documented steps/CFG
-(Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0; Krea 2 Raw
-52 steps · CFG 3.5). The dropdowns
+(Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0). The dropdowns
 still expose the full sd.cpp list for manual experimentation, **annotated per
 model** — with a description card and a fold-out rationale right in the tab.
 New entries need a recent engine (`update-engine.bat`).
 
-#### Why most of the menu does not apply — except on one model
-Three properties, read off sd.cpp itself rather than guessed, decide almost
-every verdict, and they rule out whole families at once:
+#### Why most of the menu does not apply here
+Three properties of our two models — read off sd.cpp itself, not guessed —
+decide almost every verdict, and they rule out whole families at once:
 
-1. **They are flow-matching models.** sd.cpp runs all of them in
-   `FLUX_FLOW_PRED` / `FluxFlowDenoiser` (Krea 2 with a flow shift of 1.15).
-   **Karras** and **Exponential**, which gain a lot on SD 1.5 / SDXL, were
-   designed for EDM epsilon-prediction diffusion: their sigma spread does not
-   match this trajectory. **This one applies to every model here.**
-2. **The distilled ones run at CFG 1.0.** There is no guidance to correct, so
-   the whole **CFG++** family has nothing to do — and the negative prompt is
-   ignored whichever sampler you pick.
+1. **They are flow-matching models.** sd.cpp runs both in `FLUX_FLOW_PRED` /
+   `FluxFlowDenoiser` (Krea 2 with a flow shift of 1.15). **Karras** and
+   **Exponential**, which gain a lot on SD 1.5 / SDXL, were designed for EDM
+   epsilon-prediction diffusion: their sigma spread does not match this
+   trajectory.
+2. **They are distilled at CFG 1.0.** There is no guidance to correct, so the
+   whole **CFG++** family has nothing to do — and the negative prompt is ignored
+   whichever sampler you pick.
 3. **They run in very few steps** (4 for Flux.2 Klein, 8 for Krea 2 Turbo).
    **Ancestral/stochastic** methods re-inject noise that never gets reconverged;
    **multistep** methods need a history of evaluations that barely has time to
    exist.
 
 **LCM** and **TCD** are not general-purpose options either: they are the
-samplers of models distilled *by those methods*, which none of ours is.
-
-**Krea 2 Raw is the exception**, and that is its whole point: it is *not*
-distilled. At **52 steps and CFG 3.5**, points 2 and 3 fall away — the negative
-prompt works, CFG++ has something to correct again, and both the ancestral and
-the multistep families are back on their home ground. What it loses instead is
-whatever explicitly targeted very-few-steps: `euler_ge`, and the `ays` / `gits`
-schedulers.
+samplers of models distilled *by those methods*, which neither of ours is.
 
 #### The verdicts, at a glance
 ⭐ recommended · ✓ usable · △ poorly suited · ⚠️ discouraged
 *(in the menu itself, "usable" simply carries no mark)*
 
-| Sampler | Flux.2 Klein (4 steps) | Krea 2 Turbo (8 steps) | Krea 2 Raw (52 steps) |
-| --- | :---: | :---: | :---: |
-| `euler` | ⭐ | ⭐ | ⭐ |
-| `res_2s` | ✓ | ✓ | ✓ |
-| `euler_ge` | ✓ | ✓ | △ |
-| `heun` · `dpm++2m` · `dpm++2mv2` · `ipndm` · `ipndm_v` · `res_multistep` | △ | ✓ | ✓ |
-| `dpm2` · `lms` | △ | △ | ✓ |
-| `ddim_trailing` | △ | △ | △ |
-| `dpm++2m_sde` · `dpm++2m_sde_bt` · `er_sde` | ⚠️ | △ | ✓ |
-| `euler_a` · `dpm++2s_a` · `euler_cfg_pp` · `euler_a_cfg_pp` | ⚠️ | ⚠️ | ✓ |
-| `lcm` · `tcd` | ⚠️ | ⚠️ | ⚠️ |
+| Sampler | Flux.2 Klein (4 steps) | Krea 2 Turbo (8 steps) |
+| --- | :---: | :---: |
+| `euler` | ⭐ | ⭐ |
+| `res_2s` · `euler_ge` | ✓ | ✓ |
+| `heun` · `dpm++2m` · `dpm++2mv2` · `ipndm` · `ipndm_v` · `res_multistep` | △ | ✓ |
+| `dpm2` · `ddim_trailing` · `lms` | △ | △ |
+| `dpm++2m_sde` · `dpm++2m_sde_bt` · `er_sde` | ⚠️ | △ |
+| `euler_a` · `dpm++2s_a` · `lcm` · `tcd` · `euler_cfg_pp` · `euler_a_cfg_pp` | ⚠️ | ⚠️ |
 
-| Scheduler | Flux.2 Klein | Krea 2 Turbo | Krea 2 Raw |
-| --- | :---: | :---: | :---: |
-| `auto` (engine default) | ⭐ | ⭐ | ⭐ |
-| `flux2` | ⭐ | △ | △ |
-| `discrete` | ✓ | ⭐ | ⭐ |
-| `smoothstep` · `sgm_uniform` · `simple` · `logit_normal` | ✓ | ✓ | ✓ |
-| `kl_optimal` | △ | ✓ | ✓ |
-| `ays` · `gits` | △ | ✓ | △ |
-| `flux` · `beta` · `bong_tangent` | △ | △ | △ |
-| `karras` · `exponential` | ⚠️ | △ | △ |
-| `lcm` | ⚠️ | ⚠️ | ⚠️ |
+| Scheduler | Flux.2 Klein | Krea 2 Turbo |
+| --- | :---: | :---: |
+| `auto` (engine default) | ⭐ | ⭐ |
+| `flux2` | ⭐ | △ |
+| `discrete` | ✓ | ⭐ |
+| `smoothstep` · `sgm_uniform` · `simple` · `logit_normal` | ✓ | ✓ |
+| `ays` · `gits` · `kl_optimal` | △ | ✓ |
+| `flux` · `beta` · `bong_tangent` | △ | △ |
+| `karras` · `exponential` | ⚠️ | △ |
+| `lcm` | ⚠️ | ⚠️ |
 
 `auto` means *don't pass `--scheduler`*, so the engine picks: `flux2` for
-Flux.2 Klein, `discrete` for both Krea 2 — which is why those two are also
-marked ⭐ on their own model.
+Flux.2 Klein, `discrete` for Krea 2 — which is why those two are also marked ⭐
+on their own model.
 
 **What is worth actually trying:** on Flux.2 Klein, almost nothing beyond
 `euler` — 4 steps leave no room, and `res_2s` is the only other one accurate
 without a history to build. On Krea 2 Turbo the margin is wider: `res_multistep`,
 `dpm++2m` and the `ays` scheduler (designed for small step budgets) deserve a
-side-by-side run at a fixed seed. On Krea 2 Raw the menu is genuinely open —
-but the biggest lever there is not the sampler, it is the **negative prompt**,
-which is the only model that reads it.
+side-by-side run at a fixed seed.
 
 These verdicts are **reasoned from the models' properties, not measured on a
 benchmark**. They say where to aim your experiments, not what your eye will
@@ -532,23 +516,33 @@ diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-st
 distilled models the gain is small and artifacts are possible, hence **off by
 default**. Requires a recent engine (`update-engine.bat`).
 
-The **Krea 2 Raw** checkbox is deliberately model-scoped: it applies a prudent
-EasyCache threshold only to Raw's long 28/52-step runs. Turbo and Flux.2 keep
-their cache off. MiniMax-H3 exposes the same experiment through
-`try-minimax.bat --cache`; it is never enabled silently.
-
 ### Measured hardware profile and Krea INT8 probe
-**Settings → Measure this machine** runs a fixed 512×512 / 4-step / seed 424242
-generation through every sensible placement: main GPU with RAM staging, encoder
-resident on the second GPU, and the old staged dual-GPU path. It records wall
-time, peak VRAM, exact engine provenance and output images in a JSON report. The
-fastest successful profile can then be applied explicitly; running the test does
-not alter preferences.
+**Settings → 🧪 Measure this machine** runs a fixed 512×512 / 4-step / seed
+424242 generation through every sensible placement: main GPU with RAM staging,
+encoder resident on the second GPU, and the staged dual-GPU path.
+
+**How it measures matters more than what it measures.** Each placement gets one
+**discarded warm-up run** followed by **three timed runs**, and the reported
+figure is the **median**, not a single sample. Without the warm-up, the first
+placement tested pays the cold-disk cost of reading ~9 GB of GGUF while the
+later ones hit the OS page cache — the ranking would then tell you the order the
+tests ran in, not which placement is faster. Peak VRAM is reported **over the
+baseline measured just before each run**, so what the desktop already occupied
+does not land in the number.
+
+A winner is only declared when it beats the runners-up by **more than the
+measured spread** (max − min across the timed runs). When two placements sit
+inside the noise, the report keeps the **simpler** one rather than pretending to
+split them. The log streams while the test runs and **⏹️ Stop** ends it cleanly
+after the run in progress. Running the test never alters your preferences —
+applying the profile is a separate, explicit click.
 
 The same block compares the normal **Krea 2 Turbo GGUF** with the optional
-**INT8 ConvRot** checkpoint from `Comfy-Org/Krea-2`. The RTX 3060 executes the
-INT8 kernels while the oversized checkpoint is streamed from RAM. GGUF remains
-the default because the two outputs still require a visual quality decision.
+**INT8 ConvRot** checkpoint from `Comfy-Org/Krea-2` (sd.cpp gained INT8 ConvRot
+support in build 817, August 2026). The RTX 3060 executes the INT8 kernels while
+the oversized checkpoint is streamed from RAM. GGUF remains the default because
+the two outputs still require a visual quality decision — and because none of
+this is measured on your machine until you press the button.
 
 ### Direct convolution (memory)
 
@@ -630,6 +624,26 @@ archive checksum and supported options. DLLs from two releases therefore never
 mix, while a broken download can never destroy the working install. **Models are
 never re-downloaded** — including the ~16 GB trellis 3D set; reinstall those
 from the **Image → 3D** tab if ever needed.
+
+### Keeping the interface shallow
+Two rules, enforced by `tests/test_ui_shape.py` rather than by good intentions:
+
+- **No accordion lives inside another accordion** — the threshold is zero, not
+  "reasonable". A fold inside a fold costs two clicks to reveal one option, and
+  the second click is never announced. Where several sections must coexist, they
+  are **tabs**: all of them visible without opening anything. That is why the
+  536-style bank is now 🎨 Styles → three tabs (*Custom preset* · *Photo* ·
+  *Artistic*), and why **Settings** is four tabs rather than a stack of six
+  folds.
+- **One-shot blocks disappear once they are done** — the seven "⚙️ Install …"
+  panels are hidden on a machine where the tool is already installed, leaving a
+  small **Reinstall / repair** button in their place. The state that matters is
+  the one you live in, not the first launch.
+
+Measured on the real rendered tree of a machine where every tool is already
+installed: **62 visible accordions before, 33 after**, and accordion nesting
+from **1 level to 0**. Part of that drop is simply the removal of a generation
+tab; the rest is the two rules above.
 
 ### Interface language & theme
 **Settings → 🌐 Langue / Language** switches the UI between **French** and
@@ -1142,14 +1156,6 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
-**Krea 2 Raw** (family `krea2raw`, sd.cpp) — same architecture, encoder and VAE
-as the Turbo, but the **undistilled** checkpoint. Krea's own card says it is
-"not recommended for inference use" and is meant as a base for finetuning —
-train LoRAs on Raw, run them on Turbo. It is here anyway for the one thing it
-does that nothing else in this app does: **obey a negative prompt**.
-- diffusion — [`vantagewithai/Krea-2-Raw-GGUF`](https://huggingface.co/vantagewithai/Krea-2-Raw-GGUF) (52 steps, CFG 3.5, 1024², as stated three times over on the official [`krea/Krea-2-Raw`](https://huggingface.co/krea/Krea-2-Raw) card — official codebase, diffusers and SGLang snippets all agree). The GGUF mirror is **not gated**, unlike Krea's own repo.
-- text encoder and VAE — **the same files as the Turbo**, so if you already have
-  Krea 2 Turbo installed, only the diffusion model is downloaded.
 
 > Why the Turbo source changed: the previous repo (`realrebelai/KREA-2_GGUFs`,
 > `TURBO/` folder) had no `Q5_K_M` and no `Q2_K`. On a 12 GB card the auto
@@ -1293,65 +1299,6 @@ What it did **not** change: the cross-volume upload race described below is
 present in Gradio 6 exactly as in 5.50 — same `os.rename`, same fallback to a
 background copy, just moved to another module. The fix in `app.py` is still
 required.
-
-## Trying MiniMax-H3 video (probe)
-
-sd.cpp gained **day-one MiniMax-H3 support on 4 August 2026** — video *and*
-synchronised audio, natively, no ComfyUI. Whether it is usable on an 11–12 GB
-card is a different question, so there is a probe rather than a feature:
-
-```
-update-engine.bat          :: the engine must be newer than 4 Aug 2026
-try-minimax.bat            :: checks engine, GPU and disk — downloads nothing
-try-minimax.bat --download :: the lightest published set, ~26 GB
-try-minimax.bat --run      :: two passes, timed
-```
-
-It adds nothing to the interface and writes nothing to the model catalog. It
-answers the only two questions that decide whether a video tab is worth
-building: **does the model fit in this card's VRAM**, and **does the 4-step
-Turbo LoRA apply**. The second is the real unknown — sd.cpp documents applying
-lightx2v turbo LoRAs to Wan 2.2 with `--steps 4`, but not to MiniMax-H3, and
-without it you are at the full step count.
-
-The weights: diffusion `ref2va_pruned-Q2_K_M` (6.7 GB), text encoder
-**Qwen3-VL 32B** `Q2_K_M` (13.1 GB — this is the real obstacle), video VAE
-(5.2 GB), audio VAE (0.6 GB), Turbo LoRA (~1 GB). They land in `models/` and are
-removable from **Manage & clean** like everything else.
-
-**Where the text encoder goes is the question that decides everything.** The
-first real run failed on it: Qwen3-VL 32B asks for a **12 845 MiB** compute
-buffer, and an RTX 3060 has 12 288 MiB in total — it does not fit on an empty
-card, and no smaller quant is published. `--offload-to-cpu` does not help,
-because it parks the *weights* in RAM while the computation still happens on
-the GPU; the encoder itself has to be placed, with `--backend`.
-
-The probe therefore walks a **ladder of placements**, fastest first, and only
-steps down when the engine actually reports running out of memory:
-
-1. **Split across cards** — `te=cuda0&cuda1`. sd.cpp cuts the encoder's blocks
-   into ranges proportional to each device's free memory, so a 12 GB card and
-   an 11 GB card pool into 23 GB and the encoder runs *on GPU*. Only offered
-   when two or more cards are present, and it uses their real indices.
-2. **On the processor** — `te=cpu`. Works anywhere, but encoding a 32B model on
-   CPU costs minutes. (`--clip-on-cpu` does the same and is deprecated upstream
-   — it now merely prepends `te=cpu`.)
-3. The same, plus a VRAM budget (`--max-vram -1`) for the rest of the graph.
-
-On an error that is *not* a memory problem, it says so rather than burning
-another multi-minute pass. The report names the placement that worked, and
-`--check` lists **every** card with the pooled total — a machine with two GPUs
-has an option a single-card summary hides. When the encoder does end up on the
-CPU, **~13 GB of RAM** becomes the real floor, so that is checked before
-anything is downloaded.
-
-`ref2va` is a *reference*-to-video model, so it needs a source image: the probe
-takes the most recent one in `outputs/`, or `--ref path/to/image.png`. The two
-passes run the same generation with and without the LoRA and write two separate
-`.webm` files so you can compare them. Community reports put a 3060 12 GB at
-roughly 7–19 minutes for a 5–10 s clip, so the probe deliberately asks for
-22 frames (~0.9 s) — the point is to learn whether it starts and how fast, not
-to produce a clip.
 
 ## Troubleshooting
 
