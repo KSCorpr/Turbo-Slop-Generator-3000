@@ -113,9 +113,26 @@ class ModePromptTests(unittest.TestCase):
 
     def test_medium_coherence_is_required(self):
         """Mélanger « oil painting » et « 85mm lens » brouille le rendu : c'est
-        la faute la plus commune d'un prompt écrit par une machine."""
+        la faute la plus commune d'un prompt écrit par une machine, et elle a
+        été observée en vrai. La consigne doit nommer les termes interdits, pas
+        se contenter d'un principe."""
         for name, text in self.run.MODES.items():
-            self.assertIn("ONLY that medium's vocabulary", text, name)
+            self.assertIn("Decide the MEDIUM once", text, name)
+            self.assertIn("brushstrokes", text, name)
+
+    def test_the_full_mode_asks_for_the_medium_FIRST(self):
+        """La dérive arrive en FIN de génération. Faire nommer le médium en
+        premier le fixe pendant que le modèle regarde encore l'image."""
+        full = self.run.MODES["full"]
+        self.assertIn("1. the MEDIUM, first", full)
+        self.assertLess(full.index("the MEDIUM, first"),
+                        full.index("the main subject"))
+
+    def test_colour_honesty_is_demanded(self):
+        """« dark red shoes » sur des escarpins noirs : la couleur inventée est
+        la seconde erreur observée."""
+        for name, text in self.run.MODES.items():
+            self.assertIn("COLOURS above all", text, name)
 
 
 class WiringTests(unittest.TestCase):
@@ -281,6 +298,92 @@ class GenerationGuardTests(unittest.TestCase):
                    _re.findall(r'"(\w+)": (\d+)', m.group(1))}
         self.assertLessEqual(budgets["full"], 220, budgets)
         self.assertLess(budgets["style"], budgets["full"])
+
+
+# Seconde sortie RÉELLE remontée : sur une PHOTO, le modèle termine par « oil
+# painting style, brushstrokes visible, canvas texture evident ». Trois
+# fragments qui contredisent tout ce qui précède — et qui suffisent à faire
+# produire une peinture au modèle de diffusion.
+MIXED_MEDIUM_OUTPUT = (
+    'Wet woman legs wearing high heels, close-up on shiny pavement puddle, nighttime city street lights reflecting, soft focus background, dark red shoes, wet surface glistening, high contrast lighting, low angle shot, shallow depth of field, vibrant neon colors, oil painting style, brushstrokes visible, canvas texture evident.')
+
+
+class MediumDriftTests(unittest.TestCase):
+    """Un seul médium par prompt, garanti après coup.
+
+    La consigne l'interdit déjà, en majuscules. Ça n'a pas suffi et ça ne
+    suffira pas : la dérive arrive en FIN de génération, quand le modèle n'a
+    plus rien de réel à dire. Même leçon que pour la boucle — on vérifie au
+    lieu d'espérer.
+    """
+
+    def setUp(self):
+        self.run = _runner()
+
+    def test_the_real_painting_tail_is_removed_from_a_photo(self):
+        out = self.run._clean(MIXED_MEDIUM_OUTPUT)
+        for wrong in ("oil painting", "brushstrokes", "canvas texture"):
+            self.assertNotIn(wrong, out.lower(), wrong)
+
+    def test_everything_else_survives(self):
+        """Retirer le médium fautif ne doit rien coûter d'autre."""
+        out = self.run._clean(MIXED_MEDIUM_OUTPUT)
+        for kept in ("Wet woman legs wearing high heels", "shiny pavement",
+                     "nighttime city street lights", "low angle shot",
+                     "shallow depth of field", "vibrant neon colors"):
+            self.assertIn(kept, out, kept)
+
+    def test_the_first_medium_named_is_the_one_kept(self):
+        """Le premier gagne, et ce n'est pas arbitraire : le modèle décrit
+        d'abord ce qu'il voit, la confabulation vient après."""
+        painting = ("oil painting, thick impasto, warm palette, wooden frame, "
+                    "shot on 85mm lens, shallow depth of field")
+        out = self.run._one_medium(painting)
+        self.assertIn("oil painting", out)
+        self.assertNotIn("85mm lens", out)
+
+    def test_a_single_medium_is_left_untouched(self):
+        clean = ("cinematic photograph, 85mm lens, shallow depth of field, "
+                 "warm rim light, wet asphalt, amber bokeh")
+        self.assertEqual(self.run._one_medium(clean), clean)
+
+    def test_a_prompt_with_no_medium_at_all_is_left_untouched(self):
+        """Rien à arbitrer : on ne retire rien."""
+        neutral = "wet asphalt, amber reflections, low angle, high contrast"
+        self.assertEqual(self.run._one_medium(neutral), neutral)
+
+    def test_ambiguous_words_are_not_used_as_markers(self):
+        """« texture » seul ne désigne aucun médium ; « canvas texture » si.
+        Un marqueur ambigu ferait supprimer des fragments légitimes."""
+        self.assertIsNone(self.run._medium_of("rich surface texture"))
+        self.assertIsNone(self.run._medium_of("vivid colors"))
+        self.assertEqual(self.run._medium_of("canvas texture evident"),
+                         "painting")
+
+
+class SamplingTests(unittest.TestCase):
+    """Décrire n'est pas créer.
+
+    Le tirage aléatoire demande au modèle de choisir parfois un jeton MOINS
+    probable — donc, sur une description, d'inventer. « dark red shoes » sur des
+    escarpins noirs en est le résultat direct. Sur une seule proposition il ne
+    doit pas y avoir de tirage du tout.
+    """
+
+    def setUp(self):
+        self.src = (ROOT / "scripts" / "tools"
+                    / "run_describe.py").read_text(encoding="utf-8")
+
+    def test_a_single_proposal_is_generated_greedily(self):
+        self.assertIn('{"do_sample": False} if n == 1', self.src)
+
+    def test_several_proposals_stay_cold(self):
+        """Le tirage ne revient que pour VARIER — et à température basse : on
+        veut des formulations différentes, pas des faits différents."""
+        import re as _re
+        m = _re.search(r'"temperature": ([\d.]+)', self.src)
+        self.assertIsNotNone(m, "plus de température dans le code ?")
+        self.assertLessEqual(float(m.group(1)), 0.4)
 
 
 if __name__ == "__main__":

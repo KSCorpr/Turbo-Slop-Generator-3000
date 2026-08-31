@@ -48,30 +48,36 @@ _COMMON = (
     "• No preamble, no explanation, no quotes, no bullet list, no markdown. One "
     "single flowing block of comma-separated phrases.\n"
     "• Describe ONLY what is visible. Never invent a brand, a place, a name or "
-    "a date you cannot actually see.\n"
+    "a date you cannot actually see. This applies to COLOURS above all: name "
+    "the colour that is actually there. If a shoe is black, it is black — not "
+    "'dark red' because that would sound better.\n"
     "• NEVER repeat yourself. Each comma-separated fragment must add something "
     "the previous ones did not. Once you have said 'wet', 'high heels' or "
     "'fashion', that idea is spent — do not restate it in another form. When "
     "you have nothing left to add, STOP; a short prompt beats a padded one.\n"
-    "• Name the MEDIUM explicitly (photograph, oil painting, anime cel, 3D "
-    "render, vector illustration, pencil sketch…) and then use ONLY that "
-    "medium's vocabulary. A photograph gets lens, aperture, depth of field and "
-    "real texture; a painting gets brushwork, canvas and pigment. Mixing the "
-    "two vocabularies is the single most common way to ruin a prompt.\n"
+    "• Decide the MEDIUM once, say it FIRST, and never contradict it. A "
+    "photograph gets lens, aperture, depth of field, film grain, real texture "
+    "— and NEVER 'oil painting', 'brushstrokes', 'canvas texture', 'painterly' "
+    "or 'render'. A painting gets brushwork, canvas and pigment, and never a "
+    "lens or an aperture. Mixing the two is the single most common way to ruin "
+    "a prompt, and it happens at the END, when there is nothing real left to "
+    "say. If you reach that point, stop writing instead.\n"
 )
 
 _MODE_FULL = _COMMON + (
     "\n"
     "TASK — write a prompt that would REPRODUCE this image on a model that has "
     "never seen it. Cover, in this order and only when relevant:\n"
-    "1. the main subject, precisely (species, age, build, pose, expression, "
+    "1. the MEDIUM, first and in two or three words (photograph, oil painting, "
+    "anime cel, 3D render, pencil sketch…). Deciding it first keeps the rest "
+    "coherent;\n"
+    "2. the main subject, precisely (species, age, build, pose, expression, "
     "clothing, materials);\n"
-    "2. what surrounds it: setting, background, secondary objects;\n"
-    "3. the LIGHT — direction, hardness, colour temperature, time of day;\n"
-    "4. the COMPOSITION and framing: shot type, angle, depth of field;\n"
-    "5. the COLOURS, named precisely (crimson, muted sage, warm ochre — not "
-    "'nice colours');\n"
-    "6. the MEDIUM and its style markers.\n"
+    "3. what surrounds it: setting, background, secondary objects;\n"
+    "4. the LIGHT — direction, hardness, colour temperature, time of day;\n"
+    "5. the COMPOSITION and framing: shot type, angle, depth of field;\n"
+    "6. the COLOURS actually present, named precisely (crimson, muted sage, "
+    "warm ochre — not 'nice colours', and not a colour you wish were there).\n"
     "Aim for 60 to 110 words. Dense, concrete, no filler adjectives."
 )
 
@@ -156,6 +162,67 @@ def _dedupe(text: str) -> str:
     return ", ".join(kept)
 
 
+# --------------------------------------------------------------------------- #
+#  Cohérence de MÉDIUM
+# --------------------------------------------------------------------------- #
+# Deuxième panne observée en vrai, et plus grave que la boucle : sur une PHOTO,
+# le modèle a terminé par « oil painting style, brushstrokes visible, canvas
+# texture evident ». Trois fragments qui contredisent tout ce qui précède, et
+# qui suffisent à faire produire une peinture au modèle de diffusion.
+#
+# La consigne l'interdit déjà, en majuscules. Ça ne suffit pas — et ça ne
+# suffira jamais : la dérive arrive en FIN de génération, quand le modèle n'a
+# plus rien de réel à dire. On vérifie donc après coup, comme pour les
+# répétitions.
+#
+# Marqueurs choisis pour être SANS AMBIGUÏTÉ : « texture » seul ne dit rien,
+# « canvas texture » désigne une toile. Un terme qui pourrait appartenir à deux
+# médiums n'a rien à faire ici — le prix d'une erreur est de supprimer un
+# fragment légitime.
+_MEDIA = {
+    "photo": ("photograph", "photography", "photorealistic", "dslr",
+              "depth of field", "bokeh", "film grain", "shot on", "camera",
+              "lens", "aperture", "shutter", "iso ", "long exposure",
+              "macro shot", "telephoto", "wide-angle"),
+    "painting": ("oil painting", "acrylic", "watercolor", "watercolour",
+                 "gouache", "brushstroke", "brush stroke", "brushwork",
+                 "impasto", "canvas texture", "painterly", "palette knife",
+                 "on canvas"),
+    "3d": ("3d render", "3d rendering", "octane", "blender render", "cgi",
+           "ray-traced", "raytraced", "clay render", "subsurface scattering"),
+    "anime": ("anime", "manga", "cel shading", "cel-shaded", "cel shaded"),
+    "drawing": ("pencil sketch", "line art", "ink drawing", "charcoal",
+                "vector art", "flat design", "linocut", "woodcut"),
+}
+
+
+def _medium_of(fragment: str) -> str | None:
+    low = fragment.lower()
+    for medium, markers in _MEDIA.items():
+        if any(m in low for m in markers):
+            return medium
+    return None
+
+
+def _one_medium(text: str) -> str:
+    """Ne garde que le médium ÉTABLI EN PREMIER, et jette les contradictions.
+
+    Le premier marqueur gagne, et ce n'est pas arbitraire : le modèle décrit
+    d'abord ce qu'il voit réellement, la confabulation vient après. Dans le cas
+    observé, « depth of field » (photo) arrive neuf fragments avant « oil
+    painting style » — l'ordre porte l'information.
+
+    S'il n'y a qu'un seul médium, ou aucun, rien n'est touché.
+    """
+    frags = [f.strip() for f in text.split(",")]
+    first = next((m for m in map(_medium_of, frags) if m), None)
+    if first is None:
+        return text
+    kept = [f for f in frags
+            if f and _medium_of(f) in (None, first)]
+    return ", ".join(kept)
+
+
 def _drop_dangling(text: str) -> str:
     """Coupe le dernier fragment d'une génération ARRÊTÉE par la limite.
 
@@ -190,7 +257,7 @@ def _clean(text: str, truncated: bool = False) -> str:
     # simplement » rend des phrases, où une virgule ne sépare pas des segments
     # interchangeables — y couper des morceaux casserait la grammaire.
     if out.count(",") >= 4 and out.count(".") <= 1:
-        out = _dedupe(out)
+        out = _one_medium(_dedupe(out))
         if truncated:
             out = _drop_dangling(out)
     # Une majuscule initiale perdue en coupant l'amorce se rattrape.
@@ -256,10 +323,20 @@ def main() -> None:
     max_new = int(args.max_new_tokens) or budget
     print(f"[image→prompt] rédaction ({args.mode}, {n} proposition(s))…",
           flush=True)
+    # DÉCRIRE N'EST PAS CRÉER. Le tirage aléatoire, c'est demander au modèle de
+    # choisir parfois un jeton MOINS probable — donc, sur une description,
+    # d'inventer. Observé en vrai : des escarpins noirs annoncés « dark red
+    # shoes ». Sur une seule proposition on prend donc le jeton le plus probable
+    # à chaque pas, sans tirage. Il n'y a rien à gagner à varier : l'image, elle,
+    # ne varie pas.
+    #
+    # Le tirage ne revient que si l'on demande PLUSIEURS propositions, où
+    # différer est justement l'objet — et encore, à température basse.
+    sampling = ({"do_sample": False} if n == 1 else
+                {"do_sample": True, "temperature": 0.3, "top_p": 0.85})
     with torch.no_grad():
         out = model.generate(
             **inputs, max_new_tokens=max_new,
-            do_sample=True, temperature=0.7, top_p=0.9,
             # Une liste de mots-clés est le format où boucler est le plus
             # tentant : rien ne signale au modèle qu'il a fini. Deux garde-fous
             # complémentaires — la pénalité décourage de réemployer un jeton
@@ -267,7 +344,7 @@ def main() -> None:
             # six jetons. Le motif observé en vrai (« high heels, fashion,
             # modern, wet, rain ») en fait une dizaine : il est couvert.
             repetition_penalty=1.1, no_repeat_ngram_size=6,
-            num_return_sequences=n)
+            num_return_sequences=n, **sampling)
     start = inputs["input_ids"].shape[1]
     eos = model.generation_config.eos_token_id
     eos_ids = set(eos if isinstance(eos, (list, tuple)) else [eos])

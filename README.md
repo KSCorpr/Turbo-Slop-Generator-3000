@@ -1048,6 +1048,33 @@ how much they can be relied on:
    description mode — are never deduplicated, since a comma there is grammar,
    not a separator.
 
+**A second failure showed up in use, and it is worse than looping.** On a
+photograph, the model finished with *"oil painting style, brushstrokes visible,
+canvas texture evident"* — three fragments contradicting everything before
+them, and enough on their own to make the diffusion model paint instead of
+photograph. Same lesson, same shape of fix:
+
+- the medium is now asked for **first**, not last. The drift happens at the
+  *end* of a generation, when there is nothing real left to say; naming the
+  medium while the model is still looking at the image pins it down;
+- and it is **enforced afterwards**: whichever medium is established first wins,
+  and later fragments from an incompatible vocabulary are dropped. First wins
+  because the model describes what it sees before it starts confabulating — in
+  the real case `depth of field` came nine fragments before `oil painting
+  style`. Markers are deliberately unambiguous (`canvas texture` is a marker,
+  bare `texture` is not): the cost of a wrong match is deleting a legitimate
+  fragment.
+
+**And the sampling was wrong for the job.** Describing is not creating. The
+runner sampled at `temperature=0.7`, which is literally asking the model to pick
+a less likely token now and then — on a description, that means inventing. It
+reported *"dark red shoes"* for black ones. A single proposal is now decoded
+**greedily**, with no sampling at all: the image does not vary, so there is
+nothing to gain from varying the answer. Sampling only comes back when several
+proposals are requested, and then at a low temperature. This is a fix at the
+cause; a wrong colour cannot be detected from the text afterwards, and the
+README will not pretend otherwise.
+
 A tail cut off by the token limit is dropped too, but only when the runner
 *knows* it was cut — the model emitted no end token. It is never guessed from
 the text: `shallow dep` and `shallow` are indistinguishable without a
