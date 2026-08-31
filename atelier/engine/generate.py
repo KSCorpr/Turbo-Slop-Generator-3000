@@ -139,6 +139,9 @@ def generate(
     # (la passe HD s'en sert pour activer la découpe même si la préférence
     # laisse la génération ordinaire tranquille).
     max_vram: str | None = None,
+    # Même logique que `max_vram` ci-dessus : la passe HD force le streaming
+    # des couches pour une tentative précise, sans toucher aux préférences.
+    stream_layers: bool | None = None,
     log: Callable[[str], None] | None = None,
     # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
     prefs_override: dict | None = None,
@@ -230,7 +233,8 @@ def generate(
         g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
         params_backend = f"diffusion=cuda{g},vae=cuda{g},te=cuda{enc_gpu}"
 
-    stream_layers = bool(prefs.get("stream_layers"))
+    stream_layers = (bool(prefs.get("stream_layers")) if stream_layers is None
+                     else bool(stream_layers))
     if model.defaults.get("memory_preset") == "int8_stream":
         # Le checkpoint INT8 ConvRot fait ~13 Go : sur une 3060 12 Go, tenter
         # de le rendre entièrement résident est un OOM certain. Les poids de
@@ -578,7 +582,7 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     d = dict(model.defaults)
     base_steps = int(steps or d.get("steps", 8) or 8)
 
-    def _attempt(sc: float) -> list[Path]:
+    def _attempt(sc: float, stream: bool = False) -> list[Path]:
         tw, th = _align_up(bw * sc), _align_up(bh * sc)
         hires = sdcpp.HiresParams(
             scale=sc, upscaler=upscaler or "Latent",
@@ -602,7 +606,8 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             schedule=("" if d.get("scheduler") in (None, "", "auto")
                       else d["scheduler"]),
             init_image=src, strength=HD_FIRST_PASS_STRENGTH,
-            preview_path=preview_path, hires=hires, max_vram=cut, log=log)
+            preview_path=preview_path, hires=hires, max_vram=cut,
+            stream_layers=True if stream else None, log=log)
         # Taille RÉELLE : sd.cpp peut avoir arrondi au-dessus de notre demande
         # pour tomber sur son propre multiple. Autant lire le résultat que
         # d'affirmer une taille qu'on n'a pas vérifiée.
@@ -619,17 +624,49 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     # Reprise automatique sur manque de VRAM. Le budget calculé plus haut n'est
     # qu'une estimation ; ceci est la mesure. Un OOM est le seul échec qui vaille
     # une nouvelle tentative — tout le reste échouerait à l'identique.
-    for attempt in range(HD_MAX_RETRIES + 1):
+    #
+    # ORDRE DES REPRISES. Baisser le facteur coûte des pixels, définitivement.
+    # Le streaming des couches coûte de la bande passante PCIe, donc du temps —
+    # et rend l'image demandée. Entre perdre 20 % de côté et attendre plus
+    # longtemps, c'est à l'utilisateur de trancher, mais le défaut raisonnable
+    # est de tenter d'abord ce qui ne sacrifie rien du résultat.
+    #
+    # Le moteur documente cette échelle (docs/performance.md) : « --offload-to-cpu
+    # → + --max-vram → + --stream-layers », et annonce des modèles 3 à 4 fois
+    # plus gros que la VRAM brute une fois les trois cumulés. On avait déjà les
+    # deux premiers barreaux ; celui-ci manquait.
+    stream = sdcpp.stream_layers_possible(sd_cli, prefs.get("flags") or {},
+                                          prefs.get("params_backend") or "")
+    streaming_on = bool(prefs.get("stream_layers"))
+    # On compte les BAISSES DE FACTEUR, pas les tentatives : la tentative en
+    # streaming ne sacrifie aucun pixel, elle ne doit donc pas consommer un
+    # barreau de l'échelle de repli. Sans ça, activer le streaming coûterait
+    # une réduction de taille — exactement ce qu'il sert à éviter.
+    drops = 0
+    while True:
         try:
-            return _attempt(scale)
+            return _attempt(scale, stream=streaming_on)
         except sdcpp.VramError:
             last = scale
-            if sdcpp.was_cancelled() or attempt == HD_MAX_RETRIES:
+            if sdcpp.was_cancelled():
+                raise
+            # 1er recours : garder le facteur, charger les couches depuis la
+            # RAM. Une seule fois — si ça n'a pas suffi, insister ne changera
+            # rien et il faut vraiment descendre.
+            if stream and not streaming_on:
+                streaming_on = True
+                if log:
+                    log(f"[hd] VRAM insuffisante à ×{last:.2f} → on garde le "
+                        "facteur et on charge les couches du modèle depuis la "
+                        "RAM au fil du calcul (--stream-layers). C'est plus "
+                        "lent, mais l'image reste à la taille demandée.")
+                continue
+            if drops >= HD_MAX_RETRIES:
                 raise
             scale = max(1.25, scale * HD_RETRY_FACTOR)
             if scale >= last:
                 raise      # plancher atteint : insister ne changerait rien
+            drops += 1
             if log:
                 log(f"[hd] VRAM insuffisante à ×{last:.2f} → nouvelle tentative "
                     f"à ×{scale:.2f}.")
-    raise sdcpp.EngineError("La passe HD n'a produit aucune image.")

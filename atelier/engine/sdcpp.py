@@ -305,6 +305,25 @@ def hires_args(h: "HiresParams") -> list[str]:
     return args
 
 
+def stream_layers_possible(sd_cli: "Path | None", flags: dict,
+                           params_backend: str = "") -> bool:
+    """`--stream-layers` aura-t-il un effet dans cette configuration ?
+
+    Le moteur est formel (docs/performance.md) : l'option ne prend effet que si
+    le backend de PARAMÈTRES de la diffusion est le CPU ; sinon elle est ignorée
+    avec un avertissement. Elle ne dépend PAS de `--max-vram`, contrairement à
+    ce que le code d'origine supposait.
+
+    La condition est extraite ici parce qu'elle sert deux fois : à la
+    construction de la commande, et en amont — la passe HD doit savoir si
+    activer le streaming vaut une tentative avant de baisser son facteur.
+    """
+    low = (params_backend or "").lower().replace(" ", "")
+    diffusion_on_cpu = (bool(flags.get("offload_to_cpu"))
+                        or "diffusion=cpu" in low or "*=cpu" in low)
+    return diffusion_on_cpu and "--stream-layers" in supported_options(sd_cli)
+
+
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
@@ -390,13 +409,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
 
     # Le streaming ne dépend pas de --max-vram. Il dépend de poids de diffusion
     # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
-    params_low = (req.params_backend or "").lower().replace(" ", "")
-    diffusion_on_cpu = (
-        bool(effective_flags.get("offload_to_cpu"))
-        or (params_supported and (
-            "diffusion=cpu" in params_low or "*=cpu" in params_low))
-    )
-    if req.stream_layers and diffusion_on_cpu and "--stream-layers" in known:
+    if req.stream_layers and stream_layers_possible(
+            sd_cli, effective_flags, req.params_backend if params_supported
+            else ""):
         cmd.append("--stream-layers")
 
     cmd += _flag_args(effective_flags, sd_cli)

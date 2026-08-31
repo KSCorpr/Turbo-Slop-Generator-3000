@@ -802,6 +802,20 @@ parameters are CPU-resident (for example `diffusion=cpu`). Setting
 `--max-vram` while keeping all parameters on the GPU does not make layer
 streaming valid; the interface now enforces that distinction.
 
+**The retry ladder tries streaming before it gives up pixels.** sd.cpp
+documents the escalation as `--offload-to-cpu` → `+ --max-vram` →
+`+ --stream-layers`, and says the three combined run models roughly 3–4× larger
+than the raw VRAM allows. HD had the first two rungs and not the third, so the
+first out-of-memory immediately cost 20% of the factor. Now the first recovery
+**keeps the requested size** and loads the diffusion layers from RAM as the
+computation walks through them; only if that still fails does the factor drop.
+The order follows what each one costs: a lower factor loses pixels for good,
+streaming only costs PCIe bandwidth, so the thing that sacrifices nothing is
+tried first. The streaming attempt does not consume a rung of the ladder either
+— otherwise turning it on would cost a size reduction, which is what it exists
+to avoid. On an engine without `--stream-layers`, or with the weights resident
+on the GPU (where the flag is a no-op), the behaviour is exactly as before.
+
 Neither the budget nor the segmentation is the safety net. **An out-of-memory
 failure is caught, the factor is stepped down 20% and the run is retried** (twice
 at most), and the log states what it settled on. sd-cli failures are now typed:
