@@ -609,6 +609,87 @@ def rtx3060_1080ti_prefs() -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+#  Le SEUL arbitrage que l'utilisateur ait à rendre
+# --------------------------------------------------------------------------- #
+# Tout le reste (quant, offload, tiling, flash-attention) se déduit du matériel :
+# l'application sait le faire, et la personne devant l'écran n'a aucun moyen de
+# mieux répondre. Il reste UNE question à laquelle le matériel ne répond pas,
+# parce qu'elle porte sur un goût : préférez-vous de la marge (ça passe toujours,
+# c'est un peu moins fin) ou du détail (c'est plus beau, ça sature plus tôt) ?
+#
+# D'où un curseur à trois crans, et un seul. « bias » décale la quantification
+# dans QUANT_LADDER et resserre ou relâche les options mémoire.
+BIASES: dict[str, dict] = {
+    "memory": {
+        "shift": -1,
+        "label": "🪶 Plus de marge mémoire",
+        "why": "Si vous voyez des erreurs de mémoire, ou si vous générez en "
+               "grand format. Le modèle est compressé d'un cran de plus et "
+               "l'application économise partout où elle peut.",
+    },
+    "balanced": {
+        "shift": 0,
+        "label": "⚖️ Équilibré (recommandé)",
+        "why": "Ce que votre carte peut tenir sans se battre. C'est le bon "
+               "choix tant que rien ne vous gêne.",
+    },
+    "quality": {
+        "shift": 1,
+        "label": "🎨 Plus de détail",
+        "why": "Un cran de compression en moins : l'image gagne un peu de "
+               "finesse, et la carte a moins de marge. À prendre si tout passe "
+               "déjà confortablement.",
+    },
+}
+
+
+def biased_profile(bias: str, gpu_index: int | None = None) -> Profile:
+    """Le profil automatique, décalé d'un cran vers la mémoire ou la qualité."""
+    prof = auto_profile(gpu_index)
+    spec = BIASES.get(bias) or BIASES["balanced"]
+    shift = spec["shift"]
+    if not shift:
+        return prof
+    vram = prof.gpu.vram_gb if prof.gpu else 0.0
+    prof.quant = _shift_quant(prof.quant, shift)
+    if shift < 0:
+        # Côté mémoire, on ne se contente pas de compresser : on rapatrie ce
+        # qu'on peut hors de la carte. L'encodeur de texte est le meilleur
+        # candidat — il ne sert qu'au début de la génération.
+        prof.offload_to_cpu = True
+        prof.vae_tiling = True
+        prof.clip_on_cpu = prof.clip_on_cpu or vram < 12
+    else:
+        # Côté qualité, on relâche le tiling du VAE (qui coûte un peu de
+        # qualité aux jointures) uniquement s'il reste vraiment de la place.
+        # On NE touche PAS à l'offload : sur PC il libère de la VRAM pour un
+        # coût de vitesse négligeable — le désactiver ne gagnerait rien et
+        # ferait saturer plus tôt.
+        if vram >= 12:
+            prof.vae_tiling = False
+    return prof
+
+
+def bias_from_prefs(prefs: dict) -> str:
+    """Retrouve le cran choisi en comparant la quant enregistrée à l'auto."""
+    if prefs.get("auto_optimize", True):
+        return "balanced"
+    saved = prefs.get("quant")
+    if not saved:
+        return "balanced"
+    auto = auto_profile(prefs.get("gpu_index")).quant
+    try:
+        delta = QUANT_LADDER.index(saved) - QUANT_LADDER.index(auto)
+    except ValueError:
+        return "balanced"
+    if delta <= -1:
+        return "memory"
+    if delta >= 1:
+        return "quality"
+    return "balanced"
+
+
 def summary_text() -> str:
     """Petit résumé lisible du matériel détecté (pour l'UI)."""
     gpus = detect_gpus()

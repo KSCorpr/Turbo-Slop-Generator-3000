@@ -1277,6 +1277,166 @@ _EN: dict[str, str] = {
         "📷 Photo ({n})",
     "🖍️ Artistiques ({n})":
         "🖍️ Artistic ({n})",
+    "### ⚠️ Aucune carte NVIDIA détectée\nL'application tournera sur le processeur : c'est **très lent** (des minutes par image). Vérifiez vos pilotes, ou tapez `nvidia-smi` dans un terminal.":
+        "### ⚠️ No NVIDIA card detected\nThe app will run on the processor: that is **very slow** (minutes per image). Check your drivers, or type `nvidia-smi` in a terminal.",
+    "### Votre matériel":
+        "### Your hardware",
+    "**Ce que l'application en fait, sans rien vous demander :**":
+        "**What the app does with it, without asking you anything:**",
+    "- l'accélération « flash attention » est active (votre carte la gère) ;":
+        "- “flash attention” acceleration is on (your card supports it);",
+    "- « flash attention » reste désactivée : votre carte n'a pas les unités qu'il faut, l'activer ralentirait ;":
+        "- “flash attention” stays off: your card lacks the units for it, turning it on would slow things down;",
+    "- l'image finale est assemblée par morceaux, pour ne pas saturer la carte au dernier moment.":
+        "- the final image is assembled in pieces, so the card is not saturated at the last moment.",
+    "- l'image finale est assemblée d'un seul tenant : vous avez la place, autant éviter les jointures.":
+        "- the final image is assembled in one piece: you have the room, so no seams.",
+    "---\n### La seule question qu'on vous pose\nTout le reste se calcule à partir de votre carte. Ceci ne se calcule pas, parce que c'est une préférence : voulez-vous de la **marge** (ça passe toujours) ou du **détail** (c'est plus fin, mais plus juste en mémoire) ?":
+        "---\n### The one question we ask you\nEverything else is computed from your card. This one cannot be, because it is a preference: do you want **headroom** (it always fits) or **detail** (finer, but tighter on memory)?",
+    "> **Un souci précis ?**  \n> *« Erreur de mémoire / la génération s'arrête »* → prenez **🪶 Plus de marge mémoire** ci-dessus.  \n> *« C'est trop lent »* → cela ne se joue pas ici mais dans l'onglet de génération : baissez le **nombre de pas** et la **taille de l'image**, qui pèsent bien plus lourd.  \n> *« Mes images sont fades »* → là non plus : c'est le **prompt** et les **styles**, pas un réglage matériel.":
+        "> **Something specific going wrong?**  \n> *“Out of memory / generation stops”* → pick **🪶 More memory headroom** above.  \n> *“It is too slow”* → not settled here but in the generation tab: lower the **step count** and the **image size**, which weigh far more.  \n> *“My images look dull”* → not here either: that is the **prompt** and the **styles**, not a hardware setting.",
+    "⏹️ Arrêt demandé — la mesure en cours se termine.":
+        "⏹️ Stop requested — the run in progress will finish first.",
+    "**{name}** — {vram} Go de mémoire vidéo · {ram} Go de RAM":
+        "**{name}** — {vram} GB of video memory · {ram} GB of RAM",
+    "- le modèle d'image est chargé en `{quant}` — le meilleur compromis qui tienne dans {vram} Go ;":
+        "- the image model is loaded as `{quant}` — the best trade-off that fits in {vram} GB;",
+    "- l'analyse de votre texte se fait en `{enc}`, **rangée en RAM** : elle ne prend pas de place sur la carte ;":
+        "- your text is analysed as `{enc}`, **kept in RAM**: it takes no room on the card;",
+    "  \n→ modèle chargé en `{quant}` au lieu de `{ref}`.":
+        "  \n→ model loaded as `{quant}` instead of `{ref}`.",
+    "  \n→ modèle chargé en `{quant}`.":
+        "  \n→ model loaded as `{quant}`.",
+    "La plus puissante est prise par défaut.":
+        "The most powerful one is used by default.",
+    "---\n### Vous avez deux cartes\nIl n'y a pas de bonne réponse universelle : cela dépend autant du **port PCIe** de la seconde carte que de sa mémoire. Plutôt que de vous faire deviner, l'application peut **mesurer**.":
+        "---\n### You have two cards\nThere is no universally right answer: it depends as much on the second card's **PCIe slot** as on its memory. Rather than make you guess, the app can **measure**.",
+    "⏱️ Mesurer sur ma machine":
+        "⏱️ Measure on my machine",
+    "Appliquer le plus rapide":
+        "Apply the fastest",
+    "⏹️ Arrêter":
+        "⏹️ Stop",
+    "Détail de la mesure (journal et rapport)":
+        "Measurement details (log and report)",
+    "🔧 Expert — options brutes de sd.cpp (facultatif)":
+        "🔧 Expert — raw sd.cpp options (optional)",
+    "⚠️ **Rien ici n'est nécessaire.** Ces options existent parce que sd.cpp les expose, pas parce qu'il faut y toucher. Elles se règlent en mesurant, pas en devinant — et le curseur ci-dessus couvre déjà les cas courants. Toucher à cette section **désactive le réglage automatique**.":
+        "⚠️ **Nothing here is required.** These options exist because sd.cpp exposes them, not because you should touch them. They are set by measuring, not by guessing — and the slider above already covers the usual cases. Touching this section **turns off automatic tuning**.",
+    "**Quantification imposée** — « auto » = laisser l'application décider d'après la carte.":
+        "**Forced quantization** — “auto” = let the app decide from the card.",
+    "**Options mémoire du moteur.**":
+        "**Engine memory options.**",
+    "---\n**Cache entre les pas** — réutilise des calculs d'un pas de diffusion au suivant. Ne gagne quelque chose qu'au-delà de ~10 pas ; nos modèles en font 4 à 8, donc **laissez désactivé** sauf mesure contraire.":
+        "---\n**Cache between steps** — reuses computations from one diffusion step to the next. Only pays off above ~10 steps; our models run 4 to 8, so **leave it off** unless a measurement says otherwise.",
+    "---\n**Convolution directe** — supprime un gros tampon intermédiaire. Gain de mémoire certain ; effet sur la vitesse **imprévisible** (parfois mieux, parfois moins bien). À chronométrer, pas à cocher les yeux fermés.":
+        "---\n**Direct convolution** — removes a large intermediate buffer. The memory gain is certain; the speed effect is **unpredictable** (sometimes better, sometimes worse). To be timed, not ticked blindly.",
+    "---\n**Découpage du calcul** — autorise le moteur à découper son graphe pour tenir dans un budget au lieu d'échouer. **C'est plus lent** : à réserver aux résolutions qui ne passent pas autrement. L'onglet 🚀 HD s'en sert déjà tout seul.":
+        "---\n**Splitting the computation** — lets the engine cut its graph to fit a budget instead of failing. **It is slower**: keep it for resolutions that will not fit otherwise. The 🚀 HD tab already uses it on its own.",
+    "⚡ Profil RTX 3060 + GTX 1080 Ti":
+        "⚡ RTX 3060 + GTX 1080 Ti profile",
+    "🌍 Langue, thème et comptes":
+        "🌍 Language, theme and accounts",
+    "Thème enregistré. **Redémarrez l'application** pour l'appliquer.":
+        "Theme saved. **Restart the app** to apply it.",
+    "Endpoint enregistré.":
+        "Endpoint saved.",
+    "Jeton Civitai enregistré.":
+        "Civitai token saved.",
+    "❌ Aucune configuration n'a pu être mesurée (voir le journal).":
+        "❌ No configuration could be measured (see the log).",
+    "Deuxième carte disponible : {other}.":
+        "Second card available: {other}.",
+    "---\n### 🧪 Dans le doute, mesurez\nL'application génère la **même image** {n} fois par configuration (plus une première jetée, le temps que tout soit chargé) et garde la médiane. Elle ne change **aucun réglage** : elle vous dit lequel est le plus rapide, vous décidez ensuite.":
+        "---\n### 🧪 When in doubt, measure\nThe app generates the **same image** {n} times per configuration (plus a first one thrown away, the time for everything to load) and keeps the median. It changes **no setting**: it tells you which is fastest, then you decide.",
+    "Carte de l'améliorateur enregistrée.":
+        "Enhancer card saved.",
+    "Réglage expert appliqué (automatique désactivé).":
+        "Expert setting applied (automatic tuning off).",
+    "✅ Médiane sur {n} mesures · le plus rapide : **{best}**":
+        "✅ Median over {n} runs · fastest: **{best}**",
+    "⏳ Mesure en cours…":
+        "⏳ Measuring…",
+    "❌ Lancez d'abord la mesure.":
+        "❌ Run the measurement first.",
+    "Profil deux cartes appliqué : la RTX 3060 dessine, la 1080 Ti lit votre texte.":
+        "Two-card profile applied: the RTX 3060 draws, the 1080 Ti reads your text.",
+    "Tout sur une seule carte — le plus fiable":
+        "Everything on one card — the most reliable",
+    "La 2e carte s'occupe du texte — libère de la mémoire pour l'image":
+        "The 2nd card handles the text — frees memory for the image",
+    "Répartir automatiquement — à mesurer avant d'y croire":
+        "Spread it automatically — measure before believing it",
+    "Exige que le modèle soit rangé en RAM. Sans cela, le moteur ignore l'option.":
+        "Requires the model to be kept in RAM. Without that, the engine ignores the option.",
+    "Langue enregistrée. **Redémarrez l'application** (`run.bat` / `run.sh`) pour appliquer « {lang} ».":
+        "Language saved. **Restart the app** (`run.bat` / `run.sh`) to apply “{lang}”.",
+    "⏹️ Mesure interrompue — aucun réglage modifié.":
+        "⏹️ Measurement interrupted — no setting changed.",
+    "Auto — mémoire libre moins 1 Go":
+        "Auto — free memory minus 1 GB",
+    "Priorité appliquée : **{label}**.":
+        "Priority applied: **{label}**.",
+    "Carte de génération : #{idx}.":
+        "Generation card: #{idx}.",
+    "Configuration mesurée appliquée : **{mode}**.":
+        "Measured configuration applied: **{mode}**.",
+    "La même que pour l'image":
+        "The same one as for the image",
+    "{name} : pas de tensor cores → flash-attention désactivé (elle n'apporte rien ici), génération plus lente.":
+        "{name}: no tensor cores → flash-attention disabled (it gains nothing here), slower generation.",
+    "🪶 Plus de marge mémoire":
+        "🪶 More memory headroom",
+    "Si vous voyez des erreurs de mémoire, ou si vous générez en grand format. Le modèle est compressé d'un cran de plus et l'application économise partout où elle peut.":
+        "If you get out-of-memory errors, or if you generate at large sizes. The model is compressed one notch further and the app saves memory wherever it can.",
+    "⚖️ Équilibré (recommandé)":
+        "⚖️ Balanced (recommended)",
+    "Ce que votre carte peut tenir sans se battre. C'est le bon choix tant que rien ne vous gêne.":
+        "What your card can hold without a fight. This is the right choice as long as nothing bothers you.",
+    "🎨 Plus de détail":
+        "🎨 More detail",
+    "Un cran de compression en moins : l'image gagne un peu de finesse, et la carte a moins de marge. À prendre si tout passe déjà confortablement.":
+        "One notch less compression: the image gains a little fineness, and the card has less headroom. Take it if everything already fits comfortably.",
+    "Tout se fera sur une seule carte.":
+        "Everything will run on a single card.",
+    "La 2e carte lira votre texte ; l'image reste sur la première.":
+        "The 2nd card will read your text; the image stays on the first.",
+    "Répartition automatique activée — mesurez-la avant d'y croire.":
+        "Automatic spreading enabled — measure it before believing it.",
+    "Assemblage sur le processeur":
+        "Assembly on the processor",
+    "Convolution directe — modèle d'image":
+        "Direct convolution — image model",
+    "Convolution directe — assemblage":
+        "Direct convolution — assembly",
+    "Image assemblée par morceaux":
+        "Image assembled in pieces",
+    "Modèle rangé en RAM":
+        "Model kept in RAM",
+    "Texte sur le processeur":
+        "Text on the processor",
+    "Budget mémoire du calcul":
+        "Memory budget for the computation",
+    "Carte utilisée pour générer":
+        "Card used for generating",
+    "Modèle d'image":
+        "Image model",
+    "Analyse du texte":
+        "Text analysis",
+    "Priorité":
+        "Priority",
+    "Répartition":
+        "Split",
+    "Option (vide = défauts)":
+        "Option (blank = defaults)",
+    "Mode de cache":
+        "Cache mode",
+    "Carte pour l'améliorateur de prompt":
+        "Card for the prompt enhancer",
+    "Journal du test":
+        "Test log",
+    "Rapport JSON":
+        "JSON report",
 }
 
 _EN_INV: dict[str, str] = {v: k for k, v in _EN.items()}

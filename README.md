@@ -391,8 +391,7 @@ The app detects your GPU (via `nvidia-smi`) and RAM, then chooses on its own:
 - Pascal cards (GTX 10xx) → flash-attention disabled automatically (it’s slow there).
 
 Multi-GPU: the largest card is used by default, changeable in **Settings**
-(see [Multi-GPU](#multi-gpu)). Everything is overridable manually
-(uncheck auto-optimization).
+(see [Multi-GPU](#multi-gpu)).
 
 These map to stable-diffusion.cpp flags: `--diffusion-fa` (CUDA: faster + less
 VRAM), `--offload-to-cpu`, `--vae-tiling`, plus GGUF quantization. On a recent
@@ -401,19 +400,50 @@ engine the app also separates **where computation runs** (`--backend`) from
 a slow PCIe link: an encoder can keep its weights on that GPU instead of staging
 them from RAM. The old CLIP/VAE-on-CPU flags remain compatibility fallbacks.
 
-### Manual settings
-With auto unchecked you control quant (diffusion / encoder), the GPU, and each
-flag (flash attention, CPU offload, VAE tiling, CLIP on CPU, VAE on CPU). A custom
-Hugging Face endpoint (mirror) can also be set.
+### One question, not twenty
+The Settings tab asks you **exactly one thing**, because it is the only thing
+your hardware cannot answer for you:
 
-### Per-generation presets (1 click)
-Below the auto toggle, one button per RTX generation (**GTX 10xx → RTX 50xx**)
-applies a **curated profile** for that card in one click: it reads the real VRAM
-of the selected GPU, picks the diffusion quant (with a small speed/quality bias
-per generation — lighter on Pascal/Turing, higher on Ada/Blackwell), sets the
-encoder quant from RAM, and toggles the memory flags (flash-attention off on
-Pascal, VAE tiling / CPU offload on tighter cards). This unchecks auto and fills
-the manual fields, so you can still tweak afterwards.
+> **More memory headroom · Balanced (recommended) · More detail**
+
+Everything else — quantization, offload, tiling, flash-attention — is derived
+from the detected card and simply *reported*, in consequences rather than flag
+names ("the final image is assembled in pieces, so the card is not saturated at
+the last moment" rather than `vae_tiling=True`). The three-notch choice shifts
+the diffusion quant one rung along `QUANT_LADDER` and tightens or relaxes the
+memory options with it; the line under the radio states the actual change
+("model loaded as `Q5_K_M` instead of `Q4_K_M`").
+
+A short **"Something specific going wrong?"** block maps symptoms to actions,
+and two of its three answers deliberately point *elsewhere*: "too slow" is the
+step count and image size in the generation tab, "images look dull" is the
+prompt and the styles. Pretending everything is solved in Settings is what sent
+people hunting through checkboxes in the first place.
+
+**There is no Save button.** Every control applies immediately and says so, next
+to itself. A Save button is one more chance to wonder whether the change was
+taken into account — and language and theme already saved themselves, which made
+the rest ambiguous.
+
+**When the answer needs measuring, the app measures.** The multi-GPU placement
+depends on the second card's PCIe link as much as on its memory, so instead of
+asking you to bet there is a button that runs the comparison (see
+[Measured hardware profile](#measured-hardware-profile-and-krea-int8-probe)).
+
+Everything sd.cpp exposes and nobody needs to touch lives under a single folded
+**🔧 Expert** section, which says in its first line that nothing in it is
+required and that touching it turns automatic tuning off. `tests/test_ui_shape.py`
+keeps the shape honest: no tabs inside the tab, at most three folded sections,
+exactly one control visible up front on a single-GPU machine, and no Save button.
+
+### Per-generation presets
+`hardware.GENERATIONS` still holds a curated profile per RTX generation (**GTX
+10xx → RTX 50xx**): real VRAM of the selected GPU, diffusion quant with a small
+speed/quality bias per generation, encoder quant from RAM, memory flags
+(flash-attention off on Pascal, VAE tiling / CPU offload on tighter cards). It is
+no longer a row of five buttons in the interface — the three-notch choice covers
+the same ground with one decision instead of five — but `generation_profile()`
+remains the reference used by the auto profile and the tests.
 
 ### Multi-GPU
 When **two or more GPUs** are detected, a **Multi-GPU** accordion appears with a

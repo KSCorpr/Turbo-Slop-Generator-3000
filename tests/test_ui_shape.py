@@ -122,3 +122,85 @@ class GenerationTabTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SettingsTabTests(unittest.TestCase):
+    """Les réglages : une décision, pas un formulaire.
+
+    L'onglet a déjà dérivé deux fois — six accordéons empilés, puis quatre
+    onglets. Les deux fois, la plainte était la même : on ne sait pas quoi
+    cocher. Ces tests fixent ce qui empêche la dérive de recommencer.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.demo = _build(all_installed=True)
+        cls.settings = [b for b in cls.demo.blocks.values()
+                        if isinstance(b, gr.Tab)
+                        and (b.label or "").endswith("Réglages")]
+
+    def _inside(self, kinds):
+        """Composants rendus à l'intérieur de l'onglet Réglages."""
+        self.assertEqual(len(self.settings), 1, "onglet Réglages introuvable")
+        root = self.settings[0]
+        out = []
+        for b in self.demo.blocks.values():
+            node = getattr(b, "parent", None)
+            while node is not None:
+                if node is root:
+                    if isinstance(b, kinds):
+                        out.append(b)
+                    break
+                node = getattr(node, "parent", None)
+        return out
+
+    def test_no_tabs_inside_the_settings(self):
+        """Des onglets dans un onglet dans un onglet : on ne sait plus où on est.
+
+        « Système > Réglages > Accélération » faisait trois niveaux pour
+        atteindre une case à cocher, et rien ne disait laquelle regarder en
+        premier. Un écran, une lecture de haut en bas.
+        """
+        nested = [b.label for b in self._inside(gr.Tab)]
+        self.assertEqual(nested, [], f"onglets imbriqués : {nested}")
+
+    def test_only_optional_things_are_folded(self):
+        """Ce qui est replié doit être facultatif, et le dire dans son titre."""
+        labels = [b.label or "" for b in self._inside(gr.Accordion)]
+        self.assertLessEqual(len(labels), 3, labels)
+        for lbl in labels:
+            self.assertTrue(
+                any(w in lbl for w in ("facultatif", "optional", "Détail",
+                                       "details", "Langue", "Language")),
+                f"repli sans promesse d'être secondaire : « {lbl} »")
+
+    def test_exactly_one_decision_is_asked_up_front(self):
+        """Hors repli, il ne reste QUE le curseur qualité/mémoire.
+
+        Le sélecteur de carte et la répartition n'apparaissent qu'avec deux
+        cartes ; sur une machine mono-GPU (le cas de ce test) ils n'existent
+        pas, et il ne doit plus rien rester d'autre à décider.
+        """
+        folded = set()
+        for acc in self._inside(gr.Accordion):
+            for b in self.demo.blocks.values():
+                node = getattr(b, "parent", None)
+                while node is not None:
+                    if node is acc:
+                        folded.add(id(b))
+                        break
+                    node = getattr(node, "parent", None)
+        inputs = [b for b in self._inside((gr.Radio, gr.Checkbox, gr.Dropdown))
+                  if id(b) not in folded and getattr(b, "visible", True)]
+        self.assertEqual(
+            [type(b).__name__ for b in inputs], ["Radio"],
+            "réglages visibles d'emblée : " +
+            ", ".join(f"{type(b).__name__}({b.label})" for b in inputs))
+
+    def test_there_is_no_save_button_to_forget(self):
+        """Tout s'applique à la volée : un bouton « Enregistrer » rouvrirait la
+        question « est-ce que ça a été pris en compte ? » — d'autant que la
+        langue et le thème, eux, s'enregistraient déjà tout seuls."""
+        buttons = [(b.value or "") for b in self._inside(gr.Button)]
+        self.assertEqual(
+            [v for v in buttons if "Enregistrer" in v or "Save" in v], [])
