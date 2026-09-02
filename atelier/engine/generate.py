@@ -51,6 +51,34 @@ def _component(model: registry.BaseModel, role: str) -> Path | None:
     return registry.resolve_component_path(comp)
 
 
+_SLOW_ENCODER_GPU = (
+    "ℹ️ Encodeur de texte ramené sur le GPU de génération : la carte "
+    "secondaire n'a pas de tensor cores et exécute le fp16 à une fraction de "
+    "sa vitesse (Pascal : 1/64). Elle reste parfaite pour STOCKER des poids, "
+    "pas pour les calculer.")
+
+
+def encoder_gpu_too_slow(enc_index: int | None,
+                         gen_index: int | None) -> bool:
+    """La 2e carte est-elle un mauvais endroit pour CALCULER l'encodeur ?
+
+    Le partage d'encodeur a été pensé comme du stockage : la carte secondaire
+    tient des poids que la principale n'a plus la place de garder. Mais elle
+    les calcule aussi — et sur une Pascal grand public le fp16 tourne à 1/64
+    de la vitesse fp32, ce qui transformait un encodage d'une seconde en
+    trente-huit. On suit les TENSOR CORES, pas les noms de cartes : c'est le
+    même critère que pour la flash-attention, et il ne se trompe pas sur les
+    GTX 16xx.
+    """
+    if enc_index is None or gen_index is None or enc_index == gen_index:
+        return False
+    gpus = {g.index: g for g in hardware.detect_gpus()}
+    enc, gen = gpus.get(enc_index), gpus.get(gen_index)
+    if enc is None or gen is None:
+        return False
+    return gen.tensor_cores and not enc.tensor_cores
+
+
 def _resolved_flags(prefs: dict) -> tuple[dict[str, bool], int | None]:
     """Flags d'optimisation effectifs + index GPU."""
     if prefs.get("auto_optimize", True):
@@ -209,6 +237,16 @@ def generate(
     # tous les GPU soient visibles (all_gpus) avec l'ordre CUDA par bus PCI.
     auto_fit = bool(prefs.get("auto_fit"))
     enc_gpu = prefs.get("encoder_gpu_index")
+    # La carte d'encodeur est écartée ICI, avant tout le reste : plusieurs
+    # branches plus bas re-déduisent le split à partir de `enc_gpu`, et une
+    # décision prise en aval leur échapperait. Le banc d'essai, lui, a le droit
+    # de mesurer le placement qu'on refuse — c'est sa raison d'être.
+    slow_encoder = (not prefs.get("encoder_placement_forced")
+                    and encoder_gpu_too_slow(enc_gpu, gpu_index))
+    if slow_encoder:
+        if log:
+            log(_SLOW_ENCODER_GPU)
+        enc_gpu = None
     split_gpu = (not auto_fit) and enc_gpu is not None and enc_gpu != gpu_index
     all_gpus = auto_fit or split_gpu
     if auto_fit:
@@ -224,6 +262,13 @@ def generate(
 
     raw_params_backend = prefs.get("params_backend") or ""
     params_backend = "" if auto_fit else raw_params_backend
+    if slow_encoder and not auto_fit:
+        # La préférence enregistrée dit encore « te=cuda<Pascal> » : sans cette
+        # réécriture, sortir l'encodeur du split ne servirait à rien, la
+        # résidence l'y renverrait. Ses poids passent en RAM et son calcul
+        # revient sur la carte de génération, remappée en cuda0 puisqu'on n'est
+        # plus en multi-GPU.
+        params_backend = "diffusion=cuda0,vae=cuda0,te=cpu"
     # Si l'utilisateur choisit le split d'encodeur et que le moteur moderne est
     # installé, le placement attendu est la valeur sûre : poids ET calcul sur
     # la même carte. L'ancien mode global RAM reste mesuré par le benchmark.
@@ -290,9 +335,27 @@ def generate(
         stream_layers=stream_layers,
     )
     out = sdcpp.unique_output(model.family)
-    cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
-    paths = sdcpp.collect_outputs(out, batch_count)
+
+    def _attempt(clip_cpu: bool) -> list[Path]:
+        req.flags = {**flags, "clip_on_cpu": True} if clip_cpu else flags
+        cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
+        sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
+        return sdcpp.collect_outputs(out, batch_count)
+
+    try:
+        paths = _attempt(bool(flags.get("clip_on_cpu")))
+    except sdcpp.VramError:
+        # L'encodeur revenu sur le GPU de génération peut faire déborder une
+        # carte juste. Plutôt que de renvoyer l'utilisateur à ses réglages, on
+        # reprend une fois avec l'encodeur en RAM : plus lent que le GPU, mais
+        # toujours bien plus rapide qu'une Pascal, et ça ne coûte pas un octet
+        # de VRAM.
+        if flags.get("clip_on_cpu"):
+            raise
+        if log:
+            log("↻ Mémoire GPU insuffisante — reprise avec l'encodeur de "
+                "texte en RAM (--clip-on-cpu).")
+        paths = _attempt(True)
 
     if save_prompt and paths:
         _write_prompt_sidecars(paths, req, model, int(seed))

@@ -57,7 +57,13 @@ class BenchmarkPlanTests(unittest.TestCase):
 
 
 class Int8PlacementTests(unittest.TestCase):
-    def test_int8_streaming_disables_conflicting_auto_fit(self):
+    def _run(self, gpus):
+        """Le placement INT8 obtenu avec ces cartes-là.
+
+        Les cartes sont FOURNIES : depuis que la génération refuse de faire
+        calculer l'encodeur sur une puce sans tensor cores, ce test dépendrait
+        sinon du matériel de la machine qui l'exécute.
+        """
         captured = {}
         model = registry.BaseModel(
             id="krea2-turbo-int8", name="INT8", family="krea2", tags=[],
@@ -83,6 +89,7 @@ class Int8PlacementTests(unittest.TestCase):
                  patch.object(generate.registry, "get_base_model",
                               return_value=model), \
                  patch.object(generate, "_component", return_value=diffusion), \
+                 patch.object(hardware, "detect_gpus", return_value=gpus), \
                  patch.object(sdcpp, "supported_options",
                               return_value=frozenset({"--params-backend"})), \
                  patch.object(sdcpp, "build_gen_cmd", side_effect=build), \
@@ -91,11 +98,27 @@ class Int8PlacementTests(unittest.TestCase):
                 generate.generate(
                     "krea2-turbo-int8", "prompt", "", 4, 1.0, 512, 512,
                     42, 1, prefs_override=prefs, save_prompt=False)
-        req = captured["request"]
+        return captured["request"]
+
+    def test_int8_streaming_disables_conflicting_auto_fit(self):
+        req = self._run((
+            hardware.Gpu(0, "RTX 3060", 12.0, "ampere", True),
+            hardware.Gpu(1, "RTX 2080 Ti", 11.0, "turing", True),
+        ))
         self.assertFalse(req.auto_fit)
         self.assertEqual(req.params_backend,
                          "diffusion=cpu,vae=cuda0,te=cuda1")
         self.assertTrue(req.stream_layers)
+
+    def test_int8_streaming_keeps_the_encoder_off_a_pascal_card(self):
+        req = self._run((
+            hardware.Gpu(0, "RTX 3060", 12.0, "ampere", True),
+            hardware.Gpu(1, "GTX 1080 Ti", 11.0, "pascal", False),
+        ))
+        # Le streaming INT8 garde ses poids de diffusion en RAM ; seul le
+        # placement de l'encodeur change.
+        self.assertEqual(req.params_backend, "diffusion=cpu,vae=cuda0,te=cpu")
+        self.assertIsNone(req.encoder_gpu_index)
 
 
 class PcieDetectionTests(unittest.TestCase):

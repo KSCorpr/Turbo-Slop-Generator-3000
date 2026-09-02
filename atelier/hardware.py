@@ -574,10 +574,17 @@ def rtx3060_1080ti_combo() -> tuple[Gpu, Gpu] | None:
 def rtx3060_1080ti_prefs() -> dict:
     """Préférences sûres et mesurables pour le duo 3060 12 Go / 1080 Ti.
 
-    Ampere exécute diffusion + VAE (tensor cores, Flash Attention) ; Pascal
-    reçoit l'encodeur et le LLM de prompt. Pas d'auto-fit/row split : la seconde
-    carte est souvent sur un port PCIe x4, donc les échanges à chaque matmul
-    peuvent coûter plus qu'ils ne rapportent.
+    Ampere exécute diffusion, encodeur et VAE (tensor cores, Flash Attention).
+    Pascal garde le LLM d'amélioration de prompt et sert de réserve de poids à
+    SeedVR2. Pas d'auto-fit/row split : la seconde carte est souvent sur un
+    port PCIe x4, donc les échanges à chaque matmul peuvent coûter plus qu'ils
+    ne rapportent.
+
+    L'encodeur de texte était sur la 1080 Ti — une erreur mesurée à 38 s par
+    image sur Krea 2. Le raisonnement d'origine ne valait que pour du
+    STOCKAGE : la carte y calculait aussi, or le GP102 exécute le fp16 à 1/64
+    de sa vitesse fp32 (c'est la puce, pas un réglage), et l'encodage de prompt
+    est précisément un gros matmul fp16.
     """
     combo = rtx3060_1080ti_combo()
     if combo is None:
@@ -586,11 +593,19 @@ def rtx3060_1080ti_prefs() -> dict:
     return {
         "auto_optimize": False,
         "gpu_index": main.index,
+        # LLM d'amélioration de prompt : il tourne SEUL, quand aucune image
+        # n'est en cours, donc l'occuper là ne prend rien à personne.
         "text_gpu_index": secondary.index,
-        "encoder_gpu_index": secondary.index,
-        "params_backend": (
-            f"diffusion=cuda{main.index},vae=cuda{main.index},"
-            f"te=cuda{secondary.index}"),
+        # Encodeur sd.cpp : plus jamais sur la Pascal (cf. docstring).
+        "encoder_gpu_index": main.index,
+        # Ses POIDS restent en RAM, son CALCUL se fait sur la carte principale :
+        # --params-backend décide de la résidence, pas du lieu d'exécution, et
+        # sd.cpp transfère les poids au moment de s'en servir. Les 4 Go de
+        # l'encodeur ne prennent donc rien à une carte de 12 Go qui doit déjà
+        # loger 8,4 Go de diffusion.
+        # Mono-GPU : CUDA_VISIBLE_DEVICES remappe la carte choisie en cuda0,
+        # donc on écrit cuda0 et pas l'index nvidia-smi.
+        "params_backend": "diffusion=cuda0,vae=cuda0,te=cpu",
         "auto_fit": False,
         "split_mode": "layer",
         "quant": "Q5_K_M",

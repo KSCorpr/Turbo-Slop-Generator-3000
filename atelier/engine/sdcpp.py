@@ -506,6 +506,58 @@ def build_upscale_cmd(sd_cli: Path, init_image: Path, upscale_model: Path,
     return cmd
 
 
+# Vitesse de lecture des poids, déduite des traces de sd-cli. Deux lignes
+# consécutives suffisent : le temps de lecture, puis la taille du tampon obtenu.
+#   « loading tensors completed, taking 80.54s (read: 79.86s, memcpy: … ) »
+#   « prepared params backend buffer (8410.71 MB, 430 tensors, VRAM) »
+_READ_SECONDS = re.compile(r"loading tensors completed, taking [\d.]+s\s*"
+                           r"\(read:\s*([\d.]+)s")
+_PARAMS_MB = re.compile(r"prepared params backend buffer \(([\d.]+)\s*MB")
+# Un SSD SATA lit à ~500 Mo/s, un NVMe à plusieurs Go/s. En dessous de 300, ce
+# n'est plus un SSD — et sur un modèle de 8 Go ça se paie en minutes.
+SLOW_DISK_MB_S = 300.0
+# Sous ce temps de lecture, le rapport n'est pas fiable (fichiers minuscules,
+# cache disque) et ne vaut de toute façon pas un avertissement.
+_MIN_READ_S = 4.0
+
+
+class DiskWatch:
+    """Repère un stockage lent à partir du journal de sd-cli.
+
+    L'information existe déjà dans le journal, mais éclatée sur deux lignes et
+    exprimée en secondes et en mégaoctets séparément : personne ne fait la
+    division de tête. On la fait, et on ne dit rien tant qu'il n'y a rien à
+    dire.
+    """
+
+    def __init__(self) -> None:
+        self._read_s: float | None = None
+        self._said = False
+
+    def note(self, line: str) -> str | None:
+        m = _READ_SECONDS.search(line)
+        if m:
+            self._read_s = float(m.group(1))
+            return None
+        m = _PARAMS_MB.search(line)
+        if m is None or self._read_s is None:
+            return None
+        read_s, self._read_s = self._read_s, None
+        size_mb = float(m.group(1))
+        if self._said or read_s < _MIN_READ_S or size_mb <= 0:
+            return None
+        speed = size_mb / read_s
+        if speed >= SLOW_DISK_MB_S:
+            return None
+        self._said = True
+        ssd = size_mb / 550.0          # SSD SATA, l'hypothèse la plus prudente
+        return (f"⚠️ Modèle lu à {speed:.0f} Mo/s "
+                f"({size_mb / 1024:.1f} Go en {read_s:.0f} s) : c'est une "
+                f"vitesse de disque mécanique. Sur un SSD la même lecture "
+                f"prendrait ~{ssd:.0f} s, soit ~{read_s - ssd:.0f} s de moins "
+                f"À CHAQUE image. Déplacez le dossier models/.")
+
+
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
         gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED
@@ -528,6 +580,7 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
     # On garde la fin de la sortie pour diagnostiquer les crashs de sd-cli
     # (l'assert GGML n'apparaît que quelques lignes avant la mort du process).
     tail: deque[str] = deque(maxlen=100)
+    disk = DiskWatch()
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -535,6 +588,9 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
             tail.append(s)
             if log:
                 log(s)
+                note = disk.note(s)
+                if note:
+                    log(note)
         code = proc.wait()
     finally:
         with _LOCK:

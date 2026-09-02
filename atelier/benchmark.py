@@ -57,16 +57,23 @@ def placement_candidates(prefs: dict | None = None,
     if secondary is not None:
         mapping = (f"diffusion=cuda{main.index},vae=cuda{main.index},"
                    f"te=cuda{secondary.index}")
+        # `encoder_placement_forced` : la génération ordinaire refuse de faire
+        # CALCULER l'encodeur sur une carte sans tensor cores. Ici c'est
+        # justement ce qu'on veut mesurer — sans ce drapeau, le banc d'essai
+        # exécuterait deux fois le même scénario et conclurait « aucune
+        # différence ».
         out.extend([
             Placement(
                 "dual-resident",
                 f"{main.name} diffusion · {secondary.name} encodeur résident",
                 {**common, "encoder_gpu_index": secondary.index,
+                 "encoder_placement_forced": True,
                  "params_backend": mapping, "flags": resident}),
             Placement(
                 "dual-staged",
                 f"{main.name} diffusion · {secondary.name} calcul · poids en RAM",
                 {**common, "encoder_gpu_index": secondary.index,
+                 "encoder_placement_forced": True,
                  "params_backend": "*=cpu", "flags": staged}),
         ])
     return out

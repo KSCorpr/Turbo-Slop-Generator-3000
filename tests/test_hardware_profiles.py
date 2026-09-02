@@ -17,13 +17,17 @@ class Rtx3060ComboTests(unittest.TestCase):
             prefs = hardware.rtx3060_1080ti_prefs()
 
         self.assertEqual(prefs["gpu_index"], 1)
-        self.assertEqual(prefs["encoder_gpu_index"], 4)
+        # L'encodeur de texte ne va PLUS sur la 1080 Ti : mesuré à 38 s par
+        # image, parce que le fp16 d'une Pascal tourne à 1/64 de sa vitesse.
+        # Le LLM d'amélioration de prompt, lui, y reste : il tourne seul.
+        self.assertEqual(prefs["encoder_gpu_index"], 1)
         self.assertEqual(prefs["text_gpu_index"], 4)
         self.assertFalse(prefs["auto_fit"])
         self.assertEqual(prefs["split_mode"], "layer")
-        self.assertEqual(
-            prefs["params_backend"],
-            "diffusion=cuda1,vae=cuda1,te=cuda4")
+        # Mono-GPU : la carte choisie est remappée en cuda0. Les poids de
+        # l'encodeur restent en RAM, son calcul se fait sur la carte.
+        self.assertEqual(prefs["params_backend"],
+                         "diffusion=cuda0,vae=cuda0,te=cpu")
         self.assertFalse(prefs["flags"]["offload_to_cpu"])
 
     def test_does_not_confuse_3060_ti_with_12gb_3060(self):
