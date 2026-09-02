@@ -634,6 +634,13 @@ in `bin/` — which keeps the model loaded and answers local HTTP requests
 starts straight at sampling. On the profile that motivated it — one image at a
 time, tweaking a prompt — that removes the 118 s of fixed cost per image.
 
+`sd-server` ships in the same archive as `sd-cli` — but **only from the
+official upstream release**. The project's own CI build packaged a single
+executable (`sd.exe`) until this was fixed, so an engine installed with
+`update-engine-ci.bat` before that has no server. When the option cannot be
+offered, Settings says which of the two pieces is missing and what to do about
+it, instead of hiding the checkbox.
+
 It is deliberately **never mandatory**:
 - LoRAs, the HD pass, multi-reference editing, step caches and auto-fit are
   **not** served — they fall back to `sd-cli` silently (the API ignores

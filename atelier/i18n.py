@@ -1325,6 +1325,20 @@ _EN: dict[str, str] = {
         "HD pass automatically go back to the old mode.",
     "Garder le modèle chargé entre deux images":
         "Keep the model loaded between images",
+    "⚠️ **Moteur résident indisponible** : le fichier `atelier/engine/sdserver.py` manque. Votre copie de l'application est incomplète — retéléchargez l'archive, **fermez l'application**, puis ré-extrayez-la.":
+        "⚠️ **Resident engine unavailable**: the file "
+        "`atelier/engine/sdserver.py` is missing. Your copy of the application "
+        "is incomplete — download the archive again, **close the "
+        "application**, then re-extract it.",
+    "⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans `bin/`. Votre moteur vient du build maison du projet, qui n'empaquetait que `sd.exe`. Relancez le workflow « Build sd.cpp (Windows CUDA) » (il empaquette désormais les deux) puis `update-engine-ci.bat` — ou passez au binaire officiel avec `update-engine.bat`.":
+        "⚠️ **Resident engine unavailable**: `sd-server` is not in `bin/`. Your "
+        "engine comes from the project's own build, which only packaged "
+        "`sd.exe`. Re-run the “Build sd.cpp (Windows CUDA)” workflow (it now "
+        "packages both) then `update-engine-ci.bat` — or switch to the "
+        "official binary with `update-engine.bat`.",
+    "⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans `bin/`. Lancez `update-engine.bat` pour réinstaller le moteur complet.":
+        "⚠️ **Resident engine unavailable**: `sd-server` is not in `bin/`. Run "
+        "`update-engine.bat` to reinstall the complete engine.",
     "Le modèle restera chargé entre deux images. Le premier chargement sera aussi long que d'habitude.":
         "The model will stay loaded between images. The first load will take "
         "as long as it always has.",

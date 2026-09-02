@@ -36,7 +36,7 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
-from ..engine import resident_engine
+from ..engine import engine_build_source, resident_engine
 from ..i18n import t
 from . import widgets
 
@@ -49,16 +49,32 @@ LANGS = [("Français", "fr"), ("English", "en")]
 _OK = "✅ "
 
 
-def _resident_available() -> bool:
-    """Le moteur résident est-il proposable ici ?
+def _resident_reason() -> str:
+    """Pourquoi le moteur résident n'est pas proposable — ou "" s'il l'est.
 
-    Deux « non » possibles, et aucun n'est une erreur : le module peut manquer
-    (mise à jour dézippée de façon incomplète) et le binaire sd-server peut ne
-    pas être dans bin/. Dans les deux cas la case n'apparaît pas, plutôt que
-    d'exister sans rien faire.
+    Première version : la case disparaissait purement et simplement. Résultat,
+    on cherche dans les Réglages une case dont on vient de lire la description,
+    sans jamais savoir ce qui manque. Une option absente doit dire ce qui
+    l'empêche, et le geste qui la débloque.
     """
     server = resident_engine()
-    return server is not None and server.available()
+    if server is None:
+        return t("⚠️ **Moteur résident indisponible** : le fichier "
+                 "`atelier/engine/sdserver.py` manque. Votre copie de "
+                 "l'application est incomplète — retéléchargez l'archive, "
+                 "**fermez l'application**, puis ré-extrayez-la.")
+    if server.available():
+        return ""
+    if engine_build_source() == "custom-ci":
+        return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas "
+                 "dans `bin/`. Votre moteur vient du build maison du projet, "
+                 "qui n'empaquetait que `sd.exe`. Relancez le workflow "
+                 "« Build sd.cpp (Windows CUDA) » (il empaquette désormais les "
+                 "deux) puis `update-engine-ci.bat` — ou passez au binaire "
+                 "officiel avec `update-engine.bat`.")
+    return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans "
+             "`bin/`. Lancez `update-engine.bat` pour réinstaller le moteur "
+             "complet.")
 
 
 def _said(msg: str):
@@ -381,12 +397,13 @@ def build_settings_tab():
                 "arrive d'un coup), et le modèle occupe la carte en "
                 "permanence — les outils du Toolkit le déchargent tout seuls "
                 "quand ils ont besoin du GPU. Les LoRA et la passe HD "
-                "repassent automatiquement par l'ancien mode."),
-                visible=_resident_available())
+                "repassent automatiquement par l'ancien mode."))
+            _no_resident = _resident_reason()
+            gr.Markdown(_no_resident, visible=bool(_no_resident))
             resident = gr.Checkbox(
                 value=bool(prefs.get("resident_engine")),
                 label="Garder le modèle chargé entre deux images",
-                visible=_resident_available())
+                visible=not _no_resident)
 
             # Confirmation LOCALE : la ligne d'état du haut est hors de l'écran
             # quand on coche quelque chose ici. Un réglage qui s'applique sans

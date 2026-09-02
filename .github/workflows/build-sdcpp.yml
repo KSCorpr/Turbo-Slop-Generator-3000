@@ -173,6 +173,19 @@ jobs:
           Write-Host "Binaire : $($exe.FullName)"
           Copy-Item $exe.FullName "$out/sd.exe" -Force
 
+          # sd-server : le MÊME moteur, qui ne meurt pas entre deux images.
+          # Il n'était pas empaqueté, donc l'option « moteur résident » de
+          # l'application restait inaccessible à qui utilise ce build maison.
+          # Il reste facultatif : son absence ne fait pas échouer la CI.
+          $srv = Get-ChildItem -Path sdcpp/build -Recurse -File -Include sd-server.exe |
+                 Select-Object -First 1
+          if ($srv) {
+            Write-Host "Serveur : $($srv.FullName)"
+            Copy-Item $srv.FullName "$out/sd-server.exe" -Force
+          } else {
+            Write-Host "⚠️ sd-server.exe absent du build (moteur résident indisponible)."
+          }
+
           # DLL à côté du binaire (ggml-base, ggml-cpu-*, ggml-cuda,
           # stable-diffusion… — backends chargés au runtime via GGML_BACKEND_DL).
           Get-ChildItem "$($exe.Directory.FullName)/*.dll" -ErrorAction SilentlyContinue |

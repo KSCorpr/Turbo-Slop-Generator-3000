@@ -31,3 +31,23 @@ def release_resident_engine(reason: str = "",
     server = resident_engine()
     if server is not None and server.is_running():
         server.stop(reason, log)
+
+
+def engine_build_source() -> str:
+    """D'où vient le moteur installé : « custom-ci », « official », ou "".
+
+    L'archive de la CI du projet et celle de leejet ne contiennent pas la même
+    chose : savoir laquelle est installée est la différence entre « il manque
+    un fichier, débrouillez-vous » et « votre build ne l'a jamais contenu,
+    voici le bouton ».
+    """
+    import json
+    from .. import settings
+    for path in settings.BIN_DIR.rglob("engine-build.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get("source"):
+            return str(data["source"])
+    return ""

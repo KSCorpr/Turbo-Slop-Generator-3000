@@ -300,6 +300,55 @@ class MissingModuleTests(unittest.TestCase):
             engine.release_resident_engine("test")   # ne doit rien lever
 
 
+class UnavailableReasonTests(unittest.TestCase):
+    """Une option qu'on ne peut pas activer doit dire POURQUOI.
+
+    Première version : la case disparaissait. On lisait sa description dans le
+    dépôt puis on la cherchait en vain dans les Réglages, sans jamais savoir
+    laquelle des deux pièces manquait.
+    """
+
+    def _reason(self, server=..., source=""):
+        from atelier.ui import settings_tab
+        with patch.object(settings_tab, "resident_engine",
+                          return_value=server), \
+             patch.object(settings_tab, "engine_build_source",
+                          return_value=source):
+            return settings_tab._resident_reason()
+
+    def test_nothing_to_say_when_it_works(self):
+        with patch.object(sdserver, "available", return_value=True):
+            self.assertEqual(self._reason(server=sdserver), "")
+
+    def test_a_missing_module_names_the_file_and_the_gesture(self):
+        reason = self._reason(server=None)
+        self.assertIn("sdserver.py", reason)
+        self.assertIn("ré-extrayez", reason)
+
+    def test_a_missing_binary_from_our_own_build_names_the_workflow(self):
+        with patch.object(sdserver, "available", return_value=False):
+            reason = self._reason(server=sdserver, source="custom-ci")
+        self.assertIn("build maison", reason)
+        self.assertIn("update-engine-ci.bat", reason)
+
+    def test_a_missing_binary_otherwise_points_at_the_updater(self):
+        with patch.object(sdserver, "available", return_value=False):
+            reason = self._reason(server=sdserver, source="official")
+        self.assertIn("update-engine.bat", reason)
+        self.assertNotIn("build maison", reason)
+
+
+class CiPackagingTests(unittest.TestCase):
+    """Le build maison n'empaquetait qu'un binaire sur les deux."""
+
+    def test_the_workflow_packages_the_server_too(self):
+        workflow = (ROOT / ".github" / "workflows" / "build-sdcpp.yml").read_text(
+            encoding="utf-8")
+        self.assertIn("sd-server.exe", workflow)
+        # Facultatif : son absence ne doit pas faire échouer la compilation.
+        self.assertNotIn('throw "Aucun serveur', workflow)
+
+
 class VramHandoverTests(unittest.TestCase):
     """Un modèle résident occupe la carte : il doit céder la place tout seul."""
 
