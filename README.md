@@ -40,7 +40,7 @@ so the grouping is not decoration.)
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, in-app documentation of every option) · **Convert to GGUF** |
 
 ---
@@ -864,6 +864,32 @@ passes the directory to SeedVR2 once, keeps its DiT and VAE caches warm across
 the whole queue, and writes new PNGs without touching the originals. This avoids
 paying model startup cost again for every image.
 
+### 🙂 Faces (CodeFormer)
+Rebuilds **faces only** — the rest of the image is untouched. This is the step
+that ESRGAN and SeedVR2 cannot do: once a face is small or blurry, neither can
+put clean eyes and a clean mouth back. Run it **last**, after the upscale; the
+Upscale and Restore tabs both carry a **→ 🙂 Fix the faces** button that hands
+the result straight over, so there is no file to find and re-upload.
+
+One control: **faithfulness to the original face** (CodeFormer's `w`). 0.5 is
+almost always right; lower it for a badly damaged face and the model invents
+more, raise it if the person stops looking like themselves. A checkbox limits
+the pass to the main face instead of every detected one.
+
+The implementation deliberately avoids `basicsr`, which the original CodeFormer
+repository depends on: `basicsr` imports `torchvision.transforms.functional_tensor`,
+removed in torchvision 0.17, so it no longer installs on our torch 2.4.1 base.
+Instead the network comes from [`spandrel`](https://github.com/chaiNNer-org/spandrel)
+(pure torch) and the detection / FFHQ-512 alignment / segmentation-masked
+paste-back from [`facexlib`](https://github.com/xinntao/facexlib) — which is
+exactly what upstream CodeFormer uses for that half. Three weights (~570 MB:
+restorer, detector, face parser) are downloaded from the **official releases**
+and **SHA-256 verified**, and facexlib is installed with `--no-deps` because its
+`numba`/`filterpy` requirements only serve its video face tracker and would fight
+our NumPy pin.
+
+⚠️ CodeFormer is **non-commercial** (S-Lab License 1.0).
+
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
 SDXL img2img at low denoise. The model stays **resident** on the GPU so tiles are
@@ -910,7 +936,7 @@ Controls:
 
 > Use the right tool: **ESRGAN** is fast and deterministic; **SeedVR2** restores
 > plausible detail with limited drift; **SDXL creative** is slower and explicitly
-> invents detail.
+> invents detail; **Faces** fixes what all three leave broken, and runs last.
 
 #### Upscaling illustrations without interpolation
 
@@ -1025,8 +1051,9 @@ subprocesses so torch DLLs never lock the UI process):
 - **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
   an object, extract it to a transparent PNG.
 - **Layers (PSD)** — decompose an image into layers, see below.
-- **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**
-  and **Creative upscale (SDXL)** — see [Upscaling](#upscaling).
+- **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**,
+  **Faces (CodeFormer)** and **Creative upscale (SDXL)** — see
+  [Upscaling](#upscaling).
 
 ### 📝 Image → prompt
 Give it an image, get back the prompt that would recreate it — then send that
@@ -1332,7 +1359,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 > or larger file at Q5.
 
 
-**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), [`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) (SeedVR2), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative).
+**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), [`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) (SeedVR2), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative), [`sczhou/CodeFormer`](https://github.com/sczhou/CodeFormer) + [`xinntao/facexlib`](https://github.com/xinntao/facexlib) (faces).
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
 (encoders/VAEs used by another model) are preserved.
@@ -1625,9 +1652,15 @@ authors. Please read and respect each model's own license on its page.
   **Real-ESRGAN** (Xintao Wang et al., Tencent ARC) and community models
   (UltraSharp, foolhardy Remacri, Nomos, LSDIR, NickelbackFS, StarSample…). Credit
   to each upstream author; see the repo for individual sources/licenses.
-- **SeedVR2 3B** standalone integration by
+- **SeedVR2 3B / 7B** standalone integration by
   [numz](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler), using the
   upstream Q8/Q4 GGUF models and low-VRAM block swapping.
+- **Face restoration:** **CodeFormer** by
+  [Shangchen Zhou et al. (S-Lab, NTU)](https://github.com/sczhou/CodeFormer),
+  non-commercial S-Lab License 1.0; detection, alignment and face parsing by
+  **facexlib** ([Xintao Wang](https://github.com/xinntao/facexlib)); network
+  implementation from **spandrel**
+  ([chaiNNer](https://github.com/chaiNNer-org/spandrel)).
 - **Creative upscale (Ultimate SD Upscale style):** **SDXL** by
   [Stability AI](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0);
   fp16-fix VAE by [Ollin Boer Bohan / madebyollin](https://huggingface.co/madebyollin/sdxl-vae-fp16-fix);

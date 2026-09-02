@@ -170,12 +170,16 @@ def clean_removed_features(purge: bool) -> int:
 def _known_addon_dirs() -> set[str]:
     """Add-ons LÉGITIMES, déduits du code plutôt que recopiés à la main.
 
-    Ainsi, retirer un add-on de tools.py suffit à ce que son dossier devienne
-    automatiquement un orphelin signalé ici — il n'y a pas de seconde liste à
-    penser à mettre à jour."""
+    La liste était recopiée à la main et avait déjà pris du retard : `clip` et
+    `describe` — le modèle image → prompt, 7,5 Go — étaient signalés comme
+    orphelins, donc proposés à la suppression par `--purge`. On énumère
+    maintenant les chemins déclarés par tools.py lui-même : ajouter un add-on
+    suffit, en retirer un le rend automatiquement orphelin, et il n'y a plus de
+    seconde liste à tenir à jour."""
     from atelier.engine import tools
-    dirs = (tools.DEPTH_MODEL_DIR, tools.BG_MODEL_DIR, tools.SAM_MODEL_DIR,
-            tools.ENHANCE_MODEL_DIR, tools.UPSCALE_DIR, tools.SEEDVR2_DIR)
+    dirs = [value for name, value in vars(tools).items()
+            if name.endswith("_DIR") and isinstance(value, Path)
+            and value != tools.TOOLS_DIR]
     out = set()
     for d in dirs:
         try:

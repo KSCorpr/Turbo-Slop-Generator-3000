@@ -25,6 +25,7 @@ SAM_MODEL_DIR = TOOLS_DIR / "sam" / "model"
 CLIP_MODEL_DIR = TOOLS_DIR / "clip" / "model"
 ENHANCE_MODEL_DIR = TOOLS_DIR / "enhance" / "model"
 DESCRIBE_MODEL_DIR = TOOLS_DIR / "describe" / "model"
+FACE_MODEL_DIR = TOOLS_DIR / "face" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
 SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
@@ -87,6 +88,18 @@ def describe_is_installed() -> bool:
 
 def enhance_is_installed() -> bool:
     return _model_present(ENHANCE_MODEL_DIR)
+
+
+# Les trois poids de la restauration de visages sont des .pth : le détecteur et
+# la segmentation sont aussi indispensables que le restaurateur lui-même, donc
+# on vérifie les trois — un seul manquant et le premier clic échouerait au
+# milieu du traitement au lieu d'afficher le bouton « Installer ».
+FACE_FILES = ("codeformer.pth", "detection_Resnet50_Final.pth",
+              "parsing_parsenet.pth")
+
+
+def face_is_installed() -> bool:
+    return all((FACE_MODEL_DIR / name).is_file() for name in FACE_FILES)
 
 
 def upscale_is_installed() -> bool:
@@ -233,6 +246,10 @@ def install_describe_stream():
     yield from _install_stream("describe")
 
 
+def install_face_stream():
+    yield from _install_stream("face")
+
+
 def install_upscale_stream():
     yield from _install_stream("upscale")
 
@@ -337,6 +354,34 @@ def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
     _run_tool(cmd, log, "L'estimation de profondeur a échoué (voir le journal).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "depth", stamp)
+
+
+def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
+                 log: Callable[[str], None] | None = None) -> Path:
+    """Restaure les visages d'une image (CodeFormer), sans toucher au reste.
+
+    `fidelity` est le « w » de CodeFormer : 0 laisse le modèle reconstruire
+    librement (visage très abîmé, mais le résultat peut ne plus être tout à
+    fait la même personne), 1 colle au pixel d'origine. 0,5 est le réglage de
+    référence. À passer APRÈS l'upscale : le visage est alors plus grand, donc
+    mieux détecté et mieux recollé.
+    """
+    if not face_is_installed():
+        raise ToolError("La restauration de visages n'est pas installée "
+                        "(bouton « Installer » du Toolkit).")
+    src = _to_src(image, "face")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = settings.TMP_DIR / f"face_out_{stamp}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    runner = settings.ROOT / "scripts" / "tools" / "run_face.py"
+    cmd = [sys.executable, str(runner), "--model-dir", str(FACE_MODEL_DIR),
+           "--input", str(src), "--output-dir", str(out_dir),
+           "--fidelity", f"{min(1.0, max(0.0, float(fidelity))):.2f}"]
+    if only_center:
+        cmd.append("--only-center")
+    _run_tool(cmd, log, "La restauration des visages a échoué (voir le journal).",
+              gpu_index=_gen_gpu_index())
+    return _collect(out_dir, "face", stamp)
 
 
 def bg_remove(image, log: Callable[[str], None] | None = None) -> Path:

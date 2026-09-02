@@ -6,6 +6,7 @@ Outils :
   bg      -> RMBG-1.4 : suppression d'arrière-plan (PNG transparent).
   sam     -> Segment Anything (facebook/sam-vit-base) : extraction d'objet au clic.
   enhance -> Qwen2.5-3B-Instruct : améliore un prompt brut (LLM).
+  face    -> CodeFormer + facexlib : restauration des visages.
   upscale -> SDXL base + VAE fp16-fix : upscale créatif tuilé (Ultimate SD Upscale).
 
 Réutilise les helpers torch CUDA de _torch_setup (build adaptée au GPU,
@@ -55,6 +56,27 @@ DESCRIBE_REPO = "Qwen/Qwen2.5-VL-3B-Instruct"
 # aux autres add-ons mais ne connaît pas ce modèle, et l'échec serait un
 # « KeyError: qwen2_5_vl » incompréhensible au premier clic.
 DESCRIBE_TRANSFORMERS_PIN = "transformers>=4.49,<4.50"
+# Restauration de visages. Les trois poids viennent des dépôts d'origine (pas
+# d'un miroir personnel) : CodeFormer chez sczhou, détection et segmentation
+# chez xinntao, l'auteur de facexlib. CodeFormer est sous licence S-Lab 1.0 :
+# usage NON COMMERCIAL, comme l'améliorateur de prompt Qwen déjà installé.
+# (fichier, URL, description, SHA-256) — empreintes relevées sur les releases
+# officielles. Elles servent deux fois : à refuser un fichier corrompu, et à
+# détecter un téléchargement tronqué déjà sur le disque (le cas le plus
+# fréquent : une coupure réseau au milieu des 377 Mo de CodeFormer).
+FACE_URLS = (
+    ("codeformer.pth", "https://github.com/sczhou/CodeFormer/releases/"
+     "download/v0.1.0/codeformer.pth", "CodeFormer (~377 Mo)",
+     "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"),
+    ("detection_Resnet50_Final.pth",
+     "https://github.com/xinntao/facexlib/releases/download/v0.1.0/"
+     "detection_Resnet50_Final.pth", "détecteur de visages (~110 Mo)",
+     "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"),
+    ("parsing_parsenet.pth",
+     "https://github.com/xinntao/facexlib/releases/download/v0.2.2/"
+     "parsing_parsenet.pth", "segmentation du visage (~85 Mo)",
+     "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"),
+)
 # Upscale créatif tuilé : SDXL base (1 fichier) + VAE fp16-fix + ControlNet Tile
 # (optionnel, verrouille la structure pour pousser la créativité sans dériver).
 SDXL_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -227,6 +249,86 @@ def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
 
 
 
+def _sha256(path: Path) -> str:
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fetch_release_file(url: str, dest: Path, desc: str, sha256: str) -> None:
+    """Télécharge un poids depuis une release GitHub et vérifie son empreinte.
+
+    Écrit d'abord dans un « .part » : un téléchargement coupé (réseau, Ctrl-C)
+    ne laisse jamais derrière lui un fichier tronqué qui passerait pour valide
+    au lancement suivant. Et un fichier déjà présent est quand même vérifié —
+    c'est justement celui-là qui peut être à moitié écrit.
+    """
+    import time
+    import urllib.request
+    if dest.is_file():
+        if _sha256(dest) == sha256:
+            print(f"  [OK] {desc} déjà présent et vérifié.")
+            return
+        print(f"  [!] {dest.name} incomplet ou corrompu — retéléchargement.")
+        dest.unlink()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_suffix(dest.suffix + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": "Turbo-Slop/1"})
+    for attempt in range(3):
+        try:
+            print(f"\nTéléchargement : {desc}…", flush=True)
+            with urllib.request.urlopen(req, timeout=120) as response, \
+                    open(part, "wb") as out:
+                shutil.copyfileobj(response, out, 1024 * 256)
+            got = _sha256(part)
+            if got != sha256:
+                raise RuntimeError(f"empreinte inattendue ({got[:12]}…)")
+            part.replace(dest)
+            print(f"  [OK] {dest.name} vérifié.")
+            return
+        except Exception as exc:  # noqa: BLE001
+            part.unlink(missing_ok=True)
+            if attempt < 2:
+                wait = 2 ** (attempt + 1)
+                print(f"  [!] échec ({type(exc).__name__}) — nouvel essai dans "
+                      f"{wait} s…")
+                time.sleep(wait)
+            else:
+                print(f"\n[X] Téléchargement impossible : {desc}")
+                print("    Sur un réseau d'entreprise, github.com est souvent")
+                print("    filtré. Téléchargez le fichier à la main :")
+                print(f"      {url}")
+                print(f"    et placez-le dans : {dest.parent}")
+                raise
+
+
+def install_face():
+    """Restauration de visages : CodeFormer (spandrel) + facexlib.
+
+    On installe facexlib SANS ses dépendances : ses `install_requires` tirent
+    numba et filterpy, qui ne servent qu'à son suiveur de visages en vidéo —
+    dont on n'utilise rien. Et numba impose sa propre borne sur NumPy, qui
+    entrerait en conflit avec celle de notre socle torch. Les modules qu'on
+    importe réellement (détection, segmentation, recollage) n'ont besoin que de
+    cv2, numpy, torch et torchvision.
+    """
+    model_dir = settings.ROOT / "tools_repo" / "face" / "model"
+    ensure_torch_cuda()
+    print("Installation de spandrel (architectures) + OpenCV…")
+    sh([sys.executable, "-m", "pip", "install", NUMPY_PIN, "opencv-python",
+        "spandrel>=0.4,<0.5", "spandrel-extra-arches>=0.2,<0.3", "pillow"])
+    print("Installation de facexlib (détection et recollage), sans ses extras…")
+    sh([sys.executable, "-m", "pip", "install", "--no-deps", "facexlib>=0.3"])
+    for name, url, desc, sha in FACE_URLS:
+        _fetch_release_file(url, model_dir / name, desc, sha)
+    pin_numpy()
+    print("\n[OK] Restauration de visages installée "
+          "(onglet Toolkit → « 🙂 Visages »).")
+
+
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
     ensure_torch_cuda()
@@ -295,7 +397,7 @@ def install_upscale():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tool", choices=["depth", "bg", "sam", "clip", "enhance",
-                                     "describe", "upscale"])
+                                     "describe", "face", "upscale"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -310,6 +412,8 @@ def main():
         install_enhance()
     elif args.tool == "describe":
         install_describe()
+    elif args.tool == "face":
+        install_face()
     elif args.tool == "upscale":
         install_upscale()
 

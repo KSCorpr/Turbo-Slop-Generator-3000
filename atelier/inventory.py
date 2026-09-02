@@ -144,6 +144,16 @@ def items(prefs: dict | None = None) -> list[Item]:
              [tools.SAM_MODEL_DIR], note="Réinstallable en 1 clic."),
         Item("tool_enhance", "Améliorateur de prompt (LLM)", "Add-ons Toolkit",
              [tools.ENHANCE_MODEL_DIR], note="Réinstallable en 1 clic."),
+        # `clip` et `describe` manquaient à cet inventaire : le modèle
+        # image → prompt pèse 7,5 Go et n'apparaissait nulle part dans ce que
+        # l'utilisateur peut voir ou libérer.
+        Item("tool_clip", "Toolkit — Étiquetage CLIP (calques)", "Add-ons Toolkit",
+             [tools.CLIP_MODEL_DIR], note="Réinstallable en 1 clic."),
+        Item("tool_describe", "Toolkit — Image → prompt (~7,5 Go)",
+             "Add-ons Toolkit", [tools.DESCRIBE_MODEL_DIR],
+             note="Réinstallable en 1 clic."),
+        Item("tool_face", "Toolkit — Restauration des visages", "Add-ons Toolkit",
+             [tools.FACE_MODEL_DIR], note="Réinstallable en 1 clic."),
         Item("tool_upscale", "Toolkit — Upscale créatif SDXL", "Add-ons Toolkit",
              [tools.UPSCALE_DIR], note="Inclut ControlNet et checkpoints perso."),
         Item("tool_seedvr2", "Toolkit — Restauration SeedVR2", "Add-ons Toolkit",

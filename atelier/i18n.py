@@ -1285,6 +1285,39 @@ _EN: dict[str, str] = {
         "Pick a folder of images.",
     "Installez d'abord SeedVR2.":
         "Install SeedVR2 first.",
+    "🙂 Visages":
+        "🙂 Faces",
+    "*CodeFormer* — reconstruit **les visages uniquement**, le reste de l'image n'est pas touché. C'est le passage qui manque après un agrandissement : ni ESRGAN ni SeedVR2 ne savent refaire des yeux et une bouche propres sur un visage devenu petit ou flou. **Passez-le en dernier**, après l'upscale.  \n⚠️ Modèle sous licence **non commerciale** (S-Lab 1.0).":
+        "*CodeFormer* — rebuilds **faces only**; the rest of the image is left "
+        "alone. It is the step missing after an enlargement: neither ESRGAN nor "
+        "SeedVR2 can rebuild clean eyes and a clean mouth on a face that has "
+        "gone small or blurry. **Run it last**, after the upscale.  \n"
+        "⚠️ **Non-commercial** licence (S-Lab 1.0).",
+    "CodeFormer":
+        "CodeFormer",
+    "Trois poids (~570 Mo au total) : le restaurateur, le détecteur de visages et la segmentation qui sert au recollage. Aucune commande à taper.":
+        "Three weight files (~570 MB total): the restorer, the face detector "
+        "and the segmentation used to blend the face back in. Nothing to type.",
+    "Fidélité au visage d'origine":
+        "Faithfulness to the original face",
+    "0,5 convient presque toujours. Baissez si le visage est très abîmé (le modèle invente davantage), montez s'il change de tête.":
+        "0.5 is almost always right. Lower it when the face is badly damaged "
+        "(the model invents more), raise it if the person stops looking like "
+        "themselves.",
+    "Seulement le visage principal":
+        "Main face only",
+    "Par défaut, tous les visages détectés sont restaurés.":
+        "By default every detected face is restored.",
+    "🙂 Restaurer les visages":
+        "🙂 Restore faces",
+    "Visages restaurés":
+        "Restored faces",
+    "Installez d'abord CodeFormer.":
+        "Install CodeFormer first.",
+    "→ 🙂 Réparer les visages":
+        "→ 🙂 Fix the faces",
+    "Produisez d'abord une image.":
+        "Produce an image first.",
     "🎭 Préréglage perso":
         "🎭 Custom preset",
     "⚙️ Réinstaller / réparer {title}":

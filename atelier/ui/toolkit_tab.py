@@ -493,6 +493,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             label="Résultat (pleine résolution dans outputs/)",
                             height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
+                        u_to_face = gr.Button("→ 🙂 Réparer les visages",
+                                              size="sm")
                         u_log = gr.Textbox(label="Journal", lines=10,
                                            autoscroll=True, elem_classes="log-box")
 
@@ -938,6 +940,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         seed_result = gr.Image(
                             label="Résultat SeedVR2", height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
+                        seed_to_face = gr.Button("→ 🙂 Réparer les visages",
+                                                 size="sm")
                         seed_log = gr.Textbox(label="Journal", lines=14,
                                               autoscroll=True,
                                               elem_classes="log-box")
@@ -1054,6 +1058,84 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         outputs=[seed_batch_gallery, seed_batch_log])
                     widgets.stop_into_log(seed_batch_stop, tools.cancel,
                                           seed_batch_log, [seed_batch_evt])
+
+            # ---------- Restauration des visages (CodeFormer) ----------------
+            with gr.Tab("🙂 Visages", id="face"):
+                gr.Markdown(
+                    "*CodeFormer* — reconstruit **les visages uniquement**, le "
+                    "reste de l'image n'est pas touché. C'est le passage qui "
+                    "manque après un agrandissement : ni ESRGAN ni SeedVR2 ne "
+                    "savent refaire des yeux et une bouche propres sur un "
+                    "visage devenu petit ou flou. **Passez-le en dernier**, "
+                    "après l'upscale.  \n"
+                    "⚠️ Modèle sous licence **non commerciale** (S-Lab 1.0).")
+                _installer_block(
+                    "CodeFormer",
+                    "Trois poids (~570 Mo au total) : le restaurateur, le "
+                    "détecteur de visages et la segmentation qui sert au "
+                    "recollage. Aucune commande à taper.",
+                    tools.install_face_stream, tools.face_is_installed())
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        f_image = gr.Image(label="Image source", type="pil",
+                                           buttons=widgets.IMAGE_VIEW_ONLY)
+                        f_fidelity = gr.Slider(
+                            0.0, 1.0, value=0.5, step=0.05,
+                            label="Fidélité au visage d'origine",
+                            info="0,5 convient presque toujours. Baissez si le "
+                                 "visage est très abîmé (le modèle invente "
+                                 "davantage), montez s'il change de tête.")
+                        f_center = gr.Checkbox(
+                            value=False, label="Seulement le visage principal",
+                            info="Par défaut, tous les visages détectés sont "
+                                 "restaurés.")
+                        f_run = gr.Button("🙂 Restaurer les visages",
+                                          variant="primary", size="lg")
+                    with gr.Column(scale=4):
+                        f_result = gr.Image(label="Visages restaurés", height=520,
+                                            format="png",
+                                            buttons=widgets.IMAGE_BUTTONS)
+                        f_log = gr.Textbox(label="Journal", lines=8,
+                                           autoscroll=True,
+                                           elem_classes="log-box")
+
+                def do_face(img, fidelity, center, progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    if not tools.face_is_installed():
+                        raise gr.Error(t("Installez d'abord CodeFormer."))
+                    logs: list[str] = []
+                    progress(0.1, desc="Visages…")
+                    try:
+                        out = tools.face_restore(
+                            img, fidelity=float(fidelity),
+                            only_center=bool(center), log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERREUR] {exc}")
+                        return None, "\n".join(logs)
+                    progress(1.0, desc="Terminé")
+                    logs.append(f"\n✅ Image : {out}")
+                    return str(out), "\n".join(logs)
+
+                f_run.click(do_face, inputs=[f_image, f_fidelity, f_center],
+                            outputs=[f_result, f_log])
+
+            # Agrandir puis réparer les visages est LA suite d'opérations
+            # normale. Sans ce relais il faudrait retrouver le fichier dans
+            # `outputs/` et le recharger à la main. Le câblage se fait ici,
+            # une fois `f_image` créé : un bouton ne peut pas écrire dans un
+            # composant qui n'existe pas encore.
+            def _hand_over_to_faces(button, source):
+                def _go(image):
+                    if image is None:
+                        raise gr.Error(t("Produisez d'abord une image."))
+                    return image, gr.Tabs(selected="face")
+
+                button.click(_go, inputs=[source], outputs=[f_image, sub_tabs])
+
+            _hand_over_to_faces(u_to_face, u_result)
+            _hand_over_to_faces(seed_to_face, seed_result)
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("✨ Upscale SDXL", id="creative"):
