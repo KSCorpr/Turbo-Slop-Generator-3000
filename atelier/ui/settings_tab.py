@@ -36,7 +36,7 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
-from ..engine import sdserver
+from ..engine import resident_engine
 from ..i18n import t
 from . import widgets
 
@@ -47,6 +47,18 @@ LANGS = [("Français", "fr"), ("English", "en")]
 # Préfixe des confirmations. Elles sont au passé et concrètes — « appliqué »,
 # pas « enregistré » : ce qu'on veut savoir, c'est que c'est FAIT.
 _OK = "✅ "
+
+
+def _resident_available() -> bool:
+    """Le moteur résident est-il proposable ici ?
+
+    Deux « non » possibles, et aucun n'est une erreur : le module peut manquer
+    (mise à jour dézippée de façon incomplète) et le binaire sd-server peut ne
+    pas être dans bin/. Dans les deux cas la case n'apparaît pas, plutôt que
+    d'exister sans rien faire.
+    """
+    server = resident_engine()
+    return server is not None and server.available()
 
 
 def _said(msg: str):
@@ -370,11 +382,11 @@ def build_settings_tab():
                 "permanence — les outils du Toolkit le déchargent tout seuls "
                 "quand ils ont besoin du GPU. Les LoRA et la passe HD "
                 "repassent automatiquement par l'ancien mode."),
-                visible=sdserver.available())
+                visible=_resident_available())
             resident = gr.Checkbox(
                 value=bool(prefs.get("resident_engine")),
                 label="Garder le modèle chargé entre deux images",
-                visible=sdserver.available())
+                visible=_resident_available())
 
             # Confirmation LOCALE : la ligne d'état du haut est hors de l'écran
             # quand on coche quelque chose ici. Un réglage qui s'applique sans
@@ -487,7 +499,9 @@ def build_settings_tab():
                 return _said(_OK + t("Le modèle restera chargé entre deux "
                                      "images. Le premier chargement sera "
                                      "aussi long que d'habitude."))
-            sdserver.stop()
+            server = resident_engine()
+            if server is not None:
+                server.stop()
             return _said(_OK + t("Moteur résident désactivé, la mémoire de la "
                                  "carte est rendue."))
 

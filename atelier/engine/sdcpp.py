@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from .. import settings
+from . import release_resident_engine
 
 
 class EngineError(RuntimeError):
@@ -583,9 +584,7 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
     # par-dessus (LoRA, passe HD, upscale ESRGAN — tout ce que le serveur ne
     # sert pas) tomberait sur une carte déjà pleine. Il rend la place ici et se
     # rechargera à la prochaine image qu'il sait servir.
-    from . import sdserver
-    if sdserver.is_running():
-        sdserver.stop("une commande a besoin de toute la carte", log)
+    release_resident_engine("une commande a besoin de toute la carte", log)
     env = child_env_for(gpu_index, all_gpus)
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))

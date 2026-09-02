@@ -16,6 +16,7 @@ from typing import Callable
 from PIL import Image
 
 from .. import hardware, settings
+from . import release_resident_engine
 from ..i18n import t
 
 TOOLS_DIR = settings.ROOT / "tools_repo"
@@ -309,9 +310,7 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
     # Un outil PyTorch qui démarre pendant que le moteur résident garde 8 Go de
     # modèle en VRAM, c'est un OOM. Le serveur rend la place ; il se rechargera
     # tout seul à la prochaine image.
-    from . import sdserver
-    if sdserver.is_running():
-        sdserver.stop("un outil du Toolkit a besoin du GPU", log)
+    release_resident_engine("un outil du Toolkit a besoin du GPU", log)
     run_env = env if env is not None else settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))

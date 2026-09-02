@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import settings
+from . import release_resident_engine
 from . import sdcpp
 
 try:
@@ -400,9 +401,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
         _log(resident_stop())
     # Le moteur d'images résident aussi : deux serveurs qui gardent chacun
     # leur modèle sur la même carte, c'est un OOM avec deux coupables.
-    from . import sdserver
-    if sdserver.is_running():
-        sdserver.stop("la 3D a besoin du GPU", _log)
+    release_resident_engine("la 3D a besoin du GPU", _log)
 
     cmd = [str(server)] + launch_args
     # NB : on n'utilise PAS CUDA_VISIBLE_DEVICES ici — le flag « --gpu N » de

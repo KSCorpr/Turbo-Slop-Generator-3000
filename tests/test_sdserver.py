@@ -16,6 +16,8 @@ from PIL import Image
 
 from atelier.engine import generate, sdcpp, sdserver
 
+ROOT = Path(__file__).resolve().parent.parent
+
 
 def _req(**kwargs):
     base = dict(diffusion_model=Path("krea2.gguf"), vae=Path("ae.sft"),
@@ -239,6 +241,63 @@ class FallbackTests(unittest.TestCase):
                               server=Path("sd-server"),
                               serve=sdserver.ServerUnavailable("mort"))
         self.assertEqual(used, {"cli": 1, "server": 1})
+
+
+class MissingModuleTests(unittest.TestCase):
+    """Une option absente retire l'option, elle n'empêche pas de démarrer.
+
+    Vécu : `from . import sdcpp, sdserver` en tête de generate.py, et une mise à
+    jour où sdserver.py manquait — l'application entière refusait de démarrer
+    sur un ImportError, pour une fonctionnalité facultative et désactivée par
+    défaut. Le test simule l'absence du fichier dans un interpréteur neuf.
+    """
+
+    def _import_with_sdserver_missing(self, modules: str) -> str:
+        import subprocess
+        import sys
+        code = (
+            "import importlib.abc, sys\n"
+            "class Blocker(importlib.abc.MetaPathFinder):\n"
+            "    def find_spec(self, name, path=None, target=None):\n"
+            "        if name == 'atelier.engine.sdserver':\n"
+            "            raise ImportError('fichier absent (simulation)')\n"
+            "        return None\n"
+            "sys.meta_path.insert(0, Blocker())\n"
+            f"import {modules}\n"
+            "print('DEMARRE')\n")
+        done = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT),
+                              capture_output=True, text=True)
+        return done.stdout + done.stderr
+
+    def test_the_generation_engine_still_imports(self):
+        self.assertIn("DEMARRE",
+                      self._import_with_sdserver_missing("atelier.engine.generate"))
+
+    def test_the_settings_tab_still_imports(self):
+        self.assertIn("DEMARRE",
+                      self._import_with_sdserver_missing("atelier.ui.settings_tab"))
+
+    def test_the_application_itself_still_starts(self):
+        # Le chemin exact du plantage rapporté : app.py -> convert_tab ->
+        # generate -> sdserver.
+        self.assertIn("DEMARRE", self._import_with_sdserver_missing("app"))
+
+    def test_generation_falls_back_to_the_command_line(self):
+        from atelier.engine import generate as gen
+        with patch.object(gen, "resident_engine", return_value=None):
+            self.assertIsNone(gen._resident_server({"resident_engine": True},
+                                                   _req(), None))
+
+    def test_cancelling_still_works(self):
+        from atelier.engine import generate as gen
+        with patch.object(gen, "resident_engine", return_value=None), \
+             patch.object(sdcpp, "cancel_active", return_value="⏹️ Annulé."):
+            self.assertEqual(gen.cancel(), "⏹️ Annulé.")
+
+    def test_freeing_the_gpu_is_a_no_op(self):
+        from atelier import engine
+        with patch.object(engine, "resident_engine", return_value=None):
+            engine.release_resident_engine("test")   # ne doit rien lever
 
 
 class VramHandoverTests(unittest.TestCase):
