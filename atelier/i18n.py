@@ -1314,6 +1314,22 @@ _EN: dict[str, str] = {
         "Restored faces",
     "Installez d'abord CodeFormer.":
         "Install CodeFormer first.",
+    "---\n**Moteur résident** — aujourd'hui le moteur démarre, lit le modèle, fabrique l'image et s'arrête : le chargement est repayé à **chaque** image. Coché, le modèle reste chargé entre deux générations. C'est tout bénéfice quand on génère une image à la fois pour affiner un prompt.\n\nEn échange : **pas d'aperçu pendant le calcul** (l'image arrive d'un coup), et le modèle occupe la carte en permanence — les outils du Toolkit le déchargent tout seuls quand ils ont besoin du GPU. Les LoRA et la passe HD repassent automatiquement par l'ancien mode.":
+        "---\n**Resident engine** — today the engine starts, reads the model, "
+        "makes the image and exits: the loading is paid again for **every** "
+        "image. Ticked, the model stays loaded between generations. That is "
+        "pure gain when you generate one image at a time to refine a prompt."
+        "\n\nIn exchange: **no preview while it computes** (the image arrives "
+        "all at once), and the model occupies the card permanently — Toolkit "
+        "tools unload it by themselves when they need the GPU. LoRAs and the "
+        "HD pass automatically go back to the old mode.",
+    "Garder le modèle chargé entre deux images":
+        "Keep the model loaded between images",
+    "Le modèle restera chargé entre deux images. Le premier chargement sera aussi long que d'habitude.":
+        "The model will stay loaded between images. The first load will take "
+        "as long as it always has.",
+    "Moteur résident désactivé, la mémoire de la carte est rendue.":
+        "Resident engine off, the card's memory is released.",
     "→ 🙂 Réparer les visages":
         "→ 🙂 Fix the faces",
     "Produisez d'abord une image.":

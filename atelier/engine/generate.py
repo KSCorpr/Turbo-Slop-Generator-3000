@@ -7,13 +7,42 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
-from . import sdcpp
+from . import sdcpp, sdserver
 from .sdcpp import GenRequest
 
 
 def cancel() -> str:
-    """Annule la génération en cours (process sd-cli)."""
-    return sdcpp.cancel_active()
+    """Annule la génération en cours, quel que soit le moteur qui la porte.
+
+    Le moteur résident survit à l'annulation : on annule la TÂCHE, pas le
+    processus — sinon on rechargerait le modèle pour rien.
+    """
+    return sdserver.cancel_active() or sdcpp.cancel_active()
+
+
+def _resident_server(prefs: dict, req: "GenRequest",
+                     log: Callable[[str], None] | None) -> Path | None:
+    """Binaire sd-server à utiliser pour CETTE demande, ou None.
+
+    Trois conditions, dans cet ordre : l'utilisateur l'a demandé, le binaire
+    existe, et la demande est dans son périmètre vérifié. Le premier « non »
+    renvoie sur sd-cli sans bruit — sauf pour l'aperçu, qui disparaît
+    silencieusement si on ne le dit pas.
+    """
+    if not prefs.get("resident_engine"):
+        return None
+    server = sdserver.find_server()
+    if server is None:
+        if log:
+            log("ℹ️ Moteur résident demandé mais sd-server est absent de bin/ "
+                "— relancez update-engine.bat.")
+        return None
+    if not sdserver.can_serve(req):
+        return None
+    if req.preview_path and log:
+        log("ℹ️ Moteur résident : pas d'aperçu pendant le calcul, l'image "
+            "arrive d'un coup à la fin.")
+    return server
 
 
 def list_custom_models() -> list[str]:
@@ -338,6 +367,20 @@ def generate(
 
     def _attempt(clip_cpu: bool) -> list[Path]:
         req.flags = {**flags, "clip_on_cpu": True} if clip_cpu else flags
+        resident = _resident_server(prefs, req, log)
+        if resident is not None:
+            try:
+                return sdserver.generate(resident, req, out,
+                                         gpu_index=gpu_index,
+                                         all_gpus=all_gpus, log=log)
+            except sdserver.ServerUnavailable as exc:
+                # Le moteur résident est un raccourci, jamais une dépendance :
+                # tout ce qu'il ne sait pas faire retombe sur sd-cli, qui reste
+                # la référence.
+                if log:
+                    log(f"↩️ Moteur résident indisponible ({exc}) — "
+                        "génération en ligne de commande.")
+                sdserver.stop()
         cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
         sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
         return sdcpp.collect_outputs(out, batch_count)

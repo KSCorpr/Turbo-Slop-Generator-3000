@@ -389,7 +389,13 @@ The app detects your GPU (via `nvidia-smi`) and RAM, then chooses on its own:
   costs no VRAM);
 - **flags**: flash-attention (Turing / RTX 20xx and newer), CPU offload, VAE
   tiling, CLIP/VAE on CPU — enabled progressively as VRAM gets tighter;
-- Pascal cards (GTX 10xx) → flash-attention disabled automatically (it’s slow there).
+- Pascal cards (GTX 10xx) → flash-attention disabled automatically (it's slow there).
+
+The engine log also reports **how fast your models are read**. sd-cli already
+prints the read time and the buffer size, on two separate lines; the app does
+the division and, below 300 MB/s, says plainly that the models sit on a
+mechanical drive and what that costs per image. The case that prompted it read
+8.2 GB at **105 MB/s** — 65 s lost on every single image.
 
 Multi-GPU: the largest card is used by default, changeable in **Settings**
 (see [Multi-GPU](#multi-gpu)).
@@ -455,6 +461,15 @@ single mutually-exclusive strategy:
   text encoder runs **and keeps its weights** on the other card (`--backend` +
   `--params-backend …,te=cudaN`). Frees VRAM on the main card without repeatedly
   staging the encoder through system RAM.
+  **Refused automatically when that second card has no tensor cores** (Pascal,
+  GTX 16xx) while the generation card does. Measured cost of getting this wrong:
+  **38 s of prompt encoding per image** on a GTX 1080 Ti, against ~1 s on the
+  RTX 3060 next to it — consumer Pascal runs fp16 at 1/64 of its fp32 rate, and
+  prompt encoding is one big fp16 matmul. The card is still excellent at
+  *holding* weights; it is bad at computing on them. In that case the encoder's
+  weights go to RAM and its computation to the generation card
+  (`--params-backend` sets residency, not where work happens), which costs no
+  VRAM at all. The benchmark can still measure the refused placement on purpose.
 - **Text encoder computed on the 2nd card, weights in RAM** — a compatibility
   fallback kept as a measurable option. It can win on unusual topologies, but
   normally loses to resident weights because it crosses PCIe repeatedly.
@@ -603,13 +618,36 @@ unknown argument. `update-engine.bat` to get them.
 > `GGML_CUDA_FA`), plus GGUF quantization and the step caches above — which is
 > where the actual speedups live.
 
-### One engine, warm reloads
-Generation always runs through **one-shot `sd-cli`** — the single engine mode.
-It gives the **live step preview**, and reload speed is handled by the OS: after
-the first load of a session, the model files sit in the **disk cache (RAM)**, so
-subsequent loads take seconds. (Earlier experimental engines — a resident
-`sd-server` and a ComfyUI backend — were removed: the server couldn't do live
-preview and ComfyUI proved too fragile. One engine, no mode switch, no surprise.)
+### One-shot CLI by default, resident engine on demand
+Generation runs through **one-shot `sd-cli`** by default: it gives the **live
+step preview**, and it is the path every feature is verified against.
+
+This section used to claim that reload cost was "handled by the OS disk cache".
+A measured log says otherwise — 250 s for one Krea 2 Turbo image, of which
+**80 s re-reading the model** and **38 s encoding the prompt**, against 117 s of
+actual sampling. Paid again for every image. That claim was wrong and is gone.
+
+So the **resident engine** is back as an opt-in, in **Settings → Expert**. It
+runs `sd-server` — the same sd.cpp, shipped in the same archive, already sitting
+in `bin/` — which keeps the model loaded and answers local HTTP requests
+(`/sdcpp/v1/img_gen`, then polling `/sdcpp/v1/jobs/{id}`). The second image
+starts straight at sampling. On the profile that motivated it — one image at a
+time, tweaking a prompt — that removes the 118 s of fixed cost per image.
+
+It is deliberately **never mandatory**:
+- LoRAs, the HD pass, multi-reference editing, step caches and auto-fit are
+  **not** served — they fall back to `sd-cli` silently (the API ignores
+  `<lora:…>` prompt tags by design, so serving them would quietly produce an
+  image *without* the LoRA);
+- any startup failure, timeout or protocol surprise falls back to `sd-cli`
+  with the reason in the log;
+- **no live preview**: the image arrives at the end, and the log says so;
+- the model holds VRAM, so `sd-cli` runs, Toolkit tools and trellis 3D all
+  **stop the server first** and let it reload on the next image;
+- changing model, quantization or residency restarts it — serving a different
+  model than the one requested would be far worse than being slow.
+
+(The earlier ComfyUI backend stays removed: too fragile.)
 
 ### Engine binary: official or self-built (CI)
 By default `update-engine.bat` downloads the **official** prebuilt binary from

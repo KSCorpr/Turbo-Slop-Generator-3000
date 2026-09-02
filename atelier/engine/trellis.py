@@ -398,6 +398,11 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     # Un résident aux réglages différents doit céder la place.
     if resident_is_running():
         _log(resident_stop())
+    # Le moteur d'images résident aussi : deux serveurs qui gardent chacun
+    # leur modèle sur la même carte, c'est un OOM avec deux coupables.
+    from . import sdserver
+    if sdserver.is_running():
+        sdserver.stop("la 3D a besoin du GPU", _log)
 
     cmd = [str(server)] + launch_args
     # NB : on n'utilise PAS CUDA_VISIBLE_DEVICES ici — le flag « --gpu N » de

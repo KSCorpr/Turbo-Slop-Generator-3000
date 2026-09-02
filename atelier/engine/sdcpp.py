@@ -558,17 +558,35 @@ class DiskWatch:
                 f"À CHAQUE image. Déplacez le dossier models/.")
 
 
+def child_env_for(gpu_index: int | None,
+                  all_gpus: bool) -> "dict[str, str] | None":
+    """Environnement CUDA d'un sous-process moteur (None = celui du parent).
+
+    Deux régimes seulement, et ils ne se mélangent pas : soit une seule carte
+    est visible et elle devient cuda0, soit toutes le sont et gardent leurs
+    index nvidia-smi. Le second impose l'ordre par bus PCI, sinon « cuda1 »
+    dans un mapping de résidence ne désigne pas la carte attendue.
+    """
+    if all_gpus:
+        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+        return env
+    if gpu_index is not None:
+        return {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_index)}
+    return None
+
+
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
         gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED
-    env = None
-    if all_gpus:
-        # Split multi-GPU (encodeur sur un 2e GPU) : tous les GPU visibles, et
-        # ordre CUDA par bus PCI pour que cudaN corresponde à l'index nvidia-smi.
-        env = {**os.environ, "CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
-        env.pop("CUDA_VISIBLE_DEVICES", None)
-    elif gpu_index is not None:
-        env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_index)}
+    # Le moteur résident garde son modèle en VRAM. Une commande sd-cli lancée
+    # par-dessus (LoRA, passe HD, upscale ESRGAN — tout ce que le serveur ne
+    # sert pas) tomberait sur une carte déjà pleine. Il rend la place ici et se
+    # rechargera à la prochaine image qu'il sait servir.
+    from . import sdserver
+    if sdserver.is_running():
+        sdserver.stop("une commande a besoin de toute la carte", log)
+    env = child_env_for(gpu_index, all_gpus)
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))
     _CANCELLED = False

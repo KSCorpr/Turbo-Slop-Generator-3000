@@ -306,6 +306,12 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
               err_msg: str, gpu_index: int | None = None,
               cwd: Path | None = None, env: dict | None = None) -> None:
     global _CANCELLED
+    # Un outil PyTorch qui démarre pendant que le moteur résident garde 8 Go de
+    # modèle en VRAM, c'est un OOM. Le serveur rend la place ; il se rechargera
+    # tout seul à la prochaine image.
+    from . import sdserver
+    if sdserver.is_running():
+        sdserver.stop("un outil du Toolkit a besoin du GPU", log)
     run_env = env if env is not None else settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))

@@ -36,6 +36,7 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
+from ..engine import sdserver
 from ..i18n import t
 from . import widgets
 
@@ -357,6 +358,24 @@ def build_settings_tab():
                     info=t("Exige que le modèle soit rangé en RAM. Sans cela, "
                            "le moteur ignore l'option."))
 
+            gr.Markdown(t(
+                "---\n"
+                "**Moteur résident** — aujourd'hui le moteur démarre, lit le "
+                "modèle, fabrique l'image et s'arrête : le chargement est "
+                "repayé à **chaque** image. Coché, le modèle reste chargé "
+                "entre deux générations. C'est tout bénéfice quand on génère "
+                "une image à la fois pour affiner un prompt.\n\n"
+                "En échange : **pas d'aperçu pendant le calcul** (l'image "
+                "arrive d'un coup), et le modèle occupe la carte en "
+                "permanence — les outils du Toolkit le déchargent tout seuls "
+                "quand ils ont besoin du GPU. Les LoRA et la passe HD "
+                "repassent automatiquement par l'ancien mode."),
+                visible=sdserver.available())
+            resident = gr.Checkbox(
+                value=bool(prefs.get("resident_engine")),
+                label="Garder le modèle chargé entre deux images",
+                visible=sdserver.available())
+
             # Confirmation LOCALE : la ligne d'état du haut est hors de l'écran
             # quand on coche quelque chose ici. Un réglage qui s'applique sans
             # rien dire de visible, c'est un réglage dont on doute.
@@ -459,6 +478,21 @@ def build_settings_tab():
         for comp in _expert:
             comp.change(_apply_expert, inputs=_expert,
                         outputs=[headline, bias_note, expert_status])
+
+        # Le moteur résident n'est PAS un réglage de sd.cpp : il ne doit donc
+        # pas basculer l'application en mode manuel comme le fait `_apply_expert`.
+        def _apply_resident(on):
+            _save(resident_engine=bool(on))
+            if on:
+                return _said(_OK + t("Le modèle restera chargé entre deux "
+                                     "images. Le premier chargement sera "
+                                     "aussi long que d'habitude."))
+            sdserver.stop()
+            return _said(_OK + t("Moteur résident désactivé, la mémoire de la "
+                                 "carte est rendue."))
+
+        resident.change(_apply_resident, inputs=[resident],
+                        outputs=[expert_status])
 
         # ---- Langue, thème, comptes --------------------------------------- #
         def _apply_lang(lang):
