@@ -634,8 +634,10 @@ in `bin/` — which keeps the model loaded and answers local HTTP requests
 starts straight at sampling. On the profile that motivated it — one image at a
 time, tweaking a prompt — that removes the 118 s of fixed cost per image.
 
-`sd-server` ships in the same archive as `sd-cli` — but **only from the
-official upstream release**. The project's own CI build packaged a single
+`sd-server` ships in the same archive as `sd-cli` — verified by listing the
+contents of `sd-master-6b3edaa-bin-win-cuda12-x64.zip`, which contains
+`sd-cli.exe` **and** `sd-server.exe` — but **only from the official upstream
+release**, and only from a release recent enough to have the server example. The project's own CI build packaged a single
 executable (`sd.exe`) until this was fixed, so an engine installed with
 `update-engine-ci.bat` before that has no server. When the option cannot be
 offered, Settings says which of the two pieces is missing and what to do about

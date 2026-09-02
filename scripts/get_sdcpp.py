@@ -468,6 +468,35 @@ def _read_embedded_metadata(root: Path) -> dict:
         return {}
 
 
+def _keep_what_the_archive_does_not_bring(old: Path, stage: Path) -> None:
+    """Reporte dans le nouveau bin/ ce qui n'appartient pas au moteur.
+
+    L'installation remplace le dossier bin/ EN ENTIER (c'est ce qui rend la
+    mise à jour atomique et le rollback possible). Effet de bord : tout ce qui
+    vivait là sans venir de l'archive disparaissait — à commencer par
+    `bin/trellis/`, installé par un tout autre bouton et qui n'a rien à voir
+    avec stable-diffusion.cpp. Mettre à jour le moteur d'images désinstallait
+    silencieusement le moteur 3D.
+
+    On COPIE au lieu de déplacer : l'ancien dossier devient la sauvegarde de
+    rollback, et il doit rester complet lui aussi.
+    """
+    if not old.is_dir():
+        return
+    for item in old.iterdir():
+        target = stage / item.name
+        if target.exists():
+            continue
+        try:
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+            print(f"     - conservé : {item.name}")
+        except OSError as exc:
+            print(f"     [!] impossible de conserver {item.name} : {exc}")
+
+
 def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
                            needs_cuda_runtime: bool = False) -> None:
     """Installe après validation, garde l'ancien moteur pour rollback manuel."""
@@ -495,6 +524,8 @@ def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
         }
         (stage / ENGINE_MANIFEST).write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        _keep_what_the_archive_does_not_bring(BIN_DIR, stage)
 
         # Une seule sauvegarde, celle qui précède immédiatement la mise à jour.
         if PREVIOUS_DIR.exists():

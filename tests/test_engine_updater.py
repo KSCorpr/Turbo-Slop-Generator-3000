@@ -92,6 +92,36 @@ class TransactionalUpdateTests(unittest.TestCase):
             self.assertEqual((root / "bin" / "old.txt").read_text(), "working")
             self.assertFalse((root / ".engine-broken").exists())
 
+    def test_updating_the_engine_does_not_uninstall_trellis(self):
+        """bin/ est remplacé en entier — mais il n'est pas qu'au moteur d'images.
+
+        Le moteur 3D s'installe dans bin/trellis/ par un tout autre bouton :
+        sans report explicite, mettre à jour sd.cpp le supprimait en silence,
+        modèles compris.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = root / "bin"
+            (old / "trellis").mkdir(parents=True)
+            (old / "trellis" / "trellis-server.exe").write_text("3d")
+            (old / "sd-cli").write_text("ancien moteur")
+            blob = archive({"sd-cli": "nouveau moteur"})
+
+            with self._globals(root), \
+                 patch.object(U, "_validate_staged",
+                              lambda folder: (folder / "sd-cli", ["--mode"])):
+                U._transactional_install(blob, "engine.zip", {"tag": "x"})
+
+            # Le moteur 3D a suivi…
+            self.assertEqual(
+                (root / "bin" / "trellis" / "trellis-server.exe").read_text(), "3d")
+            # …le moteur d'images a bien été remplacé…
+            self.assertEqual((root / "bin" / "sd-cli").read_text(),
+                             "nouveau moteur")
+            # …et la sauvegarde de rollback est restée complète.
+            self.assertTrue(
+                (root / ".engine-previous" / "trellis" / "trellis-server.exe").is_file())
+
     def test_rollback_swaps_current_and_previous(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
