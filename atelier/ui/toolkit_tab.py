@@ -880,10 +880,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
             with gr.Tab("🌱 Restaurer", id="seedvr2"):
                 gr.Markdown(
-                    "Restauration diffusion **SeedVR2 3B** : récupère des détails "
+                    "Restauration diffusion **SeedVR2** : récupère des détails "
                     "plus naturels qu'ESRGAN tout en restant plus fidèle que "
                     "l'upscale créatif SDXL. Le calcul reste sur la RTX 3060 ; "
-                    "la GTX 1080 Ti peut servir de réserve pour les poids.")
+                    "la GTX 1080 Ti peut servir de réserve pour les poids. "
+                    "Le 3B suffit dans la plupart des cas ; le 7B garde mieux "
+                    "les textures fines (visages, tissus) mais prend le double "
+                    "de temps.")
                 _installer_block(
                     "SeedVR2",
                     "Installation isolée (Python 3.12 + PyTorch CUDA) : elle ne "
@@ -897,11 +900,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             label="Image à restaurer", type="pil",
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         seed_model = gr.Radio(
-                            [("Q8 — qualité recommandée (RTX 3060 12 Go)",
-                              "seedvr2_ema_3b-Q8_0.gguf"),
-                             ("Q4 — plus léger (repli mémoire)",
-                              "seedvr2_ema_3b-Q4_K_M.gguf")],
-                            value="seedvr2_ema_3b-Q8_0.gguf", label="Modèle")
+                            [(t(label), value)
+                             for label, value in tools.SEEDVR2_MODELS],
+                            value=tools.SEEDVR2_MODELS[0][1], label="Modèle",
+                            info="Les poids se téléchargent tout seuls au "
+                                 "premier usage (4,8 Go pour un 7B).")
                         seed_res = gr.Slider(
                             1024, 4096, value=2048, step=64,
                             label="Résolution cible (petit côté)",
@@ -913,8 +916,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             value=("secondary" if hardware.rtx3060_1080ti_combo()
                                    else "cpu"), label="Réserve des poids")
                         seed_blocks = gr.Slider(
-                            0, 32, value=16, step=1, label="Blocs à décharger",
-                            info="16 recommandé avec 12 Go ; 24 puis 32 si OOM.")
+                            0, 36, value=16, step=1, label="Blocs à décharger",
+                            info="16 recommandé avec 12 Go ; 24 puis 36 si OOM.")
                         with gr.Row():
                             seed_tile = gr.Slider(512, 1280, value=1024, step=64,
                                                   label="Tuile VAE")

@@ -111,6 +111,70 @@ def seedvr2_is_installed() -> bool:
             and (SEEDVR2_SOURCE_DIR / "inference_cli.py").is_file())
 
 
+# Poids SeedVR2 : (libellé, fichier). Le CLI amont les télécharge lui-même et
+# vérifie leur SHA-256 (dépôt AInVFX/SeedVR2_comfyUI) — cette liste est donc à
+# la fois le menu de l'interface et l'unique liste blanche du sous-process.
+SEEDVR2_MODELS: tuple[tuple[str, str], ...] = (
+    ("3B Q8 — valeur sûre, la plus rapide", "seedvr2_ema_3b-Q8_0.gguf"),
+    ("3B Q4 — repli si la mémoire manque", "seedvr2_ema_3b-Q4_K_M.gguf"),
+    ("7B Q4 — plus de détails, environ 2× plus lent",
+     "seedvr2_ema_7b-Q4_K_M.gguf"),
+    ("7B Q4 « sharp » — le plus net (peut durcir le grain)",
+     "seedvr2_ema_7b_sharp-Q4_K_M.gguf"),
+)
+SEEDVR2_MODEL_FILES = frozenset(f for _, f in SEEDVR2_MODELS)
+
+
+def _seedvr2_max_blocks(model: str) -> int:
+    """Le 7B a 36 blocs de transformeur, le 3B en a 32."""
+    return 36 if "_7b" in model else 32
+
+
+def _seedvr2_site_packages() -> Path | None:
+    lib = SEEDVR2_DIR / ("venv/Lib/site-packages" if sys.platform == "win32"
+                         else "venv/lib")
+    if sys.platform == "win32":
+        return lib if lib.is_dir() else None
+    if not lib.is_dir():
+        return None
+    for child in sorted(lib.glob("python3.*/site-packages")):
+        return child
+    return None
+
+
+def seedvr2_attention_mode() -> str:
+    """Meilleur noyau d'attention réellement installable ici.
+
+    ``sdpa`` (PyTorch) marche partout. ``flash_attn_2`` / ``sageattn_2``
+    exigent Ampère ou mieux (RTX 3060 oui, RTX 2080 Ti et GTX 1080 Ti non) ET
+    le paquet correspondant dans le venv isolé de SeedVR2. On ne demande le
+    noyau rapide que si les deux conditions sont vraies : le CLI amont saurait
+    retomber sur ``sdpa``, mais autant ne pas polluer le journal d'un
+    avertissement à chaque lancement.
+    """
+    site = _seedvr2_site_packages()
+    if site is None:
+        return "sdpa"
+    index = _gen_gpu_index()
+    gpus = {g.index: g for g in hardware.detect_gpus()}
+    gpu = gpus.get(index) if index is not None else None
+    cc = (gpu.compute_cap if gpu else "") or ""
+    try:
+        ampere_or_newer = float(cc) >= 8.0
+    except ValueError:
+        # Pilote trop ancien pour rapporter la capacité : l'architecture déduite
+        # du nom reste un indice suffisant pour ne PAS tenter le noyau rapide.
+        ampere_or_newer = bool(gpu) and gpu.arch in {
+            "ampere", "ada", "hopper", "blackwell"}
+    if not ampere_or_newer:
+        return "sdpa"
+    if (site / "flash_attn").is_dir():
+        return "flash_attn_2"
+    if (site / "sageattention").is_dir():
+        return "sageattn_2"
+    return "sdpa"
+
+
 def list_upscale_checkpoints() -> list[tuple[str, str]]:
     """Checkpoints SDXL disponibles pour l'upscale créatif : (libellé, chemin).
     Le modèle de base + tout .safetensors déposé dans tools_repo/upscale/checkpoints/."""
@@ -669,8 +733,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
     """
     if not seedvr2_is_installed():
         raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
-    allowed = {"seedvr2_ema_3b-Q8_0.gguf", "seedvr2_ema_3b-Q4_K_M.gguf"}
-    if model not in allowed:
+    if model not in SEEDVR2_MODEL_FILES:
         raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
         color_correction = "wavelet"
@@ -701,9 +764,12 @@ def seedvr2_upscale(image, resolution: int = 2048,
     elif main_gpu is not None:
         run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
         offload_device = "none" if offload == "none" else "cpu"
-    blocks = max(0, min(32, int(blocks_to_swap)))
+    blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
     if offload_device == "none":
         blocks = 0
+    attention = seedvr2_attention_mode()
+    if log and attention != "sdpa":
+        log(f"SeedVR2 : attention accélérée ({attention}).")
 
     cmd = [
         str(py), str(cli), str(src), "--output", str(output),
@@ -720,7 +786,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
         "--vae_decode_tile_size", str(max(512, int(tile))),
         "--vae_encode_tile_overlap", str(max(64, int(overlap))),
         "--vae_decode_tile_overlap", str(max(64, int(overlap))),
-        "--attention_mode", "sdpa", "--debug",
+        "--attention_mode", attention, "--debug",
     ]
     if blocks:
         cmd.append("--swap_io_components")
@@ -745,8 +811,7 @@ def seedvr2_batch(images, resolution: int = 2048,
     """
     if not seedvr2_is_installed():
         raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
-    allowed = {"seedvr2_ema_3b-Q8_0.gguf", "seedvr2_ema_3b-Q4_K_M.gguf"}
-    if model not in allowed:
+    if model not in SEEDVR2_MODEL_FILES:
         raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
         color_correction = "wavelet"
@@ -802,7 +867,10 @@ def seedvr2_batch(images, resolution: int = 2048,
         if log:
             log("SeedVR2 lot : offload RAM activé pour garder le modèle en cache.")
 
-    blocks = max(0, min(32, int(blocks_to_swap)))
+    blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
+    attention = seedvr2_attention_mode()
+    if log and attention != "sdpa":
+        log(f"SeedVR2 : attention accélérée ({attention}).")
     cmd = [
         str(py), str(cli), str(input_dir), "--output", str(output_dir),
         "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
@@ -818,7 +886,7 @@ def seedvr2_batch(images, resolution: int = 2048,
         "--vae_decode_tile_size", str(max(512, int(tile))),
         "--vae_encode_tile_overlap", str(max(64, int(overlap))),
         "--vae_decode_tile_overlap", str(max(64, int(overlap))),
-        "--attention_mode", "sdpa", "--debug",
+        "--attention_mode", attention, "--debug",
     ]
     if blocks:
         cmd.append("--swap_io_components")

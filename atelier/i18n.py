@@ -1251,6 +1251,24 @@ _EN: dict[str, str] = {
         "INT8 ConvRot — experimental, RTX 30xx",
     "Comparez les deux avec le test A/B des Réglages.":
         "Compare the two with the A/B test in Settings.",
+    "Restauration diffusion **SeedVR2** : récupère des détails plus naturels qu'ESRGAN tout en restant plus fidèle que l'upscale créatif SDXL. Le calcul reste sur la RTX 3060 ; la GTX 1080 Ti peut servir de réserve pour les poids. Le 3B suffit dans la plupart des cas ; le 7B garde mieux les textures fines (visages, tissus) mais prend le double de temps.":
+        "**SeedVR2** diffusion restoration: recovers more natural detail than "
+        "ESRGAN while staying more faithful than the creative SDXL upscale. "
+        "Compute stays on the RTX 3060; the GTX 1080 Ti can hold the weights. "
+        "The 3B is enough most of the time; the 7B keeps fine textures (faces, "
+        "fabric) better but takes twice as long.",
+    "3B Q8 — valeur sûre, la plus rapide":
+        "3B Q8 — safe default, fastest",
+    "3B Q4 — repli si la mémoire manque":
+        "3B Q4 — fallback when memory runs short",
+    "7B Q4 — plus de détails, environ 2× plus lent":
+        "7B Q4 — more detail, about 2× slower",
+    "7B Q4 « sharp » — le plus net (peut durcir le grain)":
+        "7B Q4 “sharp” — sharpest (can harden grain)",
+    "Les poids se téléchargent tout seuls au premier usage (4,8 Go pour un 7B).":
+        "Weights download themselves on first use (4.8 GB for a 7B).",
+    "16 recommandé avec 12 Go ; 24 puis 36 si OOM.":
+        "16 is right with 12 GB; try 24 then 36 if you hit OOM.",
     "📁 Restaurer un dossier en une fois":
         "📁 Restore a whole folder at once",
     "Sélectionnez un dossier d'images. SeedVR2 charge le modèle **une seule fois**, le garde en cache et traite tous les fichiers sans modifier les originaux. Les résultats vont dans un sous-dossier horodaté de `outputs/`.":

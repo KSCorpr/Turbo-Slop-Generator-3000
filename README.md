@@ -828,19 +828,36 @@ old bare "sd-cli exited with code 1".
 Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
 and points at `update-engine.bat` instead of silently producing a plain image.
 
-### 🌱 Restore (SeedVR2 3B)
+### 🌱 Restore (SeedVR2 3B / 7B)
 Diffusion restoration/upscale using the standalone
 [`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
 engine, pinned to a known commit and installed in an isolated Python 3.12
 environment. It restores natural detail more convincingly than ESRGAN while
-staying closer to the source than the creative SDXL mode. The Q8 and Q4 GGUF
-weights download automatically on first use.
+staying closer to the source than the creative SDXL mode. GGUF weights download
+automatically on first use and are SHA-256 verified by the upstream CLI.
+
+Four weights are offered: **3B Q8** (the default), **3B Q4** (memory fallback),
+**7B Q4** and **7B Q4 “sharp”**. A 7B is 4.76 GB of weights — it fits an 11–12
+GB card with block swapping — keeps fine textures better and takes roughly twice
+as long. The 3B has 32 transformer blocks, the 7B has 36; the swap slider is
+clamped to whichever model is selected.
 
 The dedicated **RTX 3060 12 GB + GTX 1080 Ti** preset keeps computation on the
 RTX 3060 and uses the GTX 1080 Ti as an offload device. This is deliberate on a
 PCIe x4 secondary slot: it avoids continuously splitting matrix operations
 between mismatched GPUs. Start with **Q8, 2048 px, 16 swapped blocks, 1024 px
-VAE tiles**. If memory runs out, try 24 then 32 blocks, or switch to Q4.
+VAE tiles**. If memory runs out, try 24 then 36 blocks, or switch to Q4.
+
+**Attention kernel.** The upstream CLI accepts `sdpa`, `flash_attn_2/3` and
+`sageattn_2/3`. The app probes SeedVR2's own venv and asks for the fast kernel
+only when the package is actually installed **and** the compute GPU is Ampere or
+newer — Turing (RTX 2080 Ti) and Pascal (GTX 1080 Ti) cannot run FlashAttention 2
+at all, so they stay on `sdpa`. Nothing to tick: `sdpa` is the default and works
+everywhere. Note that neither FlashAttention nor SageAttention currently ships a
+Windows wheel built against **torch 2.7.1 + cu126**, which is what this venv
+uses; the published Windows wheels are cu128, and PyTorch's cu128 builds dropped
+Pascal (`sm_61`), which would cost the GTX 1080 Ti as an offload device. That
+trade is not worth it here, so the venv stays on cu126.
 
 For a folder of images, use **Batch folder** in the same Restore tab. The app
 passes the directory to SeedVR2 once, keeps its DiT and VAE caches warm across
