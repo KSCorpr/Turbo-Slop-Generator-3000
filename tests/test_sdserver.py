@@ -329,24 +329,13 @@ class UnavailableReasonTests(unittest.TestCase):
         with patch.object(sdserver, "available", return_value=False):
             reason = self._reason(server=sdserver, source="custom-ci")
         self.assertIn("build maison", reason)
-        self.assertIn("update-engine-ci.bat", reason)
+        self.assertIn("update-engine.bat", reason)
 
     def test_a_missing_binary_otherwise_points_at_the_updater(self):
         with patch.object(sdserver, "available", return_value=False):
             reason = self._reason(server=sdserver, source="official")
         self.assertIn("update-engine.bat", reason)
         self.assertNotIn("build maison", reason)
-
-
-class CiPackagingTests(unittest.TestCase):
-    """Le build maison n'empaquetait qu'un binaire sur les deux."""
-
-    def test_the_workflow_packages_the_server_too(self):
-        workflow = (ROOT / ".github" / "workflows" / "build-sdcpp.yml").read_text(
-            encoding="utf-8")
-        self.assertIn("sd-server.exe", workflow)
-        # Facultatif : son absence ne doit pas faire échouer la compilation.
-        self.assertNotIn('throw "Aucun serveur', workflow)
 
 
 class VramHandoverTests(unittest.TestCase):

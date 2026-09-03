@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Maintenance après mise à jour par copier-coller.
+"""Maintenance : vérifie l'installation et nettoie ce qui traîne.
 
-Copier-coller le dépôt par-dessus l'ancien AJOUTE et REMPLACE les fichiers, mais
-n'efface JAMAIS ceux supprimés en amont. Ce script rattrape ça :
+`update.bat` fait désormais les mises à jour proprement (il sait supprimer ce
+qui a disparu du projet). Ce script reste utile pour deux choses : rattraper
+les copies mises à jour à la main — dézipper par-dessus AJOUTE et REMPLACE,
+mais n'efface JAMAIS ce qui a été retiré en amont — et vérifier que
+l'installation est saine.
 
   • supprime le CODE des fonctions retirées (table REMOVED_FEATURES) ;
   • CHIFFRE les DONNÉES qu'elles ont laissées (poids, dépôts clonés) sans les
@@ -12,7 +15,8 @@ n'efface JAMAIS ceux supprimés en amont. Ce script rattrape ça :
     référencés par le catalogue) ;
   • purge les __pycache__ (.pyc d'anciens modules) et le dossier tmp/ ;
   • vérifie que tout compile, que le catalogue YAML est valide, que les
-    dépendances et le binaire sd-cli sont présents.
+    dépendances et le binaire sd-cli sont présents, et qu'aucun fichier de
+    l'application n'a disparu depuis la dernière mise à jour.
 
 Par défaut il ne supprime AUCUNE donnée : il affiche l'espace récupérable et la
 commande pour le libérer.
@@ -51,6 +55,13 @@ sys.path.insert(0, str(ROOT))
 #
 #  Ajouter une entrée ici est la SEULE chose à faire quand on retire une
 #  fonction : le nettoyage, le calcul de taille et le message suivent.
+#
+#  ⚠️ UN NOM DE FICHIER PEUT ÊTRE REPRIS. C'est arrivé : `atelier/engine/
+#  sdserver.py` était listé ici (ancien backend serveur, retiré) et un nouveau
+#  module du même nom est arrivé des mois plus tard. La maintenance l'effaçait
+#  à chaque passage, et l'application ne démarrait plus. Une table de noms ne
+#  peut pas savoir ça — c'est pourquoi `clean_removed_features` demande
+#  maintenant au CODE ACTUEL s'il utilise le fichier avant de le supprimer.
 # --------------------------------------------------------------------------- #
 REMOVED_FEATURES = [
     {"name": "Onglet Upscale (ancienne version)",
@@ -59,14 +70,18 @@ REMOVED_FEATURES = [
      "dirs": []},
     {"name": "Module Midjourney",
      "files": ["atelier/mjparams.py"], "dirs": []},
-    {"name": "Backend ComfyUI et mode serveur",
-     "files": ["atelier/engine/comfyui.py", "atelier/engine/sdserver.py",
+    {"name": "Backend ComfyUI",
+     "files": ["atelier/engine/comfyui.py",
                "scripts/get_comfyui.py",
                "config/comfyui_workflows/flux2.json",
                "config/comfyui_workflows/krea2.json",
                "config/comfyui_workflows/krea2int8.json",
                "config/comfyui_workflows/krea2convrot.json"],
      "dirs": ["config/comfyui_workflows", "comfyui"]},
+    {"name": "Build maison du moteur (CI du projet)",
+     "files": ["update-engine-ci.bat",
+               ".github/workflows/build-sdcpp.yml"],
+     "dirs": []},
     {"name": "Génération vidéo (LTX-2.3, MiniMax-H3)",
      "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
      "dirs": []},
@@ -111,13 +126,46 @@ def _human(n: float) -> str:
     return f"{n:.1f} To"
 
 
+def _still_in_service(rel: str) -> bool:
+    """Ce fichier est-il utilisé par le code ACTUEL ?
+
+    Un nom de fichier peut être repris des mois après le retrait de ce qu'il
+    désignait. La table REMOVED_FEATURES ne peut pas le deviner : elle ne
+    connaît que des chaînes de caractères. On demande donc au code actuel —
+    et un module que quelqu'un importe est vivant, quoi qu'en dise la table.
+
+    C'est un garde-fou, pas une devinette : en cas de doute (fichier hors
+    atelier/, analyse impossible), on répond « oui, en service ». Refuser une
+    suppression coûte un fichier mort de plus ; l'accepter à tort a coûté une
+    application qui ne démarrait plus.
+    """
+    if not rel.endswith(".py"):
+        return False
+    path = ROOT / rel
+    if not path.is_file():
+        return False
+    try:
+        module = ".".join(path.relative_to(ROOT).with_suffix("").parts)
+    except ValueError:
+        return True
+    if not module.startswith("atelier."):
+        # Un script ou un runner : il n'est importé par personne par
+        # construction, la table reste seule juge.
+        return False
+    try:
+        return module in _reachable_modules()
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def clean_removed_features(purge: bool) -> int:
     """Nettoie ce que les fonctions retirées ont laissé derrière elles.
 
     Le CODE part sans discussion (c'est le nôtre, et le garder fait tourner de
-    l'ancien code par accident). Les DONNÉES sont d'abord CHIFFRÉES et
-    signalées : supprimer plusieurs gigaoctets de poids sans prévenir n'est pas
-    à nous de le décider. Renvoie l'espace récupérable restant, en octets.
+    l'ancien code par accident) — SAUF s'il est encore utilisé, cf.
+    `_still_in_service`. Les DONNÉES sont d'abord CHIFFRÉES et signalées :
+    supprimer plusieurs gigaoctets de poids sans prévenir n'est pas à nous de
+    le décider. Renvoie l'espace récupérable restant, en octets.
     """
     print("• Fonctions retirées (code + données laissées derrière)…")
     touched = False
@@ -127,6 +175,11 @@ def clean_removed_features(purge: bool) -> int:
         for rel in feat["files"]:
             f = ROOT / rel
             if f.exists():
+                if _still_in_service(rel):
+                    _warn(f"{rel} est listé comme retiré mais le code actuel "
+                          "l'utilise : NON supprimé. Le nom a été repris — "
+                          "retirez-le de REMOVED_FEATURES.")
+                    continue
                 try:
                     f.unlink()
                     gone.append(rel)
@@ -561,54 +614,77 @@ def _run_get_sdcpp(force: bool = False) -> bool:
     return False
 
 
-def check_orphan_modules() -> None:
-    """Modules Python de atelier/ que plus RIEN n'importe.
-
-    Complément générique à REMOVED_FEATURES : celle-ci ne connaît que les
-    fonctions qu'on a pensé à y déclarer. Ici on part de app.py et des scripts,
-    on suit les imports, et tout module de atelier/ jamais atteint est un reste
-    d'une version précédente — quelle qu'elle soit, déclarée ou non.
-    """
-    print("• Modules Python orphelins (plus importés par personne)…")
-    import ast
-
+def _module_map() -> dict[str, "Path"]:
+    """Nom de module -> fichier, pour tout atelier/."""
     def module_of(path: Path) -> str:
         rel = path.relative_to(ROOT).with_suffix("")
-        parts = [p for p in rel.parts if p != "__init__"]
+        parts = [x for x in rel.parts if x != "__init__"]
         return ".".join(parts)
 
-    files = {module_of(p): p for p in (ROOT / "atelier").rglob("*.py")}
-    # RGLOB, pas glob : les runners d'outils vivent dans scripts/tools/ et sont
-    # eux aussi des points d'entrée. Les oublier faisait passer pour orphelin
-    # tout module importé uniquement par eux — un faux positif qui pousse à
-    # supprimer du code vivant, soit exactement l'inverse du but.
-    roots = [ROOT / "app.py"] + sorted((ROOT / "scripts").rglob("*.py"))
+    return {module_of(x): x for x in (ROOT / "atelier").rglob("*.py")}
 
-    def imports_of(path: Path) -> set[str]:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            return set()
-        found: set[str] = set()
-        pkg = module_of(path).rsplit(".", 1)[0] if path != ROOT / "app.py" else ""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                found.update(a.name for a in node.names)
-            elif isinstance(node, ast.ImportFrom):
-                base = node.module or ""
-                if node.level:                       # import relatif
-                    up = pkg.split(".")
-                    base = ".".join(up[:len(up) - node.level + 1]
-                                    + ([base] if base else []))
-                found.add(base)
-                found.update(f"{base}.{a.name}" for a in node.names)
-        return found
 
+def _imports_of(path: "Path") -> set[str]:
+    """Modules cités par les imports de ce fichier (relatifs résolus)."""
+    import ast
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return set()
+    rel = path.relative_to(ROOT).with_suffix("")
+    parts = [x for x in rel.parts if x != "__init__"]
+    module = ".".join(parts)
+    # Le paquet CONTENANT le fichier — et un __init__.py est contenu par son
+    # propre paquet, pas par celui du dessus. Sans cette distinction,
+    # « from . import sdserver » écrit dans atelier/engine/__init__.py
+    # résolvait vers « atelier.sdserver », qui n'existe pas : le module
+    # importé passait pour orphelin, et le garde-fou de suppression pour
+    # inutile. Exactement le module qu'on venait d'effacer par erreur.
+    if path == ROOT / "app.py":
+        pkg = ""
+    elif path.name == "__init__.py":
+        pkg = module
+    else:
+        pkg = module.rsplit(".", 1)[0]
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:                       # import relatif
+                up = pkg.split(".")
+                base = ".".join(up[:len(up) - node.level + 1]
+                                + ([base] if base else []))
+            found.add(base)
+            found.update(f"{base}.{a.name}" for a in node.names)
+    return found
+
+
+_REACHABLE: "set[str] | None" = None
+
+
+def _reachable_modules() -> set[str]:
+    """Modules de atelier/ réellement atteints depuis les points d'entrée.
+
+    Le calcul sert deux fois — signaler les orphelins, et protéger un fichier
+    dont le nom a été repris — donc il est fait une seule fois.
+
+    RGLOB sur scripts/, pas glob : les runners d'outils vivent dans
+    scripts/tools/ et sont eux aussi des points d'entrée. Les oublier faisait
+    passer pour orphelin tout module importé uniquement par eux — un faux
+    positif qui pousse à supprimer du code vivant, soit exactement l'inverse
+    du but.
+    """
+    global _REACHABLE
+    if _REACHABLE is not None:
+        return _REACHABLE
+    files = _module_map()
     seen: set[str] = set()
-    queue = list(roots)
+    queue = [ROOT / "app.py"] + sorted((ROOT / "scripts").rglob("*.py"))
     while queue:
         path = queue.pop()
-        for name in imports_of(path):
+        for name in _imports_of(path):
             if name in seen or name not in files:
                 continue
             seen.add(name)
@@ -619,7 +695,21 @@ def check_orphan_modules() -> None:
             for i in range(1, len(parts)):
                 seen.add(".".join(parts[:i]))
             queue.append(files[name])
+    _REACHABLE = seen
+    return seen
 
+
+def check_orphan_modules() -> None:
+    """Modules Python de atelier/ que plus RIEN n'importe.
+
+    Complément générique à REMOVED_FEATURES : celle-ci ne connaît que les
+    fonctions qu'on a pensé à y déclarer. Ici on part de app.py et des scripts,
+    on suit les imports, et tout module de atelier/ jamais atteint est un reste
+    d'une version précédente — quelle qu'elle soit, déclarée ou non.
+    """
+    print("• Modules Python orphelins (plus importés par personne)…")
+    files = _module_map()
+    seen = _reachable_modules()
     orphans = sorted(m for m in files if m not in seen and m != "atelier")
     if not orphans:
         print(OK + "aucun module orphelin (propre).")
@@ -642,9 +732,42 @@ Maintenance — Turbo Slop Generator 3000
   maintenance.bat --all             tout : purge + mise à jour du moteur
                                     (« après une MAJ, tout est nickel »)
 
+Pour mettre à jour l'APPLICATION elle-même : update.bat (ce script ne
+télécharge rien).
+
 (./maintenance.sh … sur Linux/Mac)
 Ne touche jamais à models/custom/, loras/, outputs/, userdata/, python/.
 """
+
+
+def check_install_complete() -> None:
+    """Des fichiers de l'application ont-ils disparu depuis la mise à jour ?
+
+    C'est le diagnostic qui manquait le jour où un module s'est volatilisé :
+    l'application ne démarrait plus, avec un ImportError qui nommait le module
+    mais pas la cause. Le manifeste de `update.bat` sait exactement ce qui
+    devrait être là.
+    """
+    print("• Intégrité de l'installation…")
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from update_app import MANIFEST, missing_files
+    except Exception as exc:  # noqa: BLE001
+        print(INFO + f"non vérifiable ({exc}).")
+        return
+    if not MANIFEST.is_file():
+        print(INFO + "jamais mise à jour par update.bat — rien à comparer.")
+        return
+    missing = missing_files()
+    if not missing:
+        print(OK + "tous les fichiers de la dernière mise à jour sont là.")
+        return
+    for rel in missing[:10]:
+        print(f"    - {rel}")
+    if len(missing) > 10:
+        print(f"    … et {len(missing) - 10} autre(s)")
+    _warn(f"{len(missing)} fichier(s) de l'application ont disparu. "
+          "Relancez update.bat : il les remettra.")
 
 
 def main() -> int:
@@ -675,6 +798,7 @@ def main() -> int:
     recoverable += report_orphan_addons(purge)
     recoverable += report_orphan_models(prune_models)
     check_orphan_modules()
+    check_install_complete()
     compile_check()
     check_deps()
     engine_stale = check_engine(update_engine)

@@ -73,6 +73,7 @@ so the grouping is not decoration.)
 ```bat
 install.bat      ::  portable Python + dependencies + GGUF engine (CUDA)
 run.bat          ::  launch the UI at http://127.0.0.1:7860
+update.bat       ::  update the app itself (code only, never your data)
 ```
 Windows and Linux use the **CUDA** build; macOS uses the **Metal** one. The
 engine variant is derived from the platform, so no flag to remember.
@@ -637,11 +638,9 @@ time, tweaking a prompt — that removes the 118 s of fixed cost per image.
 `sd-server` ships in the same archive as `sd-cli` — verified by listing the
 contents of `sd-master-6b3edaa-bin-win-cuda12-x64.zip`, which contains
 `sd-cli.exe` **and** `sd-server.exe` — but **only from the official upstream
-release**, and only from a release recent enough to have the server example. The project's own CI build packaged a single
-executable (`sd.exe`) until this was fixed, so an engine installed with
-`update-engine-ci.bat` before that has no server. When the option cannot be
-offered, Settings says which of the two pieces is missing and what to do about
-it, instead of hiding the checkbox.
+release**, and only from a release recent enough to have the server example.
+When the option cannot be offered, Settings says which of the two pieces is
+missing and what to do about it, instead of hiding the checkbox.
 
 It is deliberately **never mandatory**:
 - LoRAs, the HD pass, multi-reference editing, step caches and auto-fit are
@@ -663,36 +662,47 @@ By default `update-engine.bat` downloads the **official** prebuilt binary from
 [`leejet/stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp)
 releases — the simplest, always-works path.
 
-Optionally, the project can build **its own** engine binary via **GitHub
-Actions**, with no dev tools on your machine:
-- The workflow **`.github/workflows/build-sdcpp.yml`** (Actions tab → *Build
-  sd.cpp (Windows CUDA)* → *Run workflow*) clones sd.cpp, builds a Windows CUDA
-  binary compiled **only for this project's cards** (arch `61;75;86` =
-  GTX 1080 Ti + RTX 2080 Ti + RTX 3060 — leaner, sometimes faster than the
-  generic release), bundles the CUDA runtime DLLs, and publishes it to a moving
-  `engine-latest` release.
-- **`update-engine-ci.bat`** then installs *that* binary
-  (`scripts/get_sdcpp.py --source ours`) instead of the official one.
-
-Why self-build: **day-0** access to new sd.cpp features, arch-tuned binaries,
-the ability to **pin a known-good commit** (workflow input `sd_ref`), or to
-apply engine **patches** when needed. Everything heavy happens in CI — your
-machine only ever downloads a ready binary.
-
-The workflow also exposes **`GGML_CUDA_FORCE_MMQ`** as an opt-in input (off by
-default): it replaces cuBLAS with ggml's mmq kernels for quantized matmuls. The
-effect depends on architecture and quantization — it can help or hurt. It is
-there **to be measured on your own cards**, not enabled on principle. Everything
-else worth setting at build time is already set: CUDA architectures targeted at
-your GPUs, and flash-attention kernels (`GGML_CUDA_FA`) which ggml compiles by
-default.
+The engine binary comes from the **official upstream release**, and only from
+there. The project used to publish its own CI build (arch-tuned for this
+project's cards, `update-engine-ci.bat`); it was removed. It packaged a single
+executable and therefore silently lacked `sd-server`, and maintaining a second
+build chain to save a few percent was not worth its cost — nor the class of bug
+where the two engines differ.
 
 ### Updating the engines
 
+### Updating the app itself
+
+`update.bat` (`./update.sh`) downloads the current code from GitHub and applies
+it in place. No manual re-download, and nothing of yours is touched: `models/`,
+`loras/`, `outputs/`, `userdata/`, `tools_repo/`, `bin/`, `python/` are off
+limits by construction.
+
+What it does that dropping a ZIP over the folder cannot:
+- it writes **only files that actually differ**, and lists them;
+- it **deletes what disappeared** from the project — but only files it
+  installed itself, tracked in `userdata/app-update.json`. A file it never
+  wrote is not its business;
+- it **backs up everything it replaces**, so `update.bat --rollback` undoes the
+  update;
+- it **refuses a suspicious download** (a proxy's HTML error page is a
+  perfectly readable "zip") and any archive that does not contain the app;
+- if the updated code **does not compile**, it restores the previous version by
+  itself;
+- it purges `__pycache__`, because a `.pyc` of a deleted module stays
+  importable.
+
+`update.bat --check` shows what would change without writing anything. Close
+the app first: Windows cannot replace a file that is open.
+
+`maintenance.bat` then reports any file from the manifest that has gone
+missing — the diagnostic that was absent the day a module vanished and the app
+stopped starting with an `ImportError` that named the module but not the cause.
+
 | Script | Updates |
 |---|---|
+| `update.bat` | **the application** — code, from GitHub |
 | `update-engine.bat` | **sd.cpp** — latest official prebuilt binary (image generation) |
-| `update-engine-ci.bat` | **sd.cpp** — our own CI build (arch-tuned, can carry PRs) |
 | `update-trellis.bat` | **trellis.cpp** — latest official Windows CUDA build (Image → 3D) |
 
 Each one replaces only the **engine binary**. sd.cpp updates are first validated

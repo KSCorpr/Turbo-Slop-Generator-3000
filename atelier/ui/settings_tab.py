@@ -66,12 +66,14 @@ def _resident_reason() -> str:
     if server.available():
         return ""
     if engine_build_source() == "custom-ci":
+        # Le build maison a été retiré du projet : il n'empaquetait qu'un
+        # binaire sur les deux, et entretenir une deuxième chaîne de
+        # compilation pour ça ne valait pas son prix.
         return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas "
-                 "dans `bin/`. Votre moteur vient du build maison du projet, "
-                 "qui n'empaquetait que `sd.exe`. Relancez le workflow "
-                 "« Build sd.cpp (Windows CUDA) » (il empaquette désormais les "
-                 "deux) puis `update-engine-ci.bat` — ou passez au binaire "
-                 "officiel avec `update-engine.bat`.")
+                 "dans `bin/`. Votre moteur vient de l'ancien build maison du "
+                 "projet, qui n'empaquetait que `sd.exe` et n'existe plus. "
+                 "Lancez `update-engine.bat` pour passer au binaire officiel, "
+                 "qui contient les deux.")
     return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans "
              "`bin/`. Lancez `update-engine.bat` pour réinstaller le moteur "
              "complet.")

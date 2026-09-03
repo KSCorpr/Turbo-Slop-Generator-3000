@@ -1330,12 +1330,11 @@ _EN: dict[str, str] = {
         "`atelier/engine/sdserver.py` is missing. Your copy of the application "
         "is incomplete — download the archive again, **close the "
         "application**, then re-extract it.",
-    "⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans `bin/`. Votre moteur vient du build maison du projet, qui n'empaquetait que `sd.exe`. Relancez le workflow « Build sd.cpp (Windows CUDA) » (il empaquette désormais les deux) puis `update-engine-ci.bat` — ou passez au binaire officiel avec `update-engine.bat`.":
+    "⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans `bin/`. Votre moteur vient de l'ancien build maison du projet, qui n'empaquetait que `sd.exe` et n'existe plus. Lancez `update-engine.bat` pour passer au binaire officiel, qui contient les deux.":
         "⚠️ **Resident engine unavailable**: `sd-server` is not in `bin/`. Your "
-        "engine comes from the project's own build, which only packaged "
-        "`sd.exe`. Re-run the “Build sd.cpp (Windows CUDA)” workflow (it now "
-        "packages both) then `update-engine-ci.bat` — or switch to the "
-        "official binary with `update-engine.bat`.",
+        "engine comes from the project's former in-house build, which only "
+        "packaged `sd.exe` and no longer exists. Run `update-engine.bat` to "
+        "switch to the official binary, which contains both.",
     "⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans `bin/`. Lancez `update-engine.bat` pour réinstaller le moteur complet.":
         "⚠️ **Resident engine unavailable**: `sd-server` is not in `bin/`. Run "
         "`update-engine.bat` to reinstall the complete engine.",
