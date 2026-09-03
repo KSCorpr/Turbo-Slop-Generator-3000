@@ -1686,25 +1686,27 @@ required.
   `unclosed transport`. Only connection errors are caught; anything else still
   propagates.
 - **Image → 3D: `CUDA error: no kernel image is available for execution on the
-  device`** → the **upstream CUDA build only covers RTX 30xx and RTX 50xx**, and
-  updating will not change that. Its `CMakeLists.txt` pins trellis's own CUDA
-  kernels (`deform_conv.cu`, `decimate_qem.cu`) with
-  `set_target_properties(trellis_core PROPERTIES CUDA_ARCHITECTURES "86;120")`,
-  which **overrides** the complete list its own CI passes
-  (`75;80;86;89;90;120`). So sm_75 (RTX 20xx), sm_89 (RTX 40xx), sm_80 (A100)
-  and sm_90 (H100) get no machine code. Because CUDA errors are *sticky*, the
-  failure surfaces on the next ggml op — usually `IM2COL` — which sends the
-  diagnosis off in the wrong direction. Checked across every published tag:
-  `75` has been in the CI list since the very first release, so "your binary is
-  old" was never the explanation.
-  **The fix is the Vulkan build**, which compiles nothing per-architecture and
-  is, tellingly, the only one of the two the upstream CI does *not* mark
-  `experimental` on Windows. The installer now picks the backend **from your
-  card** — CUDA only for sm_86/sm_120, Vulkan otherwise, and Vulkan too when the
-  card cannot be identified, because a backend that works everywhere beats a
-  faster one that works on two models. Press **⬆️ Update the binary** in the 3D
-  tab; the ~10 GB of models are not re-downloaded. Force it either way with
-  `python scripts/get_trellis.py --binary --force --backend vulkan`.
+  device`** → the installed binary has no machine code for your card. Because
+  CUDA errors are *sticky*, the failure surfaces on the next ggml op — usually
+  `IM2COL` — which sends the diagnosis off in the wrong direction.
+  For a long time this was a dead end: upstream's `CMakeLists.txt` **overrode**
+  the complete architecture list its own CI passed, pinning trellis's kernels
+  (`deform_conv.cu`, `decimate_qem.cu`) to `86;120` — so only RTX 30xx and 50xx
+  got machine code, and updating changed nothing. The fix was to install the
+  Vulkan build.
+  **v0.6.0 (19 Aug 2026) fixed it upstream**: the pin became a mere default
+  (`if(NOT CMAKE_CUDA_ARCHITECTURES)`), and the release now ships **two** CUDA
+  packages — verified in `.github/workflows/release.yml` at that tag:
+  `cuda` (CUDA 13.1) builds `75;80;86;89;90;120` — **Turing and newer** — and
+  `cuda12` (CUDA 12.9) builds `60;61;70` — **Pascal and Volta**. So an RTX
+  2080 Ti and a GTX 1080 Ti each have their package now.
+  The installer picks the archive **from your card**, and **Vulkan stays the
+  fallback** for anything neither list covers (and when the card cannot be
+  identified). The only substitution allowed is *toward* Vulkan: swapping
+  `cuda` for `cuda12` would install a binary built for architectures the card
+  does not have. Press **⬆️ Update the binary** in the 3D tab; the ~10 GB of
+  models are not re-downloaded. Force a choice with
+  `python scripts/get_trellis.py --binary --force --backend cuda12`.
   The app surfaces the diagnosis itself: when the trellis server dies
   mid-generation the HTTP connection is cut and `requests` raises a bare
   `ConnectionResetError`, which says nothing — the real cause is captured from

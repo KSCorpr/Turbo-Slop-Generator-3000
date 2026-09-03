@@ -46,42 +46,54 @@ GH_RELEASE = "https://api.github.com/repos/pwilkin/trellis.cpp/releases/latest"
 HF_MODEL_REPO = "ilintar/trellis2-gguf"
 
 # --------------------------------------------------------------------------- #
-#  CHOIX DU BACKEND — et pourquoi ce n'est pas « CUDA, évidemment ».
+#  CHOIX DU PAQUET — et pourquoi ce n'est plus « Vulkan par défaut ».
 #
-#  La build CUDA de trellis.cpp ne tourne PAS sur toutes les cartes NVIDIA. Son
-#  CMakeLists épingle ses propres noyaux CUDA à deux architectures :
+#  Longtemps, la build CUDA de trellis.cpp ne tournait PAS sur toutes les cartes
+#  NVIDIA : son CMakeLists ÉCRASAIT la liste d'architectures passée par la CI
+#  (« set_target_properties(... CUDA_ARCHITECTURES "86;120") »), donc seules les
+#  RTX 30xx et 50xx recevaient du code machine pour `deform_conv.cu` et
+#  `decimate_qem.cu`. Ailleurs, « no kernel image is available » — et comme les
+#  erreurs CUDA sont rémanentes, c'est l'opération ggml SUIVANTE qui la
+#  rapportait, ce qui égarait le diagnostic. D'où Vulkan par défaut.
 #
-#      set_target_properties(trellis_core PROPERTIES CUDA_ARCHITECTURES "86;120")
+#  v0.6.0 (19 août 2026) corrige ça à la racine : l'écrasement est devenu un
+#  simple défaut (« if(NOT CMAKE_CUDA_ARCHITECTURES) »), donc la liste de la CI
+#  est enfin respectée, et une seconde archive vise les cartes anciennes.
+#  Vérifié dans .github/workflows/release.yml au tag v0.6.0 :
 #
-#  ce qui écrase la liste pourtant complète passée par la CI
-#  (75;80;86;89;90;120). Seuls sm_86 (RTX 30xx) et sm_120 (RTX 50xx) reçoivent
-#  donc du code machine pour `deform_conv.cu` et `decimate_qem.cu`. Sur une
-#  RTX 20xx (75), une RTX 40xx (89), une A100 (80) ou une H100 (90), le premier
-#  lancement de ces noyaux échoue par « no kernel image is available » — et
-#  comme les erreurs CUDA sont RÉMANENTES, c'est l'opération ggml suivante
-#  (souvent IM2COL) qui la rapporte, ce qui égare le diagnostic.
+#      cuda    (CUDA 13.1) -> archs 75;80;86;89;90;120   Turing et plus récent
+#      cuda12  (CUDA 12.9) -> archs 60;61;70             Pascal et Volta
 #
-#  La build Vulkan n'a pas ce problème : rien n'y est compilé par architecture,
-#  la convolution déformable passe par un shader de calcul. Elle est d'ailleurs
-#  la seule des deux que la CI amont ne marque PAS « experimental » sur Windows.
-#  D'où : Vulkan par défaut sauf carte explicitement couverte par CUDA.
+#  Concrètement : RTX 2080 Ti (7.5) et GTX 1080 Ti (6.1), jusqu'ici renvoyées
+#  sur Vulkan, ont maintenant chacune leur paquet CUDA.
+#
+#  Vulkan reste le repli — rien n'y est compilé par architecture, la
+#  convolution déformable passe par un shader de calcul — pour toute carte
+#  qu'aucune des deux listes ne couvre (AMD, Intel, NVIDIA plus récente que la
+#  CI amont).
 # --------------------------------------------------------------------------- #
-TRELLIS_CUDA_SM = frozenset({"8.6", "12.0"})
+CUDA_ARCHS = frozenset({"7.5", "8.0", "8.6", "8.9", "9.0", "12.0"})
+CUDA12_ARCHS = frozenset({"6.0", "6.1", "7.0"})
 
 
 def cuda_build_supports(compute_cap: str) -> bool:
-    """La build CUDA amont a-t-elle du code machine pour cette carte ?"""
-    return (compute_cap or "").strip() in TRELLIS_CUDA_SM
+    """Une build CUDA amont couvre-t-elle cette carte ?"""
+    cap = (compute_cap or "").strip()
+    return cap in CUDA_ARCHS or cap in CUDA12_ARCHS
 
 
 def preferred_backend(compute_cap: str | None = None) -> str:
-    """« cuda » ou « vulkan », selon la carte détectée.
+    """« cuda », « cuda12 » ou « vulkan », selon la carte détectée.
 
-    Sans capacité de calcul connue on choisit Vulkan : mieux vaut un backend
-    qui marche partout qu'un backend plus rapide sur deux modèles de cartes et
-    inutilisable sur les autres.
+    Sans capacité de calcul connue on choisit Vulkan : mieux vaut un paquet qui
+    marche partout qu'un paquet plus rapide qui refuse de démarrer.
     """
-    return "cuda" if cuda_build_supports(compute_cap or "") else "vulkan"
+    cap = (compute_cap or "").strip()
+    if cap in CUDA_ARCHS:
+        return "cuda"
+    if cap in CUDA12_ARCHS:
+        return "cuda12"
+    return "vulkan"
 
 
 def _is_binary(p: Path) -> bool:
@@ -123,23 +135,42 @@ def has_models() -> bool:
     return MODELS_DIR.is_dir() and any(MODELS_DIR.rglob("*.gguf"))
 
 
-def _pick_asset(assets: list[dict], backend: str = "cuda") -> dict | None:
-    """Archive Windows du backend demandé, avec repli sur l'autre.
+def _backend_of(name: str) -> str:
+    """Backend d'une archive, d'après son nom — sans confondre cuda et cuda12.
 
-    Le repli compte : une release où le job CUDA a échoué (il est marqué
-    « experimental » côté CI) ne doit pas bloquer l'installation.
+    « cuda » est un préfixe de « cuda12 » : un simple `in` ferait passer
+    l'archive Pascal pour l'archive Turing+, et la carte récente hériterait
+    d'un binaire compilé pour des architectures qu'elle n'a pas. On lit donc le
+    segment ENTIER entre deux tirets (« trellis-<backend>-windows-x64.zip »).
     """
-    other = "vulkan" if backend == "cuda" else "cuda"
-    wanted = fallback = None
+    parts = name.lower().replace(".zip", "").replace(".tar.gz", "").split("-")
+    for token in parts:
+        if token in ("cuda", "cuda12", "vulkan", "rocm"):
+            return token
+    return ""
+
+
+def _pick_asset(assets: list[dict], backend: str = "cuda") -> dict | None:
+    """Archive Windows du paquet demandé, avec repli sur Vulkan.
+
+    Le repli compte : une release où un job de CI a échoué ne doit pas bloquer
+    l'installation.
+    """
+    windows = {}
     for a in assets:
         n = a.get("name", "").lower()
-        if not n.endswith(".zip") or "win" not in n or "rocm" in n:
+        if not n.endswith(".zip") or "win" not in n or "studio" in n:
             continue
-        if backend in n and wanted is None:
-            wanted = a
-        elif other in n and fallback is None:
-            fallback = a
-    return wanted or fallback
+        kind = _backend_of(n)
+        if kind and kind != "rocm" and kind not in windows:
+            windows[kind] = a
+    if backend in windows:
+        return windows[backend]
+    # Le SEUL repli valable est Vulkan. Passer de « cuda » à « cuda12 » (ou
+    # l'inverse) donnerait un binaire compilé pour d'autres architectures que
+    # celles de la carte : il se téléchargerait, s'installerait, et échouerait
+    # au premier noyau par « no kernel image is available ».
+    return windows.get("vulkan")
 
 
 def install_binary(force: bool = False, log=print,
@@ -148,7 +179,7 @@ def install_binary(force: bool = False, log=print,
         log("Binaire trellis-cli déjà présent, on saute (--force pour MAJ).")
         return True
     if backend is None:
-        # Choix guidé par la carte : voir TRELLIS_CUDA_SM plus haut.
+        # Choix guidé par la carte : voir CUDA_ARCHS plus haut.
         cap = ""
         try:
             from atelier import hardware
@@ -158,15 +189,17 @@ def install_binary(force: bool = False, log=print,
         except Exception:  # noqa: BLE001
             pass
         backend = preferred_backend(cap)
+        sm = f"sm_{cap.replace('.', '')}" if cap else ""
         if backend == "vulkan":
-            log("Backend VULKAN retenu : la build CUDA de trellis.cpp n'embarque "
-                "de code machine que pour sm_86 (RTX 30xx) et sm_120 (RTX 50xx)"
-                + (f" — votre carte est en sm_{cap.replace('.', '')}." if cap
-                   else " et votre carte n'a pas pu être identifiée.")
+            log("Paquet VULKAN retenu : "
+                + (f"aucune des deux archives CUDA amont ne compile pour {sm}."
+                   if cap else "votre carte n'a pas pu être identifiée.")
                 + " Vulkan marche sur toutes les cartes.")
+        elif backend == "cuda12":
+            log(f"Paquet CUDA12 retenu ({sm} — Pascal/Volta, archive CUDA 12.9 "
+                "prévue pour les cartes anciennes).")
         else:
-            log(f"Backend CUDA retenu (carte en sm_{cap.replace('.', '')}, "
-                "couverte par la build amont).")
+            log(f"Paquet CUDA retenu ({sm} — Turing ou plus récent).")
     log("Recherche de la dernière release pwilkin/trellis.cpp…")
     rel = get_sdcpp._fetch_json(GH_RELEASE)
     if isinstance(rel, dict) and rel.get("message") and not rel.get("assets"):
@@ -291,11 +324,11 @@ def main():
                     help="variante de poids : f16 (défaut), q8 ou q4")
     ap.add_argument("--force", action="store_true",
                     help="re-télécharger le binaire même s'il est présent")
-    ap.add_argument("--backend", choices=["auto", "cuda", "vulkan"],
+    ap.add_argument("--backend", choices=["auto", "cuda", "cuda12", "vulkan"],
                     default="auto",
-                    help="backend du binaire. auto (défaut) = CUDA seulement si "
-                         "la carte est couverte par la build amont (sm_86 / "
-                         "sm_120), Vulkan sinon — voir TRELLIS_CUDA_SM.")
+                    help="paquet à installer. auto (défaut) = cuda pour "
+                         "Turing et plus récent, cuda12 pour Pascal/Volta, "
+                         "vulkan si aucune archive CUDA ne couvre la carte.")
     ap.add_argument("--allow-ipv6", action="store_true")
     args = ap.parse_args()
     if not args.allow_ipv6:
