@@ -8,6 +8,7 @@ import gradio as gr
 
 from .. import downloader, hardware, registry, settings
 from ..engine import generate as gen_engine
+from ..engine import highres
 from ..engine import tools
 from ..i18n import t
 from . import widgets
@@ -878,6 +879,110 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     outputs=[hd_result, hd_log])
                 widgets.stop_into_log(hd_stop, gen_engine.cancel, hd_log,
                                       [hd_evt])
+
+            # ---------- Haute résolution (Flux.2 en référence + départ) ------
+            with gr.Tab("🔍 Haute résolution", id="highres"):
+                gr.Markdown(
+                    "L'image est **repassée dans Flux.2 à sa résolution "
+                    "native**, en lui servant à la fois de **référence** et de "
+                    "**point de départ**. Trois détails font toute la "
+                    "différence, et aucun n'est évident :\n"
+                    "- on demande « **high resolution** », pas « upscale » : "
+                    "dans les légendes d'entraînement, *upscaled* désigne des "
+                    "images réellement upscalées — donc porteuses des "
+                    "artefacts qu'on veut éviter ;\n"
+                    "- le pré-agrandissement est **bilinéaire**, volontairement "
+                    "fade : Lanczos ajoute du ringing que le modèle relit "
+                    "comme du détail, et l'amplifie ;\n"
+                    "- la même image sert de **référence** (le contenu) **et** "
+                    "de **latent de départ** (la structure).\n\n"
+                    "⚠️ **Ce n'est pas une restauration.** À fort débruitage le "
+                    "modèle REDESSINE : ce qui est préservé, c'est la "
+                    "vraisemblance, pas la fidélité. Pour qu'un visage reste "
+                    "la même personne, passez par **🌱 Restaurer** (SeedVR2).")
+
+                _hr_models = highres.edit_models()
+                if not _hr_models:
+                    gr.Markdown(
+                        "> ⚠️ **Aucun modèle d'édition installé.** Cette "
+                        "méthode a besoin d'un modèle qui accepte une image "
+                        "de référence (Flux.2 Klein). Téléchargez-le depuis "
+                        "l'onglet « Catalogue de modèles ».")
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        hr_image = gr.Image(label="Image à agrandir", type="pil",
+                                            buttons=widgets.IMAGE_VIEW_ONLY)
+                        hr_model = gr.Dropdown(
+                            choices=_hr_models,
+                            value=(_hr_models[0][1] if _hr_models else None),
+                            label="Modèle d'édition")
+                        hr_factor = gr.Slider(
+                            1.0, 3.0, value=2.0, step=0.25,
+                            label="Facteur d'agrandissement",
+                            info="La sortie ne descend jamais sous 1 Mpx (le "
+                                 "régime de Flux.2) et ne dépasse pas 3,7 Mpx "
+                                 "— au-delà le modèle perd la cohérence "
+                                 "globale. Réduit tout seul si la carte refuse.")
+                        hr_strength = gr.Slider(
+                            0.4, 0.95, value=0.8, step=0.05,
+                            label="Débruitage",
+                            info="0,7–0,9 : la plage de la méthode. Plus bas, "
+                                 "l'image bouge moins mais gagne moins de "
+                                 "détail ; plus haut, elle devient une autre "
+                                 "image.")
+                        hr_prompt = gr.Textbox(
+                            value=highres.DEFAULT_PROMPT,
+                            label="Prompt",
+                            info="Le mot « high resolution » EST la méthode. "
+                                 "Ajoutez une description si l'image le mérite.")
+                        hr_colors = gr.Checkbox(
+                            value=True,
+                            label="Rendre ses couleurs à l'original",
+                            info="À fort débruitage le modèle fade l'image. On "
+                                 "lui remet les couleurs de départ sous le "
+                                 "détail qu'il vient d'ajouter.")
+                        with gr.Row():
+                            hr_run = gr.Button("🔍 Passer en haute résolution",
+                                               variant="primary", size="lg",
+                                               scale=2)
+                            hr_stop = gr.Button("⏹️ Annuler", variant="stop",
+                                                size="sm")
+                    with gr.Column(scale=4):
+                        hr_result = gr.Image(label="Résultat", height=520,
+                                             format="png",
+                                             buttons=widgets.IMAGE_BUTTONS)
+                        hr_log = gr.Textbox(label="Journal", lines=12,
+                                            autoscroll=True,
+                                            elem_classes="log-box")
+
+                def do_highres(img, model_id, factor, strength, prompt,
+                               colors, progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Fournissez une image."))
+                    if not model_id:
+                        raise gr.Error(t("Aucun modèle d'édition installé."))
+                    logs: list[str] = []
+                    progress(0.1, desc="Haute résolution…")
+                    try:
+                        out = highres.high_resolution(
+                            img, model_id=model_id, factor=float(factor),
+                            strength=float(strength), prompt=prompt,
+                            match_colors=bool(colors), log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERREUR] {exc}")
+                        return None, "\n".join(logs)
+                    progress(1.0, desc="Terminé")
+                    logs.append(f"\n✅ Image : {out}")
+                    return str(out), "\n".join(logs)
+
+                hr_evt = hr_run.click(
+                    do_highres,
+                    inputs=[hr_image, hr_model, hr_factor, hr_strength,
+                            hr_prompt, hr_colors],
+                    outputs=[hr_result, hr_log])
+                widgets.stop_into_log(hr_stop, gen_engine.cancel, hr_log,
+                                      [hr_evt])
 
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
             with gr.Tab("🌱 Restaurer", id="seedvr2"):

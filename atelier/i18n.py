@@ -1285,6 +1285,31 @@ _EN: dict[str, str] = {
         "Pick a folder of images.",
     "Installez d'abord SeedVR2.":
         "Install SeedVR2 first.",
+    "🔍 Haute résolution":
+        "🔍 High resolution",
+    "Modèle d'édition":
+        "Editing model",
+    "Facteur d'agrandissement":
+        "Enlargement factor",
+    "La sortie ne descend jamais sous 1 Mpx (le régime de Flux.2) et ne dépasse pas 3,7 Mpx — au-delà le modèle perd la cohérence globale. Réduit tout seul si la carte refuse.":
+        "Output never goes below 1 MP (Flux.2's own regime) and never past "
+        "3.7 MP — beyond that the model loses global coherence. Reduced by "
+        "itself if the card refuses.",
+    "0,7–0,9 : la plage de la méthode. Plus bas, l'image bouge moins mais gagne moins de détail ; plus haut, elle devient une autre image.":
+        "0.7–0.9 is the method's range. Lower moves the image less but gains "
+        "less detail; higher makes it a different image.",
+    "Le mot « high resolution » EST la méthode. Ajoutez une description si l'image le mérite.":
+        "The words “high resolution” ARE the method. Add a description if the "
+        "image deserves one.",
+    "Rendre ses couleurs à l'original":
+        "Give the original its colours back",
+    "À fort débruitage le modèle fade l'image. On lui remet les couleurs de départ sous le détail qu'il vient d'ajouter.":
+        "At high denoise the model washes the image out. We put the starting "
+        "colours back underneath the detail it just added.",
+    "🔍 Passer en haute résolution":
+        "🔍 Go high resolution",
+    "Aucun modèle d'édition installé.":
+        "No editing model installed.",
     "🙂 Visages":
         "🙂 Faces",
     "*CodeFormer* — reconstruit **les visages uniquement**, le reste de l'image n'est pas touché. C'est le passage qui manque après un agrandissement : ni ESRGAN ni SeedVR2 ne savent refaire des yeux et une bouche propres sur un visage devenu petit ou flou. **Passez-le en dernier**, après l'upscale.  \n⚠️ Modèle sous licence **non commerciale** (S-Lab 1.0).":

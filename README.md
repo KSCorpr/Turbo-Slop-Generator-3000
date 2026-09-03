@@ -40,7 +40,7 @@ so the grouping is not decoration.)
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, in-app documentation of every option) · **Convert to GGUF** |
 
 ---
@@ -921,6 +921,43 @@ passes the directory to SeedVR2 once, keeps its DiT and VAE caches warm across
 the whole queue, and writes new PNGs without touching the originals. This avoids
 paying model startup cost again for every image.
 
+### 🔍 High resolution (Flux.2 as its own upscaler)
+Runs the image back through **Flux.2 at its native resolution**, using it as
+**both the reference and the starting latent**. Three details carry the whole
+method, and none of them is obvious:
+
+- the prompt says **“high resolution”**, not “upscale”. In training captions
+  *upscaled* labels images that really were upscaled — carrying exactly the
+  artefacts we are trying to avoid. *High resolution* labels photographs that
+  were sharp to begin with. Different distribution, different output;
+- the pre-enlargement is **bilinear**, deliberately bland. Lanczos adds ringing
+  the model reads as detail and then amplifies;
+- the same image goes in as the **reference** (content, through the VAE) *and*
+  as the **starting latent** (structure). The engine always supported passing
+  both; the interface sent one or the other, never both.
+
+Denoise sits at **0.8** by default (the method's range is 0.7–0.9), and the
+pass runs **8 steps**: Klein is distilled for 4, which at 0.8 denoise leaves
+only 3 effective steps — too short to rebuild anything.
+
+**This is not restoration.** At that denoise the model *redraws*: what survives
+is plausibility, not fidelity. For a face that must stay the same person, use
+**🌱 Restore** (SeedVR2). The two tools answer different questions.
+
+Output is bounded on both ends: never below **1 MP** (Flux.2's own regime —
+below it the model is out of its element anyway) and never past **3.7 MP**,
+where it starts losing global coherence and the VRAM cost explodes. If the card
+refuses, the target shrinks and the log says to what.
+
+High denoise also drags colour toward the model's own prior — the original post
+noticed the desaturation and suggested prompting against it. Prompting is a
+wish; this tab does the arithmetic instead: the **original's low frequencies**
+(hue, exposure, cast) are put back underneath the **result's high frequencies**
+(the detail just added). On by default, one checkbox to turn off.
+
+Credit: the method comes from a r/StableDiffusion post; the colour-matching
+step and the memory ladder are ours.
+
 ### 🙂 Faces (CodeFormer)
 Rebuilds **faces only** — the rest of the image is untouched. This is the step
 that ESRGAN and SeedVR2 cannot do: once a face is small or blurry, neither can
@@ -992,8 +1029,10 @@ Controls:
 - On < 12 GB VRAM, the model is automatically CPU-offloaded to avoid OOM.
 
 > Use the right tool: **ESRGAN** is fast and deterministic; **SeedVR2** restores
-> plausible detail with limited drift; **SDXL creative** is slower and explicitly
-> invents detail; **Faces** fixes what all three leave broken, and runs last.
+> plausible detail with limited drift; **High resolution** re-renders through
+> Flux.2 (best-looking, least faithful); **SDXL creative** is slower and
+> explicitly invents detail; **Faces** fixes what all of them leave broken, and
+> runs last.
 
 #### Upscaling illustrations without interpolation
 

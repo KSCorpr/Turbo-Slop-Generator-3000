@@ -691,9 +691,21 @@ def _reachable_modules() -> set[str]:
             # Importer « atelier.ui.generate_tab » importe forcément le paquet
             # « atelier.ui » : sans ça, chaque __init__.py serait signalé
             # orphelin alors qu'il est la condition de tous ses modules.
+            #
+            # Et le paquet est EMPILÉ, pas seulement marqué : un __init__.py
+            # contient du code, donc des imports. Le marquer « vu » sans le
+            # lire faisait dépendre le résultat de l'ordre de parcours — si le
+            # paquet était rencontré comme parent avant d'être rencontré comme
+            # import, ses propres imports n'étaient jamais suivis. C'est ce qui
+            # rendait `atelier.engine.sdserver` invisible : il n'est importé
+            # que depuis `atelier/engine/__init__.py`.
             parts = name.split(".")
             for i in range(1, len(parts)):
-                seen.add(".".join(parts[:i]))
+                parent = ".".join(parts[:i])
+                if parent not in seen:
+                    seen.add(parent)
+                    if parent in files:
+                        queue.append(files[parent])
             queue.append(files[name])
     _REACHABLE = seen
     return seen
