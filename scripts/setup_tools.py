@@ -6,7 +6,8 @@ Outils :
   bg      -> RMBG-1.4 : suppression d'arrière-plan (PNG transparent).
   sam     -> Segment Anything (facebook/sam-vit-base) : extraction d'objet au clic.
   enhance -> Qwen2.5-3B-Instruct : améliore un prompt brut (LLM).
-  face    -> CodeFormer + facexlib : restauration des visages.
+  face    -> GFPGAN / RestoreFormer++ / CodeFormer + facexlib :
+             restauration des visages.
   upscale -> SDXL base + VAE fp16-fix : upscale créatif tuilé (Ultimate SD Upscale).
 
 Réutilise les helpers torch CUDA de _torch_setup (build adaptée au GPU,
@@ -56,18 +57,16 @@ DESCRIBE_REPO = "Qwen/Qwen2.5-VL-3B-Instruct"
 # aux autres add-ons mais ne connaît pas ce modèle, et l'échec serait un
 # « KeyError: qwen2_5_vl » incompréhensible au premier clic.
 DESCRIBE_TRANSFORMERS_PIN = "transformers>=4.49,<4.50"
-# Restauration de visages. Les trois poids viennent des dépôts d'origine (pas
-# d'un miroir personnel) : CodeFormer chez sczhou, détection et segmentation
-# chez xinntao, l'auteur de facexlib. CodeFormer est sous licence S-Lab 1.0 :
-# usage NON COMMERCIAL, comme l'améliorateur de prompt Qwen déjà installé.
-# (fichier, URL, description, SHA-256) — empreintes relevées sur les releases
-# officielles. Elles servent deux fois : à refuser un fichier corrompu, et à
-# détecter un téléchargement tronqué déjà sur le disque (le cas le plus
-# fréquent : une coupure réseau au milieu des 377 Mo de CodeFormer).
-FACE_URLS = (
-    ("codeformer.pth", "https://github.com/sczhou/CodeFormer/releases/"
-     "download/v0.1.0/codeformer.pth", "CodeFormer (~377 Mo)",
-     "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"),
+# Restauration de visages. Les poids viennent des dépôts d'ORIGINE (pas d'un
+# miroir personnel), et chacun est vérifié par SHA-256 — empreintes relevées
+# une à une. Elles servent deux fois : refuser un fichier corrompu, et détecter
+# un téléchargement tronqué DÉJÀ sur le disque (le cas le plus fréquent : une
+# coupure réseau au milieu des 377 Mo de CodeFormer).
+#
+# Deux briques COMMUNES à tous les restaurateurs : la détection de visages et
+# la segmentation qui sert au recollage. Elles ne dépendent pas du modèle
+# choisi, et sans elles aucun ne fonctionne.
+FACE_SHARED = (
     ("detection_Resnet50_Final.pth",
      "https://github.com/xinntao/facexlib/releases/download/v0.1.0/"
      "detection_Resnet50_Final.pth", "détecteur de visages (~110 Mo)",
@@ -77,6 +76,26 @@ FACE_URLS = (
      "parsing_parsenet.pth", "segmentation du visage (~85 Mo)",
      "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"),
 )
+# Les trois restaurateurs, installés ENSEMBLE (~1 Go). Ils ne se valent pas
+# selon l'image, et comparer sur son propre visage est la seule façon de
+# trancher : une seconde procédure d'installation « au cas où » coûterait plus
+# cher en confusion que ce gigaoctet en disque.
+FACE_RESTORERS = (
+    ("GFPGANv1.4.pth",
+     "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/"
+     "GFPGANv1.4.pth", "GFPGAN v1.4 — Apache-2.0 (~349 Mo)",
+     "e2cd4703ab14f4d01fd1383a8a8b266f9a5833dacee8e6a79d3bf21a1b6be5ad"),
+    ("RestoreFormer++.ckpt",
+     "https://github.com/wzhouxiff/RestoreFormerPlusPlus/releases/download/"
+     "v1.0.0/RestoreFormer++.ckpt", "RestoreFormer++ — Apache-2.0 (~294 Mo)",
+     "613fe52805f86bf8c2bffff08ae9f7a0b99f408be1bf221767af6183038be3a2"),
+    ("codeformer.pth",
+     "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/"
+     "codeformer.pth", "CodeFormer — S-Lab 1.0, NON COMMERCIAL (~377 Mo)",
+     "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"),
+)
+FACE_URLS = FACE_SHARED + FACE_RESTORERS
+
 # Upscale créatif tuilé : SDXL base (1 fichier) + VAE fp16-fix + ControlNet Tile
 # (optionnel, verrouille la structure pour pousser la créativité sans dériver).
 SDXL_REPO = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -327,6 +346,9 @@ def install_face():
     pin_numpy()
     print("\n[OK] Restauration de visages installée "
           "(onglet Toolkit → « 🙂 Visages »).")
+    print("     Trois modèles disponibles : GFPGAN et RestoreFormer++ "
+          "(Apache-2.0, usage commercial libre),")
+    print("     CodeFormer (S-Lab 1.0, NON COMMERCIAL).")
 
 
 def install_upscale():

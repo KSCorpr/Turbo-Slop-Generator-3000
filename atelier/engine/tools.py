@@ -91,16 +91,51 @@ def enhance_is_installed() -> bool:
     return _model_present(ENHANCE_MODEL_DIR)
 
 
-# Les trois poids de la restauration de visages sont des .pth : le détecteur et
-# la segmentation sont aussi indispensables que le restaurateur lui-même, donc
-# on vérifie les trois — un seul manquant et le premier clic échouerait au
-# milieu du traitement au lieu d'afficher le bouton « Installer ».
-FACE_FILES = ("codeformer.pth", "detection_Resnet50_Final.pth",
-              "parsing_parsenet.pth")
+# Détection et segmentation : COMMUNES à tous les restaurateurs, et aussi
+# indispensables qu'eux. Sans elles, le premier clic échouerait au milieu du
+# traitement au lieu d'afficher le bouton « Installer ».
+FACE_SHARED_FILES = ("detection_Resnet50_Final.pth", "parsing_parsenet.pth")
+
+# Les restaurateurs proposés : (fichier, libellé, licence).
+#
+# La LICENCE est affichée avec le modèle, pas enterrée dans un avertissement de
+# bas de page. Elle décide de ce qu'on a le droit de faire du résultat, et deux
+# des trois sont libres de toute restriction commerciale — c'est une
+# information de premier plan pour qui vend ses images, pas une note de bas de
+# page juridique.
+FACE_MODELS: tuple[tuple[str, str, str], ...] = (
+    ("GFPGANv1.4.pth",
+     "GFPGAN v1.4 — préserve le mieux l'identité",
+     "Apache-2.0 · usage commercial libre"),
+    ("RestoreFormer++.ckpt",
+     "RestoreFormer++ — meilleur sur les photos très abîmées",
+     "Apache-2.0 · usage commercial libre"),
+    ("codeformer.pth",
+     "CodeFormer — curseur de fidélité réglable",
+     "S-Lab 1.0 · NON COMMERCIAL"),
+)
+FACE_MODEL_FILES = frozenset(f for f, _, _ in FACE_MODELS)
+# Par défaut : le modèle libre qui garde le mieux le visage de la personne.
+FACE_DEFAULT = "GFPGANv1.4.pth"
+# Seul CodeFormer expose le « w » de fidélité ; pour les autres le curseur
+# n'aurait aucun effet, et l'interface le dit plutôt que de le laisser croire.
+FACE_FIDELITY_MODELS = frozenset({"codeformer.pth"})
+
+
+def face_models_installed() -> list[tuple[str, str, str]]:
+    """Restaurateurs réellement présents sur le disque."""
+    return [m for m in FACE_MODELS if (FACE_MODEL_DIR / m[0]).is_file()]
 
 
 def face_is_installed() -> bool:
-    return all((FACE_MODEL_DIR / name).is_file() for name in FACE_FILES)
+    """Les briques communes ET au moins un restaurateur.
+
+    « Au moins un » et pas « tous » : une installation interrompue après le
+    premier modèle reste utilisable, et proposer de tout réinstaller pour un
+    fichier manquant serait disproportionné.
+    """
+    shared = all((FACE_MODEL_DIR / n).is_file() for n in FACE_SHARED_FILES)
+    return shared and bool(face_models_installed())
 
 
 def upscale_is_installed() -> bool:
@@ -362,6 +397,7 @@ def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
 
 
 def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
+                 model: str = FACE_DEFAULT,
                  log: Callable[[str], None] | None = None) -> Path:
     """Restaure les visages d'une image (CodeFormer), sans toucher au reste.
 
@@ -374,12 +410,19 @@ def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
     if not face_is_installed():
         raise ToolError("La restauration de visages n'est pas installée "
                         "(bouton « Installer » du Toolkit).")
+    if model not in FACE_MODEL_FILES:
+        raise ToolError(f"Modèle de restauration inconnu : {model}")
+    weights = FACE_MODEL_DIR / model
+    if not weights.is_file():
+        raise ToolError(f"Le modèle « {model} » n'est pas téléchargé. "
+                        "Relancez l'installation depuis le Toolkit.")
     src = _to_src(image, "face")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"face_out_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     runner = settings.ROOT / "scripts" / "tools" / "run_face.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(FACE_MODEL_DIR),
+           "--weights", weights.name,
            "--input", str(src), "--output-dir", str(out_dir),
            "--fidelity", f"{min(1.0, max(0.0, float(fidelity))):.2f}"]
     if only_center:

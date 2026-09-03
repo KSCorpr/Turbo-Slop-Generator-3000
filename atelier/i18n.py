@@ -1312,17 +1312,6 @@ _EN: dict[str, str] = {
         "No editing model installed.",
     "🙂 Visages":
         "🙂 Faces",
-    "*CodeFormer* — reconstruit **les visages uniquement**, le reste de l'image n'est pas touché. C'est le passage qui manque après un agrandissement : ni ESRGAN ni SeedVR2 ne savent refaire des yeux et une bouche propres sur un visage devenu petit ou flou. **Passez-le en dernier**, après l'upscale.  \n⚠️ Modèle sous licence **non commerciale** (S-Lab 1.0).":
-        "*CodeFormer* — rebuilds **faces only**; the rest of the image is left "
-        "alone. It is the step missing after an enlargement: neither ESRGAN nor "
-        "SeedVR2 can rebuild clean eyes and a clean mouth on a face that has "
-        "gone small or blurry. **Run it last**, after the upscale.  \n"
-        "⚠️ **Non-commercial** licence (S-Lab 1.0).",
-    "CodeFormer":
-        "CodeFormer",
-    "Trois poids (~570 Mo au total) : le restaurateur, le détecteur de visages et la segmentation qui sert au recollage. Aucune commande à taper.":
-        "Three weight files (~570 MB total): the restorer, the face detector "
-        "and the segmentation used to blend the face back in. Nothing to type.",
     "Fidélité au visage d'origine":
         "Faithfulness to the original face",
     "0,5 convient presque toujours. Baissez si le visage est très abîmé (le modèle invente davantage), montez s'il change de tête.":
@@ -1333,6 +1322,29 @@ _EN: dict[str, str] = {
         "Main face only",
     "Par défaut, tous les visages détectés sont restaurés.":
         "By default every detected face is restored.",
+    "Reconstruit **les visages uniquement**, le reste de l'image n'est pas touché. C'est le passage qui manque après un agrandissement : ni ESRGAN ni SeedVR2 ne savent refaire des yeux et une bouche propres sur un visage devenu petit ou flou. **Passez-le en dernier**, après l'upscale.  \nTrois modèles au choix — ils ne gagnent pas sur les mêmes images, **comparez sur la vôtre**. ⚠️ **Si vous vendez vos images, évitez CodeFormer** : sa licence S-Lab 1.0 interdit l'usage commercial. Les deux autres sont en Apache-2.0.":
+        "Rebuilds **faces only**; the rest of the image is left alone. It is "
+        "the step missing after an enlargement: neither ESRGAN nor SeedVR2 can "
+        "rebuild clean eyes and a clean mouth on a face that has gone small or "
+        "blurry. **Run it last**, after the upscale.  \n"
+        "Three models to choose from — they do not win on the same images, so "
+        "**compare on yours**. ⚠️ **If you sell your images, avoid "
+        "CodeFormer**: its S-Lab 1.0 licence forbids commercial use. The other "
+        "two are Apache-2.0.",
+    "la restauration de visages":
+        "face restoration",
+    "Cinq poids (~1,5 Go au total) : trois restaurateurs, le détecteur de visages et la segmentation qui sert au recollage. Ils sont installés ensemble parce qu'aucun ne gagne sur toutes les images — on compare. Aucune commande à taper.":
+        "Five weight files (~1.5 GB total): three restorers, the face detector "
+        "and the segmentation used to blend the face back in. They are "
+        "installed together because none wins on every image — you compare. "
+        "Nothing to type.",
+    "La licence décide de ce que vous avez le droit de faire du résultat. Deux des trois sont libres de toute restriction commerciale.":
+        "The licence decides what you may do with the result. Two of the three "
+        "carry no commercial restriction.",
+    "0,5 convient presque toujours. Baissez si le visage est très abîmé (le modèle invente davantage), montez s'il change de tête. **CodeFormer uniquement** : les deux autres n'ont pas ce réglage.":
+        "0.5 is almost always right. Lower it when the face is badly damaged "
+        "(the model invents more), raise it if the person stops looking like "
+        "themselves. **CodeFormer only**: the other two have no such dial.",
     "🙂 Restaurer les visages":
         "🙂 Restore faces",
     "Visages restaurés":

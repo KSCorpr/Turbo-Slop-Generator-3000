@@ -958,17 +958,37 @@ wish; this tab does the arithmetic instead: the **original's low frequencies**
 Credit: the method comes from a r/StableDiffusion post; the colour-matching
 step and the memory ladder are ours.
 
-### 🙂 Faces (CodeFormer)
+### 🙂 Faces (GFPGAN · RestoreFormer++ · CodeFormer)
 Rebuilds **faces only** — the rest of the image is untouched. This is the step
 that ESRGAN and SeedVR2 cannot do: once a face is small or blurry, neither can
 put clean eyes and a clean mouth back. Run it **last**, after the upscale; the
 Upscale and Restore tabs both carry a **→ 🙂 Fix the faces** button that hands
 the result straight over, so there is no file to find and re-upload.
 
-One control: **faithfulness to the original face** (CodeFormer's `w`). 0.5 is
-almost always right; lower it for a badly damaged face and the model invents
-more, raise it if the person stops looking like themselves. A checkbox limits
-the pass to the main face instead of every detected one.
+**Three restorers**, installed together (~1.5 GB with the shared detector and
+face parser) because none of them wins on every image:
+
+| Model | Licence | Character |
+|---|---|---|
+| **GFPGAN v1.4** (default) | **Apache-2.0** | Gentler, preserves identity best |
+| **RestoreFormer++** | **Apache-2.0** | Better on genuinely damaged photos, more aggressive |
+| **CodeFormer** | **S-Lab 1.0 — non-commercial** | The only one with a fidelity dial |
+
+The licence is shown **next to each model**, not buried in a footnote: it
+decides what you may do with the result. If you sell your images, CodeFormer is
+the one to avoid — which is why the default is GFPGAN.
+
+**Faithfulness to the original face** (CodeFormer's `w`) applies to CodeFormer
+only; 0.5 is almost always right, lower it for a badly damaged face and the
+model invents more, raise it if the person stops looking like themselves. The
+other two have no such dial and the runner says so instead of pretending. A
+checkbox limits the pass to the main face instead of every detected one.
+
+Each architecture has its own input convention, and getting it wrong is silent:
+CodeFormer's reference pipeline works in `[-1, 1]` and is called directly (it is
+the only one taking `weight=`), while GFPGAN and RestoreFormer go through
+spandrel's descriptor, which knows each architecture's normalisation and returns
+`[0, 1]`.
 
 The implementation deliberately avoids `basicsr`, which the original CodeFormer
 repository depends on: `basicsr` imports `torchvision.transforms.functional_tensor`,

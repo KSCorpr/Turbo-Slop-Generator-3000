@@ -22,15 +22,50 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class FaceInstallTests(unittest.TestCase):
-    def test_needs_all_three_weights(self):
+    def test_needs_the_shared_parts_and_at_least_one_restorer(self):
         with tempfile.TemporaryDirectory() as tmp:
             model_dir = Path(tmp)
             with patch.object(tools, "FACE_MODEL_DIR", model_dir):
-                for index, name in enumerate(tools.FACE_FILES):
-                    self.assertFalse(tools.face_is_installed(),
-                                     f"installé avec {index} poids sur 3")
+                # Détecteur et segmentation seuls : rien ne peut tourner.
+                for name in tools.FACE_SHARED_FILES:
+                    self.assertFalse(tools.face_is_installed())
                     (model_dir / name).write_bytes(b"x")
+                self.assertFalse(tools.face_is_installed(),
+                                 "installé sans aucun restaurateur")
+                # Un seul restaurateur suffit : une installation interrompue
+                # après le premier modèle reste utilisable.
+                (model_dir / tools.FACE_DEFAULT).write_bytes(b"x")
                 self.assertTrue(tools.face_is_installed())
+
+    def test_a_restorer_without_the_shared_parts_is_not_enough(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir = Path(tmp)
+            (model_dir / tools.FACE_DEFAULT).write_bytes(b"x")
+            with patch.object(tools, "FACE_MODEL_DIR", model_dir):
+                self.assertFalse(tools.face_is_installed())
+
+    def test_it_lists_only_the_models_actually_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir = Path(tmp)
+            (model_dir / "codeformer.pth").write_bytes(b"x")
+            with patch.object(tools, "FACE_MODEL_DIR", model_dir):
+                present = tools.face_models_installed()
+        self.assertEqual([f for f, _, _ in present], ["codeformer.pth"])
+
+    def test_every_model_declares_its_licence(self):
+        # La licence décide de ce qu'on a le droit de faire du résultat : elle
+        # est affichée AVEC le modèle, pas dans une note de bas de page.
+        for filename, label, licence in tools.FACE_MODELS:
+            self.assertTrue(label and licence, filename)
+        by_file = {f: lic for f, _, lic in tools.FACE_MODELS}
+        self.assertIn("NON COMMERCIAL", by_file["codeformer.pth"])
+        self.assertIn("Apache-2.0", by_file["GFPGANv1.4.pth"])
+        self.assertIn("Apache-2.0", by_file["RestoreFormer++.ckpt"])
+
+    def test_the_default_is_free_of_commercial_restriction(self):
+        licence = dict((f, lic) for f, _, lic in tools.FACE_MODELS)[
+            tools.FACE_DEFAULT]
+        self.assertNotIn("NON COMMERCIAL", licence)
 
     def test_refuses_to_run_when_not_installed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,8 +81,10 @@ class FaceCommandTests(unittest.TestCase):
             base = Path(tmp)
             model_dir = base / "model"
             model_dir.mkdir()
-            for name in tools.FACE_FILES:
+            for name in tools.FACE_SHARED_FILES:
                 (model_dir / name).write_bytes(b"x")
+            for filename, _, _ in tools.FACE_MODELS:
+                (model_dir / filename).write_bytes(b"x")
 
             def fake_run(cmd, log, err_msg, gpu_index=None, cwd=None, env=None):
                 captured["cmd"] = cmd
@@ -78,6 +115,15 @@ class FaceCommandTests(unittest.TestCase):
         cmd, _ = self._run(only_center=False)
         self.assertNotIn("--only-center", cmd)
 
+    def test_the_chosen_model_is_the_one_sent(self):
+        for filename, _, _ in tools.FACE_MODELS:
+            cmd, _ = self._run(model=filename)
+            self.assertEqual(cmd[cmd.index("--weights") + 1], filename)
+
+    def test_an_unknown_model_is_refused(self):
+        with self.assertRaises(tools.ToolError):
+            self._run(model="../../etc/passwd.pth")
+
     def test_result_lands_in_outputs(self):
         _, out = self._run()
         self.assertTrue(out.name.startswith("face-"))
@@ -94,6 +140,20 @@ class FaceRunnerTests(unittest.TestCase):
         for option in ("--model-dir", "--input", "--output-dir", "--fidelity",
                        "--only-center"):
             self.assertIn(option, source)
+
+    def test_the_runner_knows_the_three_architectures(self):
+        source = (ROOT / "scripts" / "tools" / "run_face.py").read_text(
+            encoding="utf-8")
+        for arch in ("CodeFormer", "GFPGAN", "RestoreFormer"):
+            self.assertIn(arch, source)
+
+    def test_only_codeformer_gets_the_fidelity_weight(self):
+        # Passer « weight= » à GFPGAN lèverait un TypeError en plein
+        # traitement ; spandrel connaît la convention de chaque architecture.
+        source = (ROOT / "scripts" / "tools" / "run_face.py").read_text(
+            encoding="utf-8")
+        head = source[:source.index("weight=fidelity")]
+        self.assertIn('arch == "CodeFormer"', head)
 
     def test_runner_does_not_depend_on_basicsr(self):
         # basicsr importe torchvision.transforms.functional_tensor, supprimé
