@@ -42,7 +42,7 @@ from . import widgets
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
-LANGS = [("Français", "fr"), ("English", "en")]
+LANGS = [("French", "fr"), ("English", "en")]
 
 # Préfixe des confirmations. Elles sont au passé et concrètes — « appliqué »,
 # pas « enregistré » : ce qu'on veut savoir, c'est que c'est FAIT.
@@ -59,24 +59,24 @@ def _resident_reason() -> str:
     """
     server = resident_engine()
     if server is None:
-        return t("⚠️ **Moteur résident indisponible** : le fichier "
-                 "`atelier/engine/sdserver.py` manque. Votre copie de "
-                 "l'application est incomplète — retéléchargez l'archive, "
-                 "**fermez l'application**, puis ré-extrayez-la.")
+        return t("⚠️ **Resident engine unavailable**: the file "
+                 "`atelier/engine/sdserver.py` is missing. Your copy of the "
+                 "application is incomplete — download the archive again, "
+                 "**close the application**, then re-extract it.")
     if server.available():
         return ""
     if engine_build_source() == "custom-ci":
         # Le build maison a été retiré du projet : il n'empaquetait qu'un
         # binaire sur les deux, et entretenir une deuxième chaîne de
         # compilation pour ça ne valait pas son prix.
-        return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas "
-                 "dans `bin/`. Votre moteur vient de l'ancien build maison du "
-                 "projet, qui n'empaquetait que `sd.exe` et n'existe plus. "
-                 "Lancez `update-engine.bat` pour passer au binaire officiel, "
-                 "qui contient les deux.")
-    return t("⚠️ **Moteur résident indisponible** : `sd-server` n'est pas dans "
-             "`bin/`. Lancez `update-engine.bat` pour réinstaller le moteur "
-             "complet.")
+        return t("⚠️ **Resident engine unavailable**: `sd-server` is not in "
+                 "`bin/`. Your engine comes from the project's former "
+                 "in-house build, which only packaged `sd.exe` and no longer "
+                 "exists. Run `update-engine.bat` to switch to the official "
+                 "binary, which contains both.")
+    return t("⚠️ **Resident engine unavailable**: `sd-server` is not in "
+             "`bin/`. Run `update-engine.bat` to reinstall the complete "
+             "engine.")
 
 
 def _said(msg: str):
@@ -90,9 +90,9 @@ def _said(msg: str):
     return gr.update(value=msg, visible=True)
 
 _STRATEGY_SAID = {
-    "single": "Tout se fera sur une seule carte.",
-    "encoder": "La 2e carte lira votre texte ; l'image reste sur la première.",
-    "autofit": "Répartition automatique activée — mesurez-la avant d'y croire.",
+    "single": "Everything will run on a single card.",
+    "encoder": "The 2nd card will read your text; the image stays on the first.",
+    "autofit": "Automatic spreading enabled — measure it before believing it.",
 }
 
 
@@ -154,37 +154,35 @@ def _headline(prefs: dict | None = None) -> str:
     gpus = hardware.detect_gpus()
 
     if prof.gpu is None:
-        return t("### ⚠️ Aucune carte NVIDIA détectée\n"
-                 "L'application tournera sur le processeur : c'est **très "
-                 "lent** (des minutes par image). Vérifiez vos pilotes, ou "
-                 "tapez `nvidia-smi` dans un terminal.")
+        return t("### ⚠️ No NVIDIA card detected\nThe app will run on the "
+                 "processor: that is **very slow** (minutes per image). Check "
+                 "your drivers, or type `nvidia-smi` in a terminal.")
 
-    lines = [t("### Votre matériel"),
-             t("**{name}** — {vram} Go de mémoire vidéo · {ram} Go de RAM"
+    lines = [t("### Your hardware"),
+             t("**{name}** — {vram} GB of video memory · {ram} GB of RAM"
                ).format(name=prof.gpu.name, vram=f"{prof.gpu.vram_gb:.0f}",
                         ram=f"{prof.ram_gb:.0f}")]
     if len(gpus) > 1:
         others = ", ".join(g.name for g in gpus if g.index != prof.gpu.index)
-        lines.append(t("Deuxième carte disponible : {other}.").format(
+        lines.append(t("Second card available: {other}.").format(
             other=others))
 
-    lines += ["", t("**Ce que l'application en fait, sans rien vous demander :**")]
-    lines.append(t("- le modèle d'image est chargé en `{quant}` — le meilleur "
-                   "compromis qui tienne dans {vram} Go ;").format(
+    lines += ["", t("**What the app does with it, without asking you anything:**")]
+    lines.append(t("- the image model is loaded as `{quant}` — the best "
+                   "trade-off that fits in {vram} GB;").format(
                        quant=prof.quant, vram=f"{prof.gpu.vram_gb:.0f}"))
-    lines.append(t("- l'analyse de votre texte se fait en `{enc}`, **rangée en "
-                   "RAM** : elle ne prend pas de place sur la carte ;").format(
+    lines.append(t("- your text is analysed as `{enc}`, **kept in RAM**: it "
+                   "takes no room on the card;").format(
                        enc=prof.enc_quant))
     lines.append(
-        t("- l'accélération « flash attention » est active (votre carte la "
-          "gère) ;") if prof.diffusion_fa else
-        t("- « flash attention » reste désactivée : votre carte n'a pas les "
-          "unités qu'il faut, l'activer ralentirait ;"))
+        t("- “flash attention” acceleration is on (your card supports it);") if prof.diffusion_fa else
+        t("- “flash attention” stays off: your card lacks the units for it, "
+          "turning it on would slow things down;"))
     lines.append(
-        t("- l'image finale est assemblée par morceaux, pour ne pas saturer la "
-          "carte au dernier moment.") if prof.vae_tiling else
-        t("- l'image finale est assemblée d'un seul tenant : vous avez la "
-          "place, autant éviter les jointures."))
+        t("- the final image is assembled in pieces, so the card is not "
+          "saturated at the last moment.") if prof.vae_tiling else
+        t("- the final image is assembled in one piece: you have the room, so "
+          "no seams."))
     return "\n".join(lines)
 
 
@@ -197,15 +195,15 @@ def _bias_note(bias: str, prefs: dict | None = None) -> str:
     ref = hardware.biased_profile("balanced", idx)
     detail = t(spec["why"])
     if prof.quant != ref.quant:
-        detail += t("  \n→ modèle chargé en `{quant}` au lieu de `{ref}`."
+        detail += t("  \n→ model loaded as `{quant}` instead of `{ref}`."
                     ).format(quant=prof.quant, ref=ref.quant)
     else:
-        detail += t("  \n→ modèle chargé en `{quant}`.").format(quant=prof.quant)
+        detail += t("  \n→ model loaded as `{quant}`.").format(quant=prof.quant)
     return detail
 
 
 def build_settings_tab():
-    with gr.Tab("⚙️ Réglages"):
+    with gr.Tab("⚙️ Settings"):
         prefs = settings.load_prefs()
         gpus = hardware.detect_gpus()
         multi_gpu = len(gpus) > 1
@@ -217,56 +215,51 @@ def build_settings_tab():
         #  LE réglage : marge mémoire ou détail
         # ------------------------------------------------------------------ #
         gr.Markdown(t(
-            "---\n"
-            "### La seule question qu'on vous pose\n"
-            "Tout le reste se calcule à partir de votre carte. Ceci ne se "
-            "calcule pas, parce que c'est une préférence : voulez-vous de la "
-            "**marge** (ça passe toujours) ou du **détail** (c'est plus fin, "
-            "mais plus juste en mémoire) ?"))
+            "---\n### The one question we ask you\nEverything else is "
+            "computed from your card. This one cannot be, because it is a "
+            "preference: do you want **headroom** (it always fits) or "
+            "**detail** (finer, but tighter on memory)?"))
         _bias = hardware.bias_from_prefs(prefs)
         bias = gr.Radio(
             [(t(spec["label"]), key) for key, spec in hardware.BIASES.items()],
-            value=_bias, label="Priorité", show_label=False)
+            value=_bias, label="Priority", show_label=False)
         bias_note = gr.Markdown(_bias_note(_bias, prefs))
         # Le vrai mode d'emploi : partir du SYMPTÔME. C'est ainsi qu'on arrive
         # sur cette page — pas en se demandant « quelle quantification ? ».
         # Deux des trois réponses renvoient ailleurs, et c'est volontaire :
         # laisser croire que tout se règle ici serait la même impasse.
         gr.Markdown(t(
-            "> **Un souci précis ?**  \n"
-            "> *« Erreur de mémoire / la génération s'arrête »* → prenez "
-            "**🪶 Plus de marge mémoire** ci-dessus.  \n"
-            "> *« C'est trop lent »* → cela ne se joue pas ici mais dans "
-            "l'onglet de génération : baissez le **nombre de pas** et la "
-            "**taille de l'image**, qui pèsent bien plus lourd.  \n"
-            "> *« Mes images sont fades »* → là non plus : c'est le **prompt** "
-            "et les **styles**, pas un réglage matériel."))
+            "> **Something specific going wrong?**  \n> *“Out of memory / "
+            "generation stops”* → pick **🪶 More memory headroom** above.  \n> "
+            "*“It is too slow”* → not settled here but in the generation tab: "
+            "lower the **step count** and the **image size**, which weigh far "
+            "more.  \n> *“My images look dull”* → not here either: that is "
+            "the **prompt** and the **styles**, not a hardware setting."))
 
         # ------------------------------------------------------------------ #
         #  Deux cartes : on ne fait pas parier, on propose de mesurer
         # ------------------------------------------------------------------ #
         gpu = gr.Dropdown(
-            label="Carte utilisée pour générer", choices=_gpu_choices(),
+            label="Card used for generating", choices=_gpu_choices(),
             value=prefs.get("gpu_index"), visible=multi_gpu,
-            info=t("La plus puissante est prise par défaut."))
+            info=t("The most powerful one is used by default."))
         if multi_gpu:
             gr.Markdown(t(
-                "---\n"
-                "### Vous avez deux cartes\n"
-                "Il n'y a pas de bonne réponse universelle : cela dépend autant "
-                "du **port PCIe** de la seconde carte que de sa mémoire. Plutôt "
-                "que de vous faire deviner, l'application peut **mesurer**."))
+                "---\n### You have two cards\nThere is no universally right "
+                "answer: it depends as much on the second card's **PCIe "
+                "slot** as on its memory. Rather than make you guess, the app "
+                "can **measure**."))
             strategy = gr.Radio(
-                [(t("Tout sur une seule carte — le plus fiable"), "single"),
-                 (t("La 2e carte s'occupe du texte — libère de la mémoire "
-                    "pour l'image"), "encoder"),
-                 (t("Répartir automatiquement — à mesurer avant d'y croire"),
+                [(t("Everything on one card — the most reliable"), "single"),
+                 (t("The 2nd card handles the text — frees memory for the "
+                    "image"), "encoder"),
+                 (t("Spread it automatically — measure before believing it"),
                   "autofit")],
-                value=_strategy_of(prefs), label="Répartition",
+                value=_strategy_of(prefs), label="Split",
                 show_label=False)
             tools_gpu = gr.Dropdown(
-                label="Carte pour l'améliorateur de prompt",
-                choices=[(t("La même que pour l'image"), None)] + _gpu_choices(),
+                label="Card for the prompt enhancer",
+                choices=[(t("The same one as for the image"), None)] + _gpu_choices(),
                 value=prefs.get("text_gpu_index"))
         else:
             strategy = gr.State(_strategy_of(prefs))
@@ -276,135 +269,129 @@ def build_settings_tab():
         #  Mesurer plutôt que deviner
         # ------------------------------------------------------------------ #
         gr.Markdown(t(
-            "---\n"
-            "### 🧪 Dans le doute, mesurez\n"
-            "L'application génère la **même image** {n} fois par configuration "
-            "(plus une première jetée, le temps que tout soit chargé) et garde "
-            "la médiane. Elle ne change **aucun réglage** : elle vous dit "
-            "lequel est le plus rapide, vous décidez ensuite."
+            "---\n### 🧪 When in doubt, measure\nThe app generates the **same "
+            "image** {n} times per configuration (plus a first one thrown "
+            "away, the time for everything to load) and keeps the median. It "
+            "changes **no setting**: it tells you which is fastest, then you "
+            "decide."
         ).format(n=benchmark.MEASURED_RUNS))
         with gr.Row():
-            bench_btn = gr.Button(t("⏱️ Mesurer sur ma machine"),
+            bench_btn = gr.Button(t("⏱️ Measure on my machine"),
                                   variant="primary")
-            apply_bench = gr.Button(t("Appliquer le plus rapide"))
-            bench_stop = gr.Button(t("⏹️ Arrêter"), variant="stop")
+            apply_bench = gr.Button(t("Apply the fastest"))
+            bench_stop = gr.Button(t("⏹️ Stop"), variant="stop")
         bench_status = gr.Markdown("")
-        with gr.Accordion(t("Détail de la mesure (journal et rapport)"),
+        with gr.Accordion(t("Measurement details (log and report)"),
                           open=False):
-            bench_file = gr.File(label="Rapport JSON", interactive=False)
-            bench_log = gr.Textbox(label="Journal du test", lines=10,
+            bench_file = gr.File(label="JSON report", interactive=False)
+            bench_log = gr.Textbox(label="Test log", lines=10,
                                    autoscroll=True, elem_classes="log-box")
             system_md = gr.Markdown(diagnostics.summary_markdown())
-            report_btn = gr.Button(t("📋 Exporter le rapport système"),
+            report_btn = gr.Button(t("📋 Export the system report"),
                                    size="sm")
 
         # ------------------------------------------------------------------ #
         #  Expert : les options brutes de sd.cpp, sous UN seul repli
         # ------------------------------------------------------------------ #
         with gr.Accordion(
-                t("🔧 Expert — options brutes de sd.cpp (facultatif)"),
+                t("🔧 Expert — raw sd.cpp options (optional)"),
                 open=False):
             gr.Markdown(t(
-                "⚠️ **Rien ici n'est nécessaire.** Ces options existent parce "
-                "que sd.cpp les expose, pas parce qu'il faut y toucher. Elles "
-                "se règlent en mesurant, pas en devinant — et le curseur "
-                "ci-dessus couvre déjà les cas courants. Toucher à cette "
-                "section **désactive le réglage automatique**."))
+                "⚠️ **Nothing here is required.** These options exist because "
+                "sd.cpp exposes them, not because you should touch them. They "
+                "are set by measuring, not by guessing — and the slider above "
+                "already covers the usual cases. Touching this section "
+                "**turns off automatic tuning**."))
 
-            gr.Markdown(t("**Quantification imposée** — « auto » = laisser "
-                          "l'application décider d'après la carte."))
+            gr.Markdown(t("**Forced quantization** — “auto” = let the app "
+                          "decide from the card."))
             with gr.Row():
-                quant = gr.Dropdown(label="Modèle d'image",
+                quant = gr.Dropdown(label="Image model",
                                     choices=["auto"] + QUANTS,
                                     value=prefs.get("quant") or "auto")
-                enc_quant = gr.Dropdown(label="Analyse du texte",
+                enc_quant = gr.Dropdown(label="Text analysis",
                                         choices=["auto"] + QUANTS,
                                         value=prefs.get("enc_quant") or "auto")
             f = prefs.get("flags", {})
-            gr.Markdown(t("**Options mémoire du moteur.**"))
+            gr.Markdown(t("**Engine memory options.**"))
             with gr.Row():
                 fa = gr.Checkbox(value=f.get("diffusion_fa", True),
                                  label="Flash attention")
                 offload = gr.Checkbox(value=f.get("offload_to_cpu", True),
-                                      label="Modèle rangé en RAM")
+                                      label="Model kept in RAM")
                 tiling = gr.Checkbox(value=f.get("vae_tiling", True),
-                                     label="Image assemblée par morceaux")
+                                     label="Image assembled in pieces")
             with gr.Row():
                 clip_cpu = gr.Checkbox(value=f.get("clip_on_cpu", False),
-                                       label="Texte sur le processeur")
+                                       label="Text on the processor")
                 vae_cpu = gr.Checkbox(value=f.get("vae_on_cpu", False),
-                                      label="Assemblage sur le processeur")
+                                      label="Assembly on the processor")
 
             gr.Markdown(t(
-                "---\n"
-                "**Cache entre les pas** — réutilise des calculs d'un pas de "
-                "diffusion au suivant. Ne gagne quelque chose qu'au-delà de "
-                "~10 pas ; nos modèles en font 4 à 8, donc **laissez "
-                "désactivé** sauf mesure contraire."))
+                "---\n**Cache between steps** — reuses computations from one "
+                "diffusion step to the next. Only pays off above ~10 steps; "
+                "our models run 4 to 8, so **leave it off** unless a "
+                "measurement says otherwise."))
             with gr.Row():
                 cache_mode = gr.Dropdown(
-                    [(t("Désactivé (recommandé)"), ""),
+                    [(t("Disabled (recommended)"), ""),
                      ("easycache", "easycache"), ("dbcache", "dbcache"),
                      ("taylorseer", "taylorseer"), ("cache-dit", "cache-dit"),
                      ("spectrum", "spectrum")],
-                    value=prefs.get("cache_mode", ""), label="Mode de cache")
+                    value=prefs.get("cache_mode", ""), label="Cache mode")
                 cache_opt = gr.Textbox(
                     value=prefs.get("cache_option", ""),
-                    label="Option (vide = défauts)",
+                    label="Option (blank = defaults)",
                     placeholder="ex. threshold=0.2")
 
             gr.Markdown(t(
-                "---\n"
-                "**Convolution directe** — supprime un gros tampon "
-                "intermédiaire. Gain de mémoire certain ; effet sur la vitesse "
-                "**imprévisible** (parfois mieux, parfois moins bien). À "
-                "chronométrer, pas à cocher les yeux fermés."))
+                "---\n**Direct convolution** — removes a large intermediate "
+                "buffer. The memory gain is certain; the speed effect is "
+                "**unpredictable** (sometimes better, sometimes worse). To be "
+                "timed, not ticked blindly."))
             with gr.Row():
                 conv_diff = gr.Checkbox(
                     value=bool(prefs.get("conv_direct_diffusion")),
-                    label="Convolution directe — modèle d'image")
+                    label="Direct convolution — image model")
                 conv_vae = gr.Checkbox(
                     value=bool(prefs.get("conv_direct_vae")),
-                    label="Convolution directe — assemblage")
+                    label="Direct convolution — assembly")
 
             gr.Markdown(t(
-                "---\n"
-                "**Découpage du calcul** — autorise le moteur à découper son "
-                "graphe pour tenir dans un budget au lieu d'échouer. **C'est "
-                "plus lent** : à réserver aux résolutions qui ne passent pas "
-                "autrement. L'onglet 🚀 HD s'en sert déjà tout seul."))
+                "---\n**Splitting the computation** — lets the engine cut its "
+                "graph to fit a budget instead of failing. **It is slower**: "
+                "keep it for resolutions that will not fit otherwise. The 🚀 "
+                "HD tab already uses it on its own."))
             with gr.Row():
                 max_vram = gr.Dropdown(
-                    [(t("Désactivé (recommandé)"), ""),
-                     (t("Auto — mémoire libre moins 1 Go"), "auto"),
-                     (t("Plafond ferme : 6 Go"), "6"),
-                     (t("Plafond ferme : 8 Go"), "8"),
-                     (t("Plafond ferme : 10 Go"), "10")],
+                    [(t("Disabled (recommended)"), ""),
+                     (t("Auto — free memory minus 1 GB"), "auto"),
+                     (t("Hard cap: 6 GB"), "6"),
+                     (t("Hard cap: 8 GB"), "8"),
+                     (t("Hard cap: 10 GB"), "10")],
                     value=prefs.get("max_vram", ""), allow_custom_value=True,
-                    label="Budget mémoire du calcul")
+                    label="Memory budget for the computation")
                 stream_layers = gr.Checkbox(
                     value=bool(prefs.get("stream_layers")),
-                    label="Streaming des couches depuis la RAM",
-                    info=t("Exige que le modèle soit rangé en RAM. Sans cela, "
-                           "le moteur ignore l'option."))
+                    label="Layer streaming from RAM",
+                    info=t("Requires the model to be kept in RAM. Without "
+                           "that, the engine ignores the option."))
 
             gr.Markdown(t(
-                "---\n"
-                "**Moteur résident** — aujourd'hui le moteur démarre, lit le "
-                "modèle, fabrique l'image et s'arrête : le chargement est "
-                "repayé à **chaque** image. Coché, le modèle reste chargé "
-                "entre deux générations. C'est tout bénéfice quand on génère "
-                "une image à la fois pour affiner un prompt.\n\n"
-                "En échange : **pas d'aperçu pendant le calcul** (l'image "
-                "arrive d'un coup), et le modèle occupe la carte en "
-                "permanence — les outils du Toolkit le déchargent tout seuls "
-                "quand ils ont besoin du GPU. Les LoRA et la passe HD "
-                "repassent automatiquement par l'ancien mode."))
+                "---\n**Resident engine** — today the engine starts, reads "
+                "the model, makes the image and exits: the loading is paid "
+                "again for **every** image. Ticked, the model stays loaded "
+                "between generations. That is pure gain when you generate one "
+                "image at a time to refine a prompt.\n\nIn exchange: **no "
+                "preview while it computes** (the image arrives all at once), "
+                "and the model occupies the card permanently — Toolkit tools "
+                "unload it by themselves when they need the GPU. LoRAs and "
+                "the HD pass automatically go back to the old mode."))
             _no_resident = _resident_reason()
             gr.Markdown(_no_resident, visible=bool(_no_resident))
             resident = gr.Checkbox(
                 value=bool(prefs.get("resident_engine")),
-                label="Garder le modèle chargé entre deux images",
+                label="Keep the model loaded between images",
                 visible=not _no_resident)
 
             # Confirmation LOCALE : la ligne d'état du haut est hors de l'écran
@@ -413,27 +400,27 @@ def build_settings_tab():
             expert_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
             combo = hardware.rtx3060_1080ti_combo() if multi_gpu else None
-            combo_btn = gr.Button(t("⚡ Profil RTX 3060 + GTX 1080 Ti"),
+            combo_btn = gr.Button(t("⚡ RTX 3060 + GTX 1080 Ti profile"),
                                   visible=bool(combo))
 
         # ------------------------------------------------------------------ #
         #  Ce qui n'a rien à voir avec la génération
         # ------------------------------------------------------------------ #
-        with gr.Accordion(t("🌍 Langue, thème et comptes"), open=False):
+        with gr.Accordion(t("🌍 Language, theme and accounts"), open=False):
             with gr.Row():
                 lang_dd = gr.Dropdown(
                     LANGS, value=prefs.get("lang", "fr"),
-                    label="🌐 Langue / Language (redémarrage requis)")
+                    label="🌐 Langue / Language (restart required)")
                 theme_dd = gr.Dropdown(
-                    [(t("Clair"), "light"), (t("Sombre"), "dark")],
+                    [(t("Light"), "light"), (t("Dark"), "dark")],
                     value=prefs.get("theme", "light"),
-                    label="🎨 Thème (redémarrage requis)")
+                    label="🎨 Theme (restart required)")
             hf_ep = gr.Textbox(
                 value=prefs.get("hf_endpoint", "https://huggingface.co"),
-                label="Endpoint Hugging Face (miroir éventuel)")
+                label="Hugging Face endpoint (optional mirror)")
             civitai_tok = gr.Textbox(
                 value=prefs.get("civitai_token", ""),
-                label="Jeton Civitai (optionnel — LoRA protégés)",
+                label="Civitai token (optional — gated LoRAs)",
                 type="password")
             account_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
@@ -452,7 +439,7 @@ def build_settings_tab():
                       enc_quant=None if choice == "balanced" else prof.enc_quant,
                       flags=prof.flags())
             return (_headline(p), _bias_note(choice, p),
-                    _said(_OK + t("Priorité appliquée : **{label}**.").format(
+                    _said(_OK + t("Priority applied: **{label}**.").format(
                         label=t(hardware.BIASES[choice]["label"]))))
 
         bias.change(_apply_bias, inputs=[bias, gpu],
@@ -462,7 +449,7 @@ def build_settings_tab():
             _save(gpu_index=idx)
             p = _apply_strategy_prefs(choice, idx)
             return _headline(p), _said(_OK + t(
-                "Carte de génération : #{idx}.").format(idx=idx))
+                "Generation card: #{idx}.").format(idx=idx))
 
         gpu.change(_apply_gpu, inputs=[gpu, strategy],
                    outputs=[headline, status])
@@ -477,7 +464,7 @@ def build_settings_tab():
 
             def _apply_tools_gpu(v):
                 _save(text_gpu_index=v)
-                return _said(_OK + t("Carte de l'améliorateur enregistrée."))
+                return _said(_OK + t("Enhancer card saved."))
 
             tools_gpu.change(_apply_tools_gpu, inputs=[tools_gpu],
                              outputs=[status])
@@ -500,8 +487,8 @@ def build_settings_tab():
                       stream_layers=bool(sl))
             return (_headline(p),
                     _bias_note(hardware.bias_from_prefs(p), p),
-                    _said(_OK + t("Réglage expert appliqué "
-                                  "(automatique désactivé).")))
+                    _said(_OK + t("Expert setting applied (automatic tuning "
+                                  "off).")))
 
         _expert = [quant, enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
                    cache_mode, cache_opt, conv_diff, conv_vae, max_vram,
@@ -515,14 +502,14 @@ def build_settings_tab():
         def _apply_resident(on):
             _save(resident_engine=bool(on))
             if on:
-                return _said(_OK + t("Le modèle restera chargé entre deux "
-                                     "images. Le premier chargement sera "
-                                     "aussi long que d'habitude."))
+                return _said(_OK + t("The model will stay loaded between "
+                                     "images. The first load will take as "
+                                     "long as it always has."))
             server = resident_engine()
             if server is not None:
                 server.stop()
-            return _said(_OK + t("Moteur résident désactivé, la mémoire de la "
-                                 "carte est rendue."))
+            return _said(_OK + t("Resident engine off, the card's memory is "
+                                 "released."))
 
         resident.change(_apply_resident, inputs=[resident],
                         outputs=[expert_status])
@@ -531,22 +518,22 @@ def build_settings_tab():
         def _apply_lang(lang):
             _save(lang=lang)
             disp = {v: k for k, v in LANGS}.get(lang, lang)
-            return _said(_OK + t("Langue enregistrée. **Redémarrez l'application** "
-                                 "(`run.bat` / `run.sh`) pour appliquer « {lang} »."
+            return _said(_OK + t("Language saved. **Restart the app** "
+                                 "(`run.bat` / `run.sh`) to apply “{lang}”."
                                  ).format(lang=disp))
 
         def _apply_theme(th):
             _save(theme="dark" if th == "dark" else "light")
-            return _said(_OK + t("Thème enregistré. **Redémarrez l'application** "
-                                 "pour l'appliquer."))
+            return _said(_OK + t("Theme saved. **Restart the app** to apply "
+                                 "it."))
 
         def _apply_endpoint(v):
             _save(hf_endpoint=v or "https://huggingface.co")
-            return _said(_OK + t("Endpoint enregistré."))
+            return _said(_OK + t("Endpoint saved."))
 
         def _apply_token(v):
             _save(civitai_token=(v or "").strip())
-            return _said(_OK + t("Jeton Civitai enregistré."))
+            return _said(_OK + t("Civitai token saved."))
 
         lang_dd.change(_apply_lang, inputs=[lang_dd], outputs=[account_status])
         theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status])
@@ -561,12 +548,11 @@ def build_settings_tab():
             """Dire ce qui a été mesuré, pas seulement qui gagne."""
             rows = [r for r in data.get("results", []) if r.get("ok")]
             if not rows:
-                return t("❌ Aucune configuration n'a pu être mesurée "
-                         "(voir le journal).")
+                return t("❌ No configuration could be measured (see the log).")
             lines = [f"- **{r['label']}** — {r['seconds']:.2f} s "
                      f"(± {r.get('spread_seconds', 0):.2f} s)" for r in rows]
             best = data.get("recommended_mode") or data.get("fastest_model")
-            head = t("✅ Médiane sur {n} mesures · le plus rapide : **{best}**"
+            head = t("✅ Median over {n} runs · fastest: **{best}**"
                      ).format(n=data.get("measured_runs", "?"), best=best)
             return head + "\n" + "\n".join(lines)
 
@@ -591,7 +577,7 @@ def build_settings_tab():
 
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
-            yield t("⏳ Mesure en cours…"), gr.update(), ""
+            yield t("⏳ Measuring…"), gr.update(), ""
             while True:
                 line = q.get()
                 if line is None:
@@ -600,7 +586,7 @@ def build_settings_tab():
                 yield gr.update(), gr.update(), "\n".join(logs[-500:])
             tail = "\n".join(logs[-500:])
             if isinstance(state.get("err"), benchmark.Cancelled):
-                yield (t("⏹️ Mesure interrompue — aucun réglage modifié."),
+                yield (t("⏹️ Measurement interrupted — no setting changed."),
                        gr.update(), tail)
                 return
             if "err" in state:
@@ -618,20 +604,20 @@ def build_settings_tab():
             # cours va au bout et la mesure s'arrête proprement ensuite.
             # Couper au milieu laisserait un tir à moitié chronométré.
             _bench_stop.set()
-            return t("⏹️ Arrêt demandé — la mesure en cours se termine.")
+            return t("⏹️ Stop requested — the run in progress will finish first.")
 
         widgets.stop_into_log(bench_stop, _cancel_bench, bench_log,
                               [_bench_evt])
 
         def _apply_report(raw):
             if not raw:
-                return gr.update(), _said(t("❌ Lancez d'abord la mesure."))
+                return gr.update(), _said(t("❌ Run the measurement first."))
             try:
                 mode = benchmark.apply_recommendation(getattr(raw, "name", raw))
             except Exception as exc:  # noqa: BLE001
                 return gr.update(), _said(f"❌ {exc}")
             return _headline(), _said(_OK + t(
-                "Configuration mesurée appliquée : **{mode}**.").format(
+                "Measured configuration applied: **{mode}**.").format(
                     mode=mode))
 
         apply_bench.click(_apply_report, inputs=[bench_file],
@@ -648,8 +634,8 @@ def build_settings_tab():
             p = _save(**preset)
             return (_headline(p), gr.update(value=preset["gpu_index"]),
                     gr.update(value="encoder"),
-                    _said(_OK + t("Profil deux cartes appliqué : la RTX 3060 "
-                                  "dessine, la 1080 Ti lit votre texte.")))
+                    _said(_OK + t("Two-card profile applied: the RTX 3060 "
+                                  "draws, the 1080 Ti reads your text.")))
 
         combo_btn.click(_apply_combo,
                         outputs=[headline, gpu, strategy, status])

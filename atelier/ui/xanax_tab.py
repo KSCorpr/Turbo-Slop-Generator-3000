@@ -60,38 +60,38 @@ XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896)}
 # nommé et une composition — la photo RÉUSSIE d'un photographe, alors qu'on
 # veut la photo RATÉE d'un oncle.
 ANECDOTES = [
-    "j'ai mangé chez Flunch avec Mamie",
-    "journée pas terrible mais j'ai pu aller acheter des clopes",
-    "on a fait les courses au Leclerc, y'avait la queue à la caisse",
-    "anniversaire de Papy, on était tous dans la véranda",
-    "j'ai attendu le bus vingt minutes sous la pluie",
-    "réveillon chez ma tante, on a mangé de la bûche",
-    "j'ai lavé la voiture dans l'allée",
-    "on est allés à la kermesse de l'école de mon fils",
-    "j'ai poireauté à la CAF toute la matinée",
-    "barbecue chez les voisins, il a commencé à pleuvoir",
-    "j'ai repeint la chambre, c'est pas fini",
-    "on a mangé au routier sur la nationale",
-    "j'ai emmené le chien chez le véto",
-    "communion de ma cousine, photo devant l'église",
-    "on a bu un café au bar-tabac après le marché",
-    "j'ai déménagé le canapé de ma sœur",
-    "vide-grenier dimanche matin, j'ai rien vendu",
-    "on a regardé le match chez Kévin",
-    "j'ai passé l'après-midi à la laverie",
-    "on est allés voir la mer, il faisait gris",
-    "j'ai monté le meuble Ikea de la cuisine",
-    "pot de départ au boulot dans la salle de pause",
-    "j'ai fait la queue à la poste pour un colis",
-    "on a pris l'apéro dans le jardin, rien de spécial",
-    "j'ai gagné trois euros au PMU",
-    "on a mangé une pizza devant la télé",
-    "j'ai attendu ma fille à la sortie du collège",
-    "on a fait une pause sur l'aire d'autoroute",
-    "j'ai réparé le vélo dans le garage",
-    "mariage de mon collègue, salle des fêtes",
-    "j'ai tondu la pelouse avant qu'il pleuve",
-    "on a fêté ça au kebab en bas de chez moi",
+    "had lunch at the motorway cafeteria with Gran",
+    "rubbish day but at least I got my cigarettes",
+    "did the shopping at the hypermarket, long queue at the till",
+    "Grandad's birthday, we were all crammed in the conservatory",
+    "waited twenty minutes for the bus in the rain",
+    "New Year's Eve at my aunt's, we had the yule log",
+    "washed the car in the driveway",
+    "went to the school fête with my son",
+    "hung around the benefits office all morning",
+    "barbecue at the neighbours', then it started raining",
+    "repainted the bedroom, not finished yet",
+    "ate at the truck stop on the main road",
+    "took the dog to the vet",
+    "my cousin's communion, photo outside the church",
+    "had a coffee at the corner café after the market",
+    "moved my sister's sofa",
+    "car boot sale on Sunday morning, sold nothing",
+    "watched the match round at Kev's",
+    "spent the afternoon at the launderette",
+    "went to see the sea, it was grey",
+    "assembled the flat-pack kitchen unit",
+    "leaving drinks at work in the break room",
+    "queued at the post office for a parcel",
+    "had drinks in the garden, nothing special",
+    "won three euros at the betting shop",
+    "had pizza in front of the telly",
+    "waited for my daughter outside the school gates",
+    "stopped at the motorway services",
+    "fixed the bike in the garage",
+    "a colleague's wedding, in the village hall",
+    "mowed the lawn before the rain",
+    "celebrated at the kebab shop downstairs",
 ]
 
 # Barres de progression de sd.cpp : converties en ligne de statut, jamais
@@ -134,8 +134,8 @@ def _recap_for(model_id: str) -> str:
     """État du modèle choisi + format qu'il produira, avant le clic."""
     model, _fam, _d, w, h, _st = _model_info(model_id)
     ready = model is not None and registry.model_is_ready(model)
-    state = (t("● modèle prêt") if ready
-             else t("○ à télécharger (onglet Catalogue de modèles)"))
+    state = (t("● model ready") if ready
+             else t("○ to download (Model Catalog tab)"))
     return f"{state} · {w}×{h}"
 
 
@@ -144,34 +144,33 @@ def build_xanax_tab(title: str = "💊 Xanax"):
         # Texte SÉPARÉ du titre : une f-string composée ne peut pas servir de
         # clé de traduction (elle ne correspondrait jamais au dictionnaire).
         gr.Markdown(
-            "### Racontez votre journée, on en fait une photo\n"
-            "N'écrivez **pas une description d'image** mais une phrase de la "
-            "vie courante, comme dans un carnet : *« j'ai mangé chez Flunch "
-            "avec Mamie »*, *« journée pas terrible mais j'ai pu aller acheter "
-            "des clopes »*. C'est ce décalage qui donne la photo prise en "
-            "passant plutôt que la photo posée.\n\n"
-            "**Le style est figé et non modifiable** : photo amateur, France "
-            "provinciale, 1995-2005, temps couvert, aucun post-traitement, "
-            "format 4:3 sur la grille native du modèle. C'est le principe de "
-            "cet onglet — pour régler quoi que ce soit, utilisez un onglet de "
-            "génération normal.")
+            "### Tell us about your day, we make a photo of it\nDo **not** "
+            "write an image description — write a plain sentence about your "
+            "day, the way you would in a diary: *“had lunch at the cafeteria "
+            "with Gran”*, *“rubbish day but at least I got my cigarettes”*. "
+            "That gap is what produces a photo taken in passing rather than a "
+            "posed one.\n\n**The style is fixed and cannot be changed**: "
+            "amateur snapshot, provincial France, 1995-2005, overcast, no "
+            "post-processing, 4:3 on the model's native grid. That is the "
+            "point of this tab — to tune anything at all, use a normal "
+            "generation tab.")
 
         with gr.Row():
             with gr.Column(scale=3):
                 model_pick = gr.Radio(
                     choices=[(t(lbl), mid) for lbl, mid in XANAX_MODELS],
-                    value=XANAX_MODELS[0][1], label="Modèle")
+                    value=XANAX_MODELS[0][1], label="Model")
                 model_state = gr.Markdown(_recap_for(XANAX_MODELS[0][1]),
                                           elem_classes="hint")
                 prompt = gr.Textbox(
-                    label="Ce que vous avez fait", lines=3,
-                    placeholder="j'ai mangé chez Flunch avec Mamie…",
-                    info="Une phrase de votre journée, à la première personne. "
-                         "Pas « un homme attend le bus » mais « j'ai attendu "
-                         "le bus une plombe ».")
-                dice = gr.Button("🎲 Une journée au hasard", size="sm")
+                    label="What you did", lines=3,
+                    placeholder="had lunch at the motorway cafeteria with Gran…",
+                    info="One sentence about your day, in the first person. "
+                         "Not “a man waits for the bus” but “waited ages for "
+                         "the bus”.")
+                dice = gr.Button("🎲 A random day", size="sm")
                 with gr.Row(elem_classes="go-row"):
-                    run = gr.Button("📷 Générer", variant="primary",
+                    run = gr.Button("📷 Generate", variant="primary",
                                     size="lg", scale=4)
                     stop = gr.Button("⏹️ Stop", variant="stop", scale=1,
                                      min_width=90)
@@ -179,24 +178,25 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                 enhance = gr.Checkbox(
                     value=tools.enhance_is_installed(),
                     interactive=tools.enhance_is_installed(),
-                    label="✨ Transformer ma phrase en photo (améliorateur IA)",
-                    info=("Cherche ce qu'on VERRAIT sur la photo : le lieu, "
-                          "les gens, l'heure. Traduit au passage, et sait ce "
-                          "qu'est un Flunch — le modèle d'image, non."
+                    label="✨ Turn my sentence into a photo (AI enhancer)",
+                    info=("Works out what the photo would SHOW: the place, "
+                          "the people, the time of day. Translates along the "
+                          "way, and knows what a French cafeteria chain is — "
+                          "the image model does not."
                           if tools.enhance_is_installed() else
-                          "Améliorateur non installé — installez-le depuis un "
-                          "onglet de génération. Sans lui votre phrase part "
-                          "TELLE QUELLE : écrivez alors en anglais et dites ce "
-                          "qu'on voit, pas ce que vous avez fait."))
+                          "Enhancer not installed — install it from a "
+                          "generation tab. Without it your sentence is sent "
+                          "AS IS: write in English then, and say what is "
+                          "visible rather than what you did."))
                 seed = gr.Number(value=-1, precision=0,
-                                 label="Seed (-1 = aléatoire)",
-                                 info="Une graine fixe rejoue exactement la "
-                                      "même photo.")
+                                 label="Seed (-1 = random)",
+                                 info="A fixed seed replays exactly the same "
+                                      "photo.")
             with gr.Column(scale=4):
                 result = gr.Image(label="Photo", type="filepath", height=460,
                                   format="png", buttons=widgets.IMAGE_BUTTONS)
                 used_md = gr.Markdown("", elem_classes="hint")
-                log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
+                log = gr.Textbox(label="Log", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
         model_pick.change(_recap_for, inputs=[model_pick],
@@ -209,12 +209,12 @@ def build_xanax_tab(title: str = "💊 Xanax"):
 
         def do_xanax(model_id, subject, use_enhance, seed_v):
             if not (subject or "").strip():
-                raise gr.Error(t("Racontez d'abord quelque chose — "
-                                 "une phrase suffit."))
+                raise gr.Error(t("Tell us something first — one sentence is "
+                                 "enough."))
             settings.ensure_dirs()
             model, _family, d, width, height, steps = _model_info(model_id)
             if model is None:
-                raise gr.Error(t("Modèle indisponible."))
+                raise gr.Error(t("Model unavailable."))
             try:
                 base_seed = int(seed_v)
             except (TypeError, ValueError):
@@ -226,7 +226,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
             text = subject.strip()
 
             if use_enhance and tools.enhance_is_installed():
-                yield (t("⏳ On cherche à quoi ressemblait ce moment…"),
+                yield (t("⏳ Working out what that moment looked like…"),
                        gr.update(), gr.update(), "\n".join(logs))
                 try:
                     # style « xanax » : le seul des trois qui parte d'une
@@ -293,7 +293,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
 
             # Le prompt accompagne l'image, comme demandé par la consigne
             # « écris le prompt après chaque image ».
-            yield (t("✅ Photo générée (seed {s})").format(s=base_seed),
+            yield (t("✅ Photo generated (seed {s})").format(s=base_seed),
                    gr.update(value=state["outs"][0]),
                    gr.update(value=f"**Prompt utilisé :** {full_prompt}"),
                    "\n".join(logs[-400:]))

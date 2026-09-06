@@ -65,7 +65,7 @@ def build_convert_tab():
                 gen_engine.list_custom_models(), value=None, scale=3,
                 label="Modèle à convertir (dans models/custom/)",
                 allow_custom_value=False)
-            refresh = gr.Button("↻ Rafraîchir", size="sm", scale=1)
+            refresh = gr.Button("↻ Refresh", size="sm", scale=1)
         with gr.Row():
             qtype = gr.Dropdown(QTYPES, value=_DEFAULT_QTYPE, scale=2,
                                 label="Quantification cible")
@@ -74,9 +74,9 @@ def build_convert_tab():
 
         with gr.Row():
             run = gr.Button("🔧 Convertir", variant="primary", scale=3)
-            stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
+            stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
         status = gr.Markdown("")
-        log = gr.Textbox(label="Journal", lines=14, autoscroll=True,
+        log = gr.Textbox(label="Log", lines=14, autoscroll=True,
                          elem_classes="log-box")
 
         # --- Comportements ---

@@ -125,7 +125,7 @@ def high_resolution(image, model_id: str, factor: float = 2.0,
                     log: Callable[[str], None] | None = None) -> Path:
     """Une passe « haute résolution » sur `image`. Renvoie le fichier produit."""
     if image is None:
-        raise sdcpp.EngineError("Fournissez une image.")
+        raise sdcpp.EngineError("Provide an image.")
     source = (Image.open(image) if isinstance(image, (str, Path))
               else image).convert("RGB")
 

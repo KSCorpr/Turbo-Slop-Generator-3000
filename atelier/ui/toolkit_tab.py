@@ -26,24 +26,24 @@ from . import preview
 # Champs : prompt · negative · denoise · cfg · steps · controlnet · cn_scale ·
 #          esrgan ("drawing" = choisir automatiquement un modèle dessin installé)
 UPSCALE_PRESETS = [
-    {"name": "🔍 Net & fidèle (aucun ajout)",
+    {"name": "🔍 Sharp & faithful (no additions)",
      "prompt": "sharp focus, clean precise detail, faithful to the original, "
                "no added elements, high fidelity",
      "denoise": 0.20},
-    {"name": "✨ Ajouter du détail",
+    {"name": "✨ Add detail",
      "prompt": "highly detailed, intricate fine textures, crisp micro-detail, "
                "enhanced clarity, sharp focus",
      "denoise": 0.40},
-    {"name": "🧴 Peau réaliste (portrait)",
+    {"name": "🧴 Realistic skin (portrait)",
      "prompt": "highly detailed realistic skin with fine pores, natural "
                "complexion, sharp eyes and individual hair strands, "
                "true-to-life photographic detail",
      "denoise": 0.35},
-    {"name": "🌿 Nature / paysage",
+    {"name": "🌿 Nature / landscape",
      "prompt": "crisp natural textures, detailed foliage and rock, fine "
                "vegetation, clear sharp landscape detail",
      "denoise": 0.40},
-    {"name": "🏙️ Architecture / produit",
+    {"name": "🏙️ Architecture / product",
      "prompt": "clean sharp edges, precise material textures, accurate "
                "reflections, crisp surface detail",
      "denoise": 0.30},
@@ -57,7 +57,7 @@ UPSCALE_PRESETS = [
     # On corrige les trois : ESRGAN dessin en base (agrandissement réel, pas une
     # interpolation), négatif anti-photo/anti-grain, débruitage bas et structure
     # verrouillée par ControlNet — SDXL ne fait plus que nettoyer.
-    {"name": "🖍️ Illustration / BD — trait net, sans interpolation",
+    {"name": "🖍️ Illustration / comics — crisp linework, no interpolation",
      "prompt": "clean crisp linework, flat solid color areas, smooth even "
                "fills, sharp precise edges, clean vector-like illustration, "
                "no texture on flat colors",
@@ -67,7 +67,7 @@ UPSCALE_PRESETS = [
                  "3d render, deformed lines",
      "denoise": 0.18, "cfg": 4.0, "steps": 20,
      "controlnet": True, "cn_scale": 0.85, "esrgan": "drawing"},
-    {"name": "🎨 Illustration peinte / concept art",
+    {"name": "🎨 Painted illustration / concept art",
      "prompt": "crisp clean brushwork, refined shapes, vivid consistent "
                "colors, sharp stylized detail",
      "negative": "photorealistic, film grain, noise, jpeg artifacts, "
@@ -75,11 +75,11 @@ UPSCALE_PRESETS = [
      "denoise": 0.35, "cfg": 5.0,
      "controlnet": True, "cn_scale": 0.7, "esrgan": "drawing"},
 
-    {"name": "🚀 Détail maximum (créatif)",
+    {"name": "🚀 Maximum detail (creative)",
      "prompt": "ultra detailed, hyper-detailed intricate surfaces, rich fine "
                "texture everywhere, razor sharp",
      "denoise": 0.55},
-    {"name": "🪶 Doux & propre (anti-grain)",
+    {"name": "🪶 Soft & clean (anti-grain)",
      "prompt": "clean smooth surfaces, gently denoised, soft natural detail, "
                "no artifacts, no grain",
      "denoise": 0.25},
@@ -109,15 +109,15 @@ def _installer_block(title: str, note: str, stream_fn, installed: bool):
     # `title` est un nom d'outil français fourni par l'appelant : il se traduit
     # séparément, sinon seule l'enveloppe passerait en anglais.
     repair = gr.Button(
-        t("⚙️ Réinstaller / réparer {title}").format(title=t(title)),
+        t("⚙️ Reinstall / repair {title}").format(title=t(title)),
         size="sm", variant="secondary", visible=installed)
     with gr.Accordion(
-            t("⚙️ Installer {title} (en 1 clic)").format(title=t(title)),
+            t("⚙️ Install {title} (1 click)").format(title=t(title)),
             open=not installed, visible=not installed) as box:
         gr.Markdown(note)
-        log = gr.Textbox(label="Journal d'installation", lines=10,
+        log = gr.Textbox(label="Install log", lines=10,
                          autoscroll=True, elem_classes="log-box")
-        btn = gr.Button(t("⬇️ Installer {title}").format(title=t(title)))
+        btn = gr.Button(t("⬇️ Install {title}").format(title=t(title)))
 
         def _install():
             for msg in stream_fn():
@@ -140,10 +140,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
     donc le conteneur, sinon l'image arriverait dans un onglet resté masqué."""
     with gr.Tab("🧰 Toolkit", id=tab_id):
         gr.Markdown(
-            "### Outils utilitaires\n"
-            "Carte de **profondeur**, **suppression d'arrière-plan** (PNG "
-            "transparent), **détourage d'objet au clic** (Segment Anything) et "
-            "**agrandissement ESRGAN** (simple, 100% GPU).")
+            "### Utility tools\n**Depth** map, **background removal** "
+            "(transparent PNG), **click-to-cutout** (Segment Anything) and "
+            "**ESRGAN upscale** (simple, 100% GPU).")
 
         with gr.Tabs() as sub_tabs:
             # ---------- Image -> prompt ----------
@@ -152,56 +151,56 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ceux qui la retouchent, dans l'ordre où on s'en sert.
             with gr.Tab("📝 Image → prompt", id="describe"):
                 gr.Markdown(
-                    "Donnez une image, récupérez le **prompt** qui permettrait "
-                    "de la refaire. Ce n'est pas une légende : un modèle de "
-                    "vision dirait « une photo d'un chat sur un canapé », ce "
-                    "qui, collé dans le champ Prompt, donne une image plate. "
-                    "Ici on nomme le **médium**, la **lumière**, l'**objectif**, "
-                    "la **palette** et le **cadrage** — les mots qui pilotent "
-                    "réellement la diffusion. Toujours en **anglais** : c'est "
-                    "la langue des modèles.")
+                    "Hand it an image, get back the **prompt** that would "
+                    "recreate it. This is not a caption: a vision model would "
+                    "say “a photo of a cat on a sofa”, which pasted into the "
+                    "Prompt field gives a flat image. Here we name the "
+                    "**medium**, the **light**, the **lens**, the **palette** "
+                    "and the **framing** — the words that actually steer "
+                    "diffusion. Always in **English**: that is the models' "
+                    "language.")
                 _installer_block(
                     "Image → prompt",
-                    "Modèle de vision-langage **Qwen2.5-VL-3B** (~7,5 Go), même "
-                    "famille que l'améliorateur de prompt. Chargé puis déchargé "
-                    "à chaque appel : **aucun conflit de VRAM** avec la "
-                    "génération. ⚠️ Licence *Qwen Research* — usage non "
-                    "commercial, comme l'améliorateur déjà installé.",
+                    "**Qwen2.5-VL-3B** vision-language model (~7.5 GB), same "
+                    "family as the prompt enhancer. Loaded then unloaded on "
+                    "each call: **no VRAM conflict** with generation. ⚠️ "
+                    "*Qwen Research* licence — non-commercial, like the "
+                    "enhancer already installed.",
                     tools.install_describe_stream, tools.describe_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=2):
-                        p_image = gr.Image(label="Image à lire", type="pil",
+                        p_image = gr.Image(label="Image to read", type="pil",
                                            height=340,
                                            buttons=widgets.IMAGE_BUTTONS)
                         p_mode = gr.Radio(
-                            [(t("📸 Refaire cette image — sujet ET style"),
+                            [(t("📸 Recreate this image — subject AND style"),
                               "full"),
-                             (t("🎨 Juste le style — à appliquer à autre chose"),
+                             (t("🎨 Style only — to apply to something else"),
                               "style"),
-                             (t("🔍 Décrire simplement — ce qu'il y a dedans"),
+                             (t("🔍 Plain description — what is in it"),
                               "plain")],
-                            value="full", label="Ce que vous voulez en tirer")
+                            value="full", label="What you want out of it")
                         p_hint = gr.Markdown("", elem_classes="hint")
                         with gr.Row():
-                            p_run = gr.Button("📝 Lire l'image",
+                            p_run = gr.Button("📝 Read the image",
                                               variant="primary")
-                            p_stop = gr.Button("⏹️ Annuler", variant="stop")
+                            p_stop = gr.Button("⏹️ Cancel", variant="stop")
                     with gr.Column(scale=3):
                         p_out = gr.Textbox(
-                            label="Prompt obtenu", lines=9,
+                            label="Resulting prompt", lines=9,
                             buttons=widgets.TEXT_COPY,
-                            placeholder="Le texte apparaîtra ici — relisez-le "
-                                        "avant de l'envoyer, c'est un point de "
-                                        "départ, pas un verdict.")
+                            placeholder="The text will appear here — read it "
+                                        "before sending, it is a starting "
+                                        "point, not a verdict.")
                         gr.Markdown(t(
-                            "**L'envoyer directement dans un onglet de "
-                            "génération** — le prompt y remplace le champ, "
-                            "vous générez ensuite quand vous voulez."))
+                            "**Send it straight to a generation tab** — the "
+                            "prompt replaces the field there, and you "
+                            "generate whenever you like."))
                         with gr.Row():
                             p_to_krea = gr.Button("→ ⚡ Krea 2 Turbo")
                             p_to_flux = gr.Button("→ 🟣 Flux.2 Klein")
-                        p_log = gr.Textbox(label="Journal", lines=6,
+                        p_log = gr.Textbox(label="Log", lines=6,
                                            autoscroll=True,
                                            elem_classes="log-box")
 
@@ -209,14 +208,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 # style » et « refaire cette image » ne se devinent pas d'après
                 # leur libellé seul, et se tromper coûte une minute de calcul.
                 _MODE_HINT = {
-                    "full": "Sujet, décor, lumière, couleurs, médium — de quoi "
-                            "refaire une image proche sur un autre modèle.",
-                    "style": "**Aucun mot sur le sujet** : ni le chat, ni la "
-                             "voiture, ni le lieu. Seulement le rendu, à coller "
-                             "devant votre propre sujet.",
-                    "plain": "Deux ou trois phrases, sans vocabulaire de "
-                             "prompt. Pour savoir ce qu'il y a dans l'image, "
-                             "pas pour la regénérer.",
+                    "full": "Subject, setting, light, colours, medium — "
+                            "enough to recreate a close image on another "
+                            "model.",
+                    "style": "**Not a word about the subject**: not the cat, "
+                             "not the car, not the place. Only the look, to "
+                             "paste in front of your own subject.",
+                    "plain": "Two or three sentences, no prompt vocabulary. "
+                             "To know what is in the image, not to regenerate "
+                             "it.",
                 }
 
                 def _mode_hint(mode):
@@ -226,9 +226,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def do_describe(image, mode):
                     if image is None:
-                        raise gr.Error(t("Chargez d'abord une image."))
+                        raise gr.Error(t("Load an image first."))
                     if not tools.describe_is_installed():
-                        raise gr.Error(t("Installez d'abord « Image → prompt »."))
+                        raise gr.Error(t("Install “Image → prompt” first."))
                     q: "queue.Queue[str | None]" = queue.Queue()
                     state: dict = {}
 
@@ -272,7 +272,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                     def _go(text):
                         if not (text or "").strip():
-                            raise gr.Error(t("Lisez d'abord une image."))
+                            raise gr.Error(t("Read an image first."))
                         return text.strip(), gr.Tabs(selected=model_id)
 
                     button.click(_go, inputs=[p_out], outputs=[box, tabs])
@@ -281,32 +281,32 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 _send_to("flux2-klein-9b", p_to_flux)
 
             # ---------- Profondeur ----------
-            with gr.Tab("🌐 Profondeur", id="depth"):
+            with gr.Tab("🌐 Depth", id="depth"):
                 gr.Markdown(
-                    "*Depth Anything V2* — carte de profondeur (clair = proche, "
-                    "sombre = loin). Téléchargez le résultat pour le réutiliser.")
+                    "*Depth Anything V2* — depth map (light = near, dark = "
+                    "far). Download the result to reuse it.")
                 _installer_block(
                     "Depth Anything V2",
-                    "Repose sur PyTorch + transformers (~100 Mo de modèle). "
-                    "Aucune commande à taper.",
+                    "Uses PyTorch + transformers (~100 MB model). No command "
+                    "to type.",
                     tools.install_depth_stream, tools.depth_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        d_image = gr.Image(label="Image source", type="pil",
+                        d_image = gr.Image(label="Source image", type="pil",
                                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        d_run = gr.Button("🌐 Générer la profondeur",
+                        d_run = gr.Button("🌐 Generate depth",
                                           variant="primary", size="lg")
                     with gr.Column(scale=4):
-                        d_result = gr.Image(label="Carte de profondeur", height=520,
+                        d_result = gr.Image(label="Depth map", height=520,
                                             format="png",
                                             buttons=widgets.IMAGE_BUTTONS)
-                        d_log = gr.Textbox(label="Journal", lines=8,
+                        d_log = gr.Textbox(label="Log", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
                 def do_depth(img, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     logs: list[str] = []
                     progress(0.1, desc="Profondeur…")
                     try:
@@ -320,34 +320,34 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 d_run.click(do_depth, inputs=[d_image], outputs=[d_result, d_log])
 
             # ---------- Suppression d'arrière-plan ----------
-            with gr.Tab("✂️ Sans arrière-plan", id="bg"):
+            with gr.Tab("✂️ Background removal", id="bg"):
                 gr.Markdown(
-                    "*RMBG-1.4* — détoure le sujet et renvoie un **PNG "
-                    "transparent**.  \n"
-                    "⚠️ Modèle sous licence **non commerciale** (BRIA RMBG-1.4).")
+                    "*RMBG-1.4* — cuts out the subject and returns a "
+                    "**transparent PNG**.  \n⚠️ **Non-commercial** license "
+                    "(BRIA RMBG-1.4).")
                 _installer_block(
                     "RMBG-1.4",
-                    "Repose sur PyTorch + transformers (~176 Mo de modèle). "
-                    "Aucune commande à taper.",
+                    "Uses PyTorch + transformers (~176 MB model). No command "
+                    "to type.",
                     tools.install_bg_stream, tools.bg_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        b_image = gr.Image(label="Image source", type="pil",
+                        b_image = gr.Image(label="Source image", type="pil",
                                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        b_run = gr.Button("✂️ Détourer", variant="primary",
+                        b_run = gr.Button("✂️ Cut out", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
-                        b_result = gr.Image(label="Sujet détouré (PNG transparent)",
+                        b_result = gr.Image(label="Cutout subject (transparent PNG)",
                                             height=520, format="png",
                                             buttons=widgets.IMAGE_BUTTONS,
                                             image_mode="RGBA")
-                        b_log = gr.Textbox(label="Journal", lines=8,
+                        b_log = gr.Textbox(label="Log", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
                 def do_bg(img, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     logs: list[str] = []
                     progress(0.1, desc="Détourage…")
                     try:
@@ -361,43 +361,43 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log])
 
             # ---------- Segment Anything (clic) ----------
-            with gr.Tab("🪄 Détourer (SAM)", id="sam"):
+            with gr.Tab("🪄 Cut out (SAM)", id="sam"):
                 gr.Markdown(
-                    "*Segment Anything* — **cliquez sur un objet** : SAM affiche "
-                    "aussitôt la **zone sélectionnée en surbrillance**. Ajustez en "
-                    "recliquant, puis « Extraire » pour le **PNG transparent**.")
+                    "*Segment Anything* — **click an object**: SAM instantly "
+                    "shows the **selected area highlighted**. Re-click to "
+                    "adjust, then “Extract” for the **transparent PNG**.")
                 _installer_block(
                     "Segment Anything",
-                    "PyTorch + transformers (~375 Mo, facebook/sam-vit-base). "
-                    "Aucune commande à taper.",
+                    "PyTorch + transformers (~375 MB, facebook/sam-vit-base). "
+                    "No command to type.",
                     tools.install_sam_stream, tools.sam_is_installed())
 
                 s_cut = gr.State(None)     # chemin du découpage déjà calculé
                 with gr.Row():
                     with gr.Column(scale=3):
-                        s_image = gr.Image(label="Image — cliquez sur l'objet",
+                        s_image = gr.Image(label="Image — click the object",
                                            type="pil",
                                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        s_info = gr.Markdown("Cliquez un point sur l'image.")
-                        s_overlay = gr.Image(label="Zone sélectionnée (aperçu)",
+                        s_info = gr.Markdown("Click a point on the image.")
+                        s_overlay = gr.Image(label="Selected area (preview)",
                                              height=300, interactive=False,
                                              buttons=widgets.IMAGE_VIEW_ONLY)
-                        s_run = gr.Button("🪄 Extraire l'objet", variant="primary",
+                        s_run = gr.Button("🪄 Extract object", variant="primary",
                                           size="lg")
                     with gr.Column(scale=4):
-                        s_result = gr.Image(label="Objet extrait (PNG transparent)",
+                        s_result = gr.Image(label="Extracted object (transparent PNG)",
                                             height=520, format="png",
                                             buttons=widgets.IMAGE_BUTTONS,
                                             image_mode="RGBA")
-                        s_log = gr.Textbox(label="Journal", lines=8,
+                        s_log = gr.Textbox(label="Log", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
                 def _on_click(img, evt: gr.SelectData, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not tools.sam_is_installed():
-                        raise gr.Error(t("Segment Anything n'est pas installé "
-                                         "(bouton « Installer » ci-dessus)."))
+                        raise gr.Error(t("Segment Anything is not installed "
+                                         "(the “Install” button above)."))
                     x, y = int(evt.index[0]), int(evt.index[1])
                     progress(0.2, desc="Segmentation…")
                     try:
@@ -406,8 +406,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         raise gr.Error(str(exc))
                     progress(1.0, desc="Terminé")
                     return (overlay or gr.update(), str(cut),
-                            t("Zone sélectionnée en ({x}, {y}). Cliquez "
-                              "« Extraire » ou recliquez ailleurs.").format(x=x, y=y))
+                            t("Area selected at ({x}, {y}). Click “Extract” "
+                              "or re-click elsewhere.").format(x=x, y=y))
 
                 s_image.select(_on_click, inputs=[s_image],
                                outputs=[s_overlay, s_cut, s_info])
@@ -424,13 +424,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def do_sam(cut):
                     if not cut:
-                        raise gr.Error(t("Cliquez d'abord sur un objet dans l'image."))
+                        raise gr.Error(t("Click an object in the image first."))
                     return str(cut), f"✅ {cut}"
 
                 s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
 
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
-            with gr.Tab("🔼 Agrandir", id="esrgan"):
+            with gr.Tab("🔼 Upscale", id="esrgan"):
                 gr.Markdown(
                     "Agrandissement **simple** par réseau ESRGAN, natif "
                     "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
@@ -451,32 +451,32 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "Le GGUF charge plus vite et évite d'exécuter un pickle, "
                     "mais il n'est pas obligatoire.")
 
-                with gr.Accordion("⬇️ Télécharger les upscalers (en 1 clic)",
+                with gr.Accordion("⬇️ Download the upscalers (1 click)",
                                   open=not registry.upscalers_ready()):
                     gr.Markdown(
-                        "Récupère **tous** les modèles ESRGAN GGUF (~1 Go au "
-                        "total) depuis `wbruna/upscalers-sdcpp-gguf`. "
-                        "Réutilisables ensuite hors-ligne.")
-                    u_inst_log = gr.Textbox(label="Journal de téléchargement",
+                        "Fetches **all** the GGUF ESRGAN models (~1 GB total) "
+                        "from `wbruna/upscalers-sdcpp-gguf`. Reusable offline "
+                        "afterwards.")
+                    u_inst_log = gr.Textbox(label="Download log",
                                             lines=8, autoscroll=True,
                                             elem_classes="log-box")
-                    u_inst = gr.Button("⬇️ Télécharger les upscalers")
+                    u_inst = gr.Button("⬇️ Download the upscalers")
 
                 with gr.Row():
                     with gr.Column(scale=3):
                         u_image = gr.Image(
-                            label="Image à agrandir", type="pil",
+                            label="Image to upscale", type="pil",
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         u_model = gr.Dropdown(
                             registry.upscaler_choices(),
                             value=registry.default_upscaler(),
-                            label="Modèle d'upscale (×2 / ×4 selon le nom)",
+                            label="Upscale model (×2 / ×4 by name)",
                             info="🎨 = entraîné pour le DESSIN (trait net, "
                                  "aplats propres) · 📷 = photo. Sur une planche "
                                  "de BD, un modèle photo bave et pose des halos.")
                         u_repeats = gr.Radio(
                             [("×1 (natif)", 1), ("Répéter ×2", 2)],
-                            value=1, label="Répétition",
+                            value=1, label="Repeat",
                             info="⚠️ Répéter fait tourner le réseau sur sa "
                                  "PROPRE sortie : il reprend pour du détail "
                                  "réel les hautes fréquences qu'il vient "
@@ -485,18 +485,18 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "modèle ×4 vaut toujours mieux qu'un ×2 "
                                  "répété.")
                         with gr.Row():
-                            u_refresh = gr.Button("↻ Rafraîchir la liste", size="sm")
-                            u_run = gr.Button("🔼 Agrandir", variant="primary",
+                            u_refresh = gr.Button("↻ Refresh list", size="sm")
+                            u_run = gr.Button("🔼 Upscale", variant="primary",
                                               size="lg", scale=2)
-                        u_stop = gr.Button("⏹️ Annuler", variant="stop", size="sm")
+                        u_stop = gr.Button("⏹️ Cancel", variant="stop", size="sm")
                     with gr.Column(scale=4):
                         u_result = gr.Image(
-                            label="Résultat (pleine résolution dans outputs/)",
+                            label="Result (full resolution in outputs/)",
                             height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
-                        u_to_face = gr.Button("→ 🙂 Réparer les visages",
+                        u_to_face = gr.Button("→ 🙂 Fix the faces",
                                               size="sm")
-                        u_log = gr.Textbox(label="Journal", lines=10,
+                        u_log = gr.Textbox(label="Log", lines=10,
                                            autoscroll=True, elem_classes="log-box")
 
                 def _install_upscalers():
@@ -518,10 +518,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def do_upscale(img, model, repeats, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not model:
-                        raise gr.Error(t("Choisissez un modèle d'upscale "
-                                         "(téléchargez-les d'abord)."))
+                        raise gr.Error(t("Choose an upscale model (download "
+                                         "them first)."))
                     logs: list[str] = []
                     progress(0.1, desc="Agrandissement…")
                     try:
@@ -541,7 +541,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                       [u_evt])
 
             # ---------- Décomposition en calques (PSD) ----------------------
-            with gr.Tab("🧩 Calques", id="layers"):
+            with gr.Tab("🧩 Layers", id="layers"):
                 gr.Markdown(
                     "Découpe une image en **calques** et écrit un **PSD** "
                     "(ou des PNG transparents séparés). Deux façons de "
@@ -562,10 +562,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "l'image d'origine, aucun pixel n'est peint deux fois.")
                 _installer_block(
                     "Segment Anything",
-                    "Même add-on que « Détourer un objet ». Indispensable.",
+                    "Same add-on as “Cut out an object”. Required.",
                     tools.install_sam_stream, tools.sam_is_installed())
                 _installer_block(
-                    "CLIP (compréhension des zones)",
+                    "CLIP (zone understanding)",
                     "**Facultatif, ~600 Mo — mais c'est lui qui apporte "
                     "l'intelligence.** Sans CLIP, l'outil ne voit que des "
                     "formes. Avec, il reconnaît ce qu'il découpe et s'en sert "
@@ -588,56 +588,56 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 lay_masks = gr.State([])      # masques choisis à la main
                 with gr.Row():
                     with gr.Column(scale=3):
-                        lay_image = gr.Image(label="Image à décomposer",
+                        lay_image = gr.Image(label="Image to decompose",
                                              type="pil",
                                              buttons=widgets.IMAGE_VIEW_ONLY)
                         lay_mode = gr.Radio(
-                            [(t("Automatique — SAM balaie l'image"), "auto"),
-                             (t("Manuel — je clique les zones"), "manual")],
+                            [(t("Automatic — SAM sweeps the image"), "auto"),
+                             (t("Manual — I click the areas"), "manual")],
                             value="auto", label="Mode")
                         with gr.Group(visible=False) as lay_manual_box:
                             lay_hint = gr.Markdown(
-                                "**Cliquez un objet** dans l'image ci-dessus : "
-                                "il devient un calque. Recliquez ailleurs pour "
-                                "en ajouter d'autres.", elem_classes="hint")
-                            lay_list = gr.Markdown("*Aucune zone choisie.*",
+                                "**Click an object** in the image above: it "
+                                "becomes a layer. Click elsewhere to add "
+                                "more.", elem_classes="hint")
+                            lay_list = gr.Markdown("*No area selected.*",
                                                    elem_classes="feedback")
                             with gr.Row():
-                                lay_undo = gr.Button("↩️ Retirer la dernière",
+                                lay_undo = gr.Button("↩️ Remove the last one",
                                                      size="sm")
-                                lay_clear = gr.Button("🗑️ Tout effacer",
+                                lay_clear = gr.Button("🗑️ Clear all",
                                                       size="sm")
                         with gr.Group(visible=True) as lay_auto_box:
                             lay_points = gr.Slider(
                                 6, 24, value=12, step=2,
-                                label="Finesse du balayage (points par côté)",
-                                info="↑ = plus de zones trouvées, et beaucoup "
-                                     "plus long. 12 est un bon départ.")
+                                label="Sweep density (points per side)",
+                                info="↑ = more areas found, and much slower. "
+                                     "12 is a good starting point.")
                             lay_minarea = gr.Slider(
                                 0.1, 5.0, value=0.4, step=0.1,
-                                label="Surface minimale d'un calque (% de l'image)",
-                                info="Monter cette valeur est le meilleur moyen "
-                                     "d'éviter la soupe de petits calques.")
+                                label="Minimum layer area (% of the image)",
+                                info="Raising this is the best way to avoid a "
+                                     "soup of tiny layers.")
                             lay_max = gr.Slider(
                                 4, 40, value=24, step=1,
-                                label="Nombre maximum de calques")
+                                label="Maximum number of layers")
                         with gr.Row():
-                            lay_psd = gr.Checkbox(value=True, label="Fichier PSD")
+                            lay_psd = gr.Checkbox(value=True, label="PSD file")
                             lay_png = gr.Checkbox(
-                                value=False, label="PNG transparents séparés")
+                                value=False, label="Separate transparent PNGs")
                         with gr.Row(elem_classes="go-row"):
-                            lay_run = gr.Button("🧩 Décomposer", variant="primary",
+                            lay_run = gr.Button("🧩 Decompose", variant="primary",
                                                 size="lg", scale=3)
-                            lay_stop = gr.Button("⏹️ Annuler", variant="stop",
+                            lay_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                  scale=1, min_width=90)
                     with gr.Column(scale=4):
                         lay_preview = gr.Image(
-                            label="Zones retenues (aperçu)", height=460,
+                            label="Selected areas (preview)", height=460,
                             interactive=False, format="png",
                             buttons=widgets.IMAGE_VIEW_ONLY)
-                        lay_files = gr.File(label="Fichiers produits",
+                        lay_files = gr.File(label="Files produced",
                                             file_count="multiple")
-                        lay_log = gr.Textbox(label="Journal", lines=10,
+                        lay_log = gr.Textbox(label="Log", lines=10,
                                              autoscroll=True,
                                              elem_classes="log-box")
 
@@ -674,7 +674,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def _lay_summary(masks):
                     if not masks:
-                        return "*Aucune zone choisie.*"
+                        return "*No area selected.*"
                     return (f"**{len(masks)} zone(s) choisie(s)** — cliquez "
                             "encore pour en ajouter, puis « Décomposer ».")
 
@@ -682,8 +682,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     if mode != "manual" or img is None:
                         return gr.update(), gr.update(), gr.update()
                     if not tools.sam_is_installed():
-                        raise gr.Error(t("Segment Anything n'est pas installé "
-                                         "(bouton « Installer » ci-dessus)."))
+                        raise gr.Error(t("Segment Anything is not installed "
+                                         "(the “Install” button above)."))
                     import numpy as np
                     from PIL import Image as _PI
                     x, y = int(evt.index[0]), int(evt.index[1])
@@ -713,10 +713,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 def do_layers(img, mode, masks, points, minarea, maxn,
                               want_psd, want_png, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not (want_psd or want_png):
-                        raise gr.Error(t("Choisissez au moins un format de "
-                                         "sortie (PSD ou PNG)."))
+                        raise gr.Error(t("Choose at least one output format "
+                                         "(PSD or PNG)."))
                     logs: list[str] = []
                     progress(0.1, desc="Décomposition…")
                     try:
@@ -752,26 +752,24 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- HD natif sd.cpp (highres fix) -----------------------
             with gr.Tab("🚀 HD", id="hd"):
                 gr.Markdown(
-                    "**Passe HD native de sd.cpp** : l'image est agrandie puis "
-                    "**re-débruitée en entier** par votre modèle de génération "
-                    "(Krea 2, Flux.2). Le tout en **une seule commande**, "
-                    "100% GPU, sans PyTorch.\n\n"
-                    "Deux différences de fond avec l'upscale créatif SDXL :\n"
-                    "- **aucun découpage en tuiles** — le second passage voit "
-                    "l'image entière, donc il n'y a pas de couture *possible*, "
-                    "et pas d'incohérence entre deux carrés voisins ;\n"
-                    "- **c'est votre modèle** qui redessine, pas un SDXL de "
-                    "2023 : le détail ajouté reste dans le style que le modèle "
-                    "connaît déjà.\n\n"
-                    "En échange, **c'est gourmand en VRAM** : refuser les "
-                    "tuiles a un prix. Le second passage réserve un tampon "
-                    "proportionnel au nombre de pixels, **qui s'ajoute aux "
-                    "poids du modèle** déjà sur la carte. Le facteur est donc "
-                    "budgété selon votre VRAM et la taille de votre modèle, et "
-                    "réduit tout seul si ça ne tient pas — le journal annonce "
-                    "la valeur retenue. Sur 11–12 Go avec un modèle en Q5, "
-                    "comptez ×1,25 à ×1,5 ; une quantification plus légère "
-                    "achète du facteur.")
+                    "**Native sd.cpp HD pass**: the image is enlarged, then "
+                    "**re-denoised as a whole** by your generation model "
+                    "(Krea 2, Flux.2). All in **a single command**, 100% GPU, "
+                    "no PyTorch.\n\nTwo fundamental differences from the "
+                    "creative SDXL upscale:\n- **no tiling at all** — the "
+                    "second pass sees the whole image, so there is no seam "
+                    "*possible*, and no mismatch between neighbouring "
+                    "squares;\n- **your model** does the redrawing, not a "
+                    "2023 SDXL: the added detail stays in the style the model "
+                    "already knows.\n\nIn exchange, **it is VRAM-hungry**: "
+                    "refusing to tile has a price. The second pass allocates "
+                    "a buffer proportional to the pixel count, **on top of "
+                    "the model weights** already on the card. The factor is "
+                    "therefore budgeted from your VRAM and your model's size, "
+                    "and lowered on its own if it does not fit — the log "
+                    "states the value it settled on. On 11–12 GB with a Q5 "
+                    "model, expect ×1.25 to ×1.5; a lighter quantization buys "
+                    "factor.")
 
                 _hd_models = [(m.name, m.id)
                               for m in registry.load_base_models(
@@ -779,75 +777,74 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                               if registry.model_is_ready(m)]
                 if not _hd_models:
                     gr.Markdown(
-                        "> ⚠️ **Aucun modèle de génération installé.** "
-                        "Téléchargez Krea 2 Turbo ou Flux.2 Klein depuis "
-                        "l'onglet « Catalogue de modèles », puis revenez ici.")
+                        "> ⚠️ **No generation model installed.** Download "
+                        "Krea 2 Turbo or Flux.2 Klein from the “Model "
+                        "catalog” tab, then come back here.")
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        hd_image = gr.Image(label="Image à passer en HD",
+                        hd_image = gr.Image(label="Image to take to HD",
                                             type="pil",
                                             buttons=widgets.IMAGE_VIEW_ONLY)
                         hd_model = gr.Dropdown(
                             choices=_hd_models,
                             value=(_hd_models[0][1] if _hd_models else None),
-                            label="Modèle de génération")
+                            label="Generation model")
                         hd_scale = gr.Slider(
                             1.25, 3.0, value=2.0, step=0.25,
-                            label="Facteur d'agrandissement",
-                            info="Le côté final est plafonné : au-delà, le "
-                                 "facteur est réduit automatiquement et le "
-                                 "journal annonce la valeur retenue.")
+                            label="Enlargement factor",
+                            info="The final side is capped: beyond it the "
+                                 "factor is reduced automatically and the log "
+                                 "states the value it settled on.")
                         hd_denoise = gr.Slider(
                             0.15, 0.70, value=0.40, step=0.05,
-                            label="Détail ajouté (débruitage de la passe HD)",
-                            info="Le SEUL réglage qui compte vraiment. 0,2 = "
-                                 "reste très près de l'original ; 0,5+ = le "
-                                 "modèle réinvente franchement la matière.")
+                            label="Added detail (HD pass denoise)",
+                            info="The ONLY setting that really matters. 0.2 = "
+                                 "stays very close to the original; 0.5+ = "
+                                 "the model frankly reinvents the material.")
                         _hd_ups = registry.list_upscalers()
                         hd_upscaler = gr.Dropdown(
-                            choices=[("Latent (défaut — le plus doux)", "Latent"),
-                                     ("Latent antialiasé", "Latent (antialiased)"),
-                                     ("Lanczos (image, neutre)", "Lanczos")]
+                            choices=[("Latent (default — the gentlest)", "Latent"),
+                                     ("Latent antialiased", "Latent (antialiased)"),
+                                     ("Lanczos (image, neutral)", "Lanczos")]
                                     + [(f"ESRGAN — {u}", u) for u in _hd_ups],
                             value="Latent",
-                            label="Agrandissement intermédiaire",
-                            info="Ce qui agrandit AVANT le second débruitage. "
-                                 "« Latent » travaille dans l'espace du modèle "
-                                 "et laisse le débruitage tout reconstruire ; "
-                                 "un ESRGAN donne une base déjà nette (utile "
-                                 "sur du trait), au risque de figer ses propres "
-                                 "défauts.")
+                            label="Intermediate enlargement",
+                            info="What enlarges BEFORE the second denoise. "
+                                 "“Latent” works in the model's own space and "
+                                 "lets the denoise rebuild everything; an "
+                                 "ESRGAN gives an already-crisp base (useful "
+                                 "on line art), at the risk of freezing its "
+                                 "own flaws.")
                         hd_prompt = gr.Textbox(
-                            label="Description (optionnelle)", lines=2,
-                            placeholder="ce que montre l'image, en quelques mots",
-                            info="Guide le détail ajouté. Vide fonctionne très "
-                                 "bien : le modèle part de l'image.")
+                            label="Description (optional)", lines=2,
+                            placeholder="what the image shows, in a few words",
+                            info="Guides the added detail. Empty works very "
+                                 "well: the model starts from the image.")
                         hd_seed = gr.Number(value=-1, precision=0,
-                                            label="Seed (-1 = aléatoire)")
+                                            label="Seed (-1 = random)")
                         with gr.Row():
-                            hd_run = gr.Button("🚀 Passer en HD",
+                            hd_run = gr.Button("🚀 Take to HD",
                                                variant="primary", size="lg",
                                                scale=2)
-                            hd_stop = gr.Button("⏹️ Annuler", variant="stop",
+                            hd_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                 size="sm")
                     with gr.Column(scale=4):
                         hd_result = gr.Image(
-                            label="Aperçu temps réel (pleine résolution dans "
-                                  "outputs/)", height=520, format="png",
+                            label="Live preview (full resolution in outputs/)", height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
-                        hd_log = gr.Textbox(label="Journal", lines=12,
+                        hd_log = gr.Textbox(label="Log", lines=12,
                                             autoscroll=True,
                                             elem_classes="log-box")
 
                 def do_hd(img, model_id, scale, denoise, upscaler, prompt,
                           seed_v, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not model_id:
-                        raise gr.Error(t("Aucun modèle de génération installé : "
-                                         "téléchargez-en un depuis l'onglet "
-                                         "« Catalogue de modèles »."))
+                        raise gr.Error(t("No generation model installed: "
+                                         "download one from the “Model "
+                                         "catalog” tab."))
                     logs: list[str] = []
                     settings.ensure_dirs()
                     preview = settings.TMP_DIR / "hd_preview.png"
@@ -855,7 +852,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         seed_i = int(seed_v)
                     except (TypeError, ValueError):
                         seed_i = -1
-                    progress(0.1, desc="Passe HD…")
+                    progress(0.1, desc="HD pass…")
                     try:
                         outs = gen_engine.hd_upscale(
                             model_id, img, scale=float(scale),
@@ -881,7 +878,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                       [hd_evt])
 
             # ---------- Haute résolution (Flux.2 en référence + départ) ------
-            with gr.Tab("🔍 Haute résolution", id="highres"):
+            with gr.Tab("🔍 High resolution", id="highres"):
                 gr.Markdown(
                     "L'image est **repassée dans Flux.2 à sa résolution "
                     "native**, en lui servant à la fois de **référence** et de "
@@ -911,57 +908,57 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        hr_image = gr.Image(label="Image à agrandir", type="pil",
+                        hr_image = gr.Image(label="Image to upscale", type="pil",
                                             buttons=widgets.IMAGE_VIEW_ONLY)
                         hr_model = gr.Dropdown(
                             choices=_hr_models,
                             value=(_hr_models[0][1] if _hr_models else None),
-                            label="Modèle d'édition")
+                            label="Editing model")
                         hr_factor = gr.Slider(
                             1.0, 3.0, value=2.0, step=0.25,
-                            label="Facteur d'agrandissement",
-                            info="La sortie ne descend jamais sous 1 Mpx (le "
-                                 "régime de Flux.2) et ne dépasse pas 3,7 Mpx "
-                                 "— au-delà le modèle perd la cohérence "
-                                 "globale. Réduit tout seul si la carte refuse.")
+                            label="Enlargement factor",
+                            info="Output never goes below 1 MP (Flux.2's own "
+                                 "regime) and never past 3.7 MP — beyond that "
+                                 "the model loses global coherence. Reduced "
+                                 "by itself if the card refuses.")
                         hr_strength = gr.Slider(
                             0.4, 0.95, value=0.8, step=0.05,
                             label="Débruitage",
-                            info="0,7–0,9 : la plage de la méthode. Plus bas, "
-                                 "l'image bouge moins mais gagne moins de "
-                                 "détail ; plus haut, elle devient une autre "
-                                 "image.")
+                            info="0.7–0.9 is the method's range. Lower moves "
+                                 "the image less but gains less detail; "
+                                 "higher makes it a different image.")
                         hr_prompt = gr.Textbox(
                             value=highres.DEFAULT_PROMPT,
                             label="Prompt",
-                            info="Le mot « high resolution » EST la méthode. "
-                                 "Ajoutez une description si l'image le mérite.")
+                            info="The words “high resolution” ARE the method. "
+                                 "Add a description if the image deserves "
+                                 "one.")
                         hr_colors = gr.Checkbox(
                             value=True,
-                            label="Rendre ses couleurs à l'original",
-                            info="À fort débruitage le modèle fade l'image. On "
-                                 "lui remet les couleurs de départ sous le "
-                                 "détail qu'il vient d'ajouter.")
+                            label="Give the original its colours back",
+                            info="At high denoise the model washes the image "
+                                 "out. We put the starting colours back "
+                                 "underneath the detail it just added.")
                         with gr.Row():
-                            hr_run = gr.Button("🔍 Passer en haute résolution",
+                            hr_run = gr.Button("🔍 Go high resolution",
                                                variant="primary", size="lg",
                                                scale=2)
-                            hr_stop = gr.Button("⏹️ Annuler", variant="stop",
+                            hr_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                 size="sm")
                     with gr.Column(scale=4):
                         hr_result = gr.Image(label="Résultat", height=520,
                                              format="png",
                                              buttons=widgets.IMAGE_BUTTONS)
-                        hr_log = gr.Textbox(label="Journal", lines=12,
+                        hr_log = gr.Textbox(label="Log", lines=12,
                                             autoscroll=True,
                                             elem_classes="log-box")
 
                 def do_highres(img, model_id, factor, strength, prompt,
                                colors, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not model_id:
-                        raise gr.Error(t("Aucun modèle d'édition installé."))
+                        raise gr.Error(t("No editing model installed."))
                     logs: list[str] = []
                     progress(0.1, desc="Haute résolution…")
                     try:
@@ -985,15 +982,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                       [hr_evt])
 
             # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
-            with gr.Tab("🌱 Restaurer", id="seedvr2"):
+            with gr.Tab("🌱 Restore", id="seedvr2"):
                 gr.Markdown(
-                    "Restauration diffusion **SeedVR2** : récupère des détails "
-                    "plus naturels qu'ESRGAN tout en restant plus fidèle que "
-                    "l'upscale créatif SDXL. Le calcul reste sur la RTX 3060 ; "
-                    "la GTX 1080 Ti peut servir de réserve pour les poids. "
-                    "Le 3B suffit dans la plupart des cas ; le 7B garde mieux "
-                    "les textures fines (visages, tissus) mais prend le double "
-                    "de temps.")
+                    "**SeedVR2** diffusion restoration: recovers more natural "
+                    "detail than ESRGAN while staying more faithful than the "
+                    "creative SDXL upscale. Compute stays on the RTX 3060; "
+                    "the GTX 1080 Ti can hold the weights. The 3B is enough "
+                    "most of the time; the 7B keeps fine textures (faces, "
+                    "fabric) better but takes twice as long.")
                 _installer_block(
                     "SeedVR2",
                     "Installation isolée (Python 3.12 + PyTorch CUDA) : elle ne "
@@ -1009,9 +1005,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         seed_model = gr.Radio(
                             [(t(label), value)
                              for label, value in tools.SEEDVR2_MODELS],
-                            value=tools.SEEDVR2_MODELS[0][1], label="Modèle",
-                            info="Les poids se téléchargent tout seuls au "
-                                 "premier usage (4,8 Go pour un 7B).")
+                            value=tools.SEEDVR2_MODELS[0][1], label="Model",
+                            info="Weights download themselves on first use "
+                                 "(4.8 GB for a 7B).")
                         seed_res = gr.Slider(
                             1024, 4096, value=2048, step=64,
                             label="Résolution cible (petit côté)",
@@ -1024,7 +1020,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                    else "cpu"), label="Réserve des poids")
                         seed_blocks = gr.Slider(
                             0, 36, value=16, step=1, label="Blocs à décharger",
-                            info="16 recommandé avec 12 Go ; 24 puis 36 si OOM.")
+                            info="16 is right with 12 GB; try 24 then 36 if you hit OOM.")
                         with gr.Row():
                             seed_tile = gr.Slider(512, 1280, value=1024, step=64,
                                                   label="Tuile VAE")
@@ -1037,26 +1033,26 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                              ("Aucune correction", "none")],
                             value="wavelet", label="Correction des couleurs")
                         with gr.Row():
-                            seed_run = gr.Button("🌱 Restaurer", variant="primary",
+                            seed_run = gr.Button("🌱 Restore", variant="primary",
                                                  size="lg", scale=2)
-                            seed_stop = gr.Button("⏹️ Annuler", variant="stop",
+                            seed_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                   size="sm")
                     with gr.Column(scale=4):
                         seed_result = gr.Image(
                             label="Résultat SeedVR2", height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
-                        seed_to_face = gr.Button("→ 🙂 Réparer les visages",
+                        seed_to_face = gr.Button("→ 🙂 Fix the faces",
                                                  size="sm")
-                        seed_log = gr.Textbox(label="Journal", lines=14,
+                        seed_log = gr.Textbox(label="Log", lines=14,
                                               autoscroll=True,
                                               elem_classes="log-box")
 
                 def do_seedvr2(img, resolution, model, blocks, tile, overlap,
                                offload, color, progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not tools.seedvr2_is_installed():
-                        raise gr.Error(t("Installez d'abord SeedVR2."))
+                        raise gr.Error(t("Install SeedVR2 first."))
                     q: "queue.Queue[str | None]" = queue.Queue()
                     state: dict = {}
 
@@ -1098,32 +1094,32 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 widgets.stop_into_log(seed_stop, tools.cancel, seed_log,
                                       [seed_evt])
 
-                with gr.Accordion("📁 Restaurer un dossier en une fois", open=False):
+                with gr.Accordion("📁 Restore a whole folder at once", open=False):
                     gr.Markdown(
-                        "Sélectionnez un dossier d'images. SeedVR2 charge le modèle "
-                        "**une seule fois**, le garde en cache et traite tous les "
-                        "fichiers sans modifier les originaux. Les résultats vont "
-                        "dans un sous-dossier horodaté de `outputs/`.")
+                        "Pick a folder of images. SeedVR2 loads the model "
+                        "**once**, keeps it cached and processes every file "
+                        "without touching the originals. Results go to a "
+                        "timestamped subfolder of `outputs/`.")
                     seed_batch_files = gr.File(
-                        label="Dossier d'images", file_count="directory",
+                        label="Image folder", file_count="directory",
                         file_types=["image"], type="filepath")
                     with gr.Row():
                         seed_batch_run = gr.Button(
-                            "🌱 Restaurer tout le dossier", variant="primary")
-                        seed_batch_stop = gr.Button("⏹️ Annuler", variant="stop")
+                            "🌱 Restore the whole folder", variant="primary")
+                        seed_batch_stop = gr.Button("⏹️ Cancel", variant="stop")
                     seed_batch_gallery = gr.Gallery(
-                        label="Résultats du lot", columns=4, height=420,
+                        label="Batch results", columns=4, height=420,
                         buttons=widgets.GALLERY_BUTTONS)
                     seed_batch_log = gr.Textbox(
-                        label="Journal du lot", lines=12, autoscroll=True,
+                        label="Batch log", lines=12, autoscroll=True,
                         elem_classes="log-box")
 
                     def do_seedvr2_batch(files, resolution, model, blocks,
                                          tile, overlap, offload, color):
                         if not files:
-                            raise gr.Error(t("Sélectionnez un dossier d'images."))
+                            raise gr.Error(t("Pick a folder of images."))
                         if not tools.seedvr2_is_installed():
-                            raise gr.Error(t("Installez d'abord SeedVR2."))
+                            raise gr.Error(t("Install SeedVR2 first."))
                         q: "queue.Queue[str | None]" = queue.Queue()
                         state: dict = {}
 
@@ -1165,31 +1161,28 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                           seed_batch_log, [seed_batch_evt])
 
             # ---------- Restauration des visages (CodeFormer) ----------------
-            with gr.Tab("🙂 Visages", id="face"):
+            with gr.Tab("🙂 Faces", id="face"):
                 gr.Markdown(
-                    "Reconstruit **les visages uniquement**, le reste de "
-                    "l'image n'est pas touché. C'est le passage qui manque "
-                    "après un agrandissement : ni ESRGAN ni SeedVR2 ne savent "
-                    "refaire des yeux et une bouche propres sur un visage "
-                    "devenu petit ou flou. **Passez-le en dernier**, après "
-                    "l'upscale.  \n"
-                    "Trois modèles au choix — ils ne gagnent pas sur les mêmes "
-                    "images, **comparez sur la vôtre**. ⚠️ **Si vous vendez "
-                    "vos images, évitez CodeFormer** : sa licence S-Lab 1.0 "
-                    "interdit l'usage commercial. Les deux autres sont en "
-                    "Apache-2.0.")
+                    "Rebuilds **faces only**; the rest of the image is left "
+                    "alone. It is the step missing after an enlargement: "
+                    "neither ESRGAN nor SeedVR2 can rebuild clean eyes and a "
+                    "clean mouth on a face that has gone small or blurry. "
+                    "**Run it last**, after the upscale.  \nThree models to "
+                    "choose from — they do not win on the same images, so "
+                    "**compare on yours**. ⚠️ **If you sell your images, "
+                    "avoid CodeFormer**: its S-Lab 1.0 licence forbids "
+                    "commercial use. The other two are Apache-2.0.")
                 _installer_block(
-                    "la restauration de visages",
-                    "Cinq poids (~1,5 Go au total) : trois restaurateurs, le "
-                    "détecteur de visages et la segmentation qui sert au "
-                    "recollage. Ils sont installés ensemble parce qu'aucun ne "
-                    "gagne sur toutes les images — on compare. Aucune commande "
-                    "à taper.",
+                    "face restoration",
+                    "Five weight files (~1.5 GB total): three restorers, the "
+                    "face detector and the segmentation used to blend the "
+                    "face back in. They are installed together because none "
+                    "wins on every image — you compare. Nothing to type.",
                     tools.install_face_stream, tools.face_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        f_image = gr.Image(label="Image source", type="pil",
+                        f_image = gr.Image(label="Source image", type="pil",
                                            buttons=widgets.IMAGE_VIEW_ONLY)
                         _f_models = tools.face_models_installed() or list(
                             tools.FACE_MODELS)
@@ -1199,39 +1192,37 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             value=next((f for f, _, _ in _f_models
                                         if f == tools.FACE_DEFAULT),
                                        _f_models[0][0]),
-                            label="Modèle",
-                            info="La licence décide de ce que vous avez le "
-                                 "droit de faire du résultat. Deux des trois "
-                                 "sont libres de toute restriction "
-                                 "commerciale.")
+                            label="Model",
+                            info="The licence decides what you may do with "
+                                 "the result. Two of the three carry no "
+                                 "commercial restriction.")
                         f_fidelity = gr.Slider(
                             0.0, 1.0, value=0.5, step=0.05,
-                            label="Fidélité au visage d'origine",
-                            info="0,5 convient presque toujours. Baissez si le "
-                                 "visage est très abîmé (le modèle invente "
-                                 "davantage), montez s'il change de tête. "
-                                 "**CodeFormer uniquement** : les deux autres "
-                                 "n'ont pas ce réglage.")
+                            label="Faithfulness to the original face",
+                            info="0.5 is almost always right. Lower it when "
+                                 "the face is badly damaged (the model "
+                                 "invents more), raise it if the person stops "
+                                 "looking like themselves. **CodeFormer "
+                                 "only**: the other two have no such dial.")
                         f_center = gr.Checkbox(
-                            value=False, label="Seulement le visage principal",
-                            info="Par défaut, tous les visages détectés sont "
-                                 "restaurés.")
-                        f_run = gr.Button("🙂 Restaurer les visages",
+                            value=False, label="Main face only",
+                            info="By default every detected face is restored.")
+                        f_run = gr.Button("🙂 Restore faces",
                                           variant="primary", size="lg")
                     with gr.Column(scale=4):
-                        f_result = gr.Image(label="Visages restaurés", height=520,
+                        f_result = gr.Image(label="Restored faces", height=520,
                                             format="png",
                                             buttons=widgets.IMAGE_BUTTONS)
-                        f_log = gr.Textbox(label="Journal", lines=8,
+                        f_log = gr.Textbox(label="Log", lines=8,
                                            autoscroll=True,
                                            elem_classes="log-box")
 
                 def do_face(img, model, fidelity, center,
                             progress=gr.Progress()):
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not tools.face_is_installed():
-                        raise gr.Error(t("Installez d'abord CodeFormer."))
+                        raise gr.Error(t("Install CodeFormer first."))
                     logs: list[str] = []
                     progress(0.1, desc="Visages…")
                     try:
@@ -1257,7 +1248,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             def _hand_over_to_faces(button, source):
                 def _go(image):
                     if image is None:
-                        raise gr.Error(t("Produisez d'abord une image."))
+                        raise gr.Error(t("Produce an image first."))
                     return image, gr.Tabs(selected="face")
 
                 button.click(_go, inputs=[source], outputs=[f_image, sub_tabs])
@@ -1266,106 +1257,105 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             _hand_over_to_faces(seed_to_face, seed_result)
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
-            with gr.Tab("✨ Upscale SDXL", id="creative"):
+            with gr.Tab("✨ SDXL upscale", id="creative"):
                 gr.Markdown(
-                    "Upscale **créatif** « Ultimate SD Upscale » : pré-agrandit "
-                    "puis **raffine tuile par tuile** en SDXL img2img à faible "
-                    "débruitage (modèle **résident** → tuiles rapides, fondu par "
-                    "recouvrement). Invente du détail fin façon Magnific. "
+                    "**Creative** “Ultimate SD Upscale”: pre-enlarges then "
+                    "**refines tile by tile** with SDXL img2img at low "
+                    "denoise (model **resident** → fast tiles, overlap "
+                    "feather blending). Invents fine detail, Magnific-style. "
                     "**100% GPU** (PyTorch).")
                 _installer_block(
-                    "Upscale créatif SDXL",
-                    "PyTorch + diffusers (~9,5 Go : SDXL base + VAE fp16-fix + "
-                    "ControlNet Tile). Modèle résident sur le GPU. Aucune "
-                    "commande à taper.",
+                    "Creative SDXL upscale",
+                    "PyTorch + diffusers (~9.5 GB: SDXL base + VAE fp16-fix + "
+                    "ControlNet Tile). Model resident on the GPU. No command "
+                    "to type.",
                     tools.install_upscale_stream, tools.upscale_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=3):
                         c_image = gr.Image(
-                            label="Image à agrandir", type="pil",
+                            label="Image to upscale", type="pil",
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         _ckpts = tools.list_upscale_checkpoints()
                         c_model = gr.Dropdown(
                             choices=_ckpts,
                             value=(_ckpts[0][1] if _ckpts else None),
-                            label="Modèle SDXL (déposez vos .safetensors dans "
+                            label="SDXL model (drop your .safetensors into "
                                   "tools_repo/upscale/checkpoints/)")
                         c_vae = gr.Radio(
-                            [(t("VAE fp16-fix (externe, recommandé)"), False),
-                             (t("VAE intégrée au modèle"), True)],
+                            [(t("VAE fp16-fix (external, recommended)"), False),
+                             (t("Model's built-in VAE"), True)],
                             value=False, label="VAE")
                         _ups = registry.list_upscalers()
                         c_esrgan = gr.Dropdown(
-                            choices=[(t("Lanczos (par défaut)"), "")]
+                            choices=[(t("Lanczos (default)"), "")]
                                     + [(u, u) for u in _ups],
-                            value="", label="Pré-agrandissement (base avant SDXL)",
+                            value="", label="Pre-upscale (base before SDXL)",
                             info="Une seule passe, toujours. Un modèle dont le "
                                  "facteur DÉPASSE l'agrandissement demandé "
                                  "(un ×4 pour un ×2) est le meilleur choix : "
                                  "la réduction qui suit fait office "
                                  "d'anti-aliasing.")
-                        c_refresh = gr.Button("↻ Rafraîchir les modèles", size="sm")
+                        c_refresh = gr.Button("↻ Refresh models", size="sm")
                         c_preset = gr.Dropdown(
                             choices=[(t(p["name"]), p["name"])
                                      for p in UPSCALE_PRESETS],
                             value=None,
-                            label="Préréglage (règle prompt, négatif, "
-                                  "créativité, CFG et structure)")
+                            label="Preset (sets prompt, negative, creativity, "
+                                  "CFG and structure)")
                         c_preset_msg = gr.Markdown("", elem_classes="feedback")
                         c_prompt = gr.Textbox(
-                            label="Prompt (optionnel — guide le détail, COURT : "
-                                  "~77 tokens max SDXL ; inutile de recopier le "
-                                  "prompt de génération)", lines=2,
+                            label="Prompt (optional — guides the detail, KEEP "
+                                  "IT SHORT: ~77 tokens max for SDXL; no need "
+                                  "to copy the generation prompt)", lines=2,
                             placeholder="highly detailed skin texture, sharp "
                                         "focus, photorealistic")
                         c_negative = gr.Textbox(
-                            label="Prompt négatif (vide = défaut orienté photo)",
+                            label="Negative prompt (empty = photo-oriented default)",
                             lines=2,
                             placeholder="photorealistic, film grain, noise…",
-                            info="Ce qu'on interdit à SDXL d'ajouter. Sur du "
-                                 "dessin, c'est ce qui empêche le grain et la "
-                                 "matière photo de se poser sur les aplats.")
+                            info="What SDXL is forbidden to add. On drawings, "
+                                 "this is what keeps grain and photo texture "
+                                 "off the flat color areas.")
                         c_scale = gr.Slider(
                             1.5, 8.0, value=2.0, step=0.5,
-                            label="Facteur d'agrandissement",
-                            info="Jusqu'à ~8K (plafonné à 8192 px). ×6–×8 = "
-                                 "beaucoup de tuiles : très long + ~1–2 Go de RAM.")
+                            label="Enlargement factor",
+                            info="Up to ~8K (capped at 8192 px). ×6–×8 = many "
+                                 "tiles: very slow + ~1–2 GB RAM.")
                         c_denoise = gr.Slider(
                             0.15, 0.75, value=0.35, step=0.05,
-                            label="Créativité (débruitage — ↑ = détail inventé)")
+                            label="Creativity (denoise — ↑ = invented detail)")
                         _cn_ok = tools.upscale_cn_is_installed()
                         c_controlnet = gr.Checkbox(
                             value=_cn_ok,
-                            label="🔒 ControlNet Tile (verrouille la structure — "
-                                  "permet de monter la créativité sans dériver)")
+                            label="🔒 ControlNet Tile (locks structure — lets "
+                                  "you raise creativity without drifting)")
                         if not _cn_ok:
                             gr.Markdown(
-                                "> ℹ️ ControlNet **pas encore téléchargé** : "
-                                "relancez « Installer l'upscale créatif SDXL » "
-                                "ci-dessus (ajoute ~2,5 Go) puis **redémarrez** "
-                                "pour activer le verrouillage de structure.")
+                                "> ℹ️ ControlNet **not downloaded yet**: "
+                                "re-run “Install the creative SDXL upscale” "
+                                "above (adds ~2.5 GB) then **restart** to "
+                                "enable the structure lock.")
                         c_cnscale = gr.Slider(
                             0.2, 1.0, value=0.6, step=0.05,
-                            label="Fidélité ControlNet (↑ = plus fidèle)")
+                            label="ControlNet fidelity (↑ = more faithful)")
                         with gr.Row():
                             c_steps = gr.Slider(10, 40, value=24, step=1,
-                                                label="Pas / tuile")
+                                                label="Steps / tile")
                             c_cfg = gr.Slider(1.0, 12.0, value=6.0, step=0.5,
                                               label="CFG")
                         c_tile = gr.Slider(640, 1280, value=1024, step=64,
-                                           label="Taille de tuile")
+                                           label="Tile size")
                         with gr.Row():
-                            c_run = gr.Button("✨ Upscaler", variant="primary",
+                            c_run = gr.Button("✨ Upscale", variant="primary",
                                               size="lg", scale=2)
-                            c_stop = gr.Button("⏹️ Annuler", variant="stop",
+                            c_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                size="sm")
                     with gr.Column(scale=4):
                         c_result = gr.Image(
-                            label="Aperçu temps réel (pleine résolution dans "
-                                  "outputs/)", height=520, format="png",
+                            label="Live preview (full resolution in outputs/)", height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
-                        c_log = gr.Textbox(label="Journal", lines=12,
+                        c_log = gr.Textbox(label="Log", lines=12,
                                            autoscroll=True, elem_classes="log-box")
 
                 def _apply_preset(name):
@@ -1388,14 +1378,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         model = registry.drawing_upscaler()
                         if model:
                             esrgan_up = gr.update(value=model)
-                            done.append(t("pré-agrandissement **{m}** (dessin) "
-                                          "au lieu de Lanczos").format(m=model))
+                            done.append(t("pre-upscale **{m}** (drawing) "
+                                          "instead of Lanczos").format(m=model))
                         else:
-                            done.append(t("⚠️ aucun upscaler **dessin** "
-                                          "installé — la base restera en "
-                                          "Lanczos (traits plus mous). "
-                                          "Téléchargez les upscalers dans "
-                                          "l'onglet « 🔼 Agrandir »."))
+                            done.append(t("⚠️ no **drawing** upscaler "
+                                          "installed — the base stays on "
+                                          "Lanczos (softer linework). "
+                                          "Download the upscalers from the “🔼 "
+                                          "Upscale” tab."))
                     elif want:
                         esrgan_up = gr.update(value=want)
 
@@ -1406,18 +1396,18 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         cn = bool(cn) and tools.upscale_cn_is_installed()
                         cn_up = gr.update(value=cn)
                         if pre.get("controlnet") and not cn:
-                            done.append(t("⚠️ ControlNet Tile pas installé : la "
-                                          "structure ne sera pas verrouillée."))
+                            done.append(t("⚠️ ControlNet Tile not installed: "
+                                          "structure will not be locked."))
                         elif cn:
-                            done.append(t("structure verrouillée par ControlNet "
+                            done.append(t("structure locked by ControlNet "
                                           "Tile ({v})").format(
                                 v=pre.get("cn_scale", 0.6)))
 
-                    done.append(t("créativité {d} · CFG {c} · {s} pas").format(
+                    done.append(t("creativity {d} · CFG {c} · {s} steps").format(
                         d=pre.get("denoise", 0.35), c=pre.get("cfg", 6.0),
                         s=pre.get("steps", 24)))
                     if pre.get("negative"):
-                        done.append(t("négatif adapté"))
+                        done.append(t("matching negative"))
 
                     return (gr.update(value=pre.get("prompt", "")),
                             gr.update(value=pre.get("negative", "")),
@@ -1439,7 +1429,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     ups = registry.list_upscalers()
                     return (gr.update(choices=ck,
                                       value=(ck[0][1] if ck else None)),
-                            gr.update(choices=[(t("Lanczos (par défaut)"), "")]
+                            gr.update(choices=[(t("Lanczos (default)"), "")]
                                               + [(u, u) for u in ups]))
 
                 c_refresh.click(_refresh_models, outputs=[c_model, c_esrgan])
@@ -1454,14 +1444,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     from PIL import Image as _PILImage
 
                     if img is None:
-                        raise gr.Error(t("Fournissez une image."))
+                        raise gr.Error(t("Provide an image."))
                     if not tools.upscale_is_installed():
-                        raise gr.Error(t("Installez d'abord l'upscale créatif SDXL "
-                                         "(accordéon ci-dessus)."))
+                        raise gr.Error(t("Install the creative SDXL upscale "
+                                         "first (accordion above)."))
                     if controlnet and not tools.upscale_cn_is_installed():
-                        gr.Warning(t("ControlNet pas installé : upscale sans "
-                                     "ControlNet. Relancez l'installateur pour "
-                                     "l'activer."))
+                        gr.Warning(t("ControlNet not installed: upscaling "
+                                     "without it. Re-run the installer to "
+                                     "enable it."))
                         controlnet = False
                     settings.ensure_dirs()
                     preview_path = (settings.TMP_DIR /

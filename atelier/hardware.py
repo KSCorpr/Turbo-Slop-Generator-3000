@@ -424,20 +424,20 @@ GENERATIONS: dict[str, dict] = {
                       "pour compenser ; encodeur déchargé en RAM."},
     "rtx20": {"label": "RTX 20xx (Turing)", "arch": "turing", "bias": 0,
               "typical_vram": 8.0,
-              "note": "Turing : flash-attention OK, pas d'accélération fp8 "
-                      "(sd.cpp calcule en fp16). VRAM souvent serrée → quant "
-                      "légère pour rester rapide."},
+              "note": "Turing: flash-attention OK, no fp8 acceleration "
+                      "(sd.cpp computes in fp16). VRAM often tight → light "
+                      "quant to stay fast."},
     "rtx30": {"label": "RTX 30xx (Ampere)", "arch": "ampere", "bias": 0,
               "typical_vram": 12.0,
-              "note": "Ampere : bf16 natif, bon équilibre. Quant selon la VRAM."},
+              "note": "Ampere: native bf16, well balanced. Quant by VRAM."},
     "rtx40": {"label": "RTX 40xx (Ada)", "arch": "ada", "bias": 1,
               "typical_vram": 16.0,
-              "note": "Ada : très rapide, grande marge VRAM → on monte d'un cran "
-                      "de qualité."},
+              "note": "Ada: very fast, large VRAM headroom → bump up one "
+                      "quality step."},
     "rtx50": {"label": "RTX 50xx (Blackwell)", "arch": "blackwell", "bias": 1,
               "typical_vram": 16.0,
-              "note": "Blackwell : architecture récente + grosse VRAM → qualité "
-                      "élevée."},
+              "note": "Blackwell: recent architecture + large VRAM → high "
+                      "quality."},
 }
 
 
@@ -462,7 +462,7 @@ def generation_profile(gen_key: str, vram_gb: float | None = None,
         clip_on_cpu=(vram < 8),
         vae_on_cpu=(vram < 6),
         notes=[t(spec["note"]),
-               t("VRAM {vram} Go → diffusion {quant}, encodeur {enc}.").format(
+               t("VRAM {vram} GB → diffusion {quant}, encoder {enc}.").format(
                    vram=f"{vram:.0f}", quant=quant, enc=enc_quant)],
     )
 
@@ -481,13 +481,13 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
             gpu = max(gpus, key=lambda g: g.vram_gb)  # par défaut : la plus grosse
         if len(gpus) > 1:
             notes.append(
-                t("{n} GPU détectés — calcul épinglé sur #{idx} ({name}). "
-                  "Modifiable dans Réglages.").format(
+                t("{n} GPUs detected — compute pinned to #{idx} ({name}). "
+                  "Changeable in Settings.").format(
                     n=len(gpus), idx=gpu.index, name=gpu.name))
 
     if gpu is None:
-        notes.append(t("Aucun GPU NVIDIA détecté : mode CPU (très lent). "
-                       "Vérifiez les pilotes / nvidia-smi."))
+        notes.append(t("No NVIDIA GPU detected: CPU mode (very slow). Check "
+                       "drivers / nvidia-smi."))
         return Profile(None, ram, "Q4_K_M", "Q4_K_M",
                        diffusion_fa=False, offload_to_cpu=True, vae_tiling=True,
                        clip_on_cpu=True, vae_on_cpu=True, notes=notes)
@@ -513,12 +513,11 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
             diffusion_fa=False, offload_to_cpu=False, vae_tiling=True,
             clip_on_cpu=False, vae_on_cpu=False, notes=notes,
         )
-        notes.append(t("{name} — mémoire unifiée {ram} Go, dont ~{vram} Go "
-                       "utilisables par le GPU -> diffusion en {quant}.").format(
+        notes.append(t("{name} — {ram} GB unified memory, ~{vram} GB usable "
+                       "by the GPU -> {quant} diffusion.").format(
             name=gpu.name, ram=f"{ram:.0f}", vram=f"{vram:.0f}", quant=quant))
-        notes.append(t("Mémoire unifiée : la décharge en RAM est désactivée "
-                       "(elle n'économise rien ici) et le calcul passe par "
-                       "Metal."))
+        notes.append(t("Unified memory: RAM offload is disabled (it saves "
+                       "nothing here) and compute goes through Metal."))
         return profile
 
     # Flash-attention : on suit les TENSOR CORES, pas une liste de noms
@@ -527,9 +526,8 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
     # jusqu'ici du réglage « Turing » et de sa flash-attention inutile.
     fa = gpu.tensor_cores
     if not fa:
-        notes.append(t("{name} : pas de tensor cores → flash-attention "
-                       "désactivé (elle n'apporte rien ici), génération plus "
-                       "lente.").format(name=gpu.name))
+        notes.append(t("{name}: no tensor cores → flash-attention disabled "
+                       "(it gains nothing here), slower generation.").format(name=gpu.name))
 
     profile = Profile(
         gpu=gpu, ram_gb=ram, quant=quant, enc_quant=enc_quant,
@@ -541,16 +539,15 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
         notes=notes,
     )
 
-    notes.append(t("VRAM {vram} Go ({arch}) -> diffusion en {quant}.").format(
+    notes.append(t("VRAM {vram} GB ({arch}) -> diffusion in {quant}.").format(
         vram=f"{vram:.0f}", arch=gpu.arch, quant=quant))
     if ram:
-        notes.append(t("RAM {ram} Go -> encodeur de texte en {enc} "
-                       "(déchargé en RAM, sans coût VRAM).").format(
+        notes.append(t("RAM {ram} GB -> text encoder in {enc} (offloaded to "
+                       "RAM, no VRAM cost).").format(
                         ram=f"{ram:.0f}", enc=enc_quant))
     if vram < 10:
-        notes.append(t("VRAM serrée : préférez des résolutions ≤ 768 px et une "
-                       "quantification plus basse (la génération sera plus "
-                       "lente)."))
+        notes.append(t("Tight VRAM: prefer resolutions ≤ 768 px and a lower "
+                       "quantization (generation will be slower)."))
     return profile
 
 
@@ -638,23 +635,23 @@ def rtx3060_1080ti_prefs() -> dict:
 BIASES: dict[str, dict] = {
     "memory": {
         "shift": -1,
-        "label": "🪶 Plus de marge mémoire",
-        "why": "Si vous voyez des erreurs de mémoire, ou si vous générez en "
-               "grand format. Le modèle est compressé d'un cran de plus et "
-               "l'application économise partout où elle peut.",
+        "label": "🪶 More memory headroom",
+        "why": "If you get out-of-memory errors, or if you generate at large "
+               "sizes. The model is compressed one notch further and the app "
+               "saves memory wherever it can.",
     },
     "balanced": {
         "shift": 0,
-        "label": "⚖️ Équilibré (recommandé)",
-        "why": "Ce que votre carte peut tenir sans se battre. C'est le bon "
-               "choix tant que rien ne vous gêne.",
+        "label": "⚖️ Balanced (recommended)",
+        "why": "What your card can hold without a fight. This is the right "
+               "choice as long as nothing bothers you.",
     },
     "quality": {
         "shift": 1,
-        "label": "🎨 Plus de détail",
-        "why": "Un cran de compression en moins : l'image gagne un peu de "
-               "finesse, et la carte a moins de marge. À prendre si tout passe "
-               "déjà confortablement.",
+        "label": "🎨 More detail",
+        "why": "One notch less compression: the image gains a little "
+               "fineness, and the card has less headroom. Take it if "
+               "everything already fits comfortably.",
     },
 }
 
@@ -710,22 +707,22 @@ def summary_text() -> str:
     gpus = detect_gpus()
     ram = detect_ram_gb()
     if not gpus:
-        return t("⚠️ Aucun GPU NVIDIA détecté · RAM {ram} Go").format(
+        return t("⚠️ No NVIDIA GPU detected · RAM {ram} GB").format(
             ram=f"{ram:.0f}")
     if gpus[0].is_apple:
         # Une seule mémoire : parler de « VRAM » induirait en erreur, on dit
         # explicitement que c'est la part de la mémoire unifiée.
         g = gpus[0]
         return "\n".join([
-            t("Mémoire unifiée : **{ram} Go**").format(ram=f"{ram:.0f}"), "",
-            t("**GPU détecté :**"),
+            t("Unified memory: **{ram} GB**").format(ram=f"{ram:.0f}"), "",
+            t("**Detected GPU:**"),
             f"- {g.name} · Metal · "
-            + t("~{vram} Go adressables par le GPU").format(
+            + t("~{vram} GB addressable by the GPU").format(
                 vram=f"{g.vram_gb:.0f}")])
-    lines = [t("RAM système : **{ram} Go**").format(ram=f"{ram:.0f}"), "",
-             t("**GPU détectés :**")]
+    lines = [t("System RAM: **{ram} GB**").format(ram=f"{ram:.0f}"), "",
+             t("**Detected GPUs:**")]
     for g in gpus:
-        tc = t("tensor cores") if g.tensor_cores else t("sans tensor cores")
+        tc = t("tensor cores") if g.tensor_cores else t("no tensor cores")
         link = f" · {g.pcie_label}" if g.pcie_label else ""
         bus = f" · bus {g.bus_id}" if g.bus_id else ""
         lines.append(f"- #{g.index} — {g.name} · {g.vram_gb:.0f} Go · "

@@ -310,9 +310,9 @@ def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
     for m in load_base_models(prefs):
         labels: list[str] = []
         if vram and vram >= m.vram_min_gb:
-            labels.append(t("✅ adapté à votre carte"))
+            labels.append(t("✅ suits your card"))
         elif vram:
-            labels.append(t("⚠️ {min} Go conseillés (vous : {vram})").format(
+            labels.append(t("⚠️ {min} GB recommended (you: {vram})").format(
                 min=f"{m.vram_min_gb:.0f}", vram=f"{vram:.0f}"))
         out[m.id] = labels
     return out

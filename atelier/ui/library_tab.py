@@ -20,22 +20,22 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
 
 
 def build_library_tab():
-    with gr.Tab("📚 Catalogue de modèles"):
-        gr.Markdown("### Modèles de base\n"
-                    "Téléchargement à la demande. La quantification est choisie "
-                    "automatiquement selon votre VRAM/RAM (modifiable dans Réglages).")
+    with gr.Tab("📚 Model Catalog"):
+        gr.Markdown("### Base models\nOn-demand download. Quantization is "
+                    "chosen automatically from your VRAM/RAM (changeable in "
+                    "Settings).")
         gr.Markdown(
-            "> ℹ️ La quantification affichée (Réglages) est une **cible**. Si le "
-            "dépôt ne la propose pas, on télécharge le quant disponible le plus "
-            "proche **en dessous** (pour tenir dans la VRAM) — c'est indiqué dans "
-            "le journal et signalé après le téléchargement.")
+            "> ℹ️ The quantization shown (Settings) is a **target**. If the "
+            "repo doesn't offer it, the closest available quant **below** it "
+            "is downloaded (to fit your VRAM) — shown in the log and flagged "
+            "after the download.")
 
         prefs = settings.load_prefs()
         models = registry.load_base_models(prefs)
         recos = registry.recommend(prefs)
 
         cards: list[gr.Markdown] = []
-        log = gr.Textbox(label="Journal des téléchargements", lines=8,
+        log = gr.Textbox(label="Download log", lines=8,
                          autoscroll=True, elem_classes="log-box")
 
         for m in models:
@@ -43,8 +43,8 @@ def build_library_tab():
                 with gr.Column(scale=5):
                     card = gr.Markdown(_card_md(m, recos))
                 with gr.Column(scale=1, min_width=170):
-                    btn = gr.Button("⬇️ Télécharger", variant="primary")
-                    del_btn = gr.Button("🗑️ Supprimer", size="sm")
+                    btn = gr.Button("⬇️ Download", variant="primary")
+                    del_btn = gr.Button("🗑️ Delete", size="sm")
             cards.append(card)
 
             def make_handler(model_id):
@@ -57,9 +57,9 @@ def build_library_tab():
                         yield "\n".join(lines)
                     # Avertit visiblement si un quant a été remplacé par un repli.
                     if any("⚠️" in line and "indisponible" in line for line in lines):
-                        gr.Warning(t("Quantification ajustée : le dépôt ne propose "
-                                     "pas le quant cible, repli sur le plus proche "
-                                     "disponible (voir le journal)."))
+                        gr.Warning(t("Quantization adjusted: the repo doesn't "
+                                     "offer the target quant, fell back to "
+                                     "the closest available (see the log)."))
                 return handler
 
             def make_deleter(model_id):
@@ -67,18 +67,17 @@ def build_library_tab():
                     p = settings.load_prefs()
                     model = registry.get_base_model(model_id, p)
                     deleted = registry.delete_model(model, p)
-                    msg = (t("🗑️ « {name} » supprimé : {n} fichier(s) "
-                             "effacé(s).").format(name=model.name, n=len(deleted))
+                    msg = (t("🗑️ “{name}” deleted: {n} file(s) removed.").format(name=model.name, n=len(deleted))
                            if deleted else
-                           t("Rien à supprimer pour « {name} » (non installé ou "
-                             "fichiers partagés).").format(name=model.name))
+                           t("Nothing to delete for “{name}” (not installed "
+                             "or shared files).").format(name=model.name))
                     return _card_md(model, registry.recommend(p)), msg
                 return deleter
 
             btn.click(make_handler(m.id), outputs=[log])
             del_btn.click(make_deleter(m.id), outputs=[card, log])
 
-        refresh = gr.Button("↻ Rafraîchir l'état")
+        refresh = gr.Button("↻ Refresh status")
 
         def refresh_cards():
             p = settings.load_prefs()

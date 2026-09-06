@@ -164,11 +164,11 @@ def seedvr2_is_installed() -> bool:
 # vérifie leur SHA-256 (dépôt AInVFX/SeedVR2_comfyUI) — cette liste est donc à
 # la fois le menu de l'interface et l'unique liste blanche du sous-process.
 SEEDVR2_MODELS: tuple[tuple[str, str], ...] = (
-    ("3B Q8 — valeur sûre, la plus rapide", "seedvr2_ema_3b-Q8_0.gguf"),
-    ("3B Q4 — repli si la mémoire manque", "seedvr2_ema_3b-Q4_K_M.gguf"),
-    ("7B Q4 — plus de détails, environ 2× plus lent",
+    ("3B Q8 — safe default, fastest", "seedvr2_ema_3b-Q8_0.gguf"),
+    ("3B Q4 — fallback when memory runs short", "seedvr2_ema_3b-Q4_K_M.gguf"),
+    ("7B Q4 — more detail, about 2× slower",
      "seedvr2_ema_7b-Q4_K_M.gguf"),
-    ("7B Q4 « sharp » — le plus net (peut durcir le grain)",
+    ("7B Q4 “sharp” — sharpest (can harden grain)",
      "seedvr2_ema_7b_sharp-Q4_K_M.gguf"),
 )
 SEEDVR2_MODEL_FILES = frozenset(f for _, f in SEEDVR2_MODELS)
@@ -489,7 +489,7 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
 
     # Le fond, c'est l'image entière : même si une zone est détourée par-dessus,
     # on ne laisse jamais un trou dans le fichier final.
-    layers = [(t("Fond (image complète)"),
+    layers = [(t("Background (full image)"),
                np.dstack([rgb, np.full((h, w), 255, "uint8")]))]
     for name, m in zip(names, masks):
         # Bord ADOUCI : un masque binaire collé tel quel donne ce contour en
@@ -619,7 +619,7 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
         raise ToolError("L'améliorateur de prompt n'est pas installé "
                         "(accordéon « ✨ Améliorer » de l'onglet de génération).")
     if not (prompt or "").strip():
-        raise ToolError("Saisissez d'abord un prompt à améliorer.")
+        raise ToolError("Enter a prompt to enhance first.")
     settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_file = settings.TMP_DIR / f"enhance_{stamp}.json"

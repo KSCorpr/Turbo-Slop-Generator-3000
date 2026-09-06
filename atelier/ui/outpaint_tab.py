@@ -153,20 +153,20 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                              "que le décor généré.")
                     steps = gr.Slider(
                         1, 40, value=_defaults(_first)["steps"], step=1,
-                        label="Étapes",
+                        label="Steps",
                         info="Ajusté automatiquement au modèle choisi.")
                     seed = gr.Number(value=-1, precision=0,
-                                     label="Seed (-1 = aléatoire)")
+                                     label="Seed (-1 = random)")
                 with gr.Row():
                     run = gr.Button("🖼️ Étendre l'image", variant="primary",
                                     scale=3)
-                    stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
+                    stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
                 result = gr.Image(label="Résultat", type="filepath",
                                   buttons=widgets.IMAGE_BUTTONS)
                 again = gr.Button("♻️ Ré-étendre le résultat", size="sm")
-                log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
+                log = gr.Textbox(label="Log", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
         # --- Aperçu du plan (dimensions) ---

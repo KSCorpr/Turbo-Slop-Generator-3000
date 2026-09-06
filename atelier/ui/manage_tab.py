@@ -12,7 +12,7 @@ from .. import inventory, settings, storage
 from ..i18n import t
 from . import widgets
 
-CATEGORIES = ["Moteurs", "Modèles", "Add-ons Toolkit", "Vos données"]
+CATEGORIES = ["Moteurs", "Models", "Add-ons Toolkit", "Your data"]
 
 
 def _choices_and_summary():
@@ -26,7 +26,7 @@ def _choices_and_summary():
         if not cat_items:
             continue
         rows.append(f"\n**{cat}**\n")
-        rows.append("| | Élément | Taille |")
+        rows.append("| | Item | Size |")
         rows.append("|---|---|---|")
         for i in cat_items:
             size = i.size
@@ -67,23 +67,22 @@ def build_manage_tab():
         #  Inventaire & suppression
         # ------------------------------------------------------------------ #
         gr.Markdown(
-            "### Gestion de l'espace disque\n"
-            "Tout ce que l'application a téléchargé, avec sa taille. Coche ce "
-            "que tu veux supprimer puis confirme. Les éléments marqués "
-            "**⚠️** sont **tes données** (LoRA, modèles perso, créations) — "
-            "réfléchis à deux fois. Tout le reste est **re-téléchargeable** "
-            "depuis l'app.")
+            "### Disk space\nEverything the application has downloaded, with "
+            "its size. Tick what you want to delete, then confirm. Items "
+            "marked **⚠️** are **your data** (LoRAs, custom models, "
+            "creations) — think twice. Everything else can be **downloaded "
+            "again** from inside the app.")
 
         _choices, _summary = _choices_and_summary()
         summary_md = gr.Markdown(_summary)
         picks = gr.CheckboxGroup(choices=_choices, value=[],
-                                 label="Éléments à supprimer")
+                                 label="Items to delete")
         with gr.Row():
             confirm = gr.Checkbox(
                 value=False,
-                label="Je confirme vouloir supprimer les éléments cochés")
-            refresh = gr.Button("↻ Rafraîchir les tailles", size="sm")
-        delete_btn = gr.Button("🗑️ Supprimer la sélection", variant="stop")
+                label="I confirm I want to delete the ticked items")
+            refresh = gr.Button("↻ Refresh sizes", size="sm")
+        delete_btn = gr.Button("🗑️ Delete the selection", variant="stop")
         result = gr.Markdown("")
 
         def _refresh():
@@ -97,10 +96,10 @@ def build_manage_tab():
         def _delete(keys, ok):
             if not keys:
                 return (gr.update(), gr.update(), gr.update(),
-                        t("Rien de coché."))
+                        t("Nothing ticked."))
             if not ok:
                 return (gr.update(), gr.update(), gr.update(),
-                        t("⚠️ Coche **« Je confirme »** pour supprimer."))
+                        t("⚠️ Tick **“I confirm”** to delete."))
             msgs, freed = inventory.delete(list(keys))
             ch, summ = _choices_and_summary()
             report = "\n".join(msgs) + \
@@ -120,29 +119,27 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         #  Emplacement des modèles (dossier externe)
         # ------------------------------------------------------------------ #
-        gr.Markdown("---\n### 📁 Emplacement des modèles")
-        with gr.Accordion("Déplacer les modèles vers un autre disque "
-                          "(ex. NVMe rapide)", open=False):
+        gr.Markdown("---\n### 📁 Where the models live")
+        with gr.Accordion("Move the models to another drive (e.g. a fast NVMe)", open=False):
             gr.Markdown(
-                "Les modèles peuvent vivre **hors du dossier du projet** : "
-                "utile pour les mettre sur un **NVMe** (chargements bien plus "
-                "rapides) ou sur un disque plus grand. Les lectures répétées "
-                "**n'usent pas** un SSD — seules les écritures comptent.\n\n"
-                "⚠️ Le changement est pris en compte **au redémarrage** de "
-                "l'application.")
+                "Models can live **outside the project folder**: useful to "
+                "put them on an **NVMe** (much faster loads) or on a larger "
+                "drive. Repeated reads **do not wear** an SSD — only writes "
+                "count.\n\n⚠️ The change takes effect **when the application "
+                "restarts**.")
             loc_now = gr.Markdown(
                 f"**Dossier actuel :** `{storage.current()}`"
-                + ("  *(défaut du projet)*" if storage.is_default() else ""))
+                + ("  *(project default)*" if storage.is_default() else ""))
             dest_box = gr.Textbox(
                 value=storage.configured(),
                 label="Nouveau dossier (chemin absolu)",
                 placeholder=r"ex. D:\IA\models  ou  /mnt/nvme/models")
             with gr.Row():
-                move_btn = gr.Button("📦 Déplacer les modèles ici",
+                move_btn = gr.Button("📦 Move the models here",
                                      variant="primary")
-                point_btn = gr.Button("🔗 Pointer ici sans déplacer")
+                point_btn = gr.Button("🔗 Point here without moving")
                 reset_btn = gr.Button("↩️ Revenir au dossier du projet")
-            loc_log = gr.Textbox(label="Journal", lines=10, autoscroll=True,
+            loc_log = gr.Textbox(label="Log", lines=10, autoscroll=True,
                                  elem_classes="log-box")
 
             def _do_move(raw):
@@ -151,8 +148,8 @@ def build_manage_tab():
                     yield gr.update(), f"❌ {err}"
                     return
                 lines: list[str] = []
-                yield gr.update(), t("⏳ Déplacement en cours… (long si les "
-                                     "disques diffèrent — ne fermez pas)")
+                yield gr.update(), t("⏳ Moving… (slow across different drives "
+                                     "— do not close)")
                 for msg in storage.move(dest):
                     lines.append(msg)
                     yield gr.update(), "\n".join(lines)
@@ -170,9 +167,9 @@ def build_manage_tab():
                 msg = storage.save(dest)
                 return (gr.update(value=f"**Dossier actuel :** `{storage.current()}` "
                                         "— *redémarrez pour appliquer*"),
-                        msg + "\n\n*(Aucun fichier déplacé : le dossier indiqué "
-                        "doit déjà contenir vos modèles, sinon ils seront "
-                        "re-téléchargés.)*")
+                        msg + "\n\n*(No file was moved: the folder you gave "
+                              "must already contain your models, otherwise "
+                              "they will be downloaded again.)*")
 
             point_btn.click(_do_point, inputs=[dest_box],
                             outputs=[loc_now, loc_log])
@@ -185,27 +182,26 @@ def build_manage_tab():
 
             reset_btn.click(_do_reset, outputs=[loc_now, loc_log, dest_box])
 
-        with gr.Accordion("Déplacer SEULEMENT certains éléments "
-                          "(ex. les 16 Go de la 3D)", open=False):
+        with gr.Accordion("Move ONLY some items (e.g. the 16 GB of 3D models)", open=False):
             gr.Markdown(
-                "Déplace **les éléments cochés** vers un autre disque et laisse "
-                "un **lien** à leur place : l'application continue de les "
-                "trouver, **sans redémarrage ni réglage**. Idéal pour sortir "
-                "les gros modèles 3D tout en gardant les modèles d'image sur "
-                "le NVMe.\n\n"
-                "⚠️ Le disque de destination doit rester **branché** — sinon "
-                "les éléments déplacés deviennent introuvables.")
+                "Moves **the ticked items** to another drive and leaves a "
+                "**link** in their place: the application still finds them, "
+                "**with no restart and no setting to change**. Ideal for "
+                "moving the large 3D models out while keeping the image "
+                "models on the NVMe.\n\n⚠️ The destination drive must stay "
+                "**connected** — otherwise the moved items become "
+                "unreachable.")
             sel_picks = gr.CheckboxGroup(choices=_move_choices(), value=[],
-                                         label="Éléments à déplacer / ramener")
+                                         label="Items to move out / bring back")
             sel_dest = gr.Textbox(
                 label="Dossier de destination (chemin absolu)",
                 placeholder=r"ex. E:\IA-gros-modeles  ou  /mnt/hdd/ia")
             with gr.Row():
-                sel_move = gr.Button("📦 Déplacer + créer le lien",
+                sel_move = gr.Button("📦 Move + create the link",
                                      variant="primary")
-                sel_back = gr.Button("↩️ Ramener dans le projet")
-                sel_refresh = gr.Button("↻ Rafraîchir", size="sm")
-            sel_log = gr.Textbox(label="Journal", lines=10, autoscroll=True,
+                sel_back = gr.Button("↩️ Bring back into the project")
+                sel_refresh = gr.Button("↻ Refresh", size="sm")
+            sel_log = gr.Textbox(label="Log", lines=10, autoscroll=True,
                                  elem_classes="log-box")
 
             def _sel_paths(keys):
@@ -219,7 +215,7 @@ def build_manage_tab():
             def _sel_move(keys, raw):
                 paths = _sel_paths(keys)
                 if not paths:
-                    yield gr.update(), t("Rien de coché.")
+                    yield gr.update(), t("Nothing ticked.")
                     return
                 raw = (raw or "").strip().strip('"')
                 if not raw or not Path(raw).expanduser().is_absolute():
@@ -227,7 +223,7 @@ def build_manage_tab():
                                          "en chemin **absolu**.")
                     return
                 lines: list[str] = []
-                yield gr.update(), t("⏳ Déplacement en cours…")
+                yield gr.update(), t("⏳ Moving…")
                 for msg in storage.relocate(paths,
                                             Path(raw).expanduser()):
                     lines.append(msg)
@@ -241,7 +237,7 @@ def build_manage_tab():
             def _sel_back(keys):
                 paths = _sel_paths(keys)
                 if not paths:
-                    yield gr.update(), t("Rien de coché.")
+                    yield gr.update(), t("Nothing ticked.")
                     return
                 lines: list[str] = []
                 yield gr.update(), t("⏳ Retour en cours…")
@@ -266,17 +262,17 @@ def build_manage_tab():
         # dans l'environnement, et demander d'ouvrir la console du navigateur
         # pour lire un code HTTP n'est pas une réponse acceptable ici. Ce
         # bouton refait le trajet exact d'une image importée et le raconte.
-        gr.Markdown("---\n### 🩺 Une image importée ne s'affiche pas ?")
-        with gr.Accordion("Diagnostiquer l'affichage des images", open=False):
+        gr.Markdown("---\n### 🩺 An imported image will not display?")
+        with gr.Accordion("Diagnose image display", open=False):
             gr.Markdown(
-                "Si une image que vous importez reste une **icône cassée**, "
-                "ce test refait tout son trajet : écriture dans le cache de "
-                "l'interface, puis affichage par le serveur web. **L'image de "
-                "test doit apparaître à droite** — si elle apparaît, la "
-                "chaîne fonctionne et le problème vient du fichier importé ; "
-                "sinon, le rapport dit quel maillon a lâché.",
+                "If an image you import stays a **broken icon**, this test "
+                "repeats its whole journey: writing to the interface cache, "
+                "then serving it over the web server. **The test image must "
+                "appear on the right** — if it does, the chain works and the "
+                "problem is the imported file; if it does not, the report "
+                "names the link that failed.",
                 elem_classes="hint")
-            diag_btn = gr.Button("🩺 Lancer le diagnostic", variant="primary")
+            diag_btn = gr.Button("🩺 Run the diagnostic", variant="primary")
             with gr.Row():
                 diag_md = gr.Markdown("")
                 with gr.Column():
@@ -291,7 +287,7 @@ def build_manage_tab():
                                             height=200, columns=5,
                                             buttons=widgets.IMAGE_VIEW_ONLY)
                     diag_last = gr.Image(
-                        label="Dernier fichier importé (le vôtre)", height=220,
+                        label="Last imported file (yours)", height=220,
                         interactive=False, buttons=widgets.IMAGE_VIEW_ONLY)
 
             def _diagnose():
@@ -305,287 +301,274 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         #  Documentation des options
         # ------------------------------------------------------------------ #
-        gr.Markdown("---\n### 📖 Aide — que fait chaque option ?")
+        gr.Markdown("---\n### 📖 Help — what does each option do?")
 
-        with gr.Accordion("🎨 Onglets de génération (Flux.2 / Krea 2)",
+        with gr.Accordion("🎨 Generation tabs (Flux.2 / Krea 2)",
                           open=False):
             gr.Markdown(
-                "**Prompt** — ta description. Sur un **modèle d'édition** "
-                "(Flux.2), décris la *modification* à appliquer.  \n"
-                "**Prompt négatif** — ce qu'on ne veut pas. **Affiché seulement "
-                "si le modèle en tient compte** (CFG > 1) : les modèles "
-                "distillés tournent en CFG 1.0 et l'ignorent.  \n"
-                "**🎨 Styles** — un seul repli qui regroupe les trois banques, "
-                "toutes **cumulables** entre elles :  \n"
-                "  · **🎭 Préréglage perso** — un préfixe que tu écris et "
-                "enregistres, ajouté en tête de chaque génération ; "
-                "« — Aucun — » le retire. Les préréglages sont **globaux** : "
-                "enregistrés une fois, ils apparaissent dans les trois onglets. "
-                "Certains sont **livrés avec l'app** (comme *📷 France "
-                "provinciale 1995-2005*) : ils survivent aux mises à jour et ne "
-                "peuvent pas être supprimés, mais enregistrer un style du même "
-                "nom crée ta propre version, qui prend le dessus — la supprimer "
-                "rétablit l'originale.  \n"
-                "  · **📷 Styles photo** (139) — qualité, lumière, objectif, "
-                "pellicule, ambiance. Ton sujet est inséré *dans* chaque style "
-                "coché. Banque © ghleg, MIT.  \n"
-                "  · **🖍️ Styles artistiques** (397) — anime, cartoon, BD, "
-                "dessin, design, peinture ; ajoutés *après* ton sujet. "
-                "🎲 en tire un au hasard (wildcard).  \n"
-                "**🎨 Générer / ⏹️ Stop / 🗑️ Effacer** — juste sous le prompt. "
-                "*Effacer* vide le prompt, le négatif et toute trace "
-                "d'amélioration.  \n"
-                "**↩️ Rétablir le prompt d'origine** — apparaît après une "
-                "amélioration et remet exactement ce que tu avais écrit, "
-                "paramètres `--` compris.  \n"
-                "ℹ️ **Un préréglage ne traduit rien** : c'est un préfixe collé "
-                "devant ton texte. Si tu écris en français, tu obtiens du "
-                "français avec une entête anglaise. C'est le bouton "
-                "**✨ Améliorer** qui traduit et met en forme — et il tient "
-                "désormais compte du préréglage actif : il décrit le sujet sans "
-                "ajouter d'appareil, d'objectif, de lumière ni de traitement qui "
-                "le contrediraient. Ordre conseillé : **choisir le préréglage, "
-                "puis améliorer**.\n\n"
-                "**✨ Améliorateur de prompt** — un petit LLM local réécrit ton "
-                "idée en prompt anglais (add-on à installer). **Intensité** "
-                "règle l'ampleur de la réécriture, **Propositions** en génère "
-                "plusieurs d'un coup (en un seul chargement du modèle) : "
-                "clique celle que tu préfères. La **ligne grise** sous les "
-                "menus résume ce que le bouton va faire avant que tu cliques. "
-                "Réglages **et** installation sont dans le même repli.\n\n"
-                "**Format / Largeur / Hauteur** — préréglages calés sur les "
-                "**résolutions natives** du modèle (il rend mieux dessus).  \n"
-                "**Étapes** — nombre de pas de débruitage. Les modèles "
-                "distillés sont calibrés pour peu de pas (4–8) : au-delà, on "
-                "gagne peu.  \n"
-                "**CFG** — force du guidage par le prompt. **1.0 = désactivé** "
-                "(normal en distillé). >1 = suit davantage le prompt (et "
-                "active le négatif). 0 peut **ignorer** le prompt.  \n"
-                "**Préréglage** — combo sampler/scheduler/pas recommandé par "
-                "la doc du modèle. En cas de doute, garde-le.  \n"
-                "**Sampler / Scheduler** — algorithmes d'échantillonnage. "
-                "« Auto » laisse le moteur choisir : le plus sûr.  \n"
-                "**Flow shift** — 0 = auto (recommandé). Trop bas = grain en "
-                "haute résolution.  \n"
-                "**Seed** — graine aléatoire. -1 = aléatoire ; une valeur fixe "
-                "**rejoue la même image**.  \n"
-                "**Images** — nombre d'images générées (seeds consécutifs).\n\n"
-                "**🖼️ Image de référence** — *édition* (Flux.2 : jusqu'à 3 "
-                "images, piloté par le prompt) ou *image-to-image* (**force de "
-                "transformation** : bas = fidèle à l'original, haut = "
-                "réinventé).  \n"
-                "**🧩 Outpaint centré** — agrandit la toile symétriquement et "
-                "laisse le modèle remplir les bords (expérimental, modèles "
-                "d'édition seulement). Pour un outpaint **directionnel**, voir "
-                "l'onglet « 🖼️ Outpaint ».  \n"
-                "**🧩 LoRA** — styles/concepts additionnels, avec un poids "
-                "(≈ 0.6–1.0 en général). Doivent correspondre à "
-                "**l'architecture du modèle**.  \n"
-                "**📂 Fichiers locaux** — utiliser un modèle déposé à la main "
-                "au lieu de celui du catalogue.")
+                "**Prompt** — your description. On an **editing model** "
+                "(Flux.2), describe the\n*change* to apply.\n**Negative "
+                "prompt** — what you do not want. **Shown only when the model "
+                "honours\nit** (CFG > 1): distilled models run at CFG 1.0 and "
+                "ignore it.\n\n**🎨 Styles** — one collapsed section gathering "
+                "three banks, all **stackable**:\n· **🎭 Custom preset** — a "
+                "prefix you write and save, prepended to every\ngeneration; "
+                "“— None —” removes it. Presets are **global**: saved once, "
+                "they\nappear in all three tabs. Some **ship with the app** "
+                "and survive updates; they\ncannot be deleted, but saving a "
+                "style under the same name creates your own\nversion, which "
+                "takes precedence — deleting yours restores the original.\n· "
+                "**📷 Photo styles** (139) — quality, light, lens, film stock, "
+                "mood. Your\nsubject is inserted *into* each ticked style. "
+                "Bank © ghleg, MIT.\n· **🖍️ Artistic styles** (397) — anime, "
+                "cartoon, comics, drawing, design,\npainting; appended "
+                "*after* your subject. 🎲 picks one at random.\n\n**🎨 Generate "
+                "/ ⏹️ Stop / 🗑️ Clear** — right under the prompt. *Clear* "
+                "empties\nthe prompt, the negative and every trace of "
+                "improvement.\n**↩️ Restore the original prompt** — appears "
+                "after an improvement and puts back\nexactly what you had "
+                "written, `--` parameters included.\n\nℹ️ **A preset "
+                "translates nothing**: it is a prefix glued in front of your "
+                "text.\nWrite in French and you get French with an English "
+                "header. It is the **✨\nImprove** button that translates and "
+                "shapes — and it now takes the active\npreset into account: "
+                "it describes the subject without adding a camera, a lens,\na "
+                "light or a treatment that would contradict it. Recommended "
+                "order: **pick the\npreset, then improve**.\n\n**✨ Prompt "
+                "improver** — a small local LLM rewrites your idea as an "
+                "English\nprompt (add-on, installed on demand). **Intensity** "
+                "sets how far the rewrite\ngoes; **Suggestions** produces "
+                "several at once in a single model load — click\nthe one you "
+                "prefer. The **grey line** under the menus summarises what "
+                "the\nbutton will do before you click it.\n\n**Format / Width "
+                "/ Height** — presets aligned on the model's "
+                "**native\nresolutions** (it renders better "
+                "there).\n**Steps** — denoising steps. Distilled models are "
+                "calibrated for few steps\n(4–8); beyond that you gain "
+                "little.\n**CFG** — prompt guidance strength. **1.0 = off** "
+                "(normal for distilled\nmodels). >1 follows the prompt more "
+                "closely (and enables the negative). 0 can\n**ignore** the "
+                "prompt.\n**Preset** — the sampler/scheduler/steps "
+                "combination recommended by the model's\nown documentation. "
+                "When in doubt, keep it.\n**Sampler / Scheduler** — sampling "
+                "algorithms. “Auto” lets the engine choose,\nwhich is the "
+                "safe option.\n**Flow shift** — 0 = auto (recommended). Too "
+                "low means grain at high\nresolution.\n**Seed** — -1 is "
+                "random; a fixed value **replays the same "
+                "image**.\n**Images** — how many to generate (consecutive "
+                "seeds).\n\n**🖼️ Reference image** — *editing* (Flux.2: up to "
+                "3 images, driven by the\nprompt) or *image-to-image* "
+                "(**transformation strength**: low stays faithful to\nthe "
+                "original, high reinvents it).\n**🧩 Centred outpaint** — "
+                "enlarges the canvas symmetrically and lets the model\nfill "
+                "the borders (experimental, editing models only). For a "
+                "**directional**\noutpaint, see the “🖼️ Outpaint” tab.\n**🧩 "
+                "LoRA** — extra styles or concepts, with a weight (≈ 0.6–1.0 "
+                "usually). They\nmust match the **model's "
+                "architecture**.\n**📂 Local files** — use a model you dropped "
+                "in by hand instead of the catalog\none.")
 
-        with gr.Accordion("⚙️ Réglages (matériel & optimisation)", open=False):
+        with gr.Accordion("⚙️ Settings (hardware & optimization)", open=False):
             gr.Markdown(
-                "**Automatique (recommandé)** — déduit tout du matériel "
-                "détecté : quantification de diffusion selon la **VRAM**, "
-                "quantification de l'encodeur selon la **RAM**, et les flags "
-                "mémoire. À laisser coché en temps normal.  \n"
-                "**Presets par génération de carte** — applique en 1 clic un "
-                "profil curaté pour GTX 10xx → RTX 50xx (désactive l'auto et "
-                "remplit les champs manuels).\n\n"
-                "**Quant. diffusion / encodeur** — précision des poids. "
-                "`Q8_0` ≈ sans perte (gros) → `Q4_K_M` bon compromis → `Q3` "
-                "agressif. Plus bas = tient dans moins de VRAM, moins fidèle.  \n"
-                "**Flash attention** — attention optimisée (Turing/RTX 20xx et "
-                "plus). Plus rapide, moins de VRAM. Désactivée sur Pascal.  \n"
-                "**Offload CPU** — garde les poids en RAM et ne monte que le "
-                "nécessaire en VRAM : économise beaucoup de VRAM, coût faible.  \n"
-                "**VAE tiling** — décode l'image par tuiles : évite les pics "
-                "mémoire en haute résolution (un peu plus lent).  \n"
-                "**CLIP / VAE sur CPU** — derniers recours quand la VRAM est "
-                "vraiment juste (lent).\n\n"
-                "**🧮 Multi-GPU** (si ≥ 2 cartes) — *Une seule carte* "
-                "(recommandé) ; *Encodeur sur la 2e carte* (libère de la VRAM "
-                "sur la principale) ; *Auto-fit* (répartit tout — ⚠️ force la "
-                "VRAM, risque d'OOM).  \n"
-                "**⚡ Cache** — réutilise des calculs entre les pas. Utile "
-                "au-delà de ~10 pas ; sur un modèle distillé (4–8 pas), gain "
-                "faible et artefacts possibles. Laisser désactivé.")
+                "**One question, not twenty.** Everything the machine can "
+                "work out from your\nhardware, it works out: diffusion "
+                "quantization from **VRAM**, text-encoder\nquantization from "
+                "**RAM**, flash-attention, CPU offload, VAE tiling. What "
+                "is\nleft is a matter of taste, so Settings asks it once: "
+                "**more memory headroom, or\nmore detail?** Three notches, "
+                "and the page tells you what each one changed —\nin "
+                "observable consequences, not flag names.\n\n**🔧 Expert** "
+                "(collapsed, optional) exposes the raw sd.cpp options for "
+                "when you\nwant to measure instead of trust: forced "
+                "quantization, memory flags, step\ncache, direct convolution, "
+                "compute budget (`--max-vram`), layer streaming, and\nthe "
+                "**resident engine** (keeps the model loaded between images — "
+                "no live\npreview in exchange).\n\n**🧮 Multi-GPU** (two or "
+                "more cards) offers three mutually exclusive\nstrategies: "
+                "*single card* (the reliable default), *text encoder on the "
+                "second\ncard*, or *auto-fit* (sd.cpp spreads everything). It "
+                "is memory-aware, not\ntopology-aware — the **benchmark "
+                "button measures them on your machine** instead\nof asking "
+                "you to bet. Note that a card without tensor cores (Pascal, "
+                "GTX 16xx)\nis refused for the encoder automatically: it runs "
+                "fp16 at a fraction of its\nfp32 rate, and prompt encoding is "
+                "one big fp16 matmul.\n\n**⚡ Step cache** reuses computation "
+                "between diffusion steps. It pays beyond\n~10 steps; our "
+                "distilled models run 4–8, so leave it off unless you "
+                "measured\notherwise.")
 
-        with gr.Accordion("🖼️ Outpaint (étendre une image)", open=False):
+        with gr.Accordion("🖼️ Outpaint (extend an image)", open=False):
             gr.Markdown(
-                "Étend une image **à gauche, à droite, en haut, en bas ou tout "
-                "autour**, façon Midjourney. Ça marche avec **n'importe quel "
-                "modèle** du catalogue et **sans prompt** — aucun modèle "
-                "d'inpainting n'est nécessaire.\n\n"
-                "**⚠️ À utiliser avec un modèle d'ÉDITION** (Flux.2 Klein). "
-                "Edit). Ce n'est pas une préférence : c'est ce qui fait que ça "
-                "marche. Un modèle d'édition reçoit la toile agrandie en "
-                "**référence** — son conditionnement image lui dit ce que "
-                "contient la scène — plus une **consigne d'extension écrite "
-                "automatiquement**. Un modèle de text-to-image ordinaire, lui, "
-                "ne reçoit qu'un latent bruité en image-to-image : il ne sait "
-                "pas ce qu'il prolonge, donc il **réinvente**. Aucun réglage de "
-                "force, de fondu ou de remplissage ne corrige ça — c'est une "
-                "limite de méthode. Le repli est là pour ne pas bloquer, pas "
-                "parce qu'il donne un bon résultat.\n\n"
-                "C'est aussi ça, le « sans prompt » : tu n'écris rien, mais le "
-                "modèle reçoit une consigne précise qui nomme les côtés étendus "
-                "et lui demande de continuer perspective, lumière, palette et "
-                "style sans toucher à l'original ni dupliquer de sujet.\n\n"
-                "**Comment ça marche** — la toile est agrandie, la nouvelle zone "
-                "est remplie (gris neutre pour un modèle d'édition : une zone "
-                "franchement vide se lit « à remplir »), le modèle génère, la "
-                "**tonalité du neuf est recalée** sur celle de l'original, puis "
-                "**l'image d'origine est recollée** par-dessus.\n\n"
-                "⚠️ Le recalage de tonalité n'est pas un détail : en "
-                "image-to-image le modèle re-rend TOUTE la toile plus "
-                "contrastée. Sans lui, l'original recollé apparaît comme un "
-                "rectangle plus terne au milieu — et le fondu n'y peut rien, "
-                "l'écart étant global et non local.\n\n"
-                "**Direction** — un ou plusieurs côtés à étendre.  \n"
-                "**Extension par côté** — proportion ajoutée de chaque côté "
-                "choisi (0.25 = +25 %). La nouvelle taille s'affiche en dessous ; "
-                "elle est alignée sur 16 px et plafonnée à **2048 px** de côté "
-                "(au-delà, les marges sont réduites automatiquement).  \n"
-                "**Modèle** — n'importe quel modèle installé. Le **sampler, le "
-                "CFG et les étapes** sont repris de ses réglages recommandés.  \n"
-                "**Prompt** — *facultatif*. À laisser vide pour une extension "
-                "neutre ; le remplir sert seulement à orienter ce qui apparaît "
-                "dans la nouvelle zone.  \n"
-                "**Remplissage des bords** — *Gris neutre* (défaut sur un modèle "
-                "d'édition) : la zone à remplir est sans ambiguïté. *Étirement "
-                "flou* prolonge les pixels du contour, ce qui ne transmet que la "
-                "couleur, aucune forme. *Miroir* donne une continuité parfaite "
-                "sur un motif régulier, **mais reflète un sujet proche du "
-                "bord** — et le modèle transforme volontiers ce reflet en un "
-                "second objet bien réel. À réserver aux fonds uniformes.  \n"
-                "**Force de génération** — **repli seulement**, grisée sur un "
-                "modèle d'édition (celui-ci est piloté par la consigne, pas par "
-                "une force). Haut = invente librement ; bas = reste proche du "
-                "pré-remplissage.  \n"
-                "**Fondu de raccord** — largeur du dégradé à la jonction avec "
-                "l'original. ~24 px efface la couture. Attention : il mélange "
-                "une bande d'environ **2× sa valeur** *à l'intérieur* du bord de "
-                "l'original — c'est précisément ce qui fait disparaître la "
-                "couture. **0 = collage net**, original strictement intact "
-                "partout.  \n"
-                "**Recalage de tonalité** — 0 à 1 : à quel point le neuf est "
-                "ramené sur le contraste et la couleur de l'original. À baisser "
-                "seulement si la correction exagère sur une image inhabituelle.  \n"
-                "**Seed** — -1 = aléatoire ; une valeur fixe rejoue la même "
-                "extension.  \n"
-                "**♻️ Ré-étendre le résultat** — recharge le résultat comme "
-                "nouvelle image d'entrée, pour enchaîner les extensions "
-                "(droite, puis haut, etc.).\n\n"
-                "Chaque résultat est enregistré dans `outputs/` avec un fichier "
-                "`.txt` à côté qui récapitule modèle, seed et réglages.")
+                "Extends an image **left, right, up, down or all around**, "
+                "Midjourney style. It\nworks with **any model** in the "
+                "catalog and **without a prompt** — no\ninpainting model is "
+                "required.\n\n**⚠️ Use an EDITING model** (Flux.2 Klein). "
+                "This is not a preference, it is\nwhat makes it work. An "
+                "editing model receives the enlarged canvas as "
+                "a\n**reference** — its image conditioning tells it what the "
+                "scene contains — plus\nan **extension instruction written "
+                "automatically**. An ordinary text-to-image\nmodel only "
+                "receives a noised latent in image-to-image: it does not know "
+                "what it\nis continuing, so it **reinvents**. No strength, "
+                "feather or fill setting fixes\nthat; it is a limit of the "
+                "method. The fallback exists so you are not blocked,\nnot "
+                "because it gives a good result.\n\nThat is also what "
+                "“without a prompt” means: you write nothing, but the "
+                "model\nreceives a precise instruction naming the extended "
+                "sides and asking it to carry\non the perspective, light, "
+                "palette and style without touching the original "
+                "or\nduplicating a subject.\n\n**How it works** — the canvas "
+                "is enlarged, the new area is filled (neutral grey\nfor an "
+                "editing model: a frankly empty area reads as “fill me”), the "
+                "model\ngenerates, the **tone of the new pixels is matched** "
+                "to the original, then the\n**original image is pasted back** "
+                "on top.\n\n⚠️ Tone matching is not a detail: in "
+                "image-to-image the model re-renders the\nWHOLE canvas with "
+                "more contrast. Without it, the pasted-back original shows "
+                "as\na duller rectangle in the middle — and feathering cannot "
+                "help, the gap being\nglobal rather than "
+                "local.\n\n**Direction** — one or more sides to "
+                "extend.\n**Extension per side** — the share added on each "
+                "chosen side (0.25 = +25%). The\nnew size is shown below; it "
+                "is aligned to 16 px and capped at **2048 px** per\nside "
+                "(beyond that the margins are reduced "
+                "automatically).\n**Model** — any installed model. The "
+                "**sampler, CFG and steps** come from its\nrecommended "
+                "settings.\n**Prompt** — *optional*. Leave it empty for a "
+                "neutral extension; filling it\nonly steers what appears in "
+                "the new area.\n**Border fill** — *Neutral grey* (default on "
+                "an editing model): the area to\nfill is unambiguous. "
+                "*Blurred stretch* extends the edge pixels, which "
+                "carries\ncolour but no shape. *Mirror* gives perfect "
+                "continuity on a regular pattern\n**but reflects any subject "
+                "near the edge** — and the model happily turns "
+                "that\nreflection into a second, very real object. Keep it "
+                "for uniform backgrounds.\n**Generation strength** — "
+                "**fallback only**, greyed out on an editing model\n(which is "
+                "driven by the instruction, not by a strength). High invents "
+                "freely;\nlow stays close to the pre-fill.\n**Seam feather** "
+                "— width of the gradient at the junction with the "
+                "original.\n~24 px erases the seam. Careful: it blends a band "
+                "roughly **twice that value**\n*inside* the original's edge — "
+                "which is precisely what makes the seam vanish.\n**0 = hard "
+                "paste**, original strictly intact everywhere.\n**Tone "
+                "matching** — 0 to 1: how far the new pixels are pulled back "
+                "onto the\noriginal's contrast and colour. Lower it only if "
+                "the correction overshoots on\nan unusual image.\n**Seed** — "
+                "-1 is random; a fixed value replays the same "
+                "extension.\n**♻️ Re-extend the result** — reloads the result "
+                "as the new input, to chain\nextensions (right, then up, and "
+                "so on).\n\nEvery result is saved in `outputs/` with a `.txt` "
+                "file beside it recording the\nmodel, seed and settings.")
 
         with gr.Accordion("🧊 Image → 3D (trellis)", open=False):
             gr.Markdown(
-                "**Poids utilisés** — variante des modèles : **f16** (~16,5 Go), "
-                "**q8** (~9,9 Go) ou **q4** (~6 Go). ⚠️ **f16 est le plus "
-                "RAPIDE** quand il tient en mémoire : en ggml, les poids "
-                "quantifiés sont déquantifiés à la volée pendant le calcul, "
-                "et ce surcoût n'est PAS amorti sur une charge 3D "
-                "(compute-bound) — contrairement aux LLM. q8/q4 ne servent "
-                "donc qu'à faire tenir un mode (1024/1536) qui déborderait "
-                "autrement. Plusieurs variantes peuvent coexister ; on "
-                "bascule à la génération.  \n"
-                "**Compléter en carré** — TRELLIS pré-traite l'entrée en "
-                "**carré** : une image 16:9 envoyée telle quelle sort "
-                "**déformée** (écrasée). Coché (défaut), des bandes neutres "
-                "sont ajoutées pour garder les proportions ; le détourage "
-                "les retire.  \n"
-                "**Résolution géométrie** — **512** = « light », le seul mode "
-                "qui tienne sur une carte ≤ 12 Go. **1024/1536** demandent "
-                "~16 Go+ : en dessous, la géométrie sort souvent **corrompue "
-                "(« blobs »)** au lieu d'échouer proprement.  \n"
-                "**Seed** — -1 = aléatoire ; valeur fixe = même objet rejoué.  \n"
-                "**Détourage** — *BiRefNet* (qualité) ou *Seuil* (rapide).  \n"
-                "**⚡ Serveur résident** — garde le moteur 3D en vie entre les "
-                "générations (évite ~30 s de rechargement) **mais occupe la "
-                "VRAM** : à arrêter avant de générer des images.  \n"
-                "**Décimation** — nombre de faces cible (plus bas = maillage "
-                "plus léger).  \n"
-                "**Atlas UV** — résolution de la texture (1024 → 4096).  \n"
-                "**Géométrie seule** — sans texture, plus rapide.  \n"
-                "**Carte utilisée** — ⚠️ en multi-GPU, laisser le calcul "
-                "déborder sur une carte **Pascal (GTX 10xx)** peut corrompre "
-                "la géométrie : **épingle la carte la plus récente**.  \n"
-                "**Exiger le GPU** — empêche un repli CPU silencieux (qui "
-                "prendrait des heures). À laisser coché.")
+                "**Weights** — model variant: **f16** (~16.5 GB), **q8** "
+                "(~9.9 GB) or **q4**\n(~6 GB). ⚠️ **f16 is the FASTEST** when "
+                "it fits: in ggml, quantized weights are\ndequantized on the "
+                "fly during computation, and that overhead is *not* "
+                "amortized\non a compute-bound 3D workload — unlike LLMs. "
+                "q8/q4 exist only to make a mode\n(1024/1536) fit that would "
+                "otherwise overflow. Several variants can coexist;\nyou "
+                "switch at generation time.\n\n**Pad to square** — TRELLIS "
+                "pre-processes its input as a **square**: a 16:9\nimage sent "
+                "as-is comes out **squashed**. Ticked (default), neutral bars "
+                "are\nadded to keep the proportions; background removal takes "
+                "them away again.\n\n**Geometry resolution** — **512** is the "
+                "“light” path, the only one that fits a\ncard with ≤ 12 GB. "
+                "**1024/1536** want ~16 GB or more: below that, "
+                "geometry\noften comes out **corrupt (“blobs”)** rather than "
+                "failing cleanly.\n\n**Seed** — -1 is random; a fixed value "
+                "replays the same object.\n**Background removal** — "
+                "*BiRefNet* (quality) or *Threshold* (fast).\n**⚡ Resident "
+                "server** — keeps the 3D engine alive between generations "
+                "(saves\n~30 s of reloading) **but holds the VRAM**: stop it "
+                "before generating images.\n**Decimation** — target face "
+                "count (lower = lighter mesh).\n**UV atlas** — texture "
+                "resolution (1024 → 4096).\n**Geometry only** — no texture, "
+                "faster.\n**Card used** — ⚠️ on a multi-GPU machine, letting "
+                "the computation spill onto a\n**Pascal (GTX 10xx)** card can "
+                "corrupt the geometry: **pin the newest card**.\n**Require "
+                "the GPU** — prevents a silent CPU fallback (which would take "
+                "hours).\nLeave it ticked.")
 
         with gr.Accordion("🔧 Convertir en GGUF · 🧰 Toolkit", open=False):
             gr.Markdown(
-                "**Convertir en GGUF** — quantifie un modèle déposé dans "
-                "`models/custom/` vers un GGUF plus léger (100 % CPU). sd.cpp "
-                "n'accepte que `q8_0 / q5_1 / q5_0 / q4_1 / q4_0 / f16` "
-                "(**pas** de k-quants ici). `q5_1` est un bon défaut.\n\n"
-                "**Toolkit** — *Profondeur* (carte de profondeur), *Sans "
-                "arrière-plan* (détourage auto), *SAM* (détourage au clic), "
-                "puis **deux agrandisseurs**, du plus fidèle au plus inventif : "
-                "*ESRGAN* (rapide, déterministe, 100 % GPU ; choisis un modèle "
-                "🎨 **dessin/anime** pour de la BD ou de l'illustration — un "
-                "modèle photo pose des halos sur les traits et invente du grain "
-                "dans les aplats ; tu peux déposer tes propres `.pth` "
-                "d'OpenModelDB dans le dossier des upscalers), "
-                "*Upscale créatif SDXL* (ré-invente ; la **créativité** "
-                "contrôle la liberté prise avec l'original). "
-                "Chaque outil s'installe en 1 clic (PyTorch, à la demande).\n\n"
-                "Chaque outil s'installe en 1 clic (PyTorch, à la demande).")
+                "**Convert to GGUF** — quantizes a model dropped into "
+                "`models/custom/` to a\nlighter GGUF (100% CPU). sd.cpp "
+                "accepts `q8_0 / q5_1 / q5_0 / q4_1 / q4_0 /\nf16` only "
+                "(**no** k-quants here). `q5_1` is a good "
+                "default.\n\n**Toolkit** — *Image → prompt* (read an image, "
+                "get the prompt that would\nrecreate it), *Depth*, "
+                "*Background removal*, *Cut out (SAM)*, *Layers (PSD)*,\nand "
+                "the upscaling family, from the most faithful to the most "
+                "inventive:\n\n- **Enlarge (ESRGAN)** — fast, deterministic, "
+                "100% GPU. Pick a 🎨 **drawing /\n  anime** model for comics "
+                "or illustration: a photo model puts halos on line\n  art and "
+                "invents grain in flat areas. You can drop your own `.pth` "
+                "files from\n  OpenModelDB into the upscalers folder.\n- "
+                "**HD** — sd.cpp's native highres fix: your own generation "
+                "model re-denoises\n  the whole image, no tiles, so no seams "
+                "are possible.\n- **High resolution** — Flux.2 re-renders the "
+                "image at its native resolution,\n  using it as both "
+                "reference and starting latent. Best-looking, least "
+                "faithful.\n- **Restore (SeedVR2)** — one-step diffusion "
+                "restoration, 3B or 7B.\n- **Faces** — GFPGAN, "
+                "RestoreFormer++ or CodeFormer on the detected faces only.\n  "
+                "Run it last.\n- **Creative upscale (SDXL)** — tiled img2img "
+                "that openly invents detail.\n\nEach tool installs in one "
+                "click (PyTorch, on demand).")
 
-        with gr.Accordion("🔄 Mettre à jour l'app (copier-coller du ZIP)",
+        with gr.Accordion("🔄 Update the app",
                           open=False):
             gr.Markdown(
-                "**Après CHAQUE mise à jour par copier-coller : lance "
-                "`maintenance.bat`.** Extraire un ZIP par-dessus *ajoute et "
-                "écrase, mais ne supprime jamais* : les fichiers retirés en "
-                "amont restent en orphelins, et un `__pycache__` périmé peut "
-                "faire tourner de l'ancien code.\n\n"
-                "**Ce que le ZIP remplace… et ce qu'il ne touche pas :**\n\n"
-                "| | Remplacé ? |\n| --- | --- |\n"
-                "| Code de l'app, catalogue de modèles, docs | ✅ oui |\n"
-                "| Moteur `bin/` | ❌ non — `update-engine.bat` seulement quand "
-                "une nouveauté de sd.cpp est nécessaire |\n"
-                "| Modèles, LoRA, sorties, préférences | ❌ non — c'est voulu |\n"
-                "| Add-ons du Toolkit (`tools_repo/`) | ❌ **non, et c'est le "
-                "piège** |\n\n"
-                "⚠️ **Le piège.** Un add-on n'est pas qu'un dossier de poids : "
-                "son installeur épingle aussi des versions de paquets Python "
-                "partagées par tous les autres. Quand une mise à jour change "
-                "*la façon dont un add-on s'installe*, mettre à jour l'app "
-                "laisse l'add-on figé dans son ancien état — et ça ne se voit "
-                "qu'à l'usage suivant. Dans ce cas : **reclique sur son bouton "
-                "« Installer »**. Les poids déjà téléchargés ne sont pas "
-                "repris.\n\n"
-                "`maintenance.bat` vérifie ça pour toi et nomme précisément ce "
-                "qui est périmé — tu n'as pas à deviner.\n\n"
-                "**Résumé** : `maintenance.bat` à chaque fois ; "
-                "`update-engine.bat` seulement sur demande ; réinstaller un "
-                "add-on seulement si la maintenance ou un message d'erreur le "
-                "réclame.")
+                "**`update.bat` updates the application itself.** It "
+                "downloads the current code\nfrom GitHub and applies it in "
+                "place: it writes only the files that actually\ndiffer, "
+                "deletes what disappeared from the project (and only files it "
+                "installed\nitself), backs up everything it replaces "
+                "(`update.bat --rollback` undoes the\nupdate), and restores "
+                "the previous version by itself if the new code does "
+                "not\ncompile. Close the app first — Windows cannot replace a "
+                "file that is open.\n\n**What is never touched:** `models/`, "
+                "`loras/`, `outputs/`, `userdata/`,\n`tools_repo/`, `bin/`, "
+                "`python/`. Your models, images, settings and engines "
+                "are\nout of its reach by "
+                "construction.\n\n**`maintenance.bat`** checks the "
+                "installation and cleans up what an old\ncopy-paste update "
+                "left behind: code of removed features, orphaned "
+                "add-on\nfolders, orphaned models, stale `__pycache__`. It "
+                "also reports any file from\nthe last update that has gone "
+                "missing. It downloads nothing and never touches\nyour "
+                "data.\n\n⚠️ **One trap worth knowing.** A Toolkit add-on is "
+                "not just a folder of\nweights: its installer also pins "
+                "Python package versions shared with the other\nadd-ons. When "
+                "an update changes *how an add-on installs*, updating the "
+                "app\nleaves that add-on frozen in its old state — and it "
+                "only shows at the next use.\nIn that case, **click its "
+                "“Install” button again**; already-downloaded weights\nare "
+                "not fetched twice. `maintenance.bat` names precisely what is "
+                "stale, so you\ndo not have to guess.\n\n**Summary**: "
+                "`update.bat` for the app, `update-engine.bat` for "
+                "sd.cpp,\n`update-trellis.bat` for the 3D engine, "
+                "`maintenance.bat` when something feels\noff.")
 
-        with gr.Accordion("🌐 Réseau, partage & maintenance", open=False):
+        with gr.Accordion("🌐 Network, sharing & maintenance", open=False):
             gr.Markdown(
-                "**Endpoint Hugging Face** — miroir alternatif si HF est "
-                "bloqué/lent sur ton réseau.  \n"
-                "**Jeton Civitai** — nécessaire pour importer certains LoRA "
-                "protégés.  \n"
-                "**Partage réseau** — `run-lan.bat` expose l'app aux machines "
-                "du réseau local (pense au pare-feu).  \n"
-                "**maintenance.bat** — après une mise à jour par copier-coller : "
-                "supprime les fichiers obsolètes, purge les caches et vérifie "
-                "que tout compile. Ne touche jamais à tes modèles/sorties.  \n"
-                "**update-engine.bat** — met à jour le moteur sd.cpp "
-                "(binaire officiel).  \n"
-                "**update.bat** — met à jour l'application elle-même "
-                "(le code), sans retélécharger le dépôt à la main.  \n"
-                "**update-trellis.bat** — met à jour le moteur **3D** "
-                "(trellis.cpp). Les modèles 3D (~16 Go) ne sont pas "
-                "re-téléchargés.  \n"
-                "**📁 Emplacement des modèles** (ci-dessus) — déplace les "
-                "modèles vers un autre disque (NVMe, disque plus grand). "
-                "*Déplacer* transfère les fichiers ; *Pointer sans déplacer* "
-                "réutilise un dossier qui les contient déjà. Effet au "
-                "**redémarrage**.")
+                "**Hugging Face endpoint** — an alternative mirror when HF is "
+                "blocked or slow on\nyour network.\n**Civitai token** — "
+                "needed to import some gated LoRAs.\n**LAN sharing** — "
+                "`run-lan.bat` exposes the app to other machines on the "
+                "local\nnetwork (mind your firewall).\n**`update.bat`** — "
+                "updates the application itself (the code), with no "
+                "manual\nre-download.\n**`maintenance.bat`** — checks the "
+                "installation, removes obsolete files, purges\ncaches, "
+                "verifies everything compiles. Never touches your models or "
+                "outputs.\n**`update-engine.bat`** — updates the sd.cpp "
+                "engine (official binary).\n**`update-trellis.bat`** — "
+                "updates the **3D** engine (trellis.cpp). The ~16 GB\nof 3D "
+                "models are not downloaded again.\n**📁 Model location** "
+                "(above) — moves the models to another drive (NVMe, "
+                "or\nsimply a larger one). *Move* transfers the files; *point "
+                "without moving* reuses\na folder that already contains them. "
+                "Takes effect **on restart**.")

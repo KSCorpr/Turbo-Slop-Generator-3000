@@ -139,7 +139,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 label="Variante à installer",
                 info="Commence par f16 (le plus rapide). N'ajoute q8/q4 que si "
                      "tu veux tenter le 1024/1536.")
-            inst_log = gr.Textbox(label="Journal d'installation", lines=8,
+            inst_log = gr.Textbox(label="Install log", lines=8,
                                   autoscroll=True, elem_classes="log-box")
             inst_btn = gr.Button("⬇️ Installer trellis.cpp (binaire + modèles)")
             gr.Markdown(
@@ -156,7 +156,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 "carte qu'aucune des deux ne couvre : il ne compile rien par "
                 "architecture et marche partout.",
                 elem_classes="hint")
-            upd_btn = gr.Button("⬆️ Mettre à jour le binaire (sans les modèles)",
+            upd_btn = gr.Button("⬆️ Update the binary (models untouched)",
                                 size="sm")
 
             def _run_installer(args: list[str], first_msg: str):
@@ -189,12 +189,12 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 # sans cet arrêt, l'extraction échouerait sur un « accès refusé »
                 # difficile à relier à sa cause.
                 if trellis.resident_is_running():
-                    yield t("⏹️ Arrêt du serveur résident (il verrouille le "
-                            "binaire)…")
+                    yield t("⏹️ Stopping the resident server (it locks the "
+                            "binary)…")
                     trellis.resident_stop()
                 yield from _run_installer(
                     ["--binary", "--force"],
-                    t("⏳ Téléchargement du binaire trellis le plus récent…"))
+                    t("⏳ Downloading the latest trellis binary…"))
 
             inst_evt = inst_btn.click(_install, inputs=[inst_variant],
                                       outputs=[inst_log])
@@ -227,7 +227,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                              "la volée) — à réserver au 1024/1536.")
                 with gr.Row():
                     seed = gr.Number(value=-1, precision=0,
-                                     label="Seed (-1 = aléatoire)")
+                                     label="Seed (-1 = random)")
                     bg = gr.Dropdown(
                         [("BiRefNet (qualité, recommandé)", "birefnet"),
                          ("Seuil (rapide)", "threshold")],
@@ -295,7 +295,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         placeholder="ex. flags additionnels du serveur")
                 with gr.Row():
                     run = gr.Button("🧊 Générer le 3D", variant="primary", scale=3)
-                    stop = gr.Button("⏹️ Annuler", variant="stop", scale=1)
+                    stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
                 model3d = gr.Model3D(label="Aperçu 3D (GLB)", clear_color=[
@@ -305,9 +305,9 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     seed_used = gr.Textbox(
                         label="Seed utilisé (pour rejouer cet objet)",
                         interactive=False, buttons=widgets.TEXT_COPY, scale=2)
-                    seed_reuse = gr.Button("♻️ Réutiliser ce seed", size="sm",
+                    seed_reuse = gr.Button("♻️ Reuse this seed", size="sm",
                                            scale=1)
-                log = gr.Textbox(label="Journal", lines=12, autoscroll=True,
+                log = gr.Textbox(label="Log", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
         def do_generate3d(image_path, square_val, pad_val, res_val,

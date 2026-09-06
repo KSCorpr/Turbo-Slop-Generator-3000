@@ -33,10 +33,10 @@ BEST, OK, MEH, BAD = "best", "ok", "meh", "bad"
 
 _MARK = {BEST: "⭐", OK: "", MEH: "△", BAD: "⚠️"}
 _VERDICT = {
-    BEST: "**Recommandé** pour ce modèle.",
-    OK: "Utilisable, sans avantage net ici.",
-    MEH: "Peu adapté à ce modèle.",
-    BAD: "**Déconseillé** avec ce modèle.",
+    BEST: "**Recommended** for this model.",
+    OK: "Usable, with no clear advantage here.",
+    MEH: "Poorly suited to this model.",
+    BAD: "**Discouraged** with this model.",
 }
 
 # clé -> (libellé, résumé, avantage, inconvénient, {famille: niveau})
@@ -45,258 +45,257 @@ _VERDICT = {
 SAMPLERS: dict[str, tuple] = {
     "euler": (
         "Euler",
-        "La méthode de base : un pas, une évaluation, aucun ajout de bruit.",
-        "Prévisible, reproductible, et la seule qui n'a rien à « rattraper » "
-        "quand les pas sont comptés. C'est le défaut de tous nos modèles.",
-        "Aucun raffinement : sur BEAUCOUP de pas, d'autres méthodes la "
-        "dépassent — mais on n'est pas dans ce régime.",
+        "The baseline method: one step, one evaluation, no added noise.",
+        "Predictable, reproducible, and the only one with nothing to “catch "
+        "up” when steps are scarce. It is the default on every one of our "
+        "models.",
+        "No refinement: over MANY steps other methods beat it — but that is "
+        "not the regime we are in.",
         {"flux2": BEST, "krea2": BEST}),
     "euler_a": (
         "Euler Ancestral",
-        "Euler + réinjection de bruit frais à chaque pas.",
-        "Sur des modèles non distillés et beaucoup de pas, apporte de la "
-        "variété et du micro-détail.",
-        "Le bruit réinjecté doit ensuite être reconvergé, ce qui demande un "
-        "budget de pas confortable. Trop court : rendu mou ou bruité. Et deux "
-        "rendus ne sont jamais identiques.",
+        "Euler plus a fresh injection of noise at every step.",
+        "On non-distilled models with many steps, it adds variety and "
+        "micro-detail.",
+        "The injected noise then has to be reconverged, which takes a "
+        "comfortable step budget. Too short: a soft or noisy render. And no "
+        "two renders are ever alike.",
         {"flux2": BAD, "krea2": BAD}),
     "heun": (
         "Heun",
-        "Euler avec une correction : deux évaluations par pas.",
-        "Trajectoire plus juste par pas.",
-        "**Deux fois plus lent** à nombre de pas égal. Quand les pas sont "
-        "comptés, ce budget est mieux dépensé en pas supplémentaires d'Euler.",
+        "Euler with a correction: two evaluations per step.",
+        "A more accurate trajectory per step.",
+        "**Twice as slow** for the same step count. When steps are scarce, "
+        "that budget is better spent on extra Euler steps.",
         {"flux2": MEH, "krea2": OK}),
     "dpm2": (
         "DPM2",
-        "Méthode d'ordre 2, deux évaluations par pas.",
-        "Bonne précision par pas sur les modèles classiques.",
-        "Même coût double que Heun ; il faut assez de pas pour que le gain "
-        "s'exprime.",
+        "A second-order method, two evaluations per step.",
+        "Good per-step accuracy on classic models.",
+        "The same doubled cost as Heun; it takes enough steps for the gain to "
+        "show.",
         {"flux2": MEH, "krea2": MEH}),
     "dpm++2s_a": (
         "DPM++ 2S Ancestral",
-        "Ordre 2, à un seul pas de mémoire, avec bruit ancestral.",
-        "Réputée sur SD1.5/SDXL en 20-30 pas.",
-        "Cumule les deux défauts qui comptent ici : coût double ET bruit "
-        "ancestral non reconvergé.",
+        "Second order, single-step memory, with ancestral noise.",
+        "Well regarded on SD1.5/SDXL at 20-30 steps.",
+        "It stacks the two flaws that matter here: doubled cost AND "
+        "unreconverged ancestral noise.",
         {"flux2": BAD, "krea2": BAD}),
     "dpm++2m": (
         "DPM++ 2M",
-        "Multi-pas : réutilise l'évaluation précédente au lieu d'en refaire une.",
-        "Le meilleur rapport qualité/temps du lot… à partir d'une quinzaine "
-        "de pas.",
-        "Son historique n'existe qu'après le 2ᵉ pas : sur un parcours très "
-        "court, une bonne part se fait sans lui.",
+        "Multistep: it reuses the previous evaluation instead of computing a new one.",
+        "The best quality/time ratio of the lot… from about fifteen steps up.",
+        "Its history only exists after the 2nd step: on a very short run, a "
+        "good part of it happens without one.",
         {"flux2": MEH, "krea2": OK}),
     "dpm++2mv2": (
         "DPM++ 2M v2",
-        "Variante de DPM++ 2M au calcul de pas révisé.",
-        "Corrige des artefacts de la v1 sur les premiers pas.",
-        "Même limite : le multi-pas a besoin de pas.",
+        "A DPM++ 2M variant with a revised step computation.",
+        "Fixes some v1 artefacts on the first steps.",
+        "Same limit: multistep needs steps.",
         {"flux2": MEH, "krea2": OK}),
     "dpm++2m_sde": (
         "DPM++ 2M SDE",
-        "DPM++ 2M en formulation stochastique (bruit à chaque pas).",
-        "Texture plus riche sur les longs échantillonnages.",
-        "Stochastique : même exigence de pas que l'ancestral, et rendu non "
-        "reproductible.",
+        "DPM++ 2M in stochastic form (noise at every step).",
+        "Richer texture on long sampling runs.",
+        "Stochastic: the same step requirement as the ancestral ones, and a "
+        "non-reproducible render.",
         {"flux2": BAD, "krea2": MEH}),
     "dpm++2m_sde_bt": (
         "DPM++ 2M SDE (Brownian)",
-        "Variante à arbre brownien : le bruit devient reproductible.",
-        "Retrouve la reproductibilité que la version SDE perd.",
-        "Reste stochastique dans son principe : il lui faut des pas.",
+        "A Brownian-tree variant: the noise becomes reproducible.",
+        "Recovers the reproducibility the plain SDE version loses.",
+        "Still stochastic in principle: it needs steps.",
         {"flux2": BAD, "krea2": MEH}),
     "ipndm": (
         "iPNDM",
-        "Pseudo-multi-pas amélioré, sans bruit ajouté.",
-        "Sobre et déterministe ; monte en qualité dès une dizaine de pas.",
-        "Historique à construire, comme toute méthode multi-pas.",
+        "Improved pseudo-multistep, with no added noise.",
+        "Sober and deterministic; quality climbs from about ten steps up.",
+        "A history to build, like every multistep method.",
         {"flux2": MEH, "krea2": OK}),
     "ipndm_v": (
         "iPNDM v",
-        "iPNDM à coefficients variables.",
-        "Un peu plus stable qu'iPNDM sur les schedules irréguliers.",
-        "Même réserve sur le nombre de pas.",
+        "iPNDM with variable coefficients.",
+        "Slightly more stable than iPNDM on irregular schedules.",
+        "Same reservation about the step count.",
         {"flux2": MEH, "krea2": OK}),
     "lcm": (
         "LCM",
-        "Échantillonneur des modèles distillés **par Latent Consistency**.",
-        "Excellent — sur un modèle LCM.",
-        "Ni Flux.2 Klein ni Krea 2 Turbo ne sont distillés en LCM. Leur "
-        "appliquer son parcours donne un rendu délavé.",
+        "The sampler for models distilled **by Latent Consistency**.",
+        "Excellent — on an LCM model.",
+        "Neither Flux.2 Klein nor Krea 2 Turbo is LCM-distilled. Applying its "
+        "trajectory to them gives a washed-out render.",
         {"flux2": BAD, "krea2": BAD}),
     "ddim_trailing": (
         "DDIM Trailing",
-        "DDIM avec alignement des timesteps « trailing ».",
-        "Utile sur les modèles où la fin du parcours est mal échantillonnée.",
-        "Pensé pour la diffusion classique ; sans objet sur du flow matching.",
+        "DDIM with “trailing” timestep alignment.",
+        "Useful on models whose end of trajectory is poorly sampled.",
+        "Designed for classic diffusion; moot on flow matching.",
         {"flux2": MEH, "krea2": MEH}),
     "tcd": (
         "TCD",
-        "Comme LCM : réservé aux modèles distillés **en TCD**.",
-        "Très peu de pas — sur un modèle TCD.",
-        "Nos modèles ne le sont pas.",
+        "Like LCM: reserved for models distilled **in TCD**.",
+        "Very few steps — on a TCD model.",
+        "Ours are not.",
         {"flux2": BAD, "krea2": BAD}),
     "res_multistep": (
         "Res Multistep",
-        "Intégrateur exponentiel multi-pas.",
-        "Très bonne précision sur les modèles de flow, à pas moyens.",
-        "Multi-pas : bridé quand les pas manquent. Le candidat le plus "
-        "crédible pour essayer autre chose dès qu'il y en a.",
+        "An exponential multistep integrator.",
+        "Very good accuracy on flow models, at medium step counts.",
+        "Multistep: hobbled when steps are missing. The most credible "
+        "candidate for trying something other than Euler as soon as there are "
+        "some.",
         {"flux2": MEH, "krea2": OK}),
     "res_2s": (
         "Res 2S",
-        "Intégrateur exponentiel à un pas, ordre 2.",
-        "Précis dès les premiers pas, sans historique à constituer — ce qui "
-        "le rend, lui, compatible avec un budget serré.",
-        "Deux évaluations par pas : à durée égale, Euler en fait deux fois plus.",
+        "A single-step, second-order exponential integrator.",
+        "Accurate from the very first steps, with no history to build — which "
+        "makes this one compatible with a tight budget.",
+        "Two evaluations per step: for the same wall time, Euler does twice as many.",
         {"flux2": OK, "krea2": OK}),
     "er_sde": (
         "ER SDE",
-        "Solveur SDE à réversibilité exacte.",
-        "Le plus rigoureux des stochastiques.",
-        "Stochastique : il lui faut des pas pour donner sa mesure.",
+        "An exactly reversible SDE solver.",
+        "The most rigorous of the stochastic methods.",
+        "Stochastic: it needs steps to show what it can do.",
         {"flux2": BAD, "krea2": MEH}),
     "euler_cfg_pp": (
         "Euler CFG++",
-        "Euler avec la correction de guidage « CFG++ ».",
-        "Enlève les sur-saturations dues à un CFG élevé.",
-        "**Nos deux modèles tournent à CFG 1.0** : il n'y a aucun guidage à "
-        "corriger. Cette variante n'a rien à faire ici.",
+        "Euler with the “CFG++” guidance correction.",
+        "Removes the over-saturation caused by a high CFG.",
+        "**Both of our models run at CFG 1.0**: there is no guidance to "
+        "correct. This variant has no business here.",
         {"flux2": BAD, "krea2": BAD}),
     "euler_a_cfg_pp": (
         "Euler Ancestral CFG++",
-        "La version ancestrale de la précédente : correction CFG++ plus "
-        "réinjection de bruit à chaque pas.",
-        "Aucun ici : la correction CFG++ est neutre à CFG 1.0, il ne reste "
-        "que le bruit ancestral, qu'Euler Ancestral fournit déjà.",
-        "Cumule l'inutilité du CFG++ à CFG 1.0 et le bruit ancestral, qui "
-        "demande un budget de pas confortable pour se résorber.",
+        "The ancestral version of the above: CFG++ correction plus a noise "
+        "injection at every step.",
+        "None here: the CFG++ correction is a no-op at CFG 1.0, leaving only "
+        "the ancestral noise, which Euler Ancestral already provides.",
+        "It stacks the uselessness of CFG++ at CFG 1.0 with ancestral noise, "
+        "which needs a comfortable step budget to settle.",
         {"flux2": BAD, "krea2": BAD}),
     "euler_ge": (
         "Euler GE",
-        "Euler à extrapolation de gradient (paramètre `gamma`).",
-        "Peut resserrer le trait quand les pas sont très comptés — le seul du "
-        "lot à viser explicitement ce régime.",
-        "Non exposé ici : `gamma` se règle via `--extra-sample-args`, et sans "
-        "lui l'effet est marginal.",
+        "Euler with gradient extrapolation (the `gamma` parameter).",
+        "Can tighten the result when steps are very scarce — the only one of "
+        "the lot explicitly aimed at that regime.",
+        "Not exposed here: `gamma` is set through `--extra-sample-args`, and "
+        "without it the effect is marginal.",
         {"flux2": OK, "krea2": OK}),
     "lms": (
         "LMS (linear multi-step)",
-        "Multi-pas linéaire classique (`lms_divisions`, défaut 1000).",
-        "Ajout récent de sd.cpp ; méthode éprouvée sur de longs parcours.",
-        "Multi-pas : sans un vrai budget de pas, l'historique n'existe pas.",
+        "Classic linear multistep (`lms_divisions`, default 1000).",
+        "A recent sd.cpp addition; a method proven on long runs.",
+        "Multistep: without a real step budget, the history never exists.",
         {"flux2": MEH, "krea2": MEH}),
 }
 
 # clé -> (libellé, résumé, avantage, inconvénient, {famille: niveau})
 SCHEDULES: dict[str, tuple] = {
     "auto": (
-        "Auto (modèle)",
-        "Laisse le moteur choisir d'après le modèle chargé.",
-        "Toujours cohérent avec le modèle : `flux2` pour Flux.2 Klein, "
-        "`discrete` pour Krea 2. C'est le réglage documenté par sd.cpp.",
-        "Aucun — sauf si vous voulez expérimenter en connaissance de cause.",
+        "Auto (model)",
+        "Lets the engine choose according to the loaded model.",
+        "Always consistent with the model: `flux2` for Flux.2 Klein, "
+        "`discrete` for Krea 2. This is the setting sd.cpp documents.",
+        "None — unless you want to experiment knowingly.",
         {"flux2": BEST, "krea2": BEST}),
     "discrete": (
         "Discrete",
-        "Répartition uniforme sur les sigmas du modèle.",
-        "Neutre et sans surprise. C'est ce que « Auto » choisit sur Krea 2.",
-        "Rien de particulier ; simplement pas optimisé pour un modèle donné.",
+        "A uniform spread over the model's sigmas.",
+        "Neutral and unsurprising. This is what “Auto” picks on Krea 2.",
+        "Nothing in particular; simply not tuned for any one model.",
         {"flux2": OK, "krea2": BEST}),
     "karras": (
         "Karras",
-        "Répartition concentrant les pas vers les bas sigmas.",
-        "La référence sur SD1.5 / SDXL, où elle gagne beaucoup.",
-        "Conçue pour la diffusion **EDM à prédiction d'epsilon**. Nos modèles "
-        "sont en flow matching : la courbe ne correspond pas au parcours.",
+        "A spread that concentrates the steps towards the low sigmas.",
+        "The reference on SD1.5 / SDXL, where it gains a lot.",
+        "Designed for **EDM epsilon-prediction diffusion**. Our models are "
+        "flow matching: the curve does not match the trajectory.",
         {"flux2": BAD, "krea2": MEH}),
     "exponential": (
         "Exponential",
-        "Décroissance exponentielle des sigmas.",
-        "Simple, parfois utile sur les modèles à v-prediction.",
-        "Même inadéquation que Karras vis-à-vis du flow matching.",
+        "Exponential decay of the sigmas.",
+        "Simple, occasionally useful on v-prediction models.",
+        "The same mismatch as Karras with respect to flow matching.",
         {"flux2": BAD, "krea2": MEH}),
     "ays": (
         "AYS (Align Your Steps)",
-        "Répartition optimisée par NVIDIA pour les **petits budgets de pas**.",
-        "Pensée exactement pour le régime 8-12 pas — l'idée est bonne ici.",
-        "Ses tables sont calibrées sur SD1.5/SDXL, pas sur nos modèles : le "
-        "transfert est plausible mais non garanti. À essayer sur Krea 2.",
+        "A spread optimised by NVIDIA for **small step budgets**.",
+        "Designed for exactly the 8-12 step regime — the idea is sound here.",
+        "Its tables are calibrated on SD1.5/SDXL, not on our models: the "
+        "transfer is plausible but not guaranteed. Worth trying on Krea 2.",
         {"flux2": MEH, "krea2": OK}),
     "gits": (
         "GITS",
-        "Répartition issue d'une recherche sur graphe.",
-        "Bons résultats publiés à faible nombre de pas.",
-        "Même réserve qu'AYS : calibrée ailleurs.",
+        "A spread derived from a graph search.",
+        "Good published results at low step counts.",
+        "Same reservation as AYS: calibrated elsewhere.",
         {"flux2": MEH, "krea2": OK}),
     "smoothstep": (
         "Smoothstep",
-        "Courbe lissée aux deux extrémités.",
-        "Transitions douces, peu d'à-coups en début de parcours.",
-        "Effet discret ; rien qui compense un scheduler adapté au modèle.",
+        "A curve smoothed at both ends.",
+        "Soft transitions, few jolts at the start of the run.",
+        "A subtle effect; nothing that makes up for a model-appropriate scheduler.",
         {"flux2": OK, "krea2": OK}),
     "sgm_uniform": (
         "SGM Uniform",
-        "Uniforme, à la façon des implémentations SGM.",
-        "Proche de Discrete, comportement prévisible.",
-        "Aucun avantage identifié sur nos modèles.",
+        "Uniform, in the style of the SGM implementations.",
+        "Close to Discrete, predictable behaviour.",
+        "No identified advantage on our models.",
         {"flux2": OK, "krea2": OK}),
     "simple": (
         "Simple",
-        "Répartition linéaire élémentaire.",
-        "Robuste, sans paramètre. Défaut de DDIM Trailing.",
-        "Grossière quand les pas sont peu nombreux.",
+        "An elementary linear spread.",
+        "Robust, parameter-free. The default for DDIM Trailing.",
+        "Coarse when the steps are few.",
         {"flux2": OK, "krea2": OK}),
     "kl_optimal": (
         "KL Optimal",
-        "Répartition minimisant une divergence KL le long du parcours.",
-        "Bien fondée théoriquement, correcte à pas moyens.",
-        "Gain non démontré quand les pas sont comptés.",
+        "A spread minimising a KL divergence along the trajectory.",
+        "Theoretically well founded, correct at medium step counts.",
+        "No demonstrated gain when steps are scarce.",
         {"flux2": MEH, "krea2": OK}),
     "lcm": (
         "LCM",
-        "Répartition des modèles Latent Consistency.",
-        "Indispensable — avec l'échantillonneur LCM.",
-        "Hors de ce couple, elle écrase le parcours et délave le rendu.",
+        "The spread for Latent Consistency models.",
+        "Indispensable — with the LCM sampler.",
+        "Outside that pairing it crushes the trajectory and washes the render out.",
         {"flux2": BAD, "krea2": BAD}),
     "bong_tangent": (
         "Bong Tangent",
-        "Courbe en tangente, très marquée.",
-        "Effet stylistique parfois intéressant.",
-        "Empirique, sans fondement pour nos modèles.",
+        "A tangent curve, very pronounced.",
+        "An occasionally interesting stylistic effect.",
+        "Empirical, with no grounding for our models.",
         {"flux2": MEH, "krea2": MEH}),
     "flux2": (
         "Flux.2",
-        "Répartition **taillée pour Flux.2**.",
-        "Ce que « Auto » sélectionne sur Flux.2 Klein : le bon choix, "
-        "explicitement.",
-        "Sur Krea 2, rien ne dit qu'elle transfère.",
+        "A spread **cut for Flux.2**.",
+        "What “Auto” selects on Flux.2 Klein: the right choice, made explicit.",
+        "On Krea 2, nothing says it transfers.",
         {"flux2": BEST, "krea2": MEH}),
     "flux": (
         "Flux",
-        "Répartition des sigmas taillée pour les modèles **Flux.1**, avec le "
-        "décalage (shift) propre à cette génération.",
-        "Reste une courbe de flow matching cohérente : elle ne casse rien, "
-        "et donne un rendu légèrement plus contrasté sur les gros plans.",
-        "Flux.2 a la sienne ; utiliser celle de Flux.1 revient à prendre "
-        "l'ancienne version d'un réglage taillé sur mesure.",
+        "A sigma spread cut for the **Flux.1** models, with the shift "
+        "specific to that generation.",
+        "It remains a coherent flow-matching curve: it breaks nothing, and "
+        "gives a slightly more contrasted render on close-ups.",
+        "Flux.2 has its own; using the Flux.1 one amounts to picking the "
+        "previous version of a bespoke setting.",
         {"flux2": MEH, "krea2": MEH}),
     "beta": (
         "Beta",
-        "Répartition suivant une loi Beta (paramètres `alpha`, `beta`).",
-        "Très modulable — via `--extra-sample-args`.",
-        "Sans réglage de ses paramètres, aucun intérêt par rapport à Discrete.",
+        "A spread following a Beta law (`alpha`, `beta` parameters).",
+        "Highly tunable — through `--extra-sample-args`.",
+        "Without tuning its parameters, no benefit over Discrete.",
         {"flux2": MEH, "krea2": MEH}),
     "logit_normal": (
         "Logit Normal",
-        "Répartition logit-normale, celle utilisée à l'entraînement de "
-        "beaucoup de modèles de flow.",
-        "Cohérente avec la façon dont ces modèles ont été entraînés — la "
-        "piste la plus défendable après « Auto ».",
-        "Ses paramètres (`mu`, `std`) ne sont pas exposés ici.",
+        "A logit-normal spread, the one used to train many flow models.",
+        "Consistent with how these models were trained — the most defensible "
+        "avenue after “Auto”.",
+        "Its parameters (`mu`, `std`) are not exposed here.",
         {"flux2": OK, "krea2": OK}),
 }
 
@@ -333,50 +332,49 @@ def choices(kind: str, model_family: str) -> list[tuple[str, str]]:
     return out
 
 
-_RATIONALE = """\
-Sur **{model}**, trois propriétés du modèle décident presque tout — et elles
-écartent des familles entières d'options, pas une ou deux au cas par cas.
+_RATIONALE = """On **{model}**, three properties of the model decide almost everything — and
+they rule out entire families of options, not one or two case by case.
 
-**1. C'est un modèle de *flow matching*.** sd.cpp le fait tourner en mode
-« Flux FLOW ». Les schedulers **Karras** et **Exponential**, qui font gagner
-beaucoup sur SD 1.5 et SDXL, ont été conçus pour une autre mécanique (diffusion
-EDM à prédiction d'epsilon) : leur répartition de sigmas ne correspond pas au
-parcours suivi ici.
+**1. It is a *flow matching* model.** sd.cpp runs it in “Flux FLOW” mode. The
+**Karras** and **Exponential** schedulers, which gain a lot on SD 1.5 and SDXL,
+were designed for another mechanism (EDM epsilon-prediction diffusion): their
+sigma spread does not match the trajectory followed here.
 
-**2. Il est distillé à CFG 1.0.** Il n'y a donc **aucun guidage à corriger** :
-toute la famille **CFG++** (`Euler CFG++`, `Euler Ancestral CFG++`) n'a
-littéralement rien à faire. C'est aussi pourquoi le **prompt négatif est
-ignoré**, quel que soit l'échantillonneur choisi.
+**2. It is distilled at CFG 1.0.** There is therefore **no guidance to
+correct**: the whole **CFG++** family (`Euler CFG++`, `Euler Ancestral CFG++`)
+has literally nothing to do. This is also why the **negative prompt is
+ignored**, whichever sampler you pick.
 
-**3. Il tourne en {steps} pas.** C'est très peu, et ça disqualifie deux familles :
+**3. It runs in {steps} steps.** That is very few, and it disqualifies two
+families:
 
-- les méthodes **ancestrales** et **stochastiques** (`Euler Ancestral`,
-  `DPM++ 2S Ancestral`, les `SDE`, `ER SDE`) réinjectent du bruit à chaque pas.
-  Ce bruit doit ensuite être reconvergé — il n'y a pas le budget pour ça, et le
-  rendu ressort mou ou bruité ;
-- les méthodes **multi-pas** (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`)
-  doivent d'abord accumuler un historique d'évaluations. Sur {steps} pas, une
-  bonne partie du parcours se fait avant que cet historique existe.
+- the **ancestral** and **stochastic** methods (`Euler Ancestral`,
+  `DPM++ 2S Ancestral`, the `SDE` ones, `ER SDE`) inject noise at every step.
+  That noise then has to be reconverged — there is no budget for it, and the
+  render comes out soft or noisy;
+- the **multistep** methods (`DPM++ 2M`, `iPNDM`, `Res Multistep`, `LMS`) must
+  first accumulate a history of evaluations. Over {steps} steps, a good part of
+  the run happens before that history exists.
 
-Enfin, **LCM** et **TCD** ne sont pas des options générales : ce sont les
-échantillonneurs de modèles distillés *par ces méthodes-là*. Ce modèle ne l'est
-pas ; les appliquer délave le rendu.
+Finally, **LCM** and **TCD** are not general-purpose options: they are the
+samplers of models distilled *by those very methods*. This model is not;
+applying them washes the render out.
 
 ---
 
-**Ce qu'il reste, en pratique :** `Euler` + `Auto`. {advice}
+**What is left, in practice:** `Euler` + `Auto`. {advice}
 
-*Ces verdicts sont raisonnés à partir des propriétés du modèle, pas tirés d'un
-banc d'essai — ils disent où porter vos essais, pas ce que votre œil va
-préférer.*"""
+*These verdicts are reasoned from the model's properties, not drawn from a
+benchmark — they say where to aim your experiments, not what your eye will
+prefer.*"""
 
 _ADVICE = {
-    "flux2": "Sur 4 pas, il n'y a pratiquement rien à gagner ailleurs ; si vous "
-             "voulez expérimenter, `Res 2S` est le seul autre à être précis "
-             "sans historique à constituer.",
-    "krea2": "Sur 8 pas, la marge est un peu plus large : `Res Multistep`, "
-             "`DPM++ 2M` et le scheduler `AYS` (pensé pour les petits budgets "
-             "de pas) valent un essai comparatif à seed fixe.",
+    "flux2": "Over 4 steps there is virtually nothing to gain elsewhere; if "
+             "you want to experiment, `Res 2S` is the only other one that is "
+             "accurate without a history to build.",
+    "krea2": "Over 8 steps the margin is a little wider: `Res Multistep`, "
+             "`DPM++ 2M` and the `AYS` scheduler (designed for small step "
+             "budgets) are worth a side-by-side try at a fixed seed.",
 }
 
 

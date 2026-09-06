@@ -256,7 +256,7 @@ def build_app() -> gr.Blocks:
         # sur QUOI ça tourne. C'est l'information qu'on veut avoir sous les yeux
         # en permanence quand on choisit une résolution ou un facteur d'upscale
         # — pas enfouie dans Réglages.
-        _subtitle = i18n.t("Génération d'images locale")
+        _subtitle = i18n.t("Local image generation")
         if gpus:
             _best = max(gpus, key=lambda g: g.vram_gb)
             _chip = (f"<span class='chip ok'>{_best.name} · "
@@ -295,12 +295,12 @@ def build_app() -> gr.Blocks:
         alerts = []
         if sd_cli is None:
             alerts.append(i18n.t(
-                "**Binaire `sd-cli` introuvable** — lancez `install.bat` / "
+                "**`sd-cli` binary not found** — run `install.bat` / "
                 "`install.sh`."))
         if not gpus:
             alerts.append(i18n.t(
-                "**Aucun GPU détecté** — mode CPU (très lent). Vérifiez vos "
-                "pilotes NVIDIA / `nvidia-smi`."))
+                "**No GPU detected** — CPU mode (very slow). Check your "
+                "NVIDIA drivers / `nvidia-smi`."))
         if alerts:
             gr.Markdown("⚠️ " + "  ·  ".join(alerts),
                         elem_id="atelier-alerts")
@@ -342,7 +342,7 @@ def build_app() -> gr.Blocks:
             # « Outils » : tout ce qui part d'une image existante. Les envois
             # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
             # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
-            with gr.Tab("🧰 Outils", id="tools"):
+            with gr.Tab("🧰 Tools", id="tools"):
                 with gr.Tabs() as tool_tabs:
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
                                       tabs=tabs, parent_tabs=tool_tabs,
@@ -352,7 +352,7 @@ def build_app() -> gr.Blocks:
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,
                                      parent_tabs=tool_tabs)
 
-            with gr.Tab("⚙️ Système", id="system"):
+            with gr.Tab("⚙️ System", id="system"):
                 with gr.Tabs():
                     build_settings_tab()
                     build_manage_tab()
@@ -366,17 +366,17 @@ def _print_lan_banner(port: int, auth: bool) -> None:
     urls = [f"http://{ip}:{port}" for ip in net.lan_ips()]
     line = "═" * 64
     print("\n" + line)
-    print("  " + i18n.t("{app} est accessible sur le réseau local !").format(
+    print("  " + i18n.t("{app} is reachable on your local network!").format(
         app=APP_NAME))
-    print("  " + i18n.t("Partagez cette adresse à vos collègues "
-                        "(Mac/PC, même Wi-Fi),"))
-    print("  " + i18n.t("à ouvrir dans Safari ou Chrome :"))
+    print("  " + i18n.t("Share this address with colleagues (Mac/PC, same "
+                        "Wi-Fi),"))
+    print("  " + i18n.t("to open in Safari or Chrome:"))
     for u in urls or [f"http://<IP-de-ce-PC>:{port}"]:
         print(f"      →  {u}")
     if auth:
-        print("  " + i18n.t("(un identifiant/mot de passe leur sera demandé)"))
-    print("  " + i18n.t("Si l'accès échoue : autorisez le port dans le "
-                        "pare-feu Windows."))
+        print("  " + i18n.t("(they will be asked for a username/password)"))
+    print("  " + i18n.t("If access fails: allow the port in the Windows "
+                        "firewall."))
     print(line + "\n")
 
 
