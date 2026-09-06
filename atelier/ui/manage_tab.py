@@ -492,7 +492,7 @@ def build_manage_tab():
                 "the GPU** — prevents a silent CPU fallback (which would take "
                 "hours).\nLeave it ticked.")
 
-        with gr.Accordion("🔧 Convertir en GGUF · 🧰 Toolkit", open=False):
+        with gr.Accordion("🔧 Convert to GGUF · 🧰 Toolkit", open=False):
             gr.Markdown(
                 "**Convert to GGUF** — quantizes a model dropped into "
                 "`models/custom/` to a\nlighter GGUF (100% CPU). sd.cpp "
