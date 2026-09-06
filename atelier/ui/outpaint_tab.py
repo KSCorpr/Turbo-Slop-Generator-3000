@@ -35,7 +35,7 @@ PRESETS = [
     ("↓ Bas", ["bottom"]),
     ("↔ Horizontal", ["left", "right"]),
     ("↕ Vertical", ["top", "bottom"]),
-    ("⤢ Tout autour", ["left", "right", "top", "bottom"]),
+    ("⤢ All around", ["left", "right", "top", "bottom"]),
 ]
 
 
@@ -64,8 +64,8 @@ def _model_choices() -> tuple[list[tuple[str, str]], str | None]:
             first_edit = m.id
         if ready and first_any is None:
             first_any = m.id
-        label = m.name if edit else f"{m.name} — sans édition, déconseillé"
-        choices.append((label if ready else f"{label} (non installé)", m.id))
+        label = m.name if edit else f"{m.name} — no editing support, not recommended"
+        choices.append((label if ready else f"{label} (not installed)", m.id))
     return choices, (first_edit or first_any)
 
 
@@ -88,84 +88,84 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
     build_toolkit_tab — l'image doit atterrir dans un onglet VISIBLE)."""
     with gr.Tab("🖼️ Outpaint", id=tab_id):
         gr.Markdown(
-            "### Étendre une image (outpaint)\n"
-            "Agrandit la toile dans les directions choisies et laisse le modèle "
-            "**prolonger la scène**, façon Midjourney.\n\n"
-            "**À utiliser avec un modèle d'ÉDITION** (Flux.2 Klein). "
-            "Lui seul *regarde* l'image, via son encodeur vision : il sait ce "
-            "qu'il prolonge. La toile agrandie lui est passée en **référence** "
-            "avec une **consigne d'extension écrite automatiquement** — c'est "
-            "ça, le « sans prompt » : tu n'écris rien, mais le modèle reçoit "
-            "une instruction précise.\n\n"
-            "Sur un modèle **sans** édition, l'onglet retombe sur de l'img2img : "
-            "le modèle ne voit pas l'image, il ne reçoit qu'un latent bruité, et "
-            "il **réinvente au lieu de prolonger**. C'est gardé en repli, mais "
-            "le résultat est incohérent par construction — c'est une limite de "
-            "méthode, pas un réglage à ajuster.")
+            "### Extend an image (outpaint)\nEnlarges the canvas in the "
+            "directions you pick and lets the model **continue the scene**, "
+            "Midjourney-style.\n\n**Use it with an EDITING model** (Flux.2 "
+            "Klein). Only such a model actually *looks* at the image, through "
+            "its vision encoder: it knows what it is continuing. The enlarged "
+            "canvas is handed to it as a **reference** along with an "
+            "**extension instruction written automatically** — that is what "
+            "“no prompt” means here: you type nothing, but the model receives "
+            "a precise instruction.\n\nOn a model **without** editing "
+            "support, the tab falls back to img2img: the model does not see "
+            "the image, it only gets a noised latent, and it **reinvents "
+            "instead of continuing**. The fallback is kept, but the result is "
+            "incoherent by construction — that is a limit of the method, not "
+            "a setting to tune.")
 
         _choices, _first = _model_choices()
         with gr.Row():
             with gr.Column(scale=3):
-                image = gr.Image(label="Image à étendre", type="pil",
+                image = gr.Image(label="Image to extend", type="pil",
                                  buttons=widgets.IMAGE_VIEW_ONLY)
                 direction = gr.Radio(
                     [(lbl, "|".join(d)) for lbl, d in PRESETS],
                     value="|".join(PRESETS[-1][1]), label="Direction")
                 amount = gr.Slider(
                     0.05, 1.0, value=0.25, step=0.05,
-                    label="Extension par côté (proportion de l'image)",
-                    info="0.25 = +25 % de chaque côté choisi. La toile est "
-                         "alignée sur 16 px et plafonnée à 2048 px.")
+                    label="Extension per side (as a fraction of the image)",
+                    info="0.25 = +25% on each side you pick. The canvas is "
+                         "aligned to 16 px and capped at 2048 px.")
                 plan_md = gr.Markdown("")
                 model = gr.Dropdown(_choices, value=_first,
-                                    label="Modèle utilisé")
+                                    label="Model used")
                 mode_md = gr.Markdown("")
                 prompt = gr.Textbox(
                     label="Prompt (facultatif)", lines=2,
-                    placeholder="Laisse vide : la consigne d'extension est "
-                                "écrite automatiquement…",
-                    info="Sert uniquement à préciser ce qui doit apparaître "
-                         "dans la nouvelle zone. La consigne d'extension, elle, "
-                         "est toujours envoyée au modèle.")
-                with gr.Accordion("Réglages avancés", open=False):
+                    placeholder="Leave empty: the extension instruction is "
+                                "written automatically…",
+                    info="Only useful to say what should appear in the new "
+                         "area. The extension instruction itself is always "
+                         "sent to the model.")
+                with gr.Accordion("Advanced settings", open=False):
                     fill = gr.Radio(
                         op.FILLS, value="neutral",
-                        label="Remplissage des bords",
-                        info="Ce que voit le modèle à la place du vide. « Gris "
-                             "neutre » avec un modèle d'édition : la zone à "
-                             "remplir est sans ambiguïté.")
+                        label="Border fill",
+                        info="What the model sees where the void is. “Neutral "
+                             "grey” with an editing model: the area to fill "
+                             "is unambiguous.")
                     strength = gr.Slider(
                         0.3, 1.0, value=0.85, step=0.05,
-                        label="Force de génération (modèles SANS édition)",
+                        label="Generation strength (models WITHOUT editing)",
                         interactive=False,
-                        info="Sans effet sur un modèle d'édition : celui-ci est "
-                             "piloté par la consigne, pas par une force.")
+                        info="No effect on an editing model: that one is "
+                             "driven by the instruction, not by a strength.")
                     feather = gr.Slider(
                         0, 96, value=24, step=4,
-                        label="Fondu de raccord (px)",
-                        info="Adoucit la jonction avec l'image d'origine. "
-                             "0 = collage net.")
+                        label="Join feather (px)",
+                        info="Softens the join with the original image. 0 = a "
+                             "hard paste.")
                     tone = gr.Slider(
                         0.0, 1.0, value=1.0, step=0.1,
-                        label="Recalage de tonalité",
-                        info="Ramène le contraste/la couleur du neuf sur ceux de "
-                             "l'original. À 0, le centre peut paraître plus terne "
-                             "que le décor généré.")
+                        label="Tone matching",
+                        info="Pulls the new area's contrast and colour back "
+                             "onto the original's. At 0, the centre can look "
+                             "duller than the generated surroundings.")
                     steps = gr.Slider(
                         1, 40, value=_defaults(_first)["steps"], step=1,
                         label="Steps",
-                        info="Ajusté automatiquement au modèle choisi.")
+                        info="Adjusted automatically to the model you pick.")
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = random)")
                 with gr.Row():
-                    run = gr.Button("🖼️ Étendre l'image", variant="primary",
+                    run = gr.Button("🖼️ Extend the image", variant="primary",
                                     scale=3)
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
                 result = gr.Image(label="Résultat", type="filepath",
                                   buttons=widgets.IMAGE_BUTTONS)
-                again = gr.Button("♻️ Ré-étendre le résultat", size="sm")
+                again = gr.Button("♻️ Extend the result again", size="sm")
                 log = gr.Textbox(label="Log", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
@@ -185,14 +185,14 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         def _on_model(mid):
             dd = _defaults(mid)
             if dd["edit"]:
-                note = ("✅ **Modèle d'édition** — la toile lui est passée en "
-                        "référence avec une consigne d'extension : il *voit* "
-                        "l'image et prolonge la scène.")
+                note = ("✅ **Editing model** — the canvas is handed to it as "
+                        "a reference along with an extension instruction: it "
+                        "*sees* the image and continues the scene.")
             else:
-                note = ("⚠️ **Modèle sans édition** — repli img2img : il ne voit "
-                        "pas l'image, il reçoit un latent bruité et **réinvente** "
-                        "au lieu de prolonger. Résultat souvent incohérent. "
-                        "Préférez Flux.2 Klein.")
+                note = ("⚠️ **Model without editing** — img2img fallback: it "
+                        "does not see the image, it gets a noised latent and "
+                        "**reinvents** instead of continuing. The result is "
+                        "often incoherent. Prefer Flux.2 Klein.")
             return (gr.update(value=dd["steps"]),
                     gr.update(interactive=not dd["edit"]),
                     gr.update(value="neutral" if dd["edit"] else "edge"),
@@ -204,12 +204,12 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         def do_outpaint(img, dirs, amt, model_id, prompt_txt, fill_v, strength_v,
                         feather_v, tone_v, steps_v, seed_v):
             if img is None:
-                raise gr.Error(t("Chargez une image à étendre."))
+                raise gr.Error(t("Load an image to extend."))
             if not model_id:
-                raise gr.Error(t("Choisissez un modèle."))
+                raise gr.Error(t("Pick a model."))
             p = op.plan(img.size, (dirs or "").split("|"), float(amt))
             if not any(p[d] for d in op.DIRECTIONS):
-                raise gr.Error(t("Aucune direction sélectionnée."))
+                raise gr.Error(t("No direction selected."))
 
             settings.ensure_dirs()
             d = _defaults(model_id)
@@ -274,17 +274,18 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     q.put(None)
 
             threading.Thread(target=worker, daemon=True).start()
-            logs = [f"Plan : {op.describe(p)}", f"Seed : {s}",
-                    f"Remplissage : {fill_v or 'edge'}",
-                    (f"Mode : ÉDITION (-r + consigne) — le modèle voit l'image"
+            logs = [f"Plan: {op.describe(p)}", f"Seed: {s}",
+                    f"Border fill: {fill_v or 'edge'}",
+                    (f"Mode: EDITING (-r + instruction) — the model sees "
+                     f"the image"
                      if d["edit"] else
-                     "Mode : img2img (-i) — modèle sans édition, résultat "
-                     "incertain" + (f" · masque {mf}" if mf else "")),
-                    f"Modèle : {model_id} · {d['sampler']} · "
-                    f"cfg {d['cfg_scale']} · {int(steps_v)} pas"]
+                     "Mode: img2img (-i) — model without editing, uncertain "
+                     "result" + (f" · mask {mf}" if mf else "")),
+                    f"Model: {model_id} · {d['sampler']} · "
+                    f"cfg {d['cfg_scale']} · {int(steps_v)} steps"]
             if d["edit"]:
-                logs.append(f"Consigne : {instr[:160]}…")
-            yield t("⏳ Extension en cours…"), gr.update(), "\n".join(logs)
+                logs.append(f"Instruction: {instr[:160]}…")
+            yield t("⏳ Extending…"), gr.update(), "\n".join(logs)
             while True:
                 line = q.get()
                 if line is None:
@@ -310,10 +311,11 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             final.save(out_path)
             _sidecar(out_path, p, model_id, prompt_txt, s, strength_v,
                      feather_v, steps_v, d, fill_v, tone_v, mf)
-            logs.append(f"\n✅ Tonalité recalée ({float(tone_v):.1f}) puis "
-                        f"original recollé (fondu {int(feather_v)} px) → "
+            logs.append(f"\n✅ Tone matched ({float(tone_v):.1f}), then the "
+                        f"original pasted back (feather "
+                        f"{int(feather_v)} px) → "
                         f"{out_path.name}")
-            yield (t("✅ Étendu : {n}").format(n=out_path.name),
+            yield (t("✅ Extended: {n}").format(n=out_path.name),
                    gr.update(value=str(out_path)), "\n".join(logs))
 
         evt = run.click(
@@ -327,10 +329,10 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         # successives, comme dans Midjourney).
         def _again(path):
             if not path:
-                return gr.update(), t("Rien à ré-étendre.")
+                return gr.update(), t("Nothing to extend again.")
             from PIL import Image as _PI
             return (gr.update(value=_PI.open(path)),
-                    t("Résultat rechargé — choisis une direction."))
+                    t("Result reloaded — pick a direction."))
 
         again.click(_again, inputs=[result], outputs=[image, status])
 
@@ -356,7 +358,7 @@ def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
     """Journal .txt à côté du PNG, comme pour les images et les GLB."""
     lines = [
         f"Fichier: {out_path.name}",
-        f"Modèle: {model_id}",
+        f"Model: {model_id}",
         f"Prompt: {prompt_txt or '(aucun)'}",
         f"Extension: {op.describe(p)}",
         f"Seed: {seed}",
@@ -364,8 +366,8 @@ def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
         f"Masque moteur: {mask_used or 'non'}",
         f"Force: {strength_v}",
         f"Fondu: {int(feather_v)} px",
-        f"Recalage de tonalité: {tone_v}",
-        f"Étapes: {int(steps_v)}  ·  Sampler: {d['sampler']}  ·  "
+        f"Tone matching: {tone_v}",
+        f"Steps: {int(steps_v)}  ·  Sampler: {d['sampler']}  ·  "
         f"CFG: {d['cfg_scale']}",
         f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}",
     ]

@@ -47,14 +47,14 @@ def cancel() -> str:
     with _LOCK:
         procs = list(_ACTIVE)
     if not procs:
-        return "Aucune tâche en cours."
+        return "No task running."
     _CANCELLED = True
     for p in procs:
         try:
             p.terminate()
         except Exception:  # noqa: BLE001
             pass
-    return "⏹️ Tâche annulée."
+    return "⏹️ Task cancelled."
 
 
 class ToolError(RuntimeError):
@@ -105,13 +105,13 @@ FACE_SHARED_FILES = ("detection_Resnet50_Final.pth", "parsing_parsenet.pth")
 # page juridique.
 FACE_MODELS: tuple[tuple[str, str, str], ...] = (
     ("GFPGANv1.4.pth",
-     "GFPGAN v1.4 — préserve le mieux l'identité",
+     "GFPGAN v1.4 — preserves identity best",
      "Apache-2.0 · usage commercial libre"),
     ("RestoreFormer++.ckpt",
-     "RestoreFormer++ — meilleur sur les photos très abîmées",
+     "RestoreFormer++ — better on badly damaged photos",
      "Apache-2.0 · usage commercial libre"),
     ("codeformer.pth",
-     "CodeFormer — curseur de fidélité réglable",
+     "CodeFormer — adjustable fidelity dial",
      "S-Lab 1.0 · NON COMMERCIAL"),
 )
 FACE_MODEL_FILES = frozenset(f for f, _, _ in FACE_MODELS)
@@ -230,7 +230,7 @@ def list_upscale_checkpoints() -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     base = UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
     if base.is_file():
-        out.append(("SDXL Base 1.0 (par défaut)", str(base)))
+        out.append(("SDXL Base 1.0 (default)", str(base)))
     if UPSCALE_CKPT_DIR.is_dir():
         for p in sorted(UPSCALE_CKPT_DIR.glob("*.safetensors")):
             out.append((p.stem, str(p)))
@@ -253,7 +253,7 @@ def _install_stream(tool: str):
         yield "\n".join(buf[-500:])
     code = proc.wait()
     buf.append("")
-    buf.append("✅ Installation terminée." if code == 0
+    buf.append("✅ Installation complete." if code == 0
                else f"❌ Échec (code {code}). Voir le journal ci-dessus.")
     yield "\n".join(buf[-500:])
 
@@ -305,7 +305,7 @@ def install_seedvr2_stream():
         buf.append(line.rstrip("\n"))
         yield "\n".join(buf[-500:])
     code = proc.wait()
-    buf += ["", "✅ Installation SeedVR2 terminée." if code == 0
+    buf += ["", "✅ SeedVR2 installation complete." if code == 0
             else f"❌ Échec SeedVR2 (code {code}). Voir le journal."]
     yield "\n".join(buf[-500:])
 
@@ -366,7 +366,7 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
         with _LOCK:
             _ACTIVE.discard(proc)
     if _CANCELLED:
-        raise ToolError("Annulé par l'utilisateur.")
+        raise ToolError("Cancelled by the user.")
     if code != 0:
         raise ToolError(err_msg)
 
@@ -374,7 +374,7 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
 def _collect(out_dir: Path, final_prefix: str, stamp: str) -> Path:
     produced = sorted(p for p in out_dir.rglob("*") if p.suffix.lower() in _IMG_EXT)
     if not produced:
-        raise ToolError("Aucune image produite (voir le journal).")
+        raise ToolError("No image produced (see the log).")
     final = settings.OUTPUT_DIR / f"{final_prefix}-{stamp}.png"
     Image.open(produced[0]).save(final)  # conserve l'alpha (RGBA) si présent
     return final
@@ -382,8 +382,8 @@ def _collect(out_dir: Path, final_prefix: str, stamp: str) -> Path:
 
 def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
     if not depth_is_installed():
-        raise ToolError("L'outil de profondeur n'est pas installé "
-                        "(bouton « Installer » du Toolkit).")
+        raise ToolError("The depth tool is not installed (“Install” button in "
+                        "the Toolkit).")
     src = _to_src(image, "depth")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"depth_out_{stamp}"
@@ -391,7 +391,7 @@ def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
     runner = settings.ROOT / "scripts" / "tools" / "run_depth.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(DEPTH_MODEL_DIR),
            "--input", str(src), "--output-dir", str(out_dir)]
-    _run_tool(cmd, log, "L'estimation de profondeur a échoué (voir le journal).",
+    _run_tool(cmd, log, "Depth estimation failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "depth", stamp)
 
@@ -408,8 +408,8 @@ def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
     mieux détecté et mieux recollé.
     """
     if not face_is_installed():
-        raise ToolError("La restauration de visages n'est pas installée "
-                        "(bouton « Installer » du Toolkit).")
+        raise ToolError("Face restoration is not installed (“Install” button "
+                        "in the Toolkit).")
     if model not in FACE_MODEL_FILES:
         raise ToolError(f"Modèle de restauration inconnu : {model}")
     weights = FACE_MODEL_DIR / model
@@ -427,15 +427,15 @@ def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
            "--fidelity", f"{min(1.0, max(0.0, float(fidelity))):.2f}"]
     if only_center:
         cmd.append("--only-center")
-    _run_tool(cmd, log, "La restauration des visages a échoué (voir le journal).",
+    _run_tool(cmd, log, "Face restoration failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "face", stamp)
 
 
 def bg_remove(image, log: Callable[[str], None] | None = None) -> Path:
     if not bg_is_installed():
-        raise ToolError("L'outil de suppression d'arrière-plan n'est pas installé "
-                        "(bouton « Installer » du Toolkit).")
+        raise ToolError("The background removal tool is not installed "
+                        "(“Install” button in the Toolkit).")
     src = _to_src(image, "nobg")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"nobg_out_{stamp}"
@@ -443,7 +443,7 @@ def bg_remove(image, log: Callable[[str], None] | None = None) -> Path:
     runner = settings.ROOT / "scripts" / "tools" / "run_rembg.py"
     cmd = [sys.executable, str(runner), "--model-dir", str(BG_MODEL_DIR),
            "--input", str(src), "--output-dir", str(out_dir)]
-    _run_tool(cmd, log, "La suppression d'arrière-plan a échoué (voir le journal).",
+    _run_tool(cmd, log, "Background removal failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "nobg", stamp)
 
@@ -453,8 +453,8 @@ def sam_segment(image, x: int, y: int,
     """Segment Anything au point (x, y). Renvoie (découpage PNG transparent,
     aperçu overlay) — l'overlay montre la zone sélectionnée en surbrillance."""
     if not sam_is_installed():
-        raise ToolError("Segment Anything n'est pas installé "
-                        "(bouton « Installer » du Toolkit).")
+        raise ToolError("Segment Anything is not installed (“Install” button "
+                        "in the Toolkit).")
     src = _to_src(image, "sam")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"sam_out_{stamp}"
@@ -465,7 +465,7 @@ def sam_segment(image, x: int, y: int,
            "--input", str(src), "--output-dir", str(out_dir),
            "--x", str(int(x)), "--y", str(int(y)),
            "--overlay-path", str(overlay)]
-    _run_tool(cmd, log, "La segmentation a échoué (voir le journal).",
+    _run_tool(cmd, log, "Segmentation failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "sam", stamp), (overlay if overlay.exists() else None)
 
@@ -532,8 +532,8 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     zone ou exporter un élément — pas pour recomposer la scène.
     """
     if not sam_is_installed():
-        raise ToolError("Segment Anything n'est pas installé "
-                        "(bouton « Installer » du Toolkit).")
+        raise ToolError("Segment Anything is not installed (“Install” button "
+                        "in the Toolkit).")
     import numpy as np
 
     src = _to_src(image, "layers")
@@ -554,12 +554,12 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     # rejet des zones qui ne ressemblent à rien. Facultatif comme la profondeur.
     if clip_is_installed():
         cmd += ["--clip-dir", str(CLIP_MODEL_DIR)]
-    _run_tool(cmd, log, "La décomposition en calques a échoué (voir le journal).",
+    _run_tool(cmd, log, "Splitting into layers failed (see the log).",
               gpu_index=_gen_gpu_index())
 
     manifest = work / "layers.json"
     if not manifest.is_file():
-        raise ToolError("Aucun calque produit (voir le journal).")
+        raise ToolError("No layer produced (see the log).")
     data = json.loads(manifest.read_text(encoding="utf-8"))
     from . import masks as mask_utils
     rgb = np.asarray(Image.open(src).convert("RGB"))
@@ -577,8 +577,8 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
         names.append(f"{lab} · {base}" if lab else base)
     if not masks:
         raise ToolError(
-            "Aucune zone exploitable trouvée. Essayez plus de points de "
-            "sondage, ou une surface minimale plus basse.")
+            "No usable region found. Try more probe points, or a lower "
+            "minimum area.")
     return _layers_to_files(src, masks, names, stamp, want_psd, want_png, log)
 
 
@@ -590,8 +590,8 @@ def masks_to_layers(image, masks: list, names: list[str] | None = None,
     Les masques arrivent déjà segmentés : aucun modèle n'est chargé ici.
     """
     if not masks:
-        raise ToolError("Aucune zone sélectionnée — cliquez d'abord sur "
-                        "l'image pour créer des calques.")
+        raise ToolError("No region selected — click on the image first to "
+                        "create layers.")
     src = _to_src(image, "layers")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     names = names or [f"Zone {i + 1}" for i in range(len(masks))]
@@ -616,8 +616,8 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
     écrive AVEC lui. S'exécute en sous-process (chargé puis déchargé : aucun
     conflit VRAM avec sd.cpp)."""
     if not enhance_is_installed():
-        raise ToolError("L'améliorateur de prompt n'est pas installé "
-                        "(accordéon « ✨ Améliorer » de l'onglet de génération).")
+        raise ToolError("The prompt improver is not installed (the “✨ "
+                        "Improve” section of the generation tab).")
     if not (prompt or "").strip():
         raise ToolError("Enter a prompt to enhance first.")
     settings.ensure_dirs()
@@ -633,7 +633,7 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
     if (style_constraint or "").strip():
         cmd += ["--style-constraint", style_constraint.strip()]
     # Améliorateur = TEXTE → GPU secondaire dédié au texte (ex. 1080 Ti).
-    _run_tool(cmd, log, "L'amélioration du prompt a échoué (voir le journal).",
+    _run_tool(cmd, log, "Prompt improvement failed (see the log).",
               gpu_index=_text_gpu_index())
     try:
         raw = out_file.read_text(encoding="utf-8").strip()
@@ -647,7 +647,7 @@ def enhance_prompt_variants(prompt: str, style: str = "generic",
         except (ValueError, TypeError):
             out = [raw]           # repli : ancien format texte brut
     if not out:
-        raise ToolError("L'améliorateur n'a renvoyé aucun texte (voir le journal).")
+        raise ToolError("The improver returned no text (see the log).")
     return out
 
 
@@ -672,8 +672,8 @@ def image_to_prompt(image, mode: str = "full", variants: int = 1,
     tranquille.
     """
     if not describe_is_installed():
-        raise ToolError("Le module « Image → prompt » n'est pas installé "
-                        "(bouton d'installation dans son onglet).")
+        raise ToolError("The “Image → prompt” module is not installed "
+                        "(install button in its own tab).")
     src = _to_src(image, "describe")
     settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -683,7 +683,7 @@ def image_to_prompt(image, mode: str = "full", variants: int = 1,
            "--image", str(src), "--output", str(out_file),
            "--mode", mode if mode in DESCRIBE_MODES else "full",
            "--variants", str(max(1, min(4, int(variants or 1))))]
-    _run_tool(cmd, log, "La lecture de l'image a échoué (voir le journal).",
+    _run_tool(cmd, log, "Reading the image failed (see the log).",
               gpu_index=_text_gpu_index())
     try:
         raw = out_file.read_text(encoding="utf-8").strip()
@@ -696,7 +696,7 @@ def image_to_prompt(image, mode: str = "full", variants: int = 1,
         except (ValueError, TypeError):
             out = [raw]
     if not out:
-        raise ToolError("Aucun texte n'est revenu du modèle (voir le journal).")
+        raise ToolError("The model returned no text (see the log).")
     return out
 
 
@@ -723,8 +723,8 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     la VAE du checkpoint au lieu de la fp16-fix externe), `esrgan_model` (pré-
     agrandir avec un ESRGAN GGUF plutôt qu'en Lanczos), `use_controlnet`."""
     if not upscale_is_installed():
-        raise ToolError("L'upscale créatif SDXL n'est pas installé "
-                        "(bouton « Installer » de l'onglet Toolkit → Upscale).")
+        raise ToolError("The creative SDXL upscale is not installed "
+                        "(“Install” button in Toolkit → Upscale).")
     base = Path(base_model) if base_model else UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
     if not base.is_file():
         raise ToolError(f"Checkpoint SDXL introuvable : {base}")
@@ -807,7 +807,7 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     if prof.gpu and prof.gpu.vram_gb < 12:
         cmd.append("--low-vram")
     # Upscale SDXL = génération d'IMAGES → GPU de génération (jamais le secondaire).
-    _run_tool(cmd, log, "L'upscale créatif SDXL a échoué (voir le journal).",
+    _run_tool(cmd, log, "The creative SDXL upscale failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "usdu", stamp)
 
@@ -825,7 +825,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
     ses blocs/VAE sur cuda:1, sans lancer son mode multi-GPU vidéo.
     """
     if not seedvr2_is_installed():
-        raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
+        raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
     if model not in SEEDVR2_MODEL_FILES:
         raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
@@ -883,7 +883,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
     ]
     if blocks:
         cmd.append("--swap_io_components")
-    _run_tool(cmd, log, "SeedVR2 a échoué (voir le journal).",
+    _run_tool(cmd, log, "SeedVR2 failed (see the log).",
               cwd=SEEDVR2_SOURCE_DIR, env=run_env)
     if not output.is_file() or output.stat().st_size == 0:
         raise ToolError("SeedVR2 n'a produit aucune image.")
@@ -903,7 +903,7 @@ def seedvr2_batch(images, resolution: int = 2048,
     pour chaque image. Les originaux ne sont jamais modifiés.
     """
     if not seedvr2_is_installed():
-        raise ToolError("SeedVR2 n'est pas installé (bouton Installer du Toolkit).")
+        raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
     if model not in SEEDVR2_MODEL_FILES:
         raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
@@ -919,7 +919,7 @@ def seedvr2_batch(images, resolution: int = 2048,
                 ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}:
             sources.append(p)
     if not sources:
-        raise ToolError("Aucune image compatible dans le lot.")
+        raise ToolError("No usable image in the batch.")
 
     settings.ensure_dirs()
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -958,7 +958,7 @@ def seedvr2_batch(images, resolution: int = 2048,
     if offload_device == "none":
         offload_device = "cpu"
         if log:
-            log("SeedVR2 lot : offload RAM activé pour garder le modèle en cache.")
+            log("SeedVR2 batch: RAM offload enabled so the model stays cached.")
 
     blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
     attention = seedvr2_attention_mode()
@@ -986,12 +986,12 @@ def seedvr2_batch(images, resolution: int = 2048,
     try:
         if log:
             log(f"SeedVR2 : {len(sources)} image(s), un seul chargement du modèle.")
-        _run_tool(cmd, log, "SeedVR2 lot a échoué (voir le journal).",
+        _run_tool(cmd, log, "The SeedVR2 batch failed (see the log).",
                   cwd=SEEDVR2_SOURCE_DIR, env=run_env)
     finally:
         shutil.rmtree(batch_root, ignore_errors=True)
     outputs = sorted(p for p in output_dir.rglob("*")
                      if p.is_file() and p.suffix.lower() == ".png")
     if not outputs:
-        raise ToolError("SeedVR2 n'a produit aucune image pour ce lot.")
+        raise ToolError("SeedVR2 produced no image for this batch.")
     return outputs

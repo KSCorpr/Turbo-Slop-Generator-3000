@@ -89,11 +89,11 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item(
         "engine_sdcpp", "Moteur stable-diffusion.cpp (sd-cli + DLL)", "Moteurs",
         _engine_sdcpp_paths(),
-        note="Réinstallable : install.bat / update-engine.bat."))
+        note="Reinstallable: install.bat / update-engine.bat."))
     out.append(Item(
         "engine_trellis", "Moteur trellis.cpp (image → 3D)", "Moteurs",
         [trellis.TRELLIS_BIN_DIR],
-        note="Réinstallable : onglet « Image → 3D »."))
+        note="Reinstallable: the “Image → 3D” tab."))
 
     # --- Modèles du catalogue ---------------------------------------------
     # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (variantes
@@ -108,9 +108,9 @@ def items(prefs: dict | None = None) -> list[Item]:
         new = [d for d in model_dirs if d not in seen]
         if new:
             idx = len(out)
-            out.append(Item(f"model_{m.id}", f"Modèle — {m.name}", "Modèles",
+            out.append(Item(f"model_{m.id}", f"Model — {m.name}", "Modèles",
                             new,
-                            note="Re-téléchargeable : Catalogue de modèles."))
+                            note="Downloadable again: Model catalog."))
             shared_names[idx] = [m.name]
             for d in new:
                 seen[d] = idx
@@ -121,62 +121,62 @@ def items(prefs: dict | None = None) -> list[Item]:
             shared_names[idx].append(m.name)
     for idx, names in shared_names.items():
         if len(names) > 1:
-            out[idx].label = "Modèles — " + " + ".join(names)
-            out[idx].note = ("⚠️ Dossiers PARTAGÉS par ces modèles : les "
-                             "supprimer les retire tous. "
-                             "Re-téléchargeables : Catalogue de modèles.")
+            out[idx].label = "Models — " + " + ".join(names)
+            out[idx].note = ("⚠️ Folders SHARED by these models: deleting "
+                             "them removes them all. Downloadable again: "
+                             "Model catalog.")
 
     # --- Autres modèles ----------------------------------------------------
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Modèles",
                     [registry.upscalers_dir()],
-                    note="Réinstallable : Toolkit → Agrandir."))
-    out.append(Item("trellis_models", "Modèles trellis 3D (GGUF, ~10 Go)",
+                    note="Reinstallable: Toolkit → Enlarge."))
+    out.append(Item("trellis_models", "Trellis 3D models (GGUF, ~10 GB)",
                     "Modèles", [trellis.MODELS_DIR],
-                    note="Réinstallable : onglet « Image → 3D »."))
+                    note="Reinstallable: the “Image → 3D” tab."))
 
     # --- Add-ons du Toolkit (PyTorch) -------------------------------------
     out += [
         Item("tool_depth", "Toolkit — Profondeur", "Add-ons Toolkit",
-             [tools.DEPTH_MODEL_DIR], note="Réinstallable en 1 clic."),
-        Item("tool_bg", "Toolkit — Sans arrière-plan", "Add-ons Toolkit",
-             [tools.BG_MODEL_DIR], note="Réinstallable en 1 clic."),
-        Item("tool_sam", "Toolkit — Détourage SAM", "Add-ons Toolkit",
-             [tools.SAM_MODEL_DIR], note="Réinstallable en 1 clic."),
-        Item("tool_enhance", "Améliorateur de prompt (LLM)", "Add-ons Toolkit",
-             [tools.ENHANCE_MODEL_DIR], note="Réinstallable en 1 clic."),
+             [tools.DEPTH_MODEL_DIR], note="Reinstallable in one click."),
+        Item("tool_bg", "Toolkit — Background removal", "Add-ons Toolkit",
+             [tools.BG_MODEL_DIR], note="Reinstallable in one click."),
+        Item("tool_sam", "Toolkit — SAM cut-out", "Add-ons Toolkit",
+             [tools.SAM_MODEL_DIR], note="Reinstallable in one click."),
+        Item("tool_enhance", "Prompt improver (LLM)", "Add-ons Toolkit",
+             [tools.ENHANCE_MODEL_DIR], note="Reinstallable in one click."),
         # `clip` et `describe` manquaient à cet inventaire : le modèle
         # image → prompt pèse 7,5 Go et n'apparaissait nulle part dans ce que
         # l'utilisateur peut voir ou libérer.
-        Item("tool_clip", "Toolkit — Étiquetage CLIP (calques)", "Add-ons Toolkit",
-             [tools.CLIP_MODEL_DIR], note="Réinstallable en 1 clic."),
+        Item("tool_clip", "Toolkit — CLIP labelling (layers)", "Add-ons Toolkit",
+             [tools.CLIP_MODEL_DIR], note="Reinstallable in one click."),
         Item("tool_describe", "Toolkit — Image → prompt (~7,5 Go)",
              "Add-ons Toolkit", [tools.DESCRIBE_MODEL_DIR],
-             note="Réinstallable en 1 clic."),
-        Item("tool_face", "Toolkit — Restauration des visages", "Add-ons Toolkit",
-             [tools.FACE_MODEL_DIR], note="Réinstallable en 1 clic."),
-        Item("tool_upscale", "Toolkit — Upscale créatif SDXL", "Add-ons Toolkit",
-             [tools.UPSCALE_DIR], note="Inclut ControlNet et checkpoints perso."),
+             note="Reinstallable in one click."),
+        Item("tool_face", "Toolkit — Face restoration", "Add-ons Toolkit",
+             [tools.FACE_MODEL_DIR], note="Reinstallable in one click."),
+        Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Add-ons Toolkit",
+             [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
         Item("tool_seedvr2", "Toolkit — Restauration SeedVR2", "Add-ons Toolkit",
-             [tools.SEEDVR2_DIR], note="Python isolé + modèles Q8/Q4."),
+             [tools.SEEDVR2_DIR], note="An isolated Python + the Q8/Q4 models."),
     ]
 
     # --- Données utilisateur (prudence) -----------------------------------
     out += [
-        Item("loras", "LoRA installés", "Vos données", [settings.LORA_DIR],
-             note="⚠️ Vos fichiers LoRA (dont imports Civitai).",
+        Item("loras", "Installed LoRAs", "Vos données", [settings.LORA_DIR],
+             note="⚠️ Your LoRA files (Civitai imports included).",
              protected=True),
-        Item("custom", "Modèles perso (models/custom)", "Vos données",
+        Item("custom", "Custom models (models/custom)", "Vos données",
              [settings.CUSTOM_DIR],
-             note="⚠️ Fichiers déposés/convertis à la main.", protected=True),
-        Item("outputs", "Images & 3D générés (outputs/)", "Vos données",
+             note="⚠️ Files you dropped in or converted by hand.", protected=True),
+        Item("outputs", "Generated images & 3D (outputs/)", "Vos données",
              [settings.OUTPUT_DIR],
-             note="⚠️ Vos créations.", protected=True),
+             note="⚠️ Your creations.", protected=True),
         Item("tmp", "Fichiers temporaires (tmp/)", "Vos données",
              [settings.TMP_DIR],
-             note="Caches d'aperçu, fichiers de travail et cache d'images de "
-                  "l'interface. Sans risque application FERMÉE ; en cours "
-                  "d'exécution, les images déjà affichées deviendront des "
-                  "icônes cassées jusqu'au rechargement de la page."),
+             note="Preview caches, working files and the interface's image "
+                  "cache. Safe with the application CLOSED; while it is "
+                  "running, images already on screen turn into broken icons "
+                  "until the page is reloaded."),
     ]
     return out
 
@@ -200,10 +200,10 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
     for key in keys or []:
         item = by_key(key, prefs)
         if item is None:
-            msgs.append(f"• {key} : inconnu, ignoré.")
+            msgs.append(f"• {key}: unknown, ignored.")
             continue
         if not item.installed:
-            msgs.append(f"• {item.label} : rien à supprimer.")
+            msgs.append(f"• {item.label}: nothing to delete.")
             continue
         size = item.size
         ok = 0
@@ -213,7 +213,7 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
             except OSError:
                 continue
             if root not in rp.parents and rp != root:
-                msgs.append(f"• {item.label} : chemin hors projet ignoré ({p}).")
+                msgs.append(f"• {item.label}: path outside the project ignored ({p}).")
                 continue
             if rp == root:
                 continue
@@ -224,10 +224,10 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
                     rp.unlink()
                 ok += 1
             except OSError as exc:
-                msgs.append(f"• {item.label} : échec sur {p.name} ({exc}).")
+                msgs.append(f"• {item.label}: failed on {p.name} ({exc}).")
         if ok:
             freed += size
-            msgs.append(f"✓ {item.label} — {human(size)} libéré(s).")
+            msgs.append(f"✓ {item.label} — {human(size)} freed.")
     # Les dossiers de base doivent continuer d'exister.
     settings.ensure_dirs()
     return msgs, freed

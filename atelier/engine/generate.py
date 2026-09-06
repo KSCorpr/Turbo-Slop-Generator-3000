@@ -42,14 +42,14 @@ def _resident_server(prefs: dict, req: "GenRequest",
     server = sdserver.find_server()
     if server is None:
         if log:
-            log("ℹ️ Moteur résident demandé mais sd-server est absent de bin/ "
-                "— relancez update-engine.bat.")
+            log("ℹ️ Resident engine requested but sd-server is missing from "
+                "bin/ — run update-engine.bat again.")
         return None
     if not sdserver.can_serve(req):
         return None
     if req.preview_path and log:
-        log("ℹ️ Moteur résident : pas d'aperçu pendant le calcul, l'image "
-            "arrive d'un coup à la fin.")
+        log("ℹ️ Resident engine: no preview while it computes, the image "
+            "arrives all at once at the end.")
     return sdserver, server
 
 
@@ -89,10 +89,10 @@ def _component(model: registry.BaseModel, role: str) -> Path | None:
 
 
 _SLOW_ENCODER_GPU = (
-    "ℹ️ Encodeur de texte ramené sur le GPU de génération : la carte "
-    "secondaire n'a pas de tensor cores et exécute le fp16 à une fraction de "
-    "sa vitesse (Pascal : 1/64). Elle reste parfaite pour STOCKER des poids, "
-    "pas pour les calculer.")
+    "ℹ️ Text encoder moved back onto the generation GPU: the secondary card "
+    "has no tensor cores and runs fp16 at a fraction of its speed (Pascal: "
+    "1/64). It remains perfect for STORING weights, not for computing on "
+    "them.")
 
 
 def encoder_gpu_too_slow(enc_index: int | None,
@@ -215,12 +215,12 @@ def generate(
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
-            "Binaire sd-cli introuvable. Lancez l'installation "
-            "(install.bat) ou « python scripts/get_sdcpp.py ».")
+            "The sd-cli binary was not found. Run the installation "
+            "(install.bat) or “python scripts/get_sdcpp.py”.")
 
     model = registry.get_base_model(model_id, prefs)
     if model is None:
-        raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
+        raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     # Famille « checkpoint complet » : un seul fichier via -m.
     has_full = any(c.role == "model" for c in model.components)
@@ -231,8 +231,8 @@ def generate(
         diffusion = enc = uncond = t5xxl = clip_l = llm_vision = None
         if model_path is None or not Path(model_path).is_file():
             raise sdcpp.EngineError(
-                f"« {model.name} » : checkpoint manquant. Téléchargez-le "
-                "(onglet Catalogue de modèles) ou fournissez un fichier local.")
+                f"“{model.name}”: checkpoint missing. Download it "
+                "(Model catalog tab) or supply a local file.")
     else:
         model_path = None
         diffusion = Path(diffusion_override) if diffusion_override else _component(model, "diffusion")
@@ -262,9 +262,9 @@ def generate(
                   if p is None or not Path(p).is_file()]
         if absent:
             raise sdcpp.EngineError(
-                f"« {model.name} » : fichiers manquants ({', '.join(absent)}). "
-                "Téléchargez le modèle (onglet Catalogue de modèles) ou fournissez des "
-                "fichiers locaux valides.")
+                f"“{model.name}”: missing files ({', '.join(absent)}). "
+                "Download the model (Model catalog tab) or supply valid "
+                "local files.")
 
     flags, gpu_index = _resolved_flags(prefs)
     loras = loras or []
@@ -325,8 +325,8 @@ def generate(
         # le split mesuré est disponible.
         if "--params-backend" not in sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError(
-                "Krea 2 INT8 ConvRot exige un moteur sd.cpp récent "
-                "(--params-backend). Lancez update-engine.bat.")
+                "Krea 2 INT8 ConvRot needs a recent sd.cpp engine "
+                "(--params-backend). Run update-engine.bat.")
         # Le streaming INT8 impose déjà sa résidence. Ne jamais lui ajouter
         # --auto-fit, qui tenterait de décider une seconde fois où vont les
         # mêmes paramètres.
@@ -387,8 +387,8 @@ def generate(
                 # tout ce qu'il ne sait pas faire retombe sur sd-cli, qui reste
                 # la référence.
                 if log:
-                    log(f"↩️ Moteur résident indisponible ({exc}) — "
-                        "génération en ligne de commande.")
+                    log(f"↩️ Resident engine unavailable ({exc}) — "
+                        "generating from the command line.")
                 sdserver.stop()
         cmd = sdcpp.build_gen_cmd(sd_cli, req, out)
         sdcpp.run(cmd, log=log, gpu_index=gpu_index, all_gpus=all_gpus)
@@ -405,8 +405,8 @@ def generate(
         if flags.get("clip_on_cpu"):
             raise
         if log:
-            log("↻ Mémoire GPU insuffisante — reprise avec l'encodeur de "
-                "texte en RAM (--clip-on-cpu).")
+            log("↻ Not enough GPU memory — retrying with the text encoder in "
+                "RAM (--clip-on-cpu).")
         paths = _attempt(True)
 
     if save_prompt and paths:
@@ -431,12 +431,12 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
-            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
+            "The sd-cli binary was not found. Run the installation (install.bat).")
     model = registry.upscaler_path(model_name)
     if model is None:
         raise sdcpp.EngineError(
-            f"Upscaler introuvable : « {model_name} ». Téléchargez les upscalers "
-            "depuis l'onglet Toolkit → Agrandir.")
+            f"Upscaler not found: “{model_name}”. Download the upscalers "
+            "from the Toolkit → Enlarge tab.")
 
     settings.ensure_dirs()
     src = settings.TMP_DIR / "upscale_in.png"
@@ -451,17 +451,17 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     tile = sdcpp.upscale_tile_size(w, h, vram)
     out = sdcpp.unique_output("upscale")
     if log:
-        log(f"Upscale ESRGAN « {model_name} » (×{repeats or 1}) sur le GPU…")
+        log(f"Upscale ESRGAN « {model_name} » (×{repeats or 1}) on the GPU…")
         if "--upscale-tile-size" in sdcpp.supported_options(sd_cli):
-            log(f"[esrgan] tuiles de {tile} px"
-                + (" — image entière en une passe, aucune couture."
+            log(f"[esrgan] tiles of {tile} px"
+                + (" — the whole image in one pass, no seam."
                    if tile >= max(w, h) else
-                   f" (au lieu de {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px :"
-                   " moins de coutures et d'aliasing)."))
+                   f" (instead of {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px:"
+                   " fewer seams and less aliasing)."))
         else:
-            log("[esrgan] sd-cli trop ancien pour --upscale-tile-size : tuiles "
-                f"de {sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px (coutures possibles). "
-                "Mettez le moteur à jour (update-engine.bat).")
+            log("[esrgan] sd-cli too old for --upscale-tile-size: tiles of "
+                f"{sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px (seams possible). "
+                "Update the engine (update-engine.bat).")
 
     def _cmd(tile_px: int) -> list[str]:
         return sdcpp.build_upscale_cmd(sd_cli, src, model, out,
@@ -479,8 +479,8 @@ def upscale_image(image, model_name: str, repeats: int = 1,
         if sdcpp.was_cancelled() or first == fallback:
             raise
         if log:
-            log(f"[esrgan] échec avec des tuiles de {tile} px (VRAM ?) → "
-                f"nouvelle tentative au défaut sd.cpp "
+            log(f"[esrgan] failed with tiles of {tile} px (VRAM ?) → "
+                f"retrying at the sd.cpp default "
                 f"({sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px).")
         sdcpp.run(fallback, log=log, gpu_index=gpu_index)
     if out.is_file():
@@ -488,7 +488,7 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     found = sorted(out.parent.glob(f"{out.stem}*{out.suffix}"))
     if found:
         return found[0]
-    raise sdcpp.EngineError("L'upscale n'a produit aucune image.")
+    raise sdcpp.EngineError("The upscale produced no image.")
 
 
 # Alignement des tailles de la passe HD.
@@ -623,17 +623,16 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
-            "Binaire sd-cli introuvable. Lancez l'installation (install.bat).")
+            "The sd-cli binary was not found. Run the installation (install.bat).")
     if not sdcpp.hires_supported(sd_cli):
         raise sdcpp.EngineError(
-            "Votre moteur sd.cpp ne connaît pas encore la passe HD "
-            "(option « --hires »).\n"
-            "→ Lancez update-engine.bat pour récupérer une version récente, "
-            "puis relancez l'application.")
+            "Your sd.cpp engine does not know the HD pass yet (the “--hires” "
+            "option).\n→ Run update-engine.bat to fetch a recent version, "
+            "then restart the application.")
     prefs = settings.load_prefs()
     model = registry.get_base_model(model_id, prefs)
     if model is None:
-        raise sdcpp.EngineError(f"Modèle inconnu : {model_id}")
+        raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     settings.ensure_dirs()
     src = settings.TMP_DIR / "hd_in.png"
@@ -657,8 +656,8 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     if max(bw, bh) * scale > HD_MAX_SIDE:
         scale = max(1.25, HD_MAX_SIDE / max(bw, bh))
         if log:
-            log(f"[hd] facteur ramené à ×{scale:.2f} pour rester sous "
-                f"{HD_MAX_SIDE} px de côté.")
+            log(f"[hd] factor lowered to ×{scale:.2f} to stay under "
+                f"{HD_MAX_SIDE} px on a side.")
     free = hardware.free_vram_gb(prof.gpu.index if prof.gpu else None)
 
     # Exécution segmentée : quand le moteur sait DÉCOUPER son graphe pour tenir
@@ -675,24 +674,24 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
         cut = ""
     if cut:
         if log:
-            log(f"[hd] exécution segmentée (--max-vram {cut}) : le moteur "
-                "découpe son graphe pour tenir dans la VRAM libre au lieu "
-                "d'allouer d'un bloc.")
+            log(f"[hd] segmented run (--max-vram {cut}): the engine splits "
+                "its graph to fit in the free VRAM instead of allocating "
+                "in one block.")
     else:
         budget = hd_pixel_budget(model, vram, free)
         if budget and bw * bh * scale * scale > budget:
             scale = max(1.25, (budget / (bw * bh)) ** 0.5)
             if log:
-                have = (f"{free:.1f} Go libres" if free else
-                        f"{vram:.0f} Go de VRAM" if vram else
-                        "la VRAM disponible")
-                log(f"[hd] facteur ramené à ×{scale:.2f} : au-delà, le tampon "
-                    f"du second débruitage ne tient pas dans {have} avec ce "
-                    "modèle chargé.")
+                have = (f"{free:.1f} GB free" if free else
+                        f"{vram:.0f} GB of VRAM" if vram else
+                        "the available VRAM")
+                log(f"[hd] factor lowered to ×{scale:.2f}: past that, the "
+                    f"second denoise's buffer does not fit in {have} with "
+                    "this model loaded.")
     if log and free and vram and free < vram * 0.75:
         # Utile à savoir AVANT de lancer : de la VRAM est prise ailleurs.
-        log(f"[hd] {free:.1f} Go libres sur {vram:.0f} — une autre application "
-            "occupe la carte. Fermez-la pour viser plus grand.")
+        log(f"[hd] {free:.1f} GB free of {vram:.0f} — another application is "
+            "holding the card. Close it to aim higher.")
 
     d = dict(model.defaults)
     base_steps = int(steps or d.get("steps", 8) or 8)
@@ -709,9 +708,9 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             tile_size=sdcpp.upscale_tile_size(tw, th, vram))
         if log:
             log(f"HD « {model.name} » : {ow}×{oh} → {tw}×{th} (×{sc:.2f}), "
-                f"agrandisseur « {hires.upscaler} », détail {denoise:g}.")
-            log("[hd] second débruitage sur l'image ENTIÈRE : pas de tuiles, "
-                "donc pas de couture possible.")
+                f"agrandisseur « {hires.upscaler}”, detail {denoise:g}.")
+            log("[hd] second denoise over the WHOLE image: no tiles, so no "
+                "seam is possible.")
         got = generate(
             model_id=model_id, prompt=prompt, negative=negative,
             steps=base_steps,
@@ -730,8 +729,8 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             try:
                 with Image.open(got[0]) as res:
                     if res.size != (tw, th):
-                        log(f"[hd] taille finale réelle : {res.width}×"
-                            f"{res.height} (aligné par sd.cpp).")
+                        log(f"[hd] actual final size: {res.width}×"
+                            f"{res.height} (aligned by sd.cpp).")
             except OSError:
                 pass
         return got
@@ -771,10 +770,10 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             if stream and not streaming_on:
                 streaming_on = True
                 if log:
-                    log(f"[hd] VRAM insuffisante à ×{last:.2f} → on garde le "
-                        "facteur et on charge les couches du modèle depuis la "
-                        "RAM au fil du calcul (--stream-layers). C'est plus "
-                        "lent, mais l'image reste à la taille demandée.")
+                    log(f"[hd] not enough VRAM at ×{last:.2f} → we keep the factor "
+                        "and stream the model's layers from RAM as the "
+                        "computation goes (--stream-layers). It is slower, "
+                        "but the image stays at the size you asked for.")
                 continue
             if drops >= HD_MAX_RETRIES:
                 raise
@@ -783,5 +782,5 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
                 raise      # plancher atteint : insister ne changerait rien
             drops += 1
             if log:
-                log(f"[hd] VRAM insuffisante à ×{last:.2f} → nouvelle tentative "
-                    f"à ×{scale:.2f}.")
+                log(f"[hd] not enough VRAM at ×{last:.2f} → retrying at "
+                    f"×{scale:.2f}.")

@@ -91,70 +91,68 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         # cliquer sur un installeur qui ne trouvera rien.
         if platform.system() == "Darwin":
             gr.Markdown(
-                "### Image → modèle 3D (GLB)\n"
-                "> ⛔ **Indisponible sur macOS.** trellis.cpp n'est publié qu'en "
-                "**binaire Windows CUDA** : il n'existe ni build Apple Silicon "
-                "ni chemin Metal. Ce n'est pas un réglage à trouver, c'est le "
-                "moteur qui n'existe pas pour cette plateforme.\n\n"
-                "Tout le reste de l'application fonctionne : génération, "
-                "outpaint, Toolkit et agrandissement passent par "
-                "stable-diffusion.cpp, qui a bien une build Metal.")
+                "### Image → 3D model (GLB)\n> ⛔ **Unavailable on macOS.** "
+                "trellis.cpp ships as a **Windows CUDA binary**\nonly: there "
+                "is no Apple Silicon build and no Metal path. This is not a "
+                "setting\nto find, it is an engine that does not exist for "
+                "this platform.\n\nEverything else in the application works: "
+                "generation, outpaint, the Toolkit and\nupscaling all go "
+                "through stable-diffusion.cpp, which does have a Metal build.")
             return
         gr.Markdown(
-            "### Image → modèle 3D (GLB)\n"
-            "Transforme une image en **maillage 3D texturé** (GLB) via "
-            "**trellis.cpp** (TRELLIS.2, binaire natif CUDA — aucun PyTorch). "
-            "Chargez une image nette d'un **objet unique** sur fond simple ; le "
-            "détourage est automatique. Le serveur trellis **démarre puis "
-            "s'arrête** à chaque génération → toute la VRAM est libérée ensuite "
-            "(stratégie low-VRAM).\n\n"
-            "💡 **Reste en 512 sous 16 Go de VRAM.** Le cascade **1024/1536** "
-            "est documenté pour une carte **16 Go** : en dessous il ne plante "
-            "pas proprement, il **dégrade le calcul** et sort un maillage "
-            "**en « blobs »**. Aucun réglage ne contourne ça (trellis n'a ni "
-            "offload ni tiling).  \n"
-            "👉 Pour gagner en qualité **sans toucher à la résolution**, monte "
-            "l'**atlas UV** (2048/4096) et la **décimation** : une géométrie "
-            "512 bien texturée bat un 1024 raté, pour un coût VRAM quasi nul.")
+            "### Image → 3D model (GLB)\nTurns an image into a **textured 3D "
+            "mesh** (GLB) through **trellis.cpp**\n(TRELLIS.2, a native CUDA "
+            "binary — no PyTorch). Load a sharp image of a\n**single object** "
+            "on a simple background; background removal is automatic. "
+            "The\ntrellis server **starts and then stops** for each "
+            "generation, so all the VRAM\nis released afterwards (the "
+            "low-VRAM strategy).\n\n💡 **Stay at 512 below 16 GB of VRAM.** "
+            "The **1024/1536** cascade is documented\nfor a **16 GB** card: "
+            "below that it does not fail cleanly, it **degrades "
+            "the\ncomputation** and returns a mesh made of **“blobs”**. No "
+            "setting works around\nit (trellis has neither offload nor "
+            "tiling).\n👉 To gain quality **without touching the resolution**, "
+            "raise the **UV atlas**\n(2048/4096) and the **decimation**: a "
+            "well-textured 512 mesh beats a botched\n1024 one, at almost no "
+            "VRAM cost.")
 
         # ---- Installation (binaire + modèles) ----
-        with gr.Accordion("⚙️ Installer trellis.cpp (binaire + modèles, 1 clic)",
+        with gr.Accordion("⚙️ Install trellis.cpp (binary + models, one click)",
                           open=not ready):
             gr.Markdown(
-                "Télécharge le **binaire Windows CUDA** "
-                "(`pwilkin/trellis.cpp`, ~700 Mo) dans `bin/trellis/` et un "
-                "**jeu de modèles GGUF** (`ilintar/trellis2-gguf`) dans "
-                "`models/trellis/`.\n\n"
-                "**Variante de poids** — **f16 est le plus RAPIDE** quand il "
-                "tient en mémoire : garde-le pour le 512. Les versions "
-                "quantifiées (q8/q4) occupent beaucoup moins de mémoire — ce "
-                "qui peut rendre le **1024/1536 atteignable** — mais elles "
-                "sont **plus LENTES** (les poids sont déquantifiés à la volée "
-                "à chaque calcul, surcoût non amorti sur une charge 3D). "
-                "Tu peux en installer plusieurs et basculer à la génération.")
+                "Downloads the **Windows CUDA binary** "
+                "(`pwilkin/trellis.cpp`, ~700 MB) into\n`bin/trellis/` and a "
+                "**set of GGUF models** (`ilintar/trellis2-gguf`) "
+                "into\n`models/trellis/`.\n\n**Weight variant** — **f16 is "
+                "the FASTEST** when it fits in memory: keep it for\n512. The "
+                "quantized versions (q8/q4) use far less memory — which can "
+                "make\n**1024/1536 reachable** — but they are **SLOWER** "
+                "(weights are dequantized on\nthe fly at every computation, "
+                "an overhead that a 3D workload does not amortize).\nYou can "
+                "install several and switch at generation time.")
             diag_md = gr.Markdown(trellis.diagnose())
-            diag_btn = gr.Button("↻ Vérifier l'installation", size="sm")
+            diag_btn = gr.Button("↻ Check the installation", size="sm")
             inst_variant = gr.Radio(
                 [(lbl, v) for lbl, v in trellis.VARIANTS], value="f16",
-                label="Variante à installer",
-                info="Commence par f16 (le plus rapide). N'ajoute q8/q4 que si "
-                     "tu veux tenter le 1024/1536.")
+                label="Variant to install",
+                info="Start with f16 (the fastest). Only add q8/q4 if you "
+                     "want to attempt 1024/1536.")
             inst_log = gr.Textbox(label="Install log", lines=8,
                                   autoscroll=True, elem_classes="log-box")
-            inst_btn = gr.Button("⬇️ Installer trellis.cpp (binaire + modèles)")
+            inst_btn = gr.Button("⬇️ Install trellis.cpp (binary + models)")
             gr.Markdown(
-                "⬆️ **Mettre à jour le binaire** — l'installation ci-dessus "
-                "**ne remplace pas** un binaire déjà présent : une fois "
-                "trellis installé, il reste tel quel indéfiniment. Ne "
-                "retélécharge **pas** les ~10 Go de modèles.\n\n"
-                "L'**archive est choisie d'après votre carte**. Depuis la "
-                "**v0.6.0** (août 2026), trellis.cpp en publie deux : `cuda` "
-                "pour **Turing et plus récent** (RTX 20xx → 50xx) et `cuda12` "
-                "pour **Pascal et Volta** (GTX 10xx). Avant, une seule build "
-                "existait et ne couvrait que les RTX 30xx/50xx — d'où le repli "
-                "systématique sur Vulkan. **Vulkan reste le repli** pour toute "
-                "carte qu'aucune des deux ne couvre : il ne compile rien par "
-                "architecture et marche partout.",
+                "⬆️ **Update the binary** — the installation above **does not "
+                "replace** a binary\nthat is already there: once trellis is "
+                "installed it stays as-is indefinitely.\nThis does **not** "
+                "download the ~10 GB of models again.\n\nThe **archive is "
+                "chosen from your card**. Since **v0.6.0** (August "
+                "2026)\ntrellis.cpp publishes two: `cuda` for **Turing and "
+                "newer** (RTX 20xx → 50xx)\nand `cuda12` for **Pascal and "
+                "Volta** (GTX 10xx). Before that a single build\nexisted and "
+                "covered only the RTX 30xx/50xx — hence the systematic "
+                "fallback to\nVulkan. **Vulkan remains the fallback** for any "
+                "card neither list covers: it\ncompiles nothing per "
+                "architecture and works everywhere.",
                 elem_classes="hint")
             upd_btn = gr.Button("⬆️ Update the binary (models untouched)",
                                 size="sm")
@@ -175,14 +173,14 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     logs.append(line.rstrip("\n"))
                     yield "\n".join(logs[-400:])
                 proc.wait()
-                logs.append("\n✅ Terminé." if trellis.is_ready()
-                            else "\n⚠️ Installation incomplète — voir ci-dessus.")
+                logs.append("\n✅ Done." if trellis.is_ready()
+                            else "\n⚠️ Incomplete installation — see above.")
                 yield "\n".join(logs[-400:])
 
             def _install(inst_var):
                 yield from _run_installer(
                     ["--variant", str(inst_var or "f16")],
-                    t("⏳ Installation en cours (binaire + ~10 Go de modèles)…"))
+                    t("⏳ Installing (binary + ~10 GB of models)…"))
 
             def _update_binary():
                 # Le serveur résident VERROUILLE l'exécutable sous Windows :
@@ -203,107 +201,108 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         # ---- Génération ----
         with gr.Row():
             with gr.Column(scale=3):
-                image = gr.Image(label="Image d'entrée (objet unique)",
+                image = gr.Image(label="Input image (a single object)",
                                  type="filepath",
                                  buttons=widgets.IMAGE_VIEW_ONLY)
                 with gr.Row():
                     square_pad = gr.Checkbox(
                         value=True, scale=2,
-                        label="Compléter en carré (garde les proportions)",
-                        info="TRELLIS traite l'entrée en carré : sans ça, une "
-                             "image non carrée sort DÉFORMÉE.")
+                        label="Pad to square (keeps the proportions)",
+                        info="TRELLIS processes its input as a square: "
+                             "without this, a non-square image comes out "
+                             "DISTORTED.")
                     pad_color = gr.Dropdown(
                         [("Blanc", "white"), ("Noir", "black"),
                          ("Transparent", "transparent")],
-                        value="white", scale=1, label="Bandes ajoutées")
+                        value="white", scale=1, label="Bars added")
                 with gr.Row():
                     res = gr.Radio(_res_choices(), value=512, scale=2,
-                                   label="Résolution géométrie")
+                                   label="Geometry resolution")
                     variant = gr.Dropdown(
                         _variant_choices(), value=_default_variant(), scale=1,
-                        label="Poids utilisés",
-                        info="f16 = le PLUS RAPIDE s'il tient. q8/q4 = moins "
-                             "de mémoire mais plus LENTS (déquantification à "
-                             "la volée) — à réserver au 1024/1536.")
+                        label="Weights used",
+                        info="f16 = the FASTEST when it fits. q8/q4 = less "
+                             "memory but SLOWER (dequantized on the fly) — "
+                             "keep them for 1024/1536.")
                 with gr.Row():
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = random)")
                     bg = gr.Dropdown(
-                        [("BiRefNet (qualité, recommandé)", "birefnet"),
+                        [("BiRefNet (quality, recommended)", "birefnet"),
                          ("Seuil (rapide)", "threshold")],
-                        value="birefnet", label="Détourage du fond")
-                with gr.Accordion("⚡ Serveur résident (séries de 3D)", open=False):
+                        value="birefnet", label="Background removal")
+                with gr.Accordion("⚡ Resident server (for a run of 3D objects)", open=False):
                     gr.Markdown(
-                        "Par défaut le serveur **démarre puis s'arrête** à "
-                        "chaque génération (VRAM libérée). Coché, il **reste en "
-                        "vie** : les 3D suivantes évitent le rechargement des "
-                        "modèles (~30 s gagnées), mais **la VRAM reste "
-                        "occupée** — arrête-le avant de générer des images.  \n"
-                        "ℹ️ Si tu changes un réglage de **lancement** "
-                        "(résolution, décimation, atlas, GPU, texture…), le "
-                        "serveur **redémarre automatiquement** pour "
-                        "l'appliquer — seuls seed et détourage sont "
-                        "modifiables sans rechargement.")
+                        "By default the server **starts and stops** for each "
+                        "generation (VRAM is\nreleased). Ticked, it **stays "
+                        "alive**: the next 3D objects skip the model\nreload "
+                        "(~30 s saved), but **the VRAM stays occupied** — "
+                        "stop it before\ngenerating images.\nℹ️ If you change "
+                        "a **launch** setting (resolution, decimation, atlas, "
+                        "GPU,\ntexture…), the server **restarts "
+                        "automatically** to apply it — only seed "
+                        "and\nbackground removal can change without a reload.")
                     resident = gr.Checkbox(
                         value=False,
-                        label="Garder le serveur résident entre les générations")
+                        label="Keep the server resident between generations")
                     with gr.Row():
                         res_status = gr.Markdown(trellis.resident_status())
-                        res_stop_btn = gr.Button("⏹️ Arrêter le serveur résident",
+                        res_stop_btn = gr.Button("⏹️ Stop the resident server",
                                                  size="sm")
-                with gr.Accordion("🎛️ Qualité / maillage", open=False):
+                with gr.Accordion("🎛️ Quality / mesh", open=False):
                     with gr.Row():
                         decim = gr.Number(
                             value=0, precision=0,
-                            label="Décimation — faces cibles (0 = défaut)",
-                            info="Plus bas = maillage plus léger.")
+                            label="Decimation — target faces (0 = default)",
+                            info="Lower = lighter mesh.")
                         atlas = gr.Dropdown(
-                            [("Défaut", 0), ("1024 px", 1024),
+                            [("Default", 0), ("1024 px", 1024),
                              ("2048 px", 2048), ("4096 px", 4096)],
                             value=0, label="Taille de l'atlas UV (texture)")
                     with gr.Row():
                         no_texture = gr.Checkbox(
                             value=False,
-                            label="Géométrie seule (sans texture, + rapide)")
+                            label="Geometry only (no texture, faster)")
                         box_uv = gr.Checkbox(value=False,
-                                             label="Dépliage UV « box »")
-                with gr.Accordion("🩺 Moteur (dépannage)", open=False):
+                                             label="“Box” UV unwrap")
+                with gr.Accordion("🩺 Engine (troubleshooting)", open=False):
                     gr.Markdown(
-                        "**Carte utilisée** — passé au moteur via son flag "
-                        "officiel `--gpu N`. Choisis la carte avec le plus de "
-                        "VRAM (le mode 1024 en réclame ~16 Go).")
+                        "**Card used** — passed to the engine through its own "
+                        "`--gpu N` flag. Pick the card with the most VRAM "
+                        "(1024 mode wants ~16 GB).")
                     gpu_pick = gr.Dropdown(
-                        [(t("Défaut du moteur (carte 0)"), -1)] + _gpu_choices(),
+                        [(t("Engine default (card 0)"), -1)] + _gpu_choices(),
                         value=(_gpu_choices()[0][1] if _gpu_choices() else -1),
-                        label="Carte utilisée pour la 3D")
+                        label="Card used for 3D")
                     band = gr.Number(
                         value=0, precision=4,
                         label="Offset de remaillage « band » (0 = auto)",
-                        info="v0.5.4 l'adapte à la résolution (corrige les "
-                             "speckles en 1024). À ne changer qu'en dépannage.")
+                        info="v0.5.4 adapts it to the resolution (fixes the "
+                             "1024 speckles). Change it only when "
+                             "troubleshooting.")
                     with gr.Row():
                         require_gpu = gr.Checkbox(
                             value=True,
-                            label="Exiger le GPU (évite un repli CPU très lent)")
+                            label="Require the GPU (prevents a very slow CPU fallback)")
                         f32 = gr.Checkbox(value=False,
-                                          label="Précision f32 (au lieu de f16)")
+                                          label="f32 precision (instead of f16)")
                         no_fa = gr.Checkbox(value=False,
-                                            label="Désactiver FlashAttention")
-                with gr.Accordion("Options avancées", open=False):
+                                            label="Disable FlashAttention")
+                with gr.Accordion("Advanced options", open=False):
                     extra = gr.Textbox(
-                        label="Arguments trellis-server supplémentaires (optionnel)",
+                        label="Extra trellis-server arguments (optional)",
                         placeholder="ex. flags additionnels du serveur")
                 with gr.Row():
-                    run = gr.Button("🧊 Générer le 3D", variant="primary", scale=3)
+                    run = gr.Button("🧊 Generate the 3D", variant="primary", scale=3)
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
-                model3d = gr.Model3D(label="Aperçu 3D (GLB)", clear_color=[
+                model3d = gr.Model3D(label="3D preview (GLB)", clear_color=[
                     0.1, 0.1, 0.12, 1.0])
                 glb_file = gr.File(label="Fichier GLB", interactive=False)
                 with gr.Row():
                     seed_used = gr.Textbox(
-                        label="Seed utilisé (pour rejouer cet objet)",
+                        label="Seed used (to replay this object)",
                         interactive=False, buttons=widgets.TEXT_COPY, scale=2)
                     seed_reuse = gr.Button("♻️ Reuse this seed", size="sm",
                                            scale=1)
@@ -317,10 +316,10 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
                           extra_args):
             if not image_path:
-                raise gr.Error(t("Chargez une image d'entrée."))
+                raise gr.Error(t("Load an input image."))
             if not trellis.is_ready():
-                raise gr.Error(t("trellis.cpp n'est pas installé — dépliez "
-                                 "« Installer trellis.cpp » ci-dessus."))
+                raise gr.Error(t("trellis.cpp is not installed — open "
+                                 "“Install trellis.cpp” above."))
             settings.ensure_dirs()
             # Normalise l'entrée en PNG (trellis-cli attend un fichier image).
             from PIL import Image as _PI
@@ -376,7 +375,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
             # (status, model3d, glb_file, log, res_status, seed_used)
-            yield (t("⏳ Génération 3D en cours (mode {r})…").format(r=res_val),
+            yield (t("⏳ Generating 3D ({r} mode)…").format(r=res_val),
                    gr.update(), gr.update(), gr.update(), gr.update(),
                    gr.update())
             while True:
@@ -389,11 +388,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
 
             if "err" in state:
                 logs.append(f"\n[ERREUR] {state['err']}")
-                yield (t("❌ Échec — voir le journal."), gr.update(),
+                yield (t("❌ Failed — see the log."), gr.update(),
                        gr.update(), "\n".join(logs),
                        gr.update(value=trellis.resident_status()), gr.update())
                 return
-            yield (t("✅ 3D généré : {name}").format(name=out_glb.name),
+            yield (t("✅ 3D generated: {name}").format(name=out_glb.name),
                    gr.update(value=str(out_glb)), gr.update(value=str(out_glb)),
                    "\n".join(logs), gr.update(value=trellis.resident_status()),
                    gr.update(value=str(meta.get("seed", ""))))

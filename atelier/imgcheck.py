@@ -82,7 +82,7 @@ def drive_kind(path: Path) -> str:
         if not drive:
             return ""
         kinds = {0: "inconnu", 1: "inexistant", 2: "amovible", 3: "fixe",
-                 4: "réseau", 5: "lecteur optique", 6: "disque en mémoire"}
+                 4: "network", 5: "lecteur optique", 6: "RAM disk"}
         code = ctypes.windll.kernel32.GetDriveTypeW(f"{drive}\\")
         return kinds.get(int(code), "inconnu")
     except Exception:  # noqa: BLE001
@@ -133,7 +133,7 @@ def write_test_image(dest_dir: Path) -> tuple[Path | None, float, str]:
             data = fh.read()
         elapsed = time.time() - start
         if not data.startswith(b"\x89PNG"):
-            return None, elapsed, "le fichier relu n'est pas un PNG valide"
+            return None, elapsed, "the file read back is not a valid PNG"
         return dest, elapsed, ""
     except OSError as exc:
         return None, 0.0, str(exc)
@@ -195,14 +195,14 @@ def format_probe(dest_dir: Path) -> tuple[list[tuple[str, str]], list[str]]:
             wrote = True
         except (OSError, KeyError, ValueError) as exc:
             wrote = False
-            lines.append(f"❌ **{name}** — impossible à écrire : {exc}")
+            lines.append(f"❌ **{name}** — could not be written: {exc}")
         if wrote:
             mark = "✅" if ok_mime else "❌"
             detail = (mime if ok_mime else
-                      f"`{mime or 'aucun'}` — Windows ne reconnaît pas "
-                      f"`{suffix}` comme une image (base de registre). Gradio "
-                      "le sert alors en téléchargement et le navigateur "
-                      "n'affiche rien.")
+                      f"`{mime or 'none'}` — Windows does not recognize "
+                      f"`{suffix}` as an image (registry database). Gradio "
+                      "then serves it as a download and the browser "
+                      "displays nothing.")
             lines.append(f"{mark} **{name}** ({suffix}) — {detail}")
     return tiles, lines
 
@@ -257,17 +257,17 @@ def describe_file(path: Path) -> str:
         parts.append(f"{w}×{h}, {fmt}")
         if fmt and f".{fmt.lower()}" != path.suffix.lower() and not (
                 fmt == "JPEG" and path.suffix.lower() in (".jpg", ".jpeg")):
-            parts.append(f"⚠️ l'extension `{path.suffix}` ne correspond pas au "
-                         f"contenu ({fmt})")
+            parts.append(f"⚠️ the extension `{path.suffix}` does not match "
+                         f"the content ({fmt})")
         if w * h > HUGE_PIXELS:
-            parts.append(f"⚠️ {w * h / 1e6:.0f} mégapixels — certains "
-                         "navigateurs renoncent à décoder au-delà")
+            parts.append(f"⚠️ {w * h / 1e6:.0f} megapixels — some browsers "
+                         "give up decoding past that")
         if size > HUGE_BYTES:
-            parts.append(f"⚠️ {size / 1e6:.0f} Mo — très lourd à transférer "
-                         "puis à décoder")
+            parts.append(f"⚠️ {size / 1e6:.0f} MB — very heavy to transfer "
+                         "and then decode")
     except Exception as exc:  # noqa: BLE001 - Pillow lève un peu de tout
-        parts.append(f"❌ illisible même par l'application : {exc}. Le fichier "
-                     "est probablement corrompu ou tronqué")
+        parts.append(f"❌ unreadable even by the application: {exc}. The "
+                     "file is probably corrupt or truncated")
     return " · ".join(parts)
 
 
@@ -278,7 +278,7 @@ def checks() -> tuple[list[Check], Path | None]:
 
     try:
         import gradio
-        out.append(Check(None, "Version de Gradio", gradio.__version__))
+        out.append(Check(None, "Gradio version", gradio.__version__))
     except ImportError:  # pragma: no cover
         pass
 
@@ -295,13 +295,13 @@ def checks() -> tuple[list[Check], Path | None]:
     # ce qui est exactement la signature du symptôme.
     inside = _is_within(cache, settings.ROOT)
     out.append(Check(
-        inside, "Cache dans le dossier du projet",
+        inside, "Cache inside the project folder",
         "" if inside else
-        "le cache est hors du projet (probablement dans le dossier temporaire "
-        "du système). Windows y fait le ménage quand bon lui semble : les "
-        "images déjà affichées cassent alors d'un coup. Une variable "
-        "`GRADIO_TEMP_DIR` définie dans votre environnement prend le pas sur "
-        "celle de l'application — supprimez-la puis relancez."))
+        "the cache is outside the project (probably in the system temp "
+        "folder). Windows cleans that out whenever it feels like it, and "
+        "images already on screen break all at once. A `GRADIO_TEMP_DIR` "
+        "variable set in your environment overrides the application's own — "
+        "remove it, then restart."))
 
     # 2. Le dépôt et le cache sont-ils sur le MÊME disque ?
     #
@@ -314,23 +314,23 @@ def checks() -> tuple[list[Check], Path | None]:
     if upload_tmp.is_dir():
         same = _same_volume(upload_tmp, cache)
         out.append(Check(
-            same, "Dépôt et cache sur le même disque",
+            same, "Upload and cache on the same drive",
             "" if same else
-            "les fichiers déposés transitent par un autre volume que le "
-            "cache : la vignette est demandée avant que la copie soit finie, "
-            "et la réponse arrive tronquée. Signalez-le — c'est un défaut de "
-            "l'application, pas de votre machine."))
+            "uploaded files pass through a different volume from the cache: "
+            "the thumbnail is requested before the copy has finished, and the "
+            "response arrives truncated. Report it — this is a flaw in the "
+            "application, not in your machine."))
 
     # 3. Type de lecteur (Windows). Réseau/amovible = cause connue.
     kind = drive_kind(cache)
     if kind:
         ok = kind == "fixe"
         out.append(Check(
-            ok, f"Type de lecteur : {kind}",
+            ok, f"Drive type: {kind}",
             "" if ok else
-            "un cache sur un lecteur réseau ou amovible donne des images "
-            "cassées par intermittence. Déplacez le projet sur un disque "
-            "interne, ou pointez `GRADIO_TEMP_DIR` vers un dossier local."))
+            "a cache on a network or removable drive gives intermittently "
+            "broken images. Move the project to an internal drive, or point "
+            "`GRADIO_TEMP_DIR` at a local folder."))
 
     # 3. Longueur du chemin (Windows).
     if sys.platform == "win32":
@@ -338,36 +338,36 @@ def checks() -> tuple[list[Check], Path | None]:
         projected = len(str(cache)) + 64 + 40
         ok = projected < WIN_MAX_PATH
         out.append(Check(
-            ok, f"Longueur du chemin : ~{projected} caractères",
+            ok, f"Path length: ~{projected} characters",
             "" if ok else
-            f"au-delà de {WIN_MAX_PATH} caractères, Windows refuse d'ouvrir "
-            "des fichiers qui existent pourtant. Placez le projet plus près "
-            "de la racine du disque (ex. `C:\\TurboSlop`)."))
+            f"beyond {WIN_MAX_PATH} characters, Windows refuses to open "
+            "files that do exist. Put the project closer to the drive root "
+            "(e.g. `C:\\TurboSlop`)."))
 
     # 4. Espace libre.
     free = _free_gb(cache if cache.exists() else settings.ROOT)
     if free >= 0:
         ok = free > 1.0
         out.append(Check(ok, f"Espace libre : {free:.1f} Go",
-                         "" if ok else "un disque plein empêche d'écrire la "
-                                       "copie que le navigateur va demander."))
+                         "" if ok else "a full disk prevents writing the copy "
+                                       "the browser is about to ask for."))
 
     # 5. L'aller-retour écriture/relecture.
     dest, elapsed, err = write_test_image(cache / "diagnostic")
     if err:
-        out.append(Check(False, "Écriture dans le cache", err))
+        out.append(Check(False, "Writing to the cache", err))
     else:
         slow = elapsed > SLOW_READBACK_S
         out.append(Check(
-            not slow, f"Écriture puis relecture : {elapsed * 1000:.0f} ms",
+            not slow, f"Write then read back: {elapsed * 1000:.0f} ms",
             "" if not slow else
-            "c'est anormalement long pour 60 Ko. Un antivirus analyse "
-            "probablement chaque fichier écrit : ajoutez le dossier du projet "
-            "à ses exclusions."))
+            "that is abnormally slow for 60 KB. An antivirus is probably "
+            "scanning every file written: add the project folder to its "
+            "exclusions."))
 
     # 6. Taille du cache — informatif, mais un cache énorme se nettoie.
     n, size = cache_size(cache)
-    out.append(Check(None, "Contenu du cache",
+    out.append(Check(None, "Cache contents",
                      f"{n} fichier(s), {size / 1e6:.0f} Mo"))
     return out, dest
 
@@ -412,41 +412,41 @@ def report() -> Report:
         detail = f" — {c.detail}" if c.detail else ""
         lines.append(f"{c.mark} **{c.label}**{detail}")
     if dest is None:
-        lines.append("⚠️ L'image de test n'a pas pu être écrite : c'est déjà "
-                     "l'explication.")
+        lines.append("⚠️ The test image could not be written: that alone is "
+                     "the explanation.")
 
     tiles, mime_lines = format_probe(cache / "diagnostic")
     bad_mime = [l for l in mime_lines if l.startswith("❌")]
-    lines.append("\n**Types de fichiers** — chaque tuile ci-dessous est écrite "
-                 "dans un format différent. Celles qui ne s'affichent pas "
-                 "désignent le coupable.")
+    lines.append("\n**File types** — each tile below is written in a "
+                 "different format. The ones that fail to display name the "
+                 "culprit.")
     lines += mime_lines
 
     ups = recent_uploads(cache)
-    lines.append("\n**Derniers fichiers importés par le navigateur**")
+    lines.append("\n**Last files uploaded by the browser**")
     if ups:
         for p in ups:
             age = max(0, int(time.time() - p.stat().st_mtime))
-            lines.append(f"• `{p.name}` — il y a {age // 60} min {age % 60} s "
+            lines.append(f"• `{p.name}` — there are {age // 60} min {age % 60} s "
                          f"· {mime_of(p.suffix) or 'MIME inconnu'} · "
                          f"{describe_file(p)}")
-        lines.append("Le plus récent est affiché en bas. **S'il s'affiche ici "
-                     "mais pas dans l'outil, le fichier est intact et le "
-                     "problème est ailleurs ; s'il est cassé ici aussi, c'est "
-                     "ce fichier-là que le navigateur n'arrive pas à lire.**")
+        lines.append("The most recent one is shown at the bottom. **If it "
+                     "displays here but not in the tool, the file is intact "
+                     "and the problem lies elsewhere; if it is broken here "
+                     "too, that file is the one the browser cannot read.**")
     else:
-        lines.append("• *Aucun.* Importez une image dans un outil, puis "
-                     "relancez ce diagnostic : si rien n'apparaît ici, c'est "
-                     "l'ENVOI qui échoue, pas l'affichage.")
+        lines.append("• *None.* Upload an image into a tool, then run this "
+                     "diagnostic again: if nothing appears here, it is the "
+                     "UPLOAD that fails, not the display.")
 
     if bad or bad_mime:
-        head = (f"### ❌ {len(bad) + len(bad_mime)} problème(s) trouvé(s)\n"
-                "Les lignes ❌ ci-dessous expliquent quoi faire.")
+        head = (f"### ❌ {len(bad) + len(bad_mime)} problem(s) found\n"
+                "The ❌ lines below say what to do.")
     else:
-        head = ("### ✅ Rien d'anormal détecté\n"
-                "La chaîne de service fonctionne. Regardez alors les tuiles de "
-                "format et le dernier fichier importé, plus bas : c'est là que "
-                "se voit un problème propre à UN fichier.")
+        head = ("### ✅ Nothing abnormal detected\nThe serving chain works. "
+                "Look instead at the format tiles and the last uploaded file, "
+                "below: that is where a problem specific to ONE file shows "
+                "up.")
     return Report("\n\n".join([head] + lines),
                   str(dest) if dest else None,
                   tiles,

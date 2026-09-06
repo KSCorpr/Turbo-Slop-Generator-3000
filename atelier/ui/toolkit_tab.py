@@ -88,7 +88,7 @@ UPSCALE_PRESETS = [
 
 # Titre de l'aperçu de secours, partagé par les outils où l'on CLIQUE sur
 # l'image : c'est là que ne pas la voir est bloquant, pas seulement gênant.
-_FALLBACK_TITLE = "🖼️ Aperçu de secours (si l'image ne s'affiche pas)"
+_FALLBACK_TITLE = "🖼️ Fallback preview (if the image will not display)"
 
 
 def _installer_block(title: str, note: str, stream_fn, installed: bool):
@@ -314,7 +314,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
 
                 d_run.click(do_depth, inputs=[d_image], outputs=[d_result, d_log])
@@ -349,13 +349,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     if img is None:
                         raise gr.Error(t("Provide an image."))
                     logs: list[str] = []
-                    progress(0.1, desc="Détourage…")
+                    progress(0.1, desc="Cutting out…")
                     try:
                         out = tools.bg_remove(img, log=logs.append)
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
 
                 b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log])
@@ -404,7 +404,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         cut, overlay = tools.sam_segment(img, x, y)
                     except Exception as exc:  # noqa: BLE001
                         raise gr.Error(str(exc))
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     return (overlay or gr.update(), str(cut),
                             t("Area selected at ({x}, {y}). Click “Extract” "
                               "or re-click elsewhere.").format(x=x, y=y))
@@ -432,24 +432,23 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
             with gr.Tab("🔼 Upscale", id="esrgan"):
                 gr.Markdown(
-                    "Agrandissement **simple** par réseau ESRGAN, natif "
-                    "**sd.cpp** : déterministe, **100% GPU**, aucun PyTorch ni "
-                    "prompt. Le facteur (×2 ou ×4) dépend du modèle choisi ; "
-                    "« Répéter » ré-applique le modèle (×2 deux fois = ×4).\n\n"
-                    "🎨 **BD, illustration, dessin au trait** : prends un modèle "
-                    "marqué **dessin / anime**. Les modèles photo (Remacri, "
-                    "Nomos, UltraSharp…) sont entraînés sur des textures "
-                    "naturelles : sur un aplat ils inventent du grain, et sur un "
-                    "trait net ils posent un halo. C'est ça, l'« interpolation "
-                    "dégueulasse ».\n\n"
-                    "📥 **Ajouter tes propres modèles** : dépose un fichier "
-                    "`.pth`, `.safetensors` ou `.gguf` dans le dossier des "
-                    "upscalers, puis « ↻ Rafraîchir ». sd.cpp lit la plupart des "
-                    "`.pth` directement — tout le catalogue "
-                    "[OpenModelDB](https://openmodeldb.info) est donc "
-                    "utilisable ; filtre-le sur *anime* / *manga* / *cartoon*. "
-                    "Le GGUF charge plus vite et évite d'exécuter un pickle, "
-                    "mais il n'est pas obligatoire.")
+                    "**Plain** enlargement by an ESRGAN network, native to "
+                    "**sd.cpp**: deterministic, **100% GPU**, no PyTorch and "
+                    "no prompt. The factor (×2 or ×4) comes from the model "
+                    "you pick; “Repeat” applies the model a second time (×2 "
+                    "twice = ×4).\n\n🎨 **Comics, illustration, line art**: "
+                    "pick a model marked **drawing / anime**. Photo models "
+                    "(Remacri, Nomos, UltraSharp…) are trained on natural "
+                    "textures: on a flat colour area they invent grain, and "
+                    "along a crisp line they lay down a halo. That is what "
+                    "“horrible interpolation” looks like.\n\n📥 **Adding your "
+                    "own models**: drop a `.pth`, `.safetensors` or `.gguf` "
+                    "file into the upscalers folder, then “↻ Refresh”. sd.cpp "
+                    "reads most `.pth` files directly — so the whole "
+                    "[OpenModelDB](https://openmodeldb.info) catalog is "
+                    "usable; filter it on *anime* / *manga* / *cartoon*. GGUF "
+                    "loads faster and avoids executing a pickle, but it is "
+                    "not required.")
 
                 with gr.Accordion("⬇️ Download the upscalers (1 click)",
                                   open=not registry.upscalers_ready()):
@@ -471,19 +470,19 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             registry.upscaler_choices(),
                             value=registry.default_upscaler(),
                             label="Upscale model (×2 / ×4 by name)",
-                            info="🎨 = entraîné pour le DESSIN (trait net, "
-                                 "aplats propres) · 📷 = photo. Sur une planche "
-                                 "de BD, un modèle photo bave et pose des halos.")
+                            info="🎨 = trained for DRAWINGS (crisp linework, "
+                                 "clean flat colours) · 📷 = photo. On a "
+                                 "comics page, a photo model smears and lays "
+                                 "down halos.")
                         u_repeats = gr.Radio(
-                            [("×1 (natif)", 1), ("Répéter ×2", 2)],
+                            [("×1 (natif)", 1), ("Repeat ×2", 2)],
                             value=1, label="Repeat",
-                            info="⚠️ Répéter fait tourner le réseau sur sa "
-                                 "PROPRE sortie : il reprend pour du détail "
-                                 "réel les hautes fréquences qu'il vient "
-                                 "d'inventer et les ré-accentue. C'est ce qui "
-                                 "crée les créneaux sur les diagonales. Un "
-                                 "modèle ×4 vaut toujours mieux qu'un ×2 "
-                                 "répété.")
+                            info="⚠️ Repeating runs the network on its OWN "
+                                 "output: it mistakes the high frequencies it "
+                                 "just invented for real detail and "
+                                 "re-emphasizes them. That is what produces "
+                                 "the staircase on diagonals. A ×4 model "
+                                 "always beats a repeated ×2.")
                         with gr.Row():
                             u_refresh = gr.Button("↻ Refresh list", size="sm")
                             u_run = gr.Button("🔼 Upscale", variant="primary",
@@ -530,7 +529,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image agrandie : {out}")
                     return str(out), "\n".join(logs)
 
@@ -543,46 +542,44 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Décomposition en calques (PSD) ----------------------
             with gr.Tab("🧩 Layers", id="layers"):
                 gr.Markdown(
-                    "Découpe une image en **calques** et écrit un **PSD** "
-                    "(ou des PNG transparents séparés). Deux façons de "
-                    "procéder : laisser SAM balayer l'image tout seul, ou "
-                    "**désigner vous-même** les zones au clic.\n\n"
-                    "⚠️ **À savoir avant de cliquer** : les calques sont des "
-                    "**découpes à plat**. Déplacer un objet révèle un trou — "
-                    "le fond derrière lui n'a jamais existé. C'est fait pour "
-                    "masquer, retoucher une zone ou exporter un élément, **pas** "
-                    "pour recomposer la scène.\n\n"
-                    "L'ordre d'empilement vient de la carte de **profondeur** "
-                    "si l'outil Profondeur est installé ; sinon les grandes "
-                    "zones passent derrière, ce qui n'est qu'une approximation.\n\n"
-                    "Les zones sont **nettoyées** avant d'être posées : trous "
-                    "intérieurs bouchés, morceaux épars séparés en zones "
-                    "distinctes, miettes écartées, bords adoucis. Et les calques "
-                    "sont **disjoints** — les afficher tous redonne exactement "
-                    "l'image d'origine, aucun pixel n'est peint deux fois.")
+                    "Cuts an image into **layers** and writes a **PSD** (or "
+                    "separate transparent PNGs). Two ways to go about it: let "
+                    "SAM sweep the image on its own, or **point at the "
+                    "regions yourself** by clicking.\n\n⚠️ **Know this before "
+                    "you click**: the layers are **flat cut-outs**. Moving an "
+                    "object reveals a hole — the background behind it never "
+                    "existed. This is meant for masking, retouching a region "
+                    "or exporting an element, **not** for recomposing the "
+                    "scene.\n\nThe stacking order comes from the **depth** "
+                    "map when the Depth tool is installed; otherwise large "
+                    "regions go to the back, which is only an "
+                    "approximation.\n\nRegions are **cleaned up** before "
+                    "being laid down: interior holes filled, scattered pieces "
+                    "split into distinct regions, crumbs discarded, edges "
+                    "softened. And the layers are **disjoint** — showing them "
+                    "all reproduces the original image exactly, no pixel is "
+                    "painted twice.")
                 _installer_block(
                     "Segment Anything",
                     "Same add-on as “Cut out an object”. Required.",
                     tools.install_sam_stream, tools.sam_is_installed())
                 _installer_block(
                     "CLIP (zone understanding)",
-                    "**Facultatif, ~600 Mo — mais c'est lui qui apporte "
-                    "l'intelligence.** Sans CLIP, l'outil ne voit que des "
-                    "formes. Avec, il reconnaît ce qu'il découpe et s'en sert "
-                    "pour trois choses :\n\n"
-                    "- **regrouper les morceaux d'un même objet** — SAM rend "
-                    "« carrosserie », « portière » et « roue » séparément ; "
-                    "étiquetés « véhicule » et voisins, ils redeviennent **un "
-                    "seul calque** ;\n"
-                    "- **écarter ce qui n'est rien** — un aplat, un bout de "
-                    "flou, un fragment sans signification. Un classifieur ne "
-                    "sait pas dire « rien », alors le vocabulaire contient des "
-                    "catégories poubelle faites pour les absorber ;\n"
-                    "- **nommer les calques** : « véhicule », « ciel », "
-                    "« personne » au lieu de « premier plan · centre · "
-                    "orange ». Et sans l'outil Profondeur, l'ordre "
-                    "d'empilement se déduit du sens — le ciel derrière parce "
-                    "que c'est le ciel, pas parce qu'il est grand.",
+                    "**Optional, ~600 MB — but it is what brings the "
+                    "intelligence.** Without CLIP the tool sees shapes only. "
+                    "With it, it recognizes what it is cutting out and uses "
+                    "that for three things:\n\n- **regrouping the pieces of "
+                    "one object** — SAM returns “body”, “door” and “wheel” "
+                    "separately; labelled “vehicle” and adjacent, they become "
+                    "**a single layer** again;\n- **discarding what is "
+                    "nothing** — a flat area, a patch of blur, a meaningless "
+                    "fragment. A classifier cannot say “nothing”, so the "
+                    "vocabulary carries junk categories whose job is to "
+                    "absorb them;\n- **naming the layers**: “vehicle”, “sky”, "
+                    "“person” instead of “foreground · centre · orange”. And "
+                    "without the Depth tool, the stacking order is inferred "
+                    "from meaning — the sky goes behind because it is the "
+                    "sky, not because it is large.",
                     tools.install_clip_stream, tools.clip_is_installed())
 
                 lay_masks = gr.State([])      # masques choisis à la main
@@ -675,8 +672,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 def _lay_summary(masks):
                     if not masks:
                         return "*No area selected.*"
-                    return (f"**{len(masks)} zone(s) choisie(s)** — cliquez "
-                            "encore pour en ajouter, puis « Décomposer ».")
+                    return (f"**{len(masks)} region(s) picked** — click "
+                            "again to add more, then “Split”.")
 
                 def _lay_click(img, mode, masks, evt: gr.SelectData):
                     if mode != "manual" or img is None:
@@ -718,7 +715,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         raise gr.Error(t("Choose at least one output format "
                                          "(PSD or PNG)."))
                     logs: list[str] = []
-                    progress(0.1, desc="Décomposition…")
+                    progress(0.1, desc="Splitting…")
                     try:
                         if mode == "manual":
                             out = tools.masks_to_layers(
@@ -734,7 +731,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return gr.update(), "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     logs.append("\n✅ " + " · ".join(str(p.name) for p in out))
                     # Un dossier ne se télécharge pas : on ne propose que les
                     # fichiers, et le journal donne le chemin du dossier PNG.
@@ -863,9 +860,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
                     if not outs:
-                        logs.append("\n[ERREUR] aucune image produite.")
+                        logs.append("\n[ERROR] no image produced.")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image HD : {outs[0]}")
                     return str(outs[0]), "\n".join(logs)
 
@@ -880,31 +877,29 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Haute résolution (Flux.2 en référence + départ) ------
             with gr.Tab("🔍 High resolution", id="highres"):
                 gr.Markdown(
-                    "L'image est **repassée dans Flux.2 à sa résolution "
-                    "native**, en lui servant à la fois de **référence** et de "
-                    "**point de départ**. Trois détails font toute la "
-                    "différence, et aucun n'est évident :\n"
-                    "- on demande « **high resolution** », pas « upscale » : "
-                    "dans les légendes d'entraînement, *upscaled* désigne des "
-                    "images réellement upscalées — donc porteuses des "
-                    "artefacts qu'on veut éviter ;\n"
-                    "- le pré-agrandissement est **bilinéaire**, volontairement "
-                    "fade : Lanczos ajoute du ringing que le modèle relit "
-                    "comme du détail, et l'amplifie ;\n"
-                    "- la même image sert de **référence** (le contenu) **et** "
-                    "de **latent de départ** (la structure).\n\n"
-                    "⚠️ **Ce n'est pas une restauration.** À fort débruitage le "
-                    "modèle REDESSINE : ce qui est préservé, c'est la "
-                    "vraisemblance, pas la fidélité. Pour qu'un visage reste "
-                    "la même personne, passez par **🌱 Restaurer** (SeedVR2).")
+                    "The image is **run back through Flux.2 at its native "
+                    "resolution**, serving as both the **reference** and the "
+                    "**starting point**. Three details make all the "
+                    "difference, and none of them is obvious:\n- we ask for "
+                    "“**high resolution**”, not “upscale”: in the training "
+                    "captions, *upscaled* labels images that really were "
+                    "upscaled — and therefore carry the very artifacts we "
+                    "want to avoid;\n- the pre-enlargement is **bilinear**, "
+                    "deliberately bland: Lanczos adds ringing that the model "
+                    "reads back as detail and amplifies;\n- the same image "
+                    "serves as the **reference** (the content) **and** as the "
+                    "**starting latent** (the structure).\n\n⚠️ **This is not "
+                    "a restoration.** At a high denoise the model REDRAWS: "
+                    "what is preserved is plausibility, not fidelity. To keep "
+                    "a face the same person, go through **🌱 Restore** "
+                    "(SeedVR2) instead.")
 
                 _hr_models = highres.edit_models()
                 if not _hr_models:
                     gr.Markdown(
-                        "> ⚠️ **Aucun modèle d'édition installé.** Cette "
-                        "méthode a besoin d'un modèle qui accepte une image "
-                        "de référence (Flux.2 Klein). Téléchargez-le depuis "
-                        "l'onglet « Catalogue de modèles ».")
+                        "> ⚠️ **No editing model installed.** This method "
+                        "needs a model that accepts a reference image (Flux.2 "
+                        "Klein). Download one from the “Model catalog” tab.")
 
                 with gr.Row():
                     with gr.Column(scale=3):
@@ -923,7 +918,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "by itself if the card refuses.")
                         hr_strength = gr.Slider(
                             0.4, 0.95, value=0.8, step=0.05,
-                            label="Débruitage",
+                            label="Denoise",
                             info="0.7–0.9 is the method's range. Lower moves "
                                  "the image less but gains less detail; "
                                  "higher makes it a different image.")
@@ -946,7 +941,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             hr_stop = gr.Button("⏹️ Cancel", variant="stop",
                                                 size="sm")
                     with gr.Column(scale=4):
-                        hr_result = gr.Image(label="Résultat", height=520,
+                        hr_result = gr.Image(label="Result", height=520,
                                              format="png",
                                              buttons=widgets.IMAGE_BUTTONS)
                         hr_log = gr.Textbox(label="Log", lines=12,
@@ -960,7 +955,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     if not model_id:
                         raise gr.Error(t("No editing model installed."))
                     logs: list[str] = []
-                    progress(0.1, desc="Haute résolution…")
+                    progress(0.1, desc="High resolution…")
                     try:
                         out = highres.high_resolution(
                             img, model_id=model_id, factor=float(factor),
@@ -969,7 +964,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image : {out}")
                     return str(out), "\n".join(logs)
 
@@ -992,15 +987,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "fabric) better but takes twice as long.")
                 _installer_block(
                     "SeedVR2",
-                    "Installation isolée (Python 3.12 + PyTorch CUDA) : elle ne "
-                    "modifie pas les dépendances de l'application. Les poids "
-                    "Q8/Q4 sont téléchargés au premier upscale.",
+                    "An isolated install (Python 3.12 + PyTorch CUDA): it "
+                    "does not touch the application's own dependencies. The "
+                    "Q8/Q4 weights are downloaded on the first upscale.",
                     tools.install_seedvr2_stream, tools.seedvr2_is_installed())
 
                 with gr.Row():
                     with gr.Column(scale=3):
                         seed_image = gr.Image(
-                            label="Image à restaurer", type="pil",
+                            label="Image to restore", type="pil",
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         seed_model = gr.Radio(
                             [(t(label), value)
@@ -1010,16 +1005,16 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "(4.8 GB for a 7B).")
                         seed_res = gr.Slider(
                             1024, 4096, value=2048, step=64,
-                            label="Résolution cible (petit côté)",
-                            info="Commencez à 2048 px ; 4K est nettement plus long.")
+                            label="Target resolution (short side)",
+                            info="Start at 2048 px; 4K takes considerably longer.")
                         seed_offload = gr.Radio(
-                            [("GTX 1080 Ti (recommandé pour ce PC)", "secondary"),
-                             ("RAM système (plus compatible)", "cpu"),
-                             ("Aucun offload (plus rapide, risque OOM)", "none")],
+                            [("GTX 1080 Ti (recommended for this PC)", "secondary"),
+                             ("System RAM (more compatible)", "cpu"),
+                             ("No offload (fastest, risk of OOM)", "none")],
                             value=("secondary" if hardware.rtx3060_1080ti_combo()
-                                   else "cpu"), label="Réserve des poids")
+                                   else "cpu"), label="Where the weights live")
                         seed_blocks = gr.Slider(
-                            0, 36, value=16, step=1, label="Blocs à décharger",
+                            0, 36, value=16, step=1, label="Blocks to offload",
                             info="16 is right with 12 GB; try 24 then 36 if you hit OOM.")
                         with gr.Row():
                             seed_tile = gr.Slider(512, 1280, value=1024, step=64,
@@ -1027,11 +1022,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             seed_overlap = gr.Slider(64, 256, value=128, step=32,
                                                      label="Recouvrement")
                         seed_color = gr.Dropdown(
-                            [("Wavelet — naturel (recommandé)", "wavelet"),
-                             ("LAB — couleurs très fidèles", "lab"),
+                            [("Wavelet — natural (recommended)", "wavelet"),
+                             ("LAB — very faithful colours", "lab"),
                              ("Wavelet adaptatif", "wavelet_adaptive"),
-                             ("Aucune correction", "none")],
-                            value="wavelet", label="Correction des couleurs")
+                             ("No correction", "none")],
+                            value="wavelet", label="Colour correction")
                         with gr.Row():
                             seed_run = gr.Button("🌱 Restore", variant="primary",
                                                  size="lg", scale=2)
@@ -1039,7 +1034,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                                   size="sm")
                     with gr.Column(scale=4):
                         seed_result = gr.Image(
-                            label="Résultat SeedVR2", height=520, format="png",
+                            label="SeedVR2 result", height=520, format="png",
                             buttons=widgets.IMAGE_BUTTONS)
                         seed_to_face = gr.Button("→ 🙂 Fix the faces",
                                                  size="sm")
@@ -1070,7 +1065,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                     threading.Thread(target=worker, daemon=True).start()
                     logs: list[str] = []
-                    progress(0.05, desc="Chargement de SeedVR2…")
+                    progress(0.05, desc="Loading SeedVR2…")
                     while True:
                         line = q.get()
                         if line is None:
@@ -1081,9 +1076,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         logs.append(f"\n[ERREUR] {state['err']}")
                         yield gr.update(), "\n".join(logs[-500:])
                         return
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     out = state.get("out")
-                    logs.append(f"\n✅ Image restaurée : {out}")
+                    logs.append(f"\n✅ Image restored: {out}")
                     yield str(out), "\n".join(logs[-500:])
 
                 seed_evt = seed_run.click(
@@ -1148,7 +1143,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             yield gr.update(), "\n".join(logs[-500:])
                             return
                         outs = [str(p) for p in state.get("outs", [])]
-                        logs.append(f"\n✅ {len(outs)} image(s) restaurée(s).")
+                        logs.append(f"\n✅ {len(outs)} image(s) restored.")
                         yield outs, "\n".join(logs[-500:])
 
                     seed_batch_evt = seed_batch_run.click(
@@ -1232,7 +1227,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERREUR] {exc}")
                         return None, "\n".join(logs)
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image : {out}")
                     return str(out), "\n".join(logs)
 
@@ -1291,11 +1286,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             choices=[(t("Lanczos (default)"), "")]
                                     + [(u, u) for u in _ups],
                             value="", label="Pre-upscale (base before SDXL)",
-                            info="Une seule passe, toujours. Un modèle dont le "
-                                 "facteur DÉPASSE l'agrandissement demandé "
-                                 "(un ×4 pour un ×2) est le meilleur choix : "
-                                 "la réduction qui suit fait office "
-                                 "d'anti-aliasing.")
+                            info="A single pass, always. A model whose factor "
+                                 "EXCEEDS the enlargement you asked for (a ×4 "
+                                 "for a ×2) is the best choice: the downscale "
+                                 "that follows acts as anti-aliasing.")
                         c_refresh = gr.Button("↻ Refresh models", size="sm")
                         c_preset = gr.Dropdown(
                             choices=[(t(p["name"]), p["name"])
@@ -1488,7 +1482,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     last_emit = 0.0
                     import re as _re
                     tile_re = _re.compile(r"tuile (\d+)/(\d+)")
-                    progress(0.03, desc="Préparation…")
+                    progress(0.03, desc="Preparing…")
                     while True:
                         try:
                             line = q.get(timeout=0.3)
@@ -1524,13 +1518,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         logs.append(f"\n[ERREUR] {state['err']}")
                         yield gr.update(), "\n".join(logs)
                         return
-                    progress(1.0, desc="Terminé")
+                    progress(1.0, desc="Done")
                     out = state.get("out")
                     if out:
                         try:
                             im = _PILImage.open(out)
-                            logs.append(f"\n✅ Image pleine résolution "
-                                        f"({im.width}x{im.height}) : {out}")
+                            logs.append(f"\n✅ Full-resolution image "
+                                        f"({im.width}x{im.height}): {out}")
                         except Exception:  # noqa: BLE001
                             pass
                     # On affiche le FICHIER pleine résolution (téléchargement =
