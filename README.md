@@ -1,12 +1,16 @@
 # 🟢 Turbo Slop Generator 3000
 
-> **Adaptatif au matériel.** Par défaut l'app utilise la **meilleure carte
-> NVIDIA détectée** (ou le **GPU Apple Silicon** sur Mac) et s'y adapte (quant de diffusion selon la VRAM, encodeur
-> déchargé dans la RAM, flash-attention, offload, VAE tiling). Deux options
-> avancées dans **Réglages** : les **presets par génération de carte** (GTX 10xx
-> → RTX 50xx, en 1 clic) et le **multi-GPU** (choix du GPU de génération, split
-> de l'encodeur sur une 2e carte, ou auto-fit qui répartit le modèle sur toutes
-> les cartes).
+> **It adapts to your hardware.** By default the app uses the **best NVIDIA card
+> it detects** (or the **Apple Silicon GPU** on a Mac) and tunes itself to it:
+> diffusion quantization from VRAM, text encoder offloaded to system RAM,
+> flash-attention, CPU offload, VAE tiling. Two advanced options live in
+> **Settings**: the **per-generation card profiles** (GTX 10xx → RTX 50xx, one
+> click) and **multi-GPU** (which card generates, whether the text encoder moves
+> to a second card, or auto-fit spreading the model across all of them).
+
+> **The interface is in English**, and only in English. It used to be written in
+> French and translated through a dictionary; that layer is gone and the source
+> strings are English. See [Interface language & theme](#interface-language--theme).
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
@@ -40,22 +44,52 @@ so the grouping is not decoration.)
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
-| ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, in-app documentation of every option) · **Convert to GGUF** |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
+
+The exact tab tree, since two of the six are containers:
+
+```
+🟣 Flux.2 Klein 9B   ⚡ Krea 2 Turbo   💊 Xanax   📚 Model Catalog
+🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Image → 3D
+⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
+
+🧰 Toolkit  → 📝 Image → prompt · 🌐 Depth · ✂️ Background removal
+              🪄 Cut out (SAM)  · 🧩 Layers · 🔼 Upscale · 🚀 HD
+              🔍 High resolution · 🌱 Restore · 🙂 Faces · ✨ SDXL upscale
+```
 
 ---
 
 ## Table of contents
 
 - [Install](#install)
+  - [Updating the app itself](#updating-the-app-itself)
+  - [Maintenance](#maintenance)
 - [Quick start](#quick-start)
+- [Model catalog](#model-catalog)
 - [Generation options](#generation-options)
 - [Xanax tab](#xanax-tab)
 - [Hardware & optimization](#hardware--optimization)
+  - [Samplers & schedulers](#samplers--schedulers)
+  - [Multi-GPU](#multi-gpu)
+  - [One-shot CLI by default, resident engine on demand](#one-shot-cli-by-default-resident-engine-on-demand)
+  - [Updating the engines](#updating-the-engines)
+  - [Interface language & theme](#interface-language--theme)
 - [Upscaling](#upscaling)
+  - [🔼 Simple (ESRGAN)](#-simple-esrgan-native-sdcpp)
+  - [🚀 HD (native highres fix)](#-hd-native-sdcpp-highres-fix)
+  - [🌱 Restore (SeedVR2)](#-restore-seedvr2-3b--7b)
+  - [🔍 High resolution (Flux.2)](#-high-resolution-flux2-as-its-own-upscaler)
+  - [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer)
+  - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
 - [Outpaint](#outpaint)
+- [Image → 3D](#image--3d)
 - [Toolkit](#toolkit)
   - [Image → prompt](#-image--prompt)
+  - [Layers → PSD](#layers--psd)
+  - [Prompt enhancer](#prompt-enhancer-ai)
+- [Convert to GGUF](#convert-to-gguf)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Sharing on your LAN](#sharing-on-your-lan)
 - [Distributing a portable package](#distributing-a-portable-package)
@@ -118,11 +152,42 @@ generation). **PyTorch is only installed on demand** for the optional Toolkit
 tools (depth, background removal, SAM, prompt enhancer, creative SDXL upscale),
 each via its own one-click installer.
 
-### Updating by copy-paste — run maintenance afterwards
-If you update by extracting the repo ZIP over your existing folder (keeping
-`python/`, `bin/`, `models/`…), copy-paste **adds and overwrites files but never
-deletes** the ones removed upstream — they linger as orphans, and stale
-`__pycache__` can confuse Python. After each copy-paste update, run:
+### Updating the app itself
+
+**`update.bat` is the way** (`./update.sh` on Linux/Mac). It downloads the
+current code from GitHub and applies it in place — no manual re-download, and
+nothing of yours is touched: `models/`, `loras/`, `outputs/`, `userdata/`,
+`tools_repo/`, `bin/` and `python/` are off limits by construction.
+
+```bat
+update.bat              ::  fetch and apply the current code
+update.bat --check      ::  show what would change, write nothing
+update.bat --rollback   ::  undo the last update
+```
+
+What it does that dropping a ZIP over the folder cannot:
+
+- it writes **only files that actually differ**, and lists them;
+- it **deletes what disappeared** from the project — but only files it installed
+  itself, tracked in `userdata/app-update.json`. A file it never wrote is not
+  its business;
+- it **backs up everything it replaces**, so `--rollback` undoes the update;
+- it **refuses a suspicious download** (a proxy's HTML error page is a perfectly
+  readable "zip") and any archive that does not contain the app;
+- if the updated code **does not compile**, it restores the previous version by
+  itself;
+- it purges `__pycache__`, because a `.pyc` of a deleted module stays importable.
+
+Close the app first: Windows cannot replace a file that is open.
+
+**`update.bat` updates the code only.** The engines are separate — see
+[Updating the engines](#updating-the-engines).
+
+### Maintenance
+If you instead update by extracting the repo ZIP over your existing folder
+(keeping `python/`, `bin/`, `models/`…), copy-paste **adds and overwrites files
+but never deletes** the ones removed upstream — they linger as orphans, and
+stale `__pycache__` can confuse Python. After each copy-paste update, run:
 ```bat
 maintenance.bat      ::  Windows   (./maintenance.sh on Linux/Mac)
 ```
@@ -191,16 +256,47 @@ weights already on disk are not re-downloaded.
 `maintenance` reports leftovers from removed features and tells you exactly how
 much disk they hold, so you don't have to guess.
 
+It also **reports any file from the update manifest that has gone missing** —
+the diagnostic that was absent the day a module vanished and the app stopped
+starting with an `ImportError` naming the module but not the cause.
+
 ---
 
 ## Quick start
 
 1. Run `install.bat` / `./install.sh`, then `run.bat` / `./run.sh`.
-2. Open the **Model Catalog** tab and download **Flux.2 Klein 9B** (or **Krea 2
-   Turbo**). Quantization is picked automatically for your VRAM/RAM.
-3. Go to the model's **generation tab**, type a prompt, click **Generate**.
+2. Open the **📚 Model Catalog** tab and download **Flux.2 Klein 9B** (or **Krea
+   2 Turbo**). Quantization is picked automatically for your VRAM/RAM.
+3. Go to the model's **generation tab**, type a prompt, click **🎨 Generate**.
 4. (Optional) Install the **prompt enhancer** and click **✨ Enhance prompt** to
    turn a rough idea into a detailed English prompt.
+
+---
+
+## Model catalog
+
+**📚 Model Catalog** is the media library: nothing is downloaded at install
+time, everything is fetched on demand from here.
+
+Each entry shows what the model is, what it weighs, and **whether it is ready**
+(● installed · ○ to download). The **quantization is chosen for your machine**
+before the download starts — diffusion from VRAM, text encoder from RAM — and
+if the exact rung does not exist in the source repository the downloader takes
+the closest one **and says so**, rather than silently handing you a smaller
+model (see [Models & sources](#models--sources) for why that footnote exists).
+
+- **⬇️ Download** fetches every component the model needs (diffusion, VAE, text
+  encoder, and the vision projector for edit models) into `models/`, with a
+  live log.
+- **🗑️ Delete** removes a model's own files and **keeps shared ones**: an
+  encoder or VAE used by another installed model is never taken out from under
+  it.
+- The catalog itself is `config/models.yaml` — the single source of truth for
+  sources, defaults and presets.
+
+The tools that live under 🧰 Toolkit are **not** here: each one carries its own
+one-click installer in its own tab, because each pulls a different Python
+dependency set.
 
 ---
 
@@ -230,7 +326,7 @@ Every generation tab exposes the same controls.
   so nothing is lost by accident: **✖️ Stop applying** only detaches the style
   from the next generations and keeps the preset, while **🗑️ Delete this preset
   (permanent)** erases it and asks for a second click to confirm. Bundled today:
-  **📷 France provinciale 1995-2005 (amateur)**, a transcription of a
+  **📷 Provincial France 1995-2005 (amateur)**, a transcription of a
   "mundane amateur snapshot, provincial France, always overcast, no
   post-processing" brief.
 - **📷 Krea 2 photo styles** (🎨 Styles → *Photo*) — a bundled bank of **139 stackable
@@ -260,7 +356,7 @@ The accordion adapts to the model family:
   strength slider — editing is prompt-driven. Output aspect follows your image.
   An **🧩 Outpaint** slider (experimental) extends the canvas and lets the model
   fill the new borders — describe the extension in the prompt.
-- **Krea 2 Turbo — ✏️ Edit mode (Ostris Edit)** — check **Mode édition** to pass
+- **Krea 2 Turbo — ✏️ Edit mode (Ostris Edit)** — tick **✏️ Edit mode** to pass
   the image as a **context reference** (style transfer, subject reference, edits)
   instead of an img2img starting point. This requires a **Krea 2 edit LoRA**
   (e.g. HF repo [`ostris/krea2_turbo_style_reference`](https://huggingface.co/ostris/krea2_turbo_style_reference) —
@@ -347,8 +443,8 @@ no post-processing, **4:3** on each model's native grid (1184×880 for Flux.2,
 This is the part that decides whether the result works:
 
 > **not** *"a man waiting for the bus outside a supermarket"*
-> **but** *"j'ai mangé chez Flunch avec Mamie"*, *"journée pas terrible mais
-> j'ai pu aller acheter des clopes"*
+> **but** *"had lunch at the motorway cafeteria with Gran"*, *"rubbish day but
+> at least I got my cigarettes"*
 
 A description is already framed — it says what to show, so the model centres the
 subject and composes it. A diary line does not say what to show: the place, the
@@ -430,8 +526,8 @@ people hunting through checkboxes in the first place.
 
 **There is no Save button.** Every control applies immediately and says so, next
 to itself. A Save button is one more chance to wonder whether the change was
-taken into account — and language and theme already saved themselves, which made
-the rest ambiguous.
+taken into account — and the theme already saved itself, which made the rest
+ambiguous.
 
 **When the answer needs measuring, the app measures.** The multi-GPU placement
 depends on the second card's PCIe link as much as on its memory, so instead of
@@ -671,47 +767,32 @@ where the two engines differ.
 
 ### Updating the engines
 
-### Updating the app itself
-
-`update.bat` (`./update.sh`) downloads the current code from GitHub and applies
-it in place. No manual re-download, and nothing of yours is touched: `models/`,
-`loras/`, `outputs/`, `userdata/`, `tools_repo/`, `bin/`, `python/` are off
-limits by construction.
-
-What it does that dropping a ZIP over the folder cannot:
-- it writes **only files that actually differ**, and lists them;
-- it **deletes what disappeared** from the project — but only files it
-  installed itself, tracked in `userdata/app-update.json`. A file it never
-  wrote is not its business;
-- it **backs up everything it replaces**, so `update.bat --rollback` undoes the
-  update;
-- it **refuses a suspicious download** (a proxy's HTML error page is a
-  perfectly readable "zip") and any archive that does not contain the app;
-- if the updated code **does not compile**, it restores the previous version by
-  itself;
-- it purges `__pycache__`, because a `.pyc` of a deleted module stays
-  importable.
-
-`update.bat --check` shows what would change without writing anything. Close
-the app first: Windows cannot replace a file that is open.
-
-`maintenance.bat` then reports any file from the manifest that has gone
-missing — the diagnostic that was absent the day a module vanished and the app
-stopped starting with an `ImportError` that named the module but not the cause.
+**The code and the engines update separately, and that is the trap.** Three
+scripts, three targets:
 
 | Script | Updates |
 |---|---|
-| `update.bat` | **the application** — code, from GitHub |
+| `update.bat` | **the application** — code, from GitHub (see [Updating the app itself](#updating-the-app-itself)) |
 | `update-engine.bat` | **sd.cpp** — latest official prebuilt binary (image generation) |
 | `update-trellis.bat` | **trellis.cpp** — latest official Windows CUDA build (Image → 3D) |
 
-Each one replaces only the **engine binary**. sd.cpp updates are first validated
-outside `bin/`, then swapped atomically; the previous working build is retained
-for one-command rollback and an `engine-manifest.json` records its exact commit,
+The two engine scripts replace only the **engine binary**. sd.cpp updates are
+first validated outside `bin/`, then swapped atomically; the previous working
+build is retained for one-command rollback (`rollback-engine.bat` /
+`./rollback-engine.sh`) and an `engine-manifest.json` records its exact commit,
 archive checksum and supported options. DLLs from two releases therefore never
-mix, while a broken download can never destroy the working install. **Models are
-never re-downloaded** — including the ~16 GB trellis 3D set; reinstall those
-from the **Image → 3D** tab if ever needed.
+mix, while a broken download can never destroy the working install. **Models
+are never re-downloaded** — including the ~10 GB trellis 3D set; reinstall
+those from the **🧊 Image → 3D** tab if ever needed.
+
+**When do you need to update the engine?** When a tab tells you to. The app
+parses `sd-cli -h` and checks the options the current code actually needs, so a
+missing capability is reported as a *feature* ("the HD tab will not work"), not
+as a flag name. `maintenance.bat --all` does the purge and the engine update in
+one go.
+
+`update-trellis.bat` picks its archive from your card — see
+[Image → 3D](#image--3d).
 
 ### Keeping the interface shallow
 Two rules, enforced by `tests/test_ui_shape.py` rather than by good intentions:
@@ -734,11 +815,36 @@ from **1 level to 0**. Part of that drop is simply the removal of a generation
 tab; the rest is the two rules above.
 
 ### Interface language & theme
-**Settings → 🌐 Langue / Language** switches the UI between **French** and
-**English**; **🎨 Thème** switches between **Light** and **Dark**. Both are saved
-to `userdata/` and applied on **restart** (`run.bat` / `run.sh`) — Gradio builds
-the interface once at launch. On first launch a bilingual language chooser is
-shown at the top. Engine logs and progress hints stay in French.
+**The interface is English, and there is no language setting.** There used to be
+one: the source strings were French and `atelier/i18n.py` held a French → English
+dictionary that `t()` looked them up in. That layer had two costs. A string added
+to a new tab was French until someone remembered to add a row to the table, so
+the English half was only ever as good as the last person to update it. And the
+table had to be kept in step with the code by hand, which is exactly the kind of
+bookkeeping that quietly stops happening.
+
+So the strings themselves are English now, and the table is gone.
+`atelier/i18n.py` survives as a seam — `t()`, `to_source()` and
+`translate_blocks()` are identity functions — so the ~40 call sites read the
+same and a real language layer could come back at that one point. Engine logs,
+progress lines and error messages are English too; there is nothing left that
+speaks French to the user.
+
+`tests/test_i18n.py` enforces it rather than trusting anyone's diligence: it
+fails on any French string literal reaching the interface, detecting them by
+accents, by a list of French words chosen to collide with no ordinary English
+word, and by the metric units (`Go` / `Mo` / `Ko` / `To`) matched
+case-sensitively so `To use` and `Go high resolution` stay legal. A short list
+of accented English loanwords (`café`, `fête`, `naïve`…) is excepted rather than
+weakening the accent rule.
+
+**Code comments and docstrings are still French** and deliberately out of scope:
+they are the source's own language, not the interface's, and nobody reads them
+from the app.
+
+**Theme** — **Settings → 🌍 Theme and accounts** switches between **Light** and
+**Dark**. It is saved to `userdata/` and applied on **restart** (`run.bat` /
+`run.sh`), because Gradio builds the interface once at launch.
 
 ---
 
@@ -1008,9 +1114,9 @@ our NumPy pin.
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
 SDXL img2img at low denoise. The model stays **resident** on the GPU so tiles are
 fast; overlapping tiles are blended with a cosine feather for seamless joins, with
-a **real-time preview**. Invents fine detail. This is an A1111-free re-implementation
-(plain img2img, no ControlNet). PyTorch + diffusers (~7 GB: SDXL base + VAE
-fp16-fix), installed in one click.
+a **real-time preview**. Invents fine detail. This is an A1111-free
+re-implementation. PyTorch + diffusers (**~9.5 GB**: SDXL base + fp16-fix VAE +
+ControlNet Tile), installed in one click.
 
 Controls:
 - **SDXL model** — use the bundled SDXL Base 1.0, or drop your own SDXL
@@ -1155,21 +1261,98 @@ sidecar recording model, seed and settings. Generation tabs have a
 
 ---
 
+## Image → 3D
+
+**🧰 Tools → 🧊 Image → 3D** turns one image into a **textured 3D mesh** (GLB)
+through **[trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (TRELLIS.2) —
+a native CUDA binary on GGML, **no PyTorch**. Give it a sharp image of a
+**single object** on a simple background; background removal is automatic.
+
+> ⛔ **Windows CUDA only.** There is no Apple Silicon build and no Metal path.
+> The tab says so on a Mac instead of offering an installer that would find
+> nothing.
+
+**Installation is two downloads**, both from the tab: the **binary** (~700 MB)
+into `bin/trellis/`, and a **set of GGUF weights**
+([`ilintar/trellis2-gguf`](https://huggingface.co/ilintar/trellis2-gguf)) into
+`models/trellis/`. Three weight variants, and the intuition here is backwards:
+
+| Variant | Size | Speed |
+|---|---|---|
+| **f16** (default) | ~16.5 GB | **the fastest** when it fits |
+| **q8** | ~9.9 GB | slower |
+| **q4** | ~6 GB | slower still |
+
+In ggml, quantized weights are **dequantized on the fly at every computation**,
+and a 3D workload does not amortize that overhead the way a long diffusion run
+does. So quantizing here buys **memory, not speed** — which is the point when it
+is what makes 1024/1536 reachable at all. You can install several and switch at
+generation time.
+
+**Stay at 512 below 16 GB of VRAM.** The 1024/1536 cascade is documented for a
+16 GB card. Below that it does not fail cleanly — it **degrades the computation**
+and returns a mesh made of blobs. No setting works around it: trellis has neither
+offload nor tiling. To gain quality *without* touching the resolution, raise the
+**UV atlas** (2048/4096) and the **decimation**: a well-textured 512 mesh beats a
+botched 1024 one, at almost no VRAM cost.
+
+**How the server is driven.** The Windows release ships `trellis-server.exe` —
+an HTTP server, not a one-shot CLI. By default the app **starts it, posts the
+image, takes the GLB and stops it**, so all the VRAM is released afterwards
+(the low-VRAM strategy). A **⚡ Resident server** checkbox keeps it alive
+instead: the next objects skip the ~30 s model reload, but the VRAM stays
+occupied — stop it before generating images. Changing a *launch* setting
+(resolution, decimation, atlas, GPU, texture) restarts the server automatically,
+because those are not renegotiable per request; only the seed and background
+removal can change without a reload.
+
+**Controls**
+
+| Control | What it does |
+|---|---|
+| **Input image** | one object, simple background |
+| **Pad to square** | TRELLIS processes its input as a square — without this a non-square image comes out **distorted** |
+| **Geometry resolution** | 512 (recommended, ≤ 12 GB) · 1024 · 1536 |
+| **Decimation — target faces** | lower = lighter mesh (0 = engine default) |
+| **UV atlas size** | texture resolution — the cheapest quality gain |
+| **Background removal** | BiRefNet (quality, recommended) or threshold |
+| **Geometry only** | skip the texture, faster |
+| **Card used for 3D** | passed to the engine as its own `--gpu N` |
+| **Seed** | shown under the result, to replay the same object |
+
+The result is previewed in the browser and written to `outputs/`. Generation
+tabs carry a **🧊 Send selection to Image → 3D** button.
+
+**When it fails, the message is the real cause.** If the server dies
+mid-generation the HTTP connection is cut and `requests` raises a bare
+`ConnectionResetError`, which says nothing useful. The app captures the server's
+own last lines and reports those instead — see the `no kernel image` entry in
+[Troubleshooting](#troubleshooting), which is the one failure that used to be a
+dead end and no longer is.
+
+---
+
 ## Toolkit
 
 One-click installable utilities (models pulled from Hugging Face, run as
 subprocesses so torch DLLs never lock the UI process):
 
-- **📝 Image → prompt** — hand it an image, get the prompt back. See below.
-- **Depth** — *Depth Anything V2* (depth map).
-- **Background removal** — *RMBG-1.4* (cutout → transparent PNG; non-commercial
-  license).
-- **Click-to-cutout (SAM)** — *Segment Anything* (`facebook/sam-vit-base`): click
-  an object, extract it to a transparent PNG.
-- **Layers (PSD)** — decompose an image into layers, see below.
-- **Upscale (ESRGAN)**, **HD** (native sd.cpp highres fix), **Restore (SeedVR2)**,
-  **Faces (CodeFormer)** and **Creative upscale (SDXL)** — see
-  [Upscaling](#upscaling).
+| Sub-tab | What it does | Add-on |
+|---|---|---|
+| **📝 Image → prompt** | hand it an image, get the prompt back ([below](#-image--prompt)) | Qwen2.5-VL-3B, ~7.5 GB |
+| **🌐 Depth** | depth map — *Depth Anything V2* | ~100 MB |
+| **✂️ Background removal** | cutout → transparent PNG — *RMBG-1.4* (**non-commercial**) | ~176 MB |
+| **🪄 Cut out (SAM)** | click an object, extract it — *Segment Anything* (`facebook/sam-vit-base`) | ~375 MB |
+| **🧩 Layers** | decompose into layers, write a PSD ([below](#layers--psd)) | shares SAM; CLIP optional (~600 MB) |
+| **🔼 Upscale** | ESRGAN, deterministic ([Upscaling](#-simple-esrgan-native-sdcpp)) | GGUF upscaler pack, ~1 GB |
+| **🚀 HD** | native sd.cpp highres fix, no tiles ([Upscaling](#-hd-native-sdcpp-highres-fix)) | none — uses your model |
+| **🔍 High resolution** | Flux.2 as its own upscaler ([Upscaling](#-high-resolution-flux2-as-its-own-upscaler)) | none — uses your model |
+| **🌱 Restore** | SeedVR2 3B/7B ([Upscaling](#-restore-seedvr2-3b--7b)) | isolated venv + GGUF |
+| **🙂 Faces** | GFPGAN · RestoreFormer++ · CodeFormer ([Upscaling](#-faces-gfpgan--restoreformer--codeformer)) | ~1.5 GB, five weights |
+| **✨ SDXL upscale** | creative, tile-by-tile ([Upscaling](#-creative-sdxl-ultimate-sd-upscale)) | ~9.5 GB with ControlNet |
+
+Every generation tab has a **Send to Toolkit** control that pushes the selected
+image straight into one of these, so there is no file to find and re-upload.
 
 ### 📝 Image → prompt
 Give it an image, get back the prompt that would recreate it — then send that
@@ -1400,6 +1583,34 @@ would contradict the style, and no restating of the prefix itself.
 
 ---
 
+## Convert to GGUF
+
+**⚙️ System → 🔧 Convert to GGUF** quantizes a model you got from somewhere else
+— a **checkpoint / safetensors / diffusion** file — into a lighter **GGUF** that
+fits on your card. It is **100% CPU** (no diffusion involved): a few minutes
+depending on the size and the disk, done once, and then you reuse the GGUF.
+
+1. Drop your model into **`models/custom/`**, then hit **↻ Refresh**.
+2. Pick the quantization.
+3. **Convert** — the GGUF is written into the same `models/custom/` folder and
+   becomes selectable as a **local model** in the generation tabs (through their
+   *Refresh local files* button).
+
+| Quantization | Bits | Notes |
+|---|---|---|
+| `f16` | 16 | no loss, and no saving either |
+| `q8_0` | 8 | near lossless, larger |
+| `q5_1` | 5 | **recommended** — the size/quality compromise |
+| `q4_1` | 4 | light |
+| `q4_0` | 4 | the lightest |
+
+⚠️ sd.cpp only implements `q8_0 / q5_1 / q5_0 / q4_1 / q4_0 / f16` **when
+converting** — there are **no k-quants** here. That is a limit of the engine's
+conversion path, not of the app; the k-quants you see in the catalog were
+produced upstream.
+
+---
+
 ## Sharing on your LAN
 
 Colleagues can generate from their **Mac/PC** using **your** machine and its GPU,
@@ -1485,29 +1696,57 @@ To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
 ## Project layout
 
 ```
-app.py                       # Gradio entry point
-config/models.yaml           # catalog: sources, defaults, presets (source of truth)
+app.py                       # Gradio entry point + presentation() (theme/CSS/head)
+config/
+  models.yaml                # catalog: sources, defaults, presets (source of truth)
+  style_presets.json         # bundled system-prompt styles
+  krea2_styles.csv           # 139 photographic styles (© ghleg, MIT)
+  krea2_art_styles.csv       # 397 artistic styles
 atelier/
   settings.py                # paths + persisted preferences (userdata/)
   hardware.py                # GPU/RAM detection + optimization profiles
+  quant.py                   # the quantization ladder
   registry.py                # catalog, file resolution, status, recommendations
-  downloader.py              # on-demand Hugging Face downloads
+  downloader.py              # on-demand Hugging Face / Civitai downloads
   styles.py                  # system-prompt / style presets
+  sampling.py                # samplers & schedulers: verdicts and their reasoning
+  benchmark.py               # "measure this machine": placements, medians, spread
+  inventory.py               # what is on disk, with sizes, by category
+  storage.py                 # moving models to another drive (+ junctions/symlinks)
+  imgcheck.py                # image-display diagnostic (cache, MIME, last upload)
+  diagnostics.py             # machine report for bug traces
+  net.py                     # LAN address discovery
+  i18n.py                    # identity seam — the interface is English (see above)
   engine/
-    sdcpp.py                 # build/run sd-cli commands (gen, edit, upscale, LoRA)
-    generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN upscale
-    outpaint.py              # directional outpaint: canvas plan, mirror fill, composite-back
-    tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, enhancer, SDXL upscale)
+    sdcpp.py                 # build/run sd-cli commands, error typing, DiskWatch
+    sdserver.py              # resident engine (sd-server HTTP), opt-in
+    generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN + HD
+    highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
+    outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
+    trellis.py               # trellis.cpp server: image → GLB, transient or resident
+    tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces, SeedVR2…)
+    masks.py                 # mask cleanup and layer naming — pure numpy
+    psd.py                   # PSD writer — pure Python, no compiled dependency
+    vocab.py                 # CLIP scene vocabulary as DATA, for layer labelling
   ui/
-    theme.py                 # light theme + CSS
-    generate_tab.py · xanax_tab.py (hard-wired style) · library_tab.py · toolkit_tab.py
-    outpaint_tab.py · settings_tab.py
+    theme.py                 # theme + CSS
+    widgets.py               # shared image/gallery button lists (Gradio 6)
+    preview.py               # data: URI fallback preview
+    generate_tab.py · xanax_tab.py (hard-wired style) · library_tab.py
+    toolkit_tab.py · outpaint_tab.py · threed_tab.py
+    settings_tab.py · manage_tab.py · convert_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
+  get_trellis.py             # downloads the trellis.cpp binary + GGUF weights
+  update_app.py              # update.bat: code update, manifest, backup, rollback
+  maintenance.py             # purge, orphan detection, engine capability check
   _torch_setup.py            # shared PyTorch-CUDA install helpers
-  setup_tools.py             # installs PyTorch tools (depth, bg, sam, enhance, upscale)
+  setup_tools.py             # installs the PyTorch add-ons
+  setup_seedvr2.py           # installs SeedVR2 in its own Python 3.12 venv
   tools/_device.py           # CUDA / Metal-MPS / CPU picker shared by the runners
-  tools/run_*.py             # inference runners (subprocess: depth, rembg, sam, enhance, usdu)
+  tools/run_*.py             # inference runners (depth, rembg, sam, layers, describe,
+                             #   enhance, face, ultimate_upscale)
+tests/                       # 400+ unit tests, run with `python -m unittest discover -s tests`
 ```
 
 ---
@@ -1521,7 +1760,8 @@ into four categories:
 | Category | What's in it |
 |---|---|
 | **Engines** | `sd-cli` (stable-diffusion.cpp) and the trellis.cpp 3D binary |
-| **Toolkit add-ons** | depth, background removal, SAM, prompt enhancer, creative SDXL upscale |
+| **Models** | each catalog model separately, the ESRGAN upscaler pack, the ~10 GB trellis 3D set |
+| **Toolkit add-ons** | depth, background removal, SAM, CLIP labelling, image → prompt, prompt enhancer, face restoration, SeedVR2, creative SDXL upscale |
 | **Your data** ⚠️ | LoRAs, custom models, generated images/3D, temp files |
 
 Tick what you want to remove, tick **“I confirm”**, then delete. Sizes refresh
@@ -1567,9 +1807,17 @@ it. Handy to keep image models on the NVMe while parking bulky ones elsewhere.
 > consumed by *writes* (TBW), not reads. Putting models on your NVMe is exactly
 > what it's for.
 
-The same tab carries **📖 in-app documentation for every option** of the app
-(generation, settings/hardware, Image → 3D, convert, toolkit, network &
-maintenance) — the fastest way to know what a slider actually does.
+### What else lives in Manage & help
+
+- **📖 In-app documentation for every option** — generation tabs, settings and
+  hardware, Outpaint, Image → 3D, Convert to GGUF, the Toolkit, and network &
+  maintenance. It is the fastest way to know what a slider actually does, and it
+  is written to be read *while* the slider is in front of you.
+- **🩺 Diagnose image display** — the three-layer test for the broken-image-icon
+  problem, described in [Troubleshooting](#troubleshooting). Press the button
+  instead of opening the browser console.
+- **🌐 Network, sharing & maintenance** — what `run-lan.bat`, `maintenance.bat`
+  and `update.bat` each do, in the same place as the buttons that need them.
 
 ---
 
@@ -1753,16 +2001,24 @@ authors. Please read and respect each model's own license on its page.
 
 ### Image models
 - **Flux.2 Klein** — base model by **Black Forest Labs**; GGUF by
-  [leejet](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF); VAE by
+  [Unsloth](https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF) (the app moved
+  off `leejet/FLUX.2-klein-9B-GGUF`, which publishes only Q4_0 and Q8_0 — see
+  [Models & sources](#models--sources)); VAE by
   [Comfy-Org](https://huggingface.co/Comfy-Org/flux2-klein-9B); text encoder
   **Qwen3-8B** by **Alibaba / Qwen team**
   ([official GGUF by Unsloth](https://huggingface.co/unsloth/Qwen3-8B-GGUF)).
 - **Krea 2** — base model by **Krea AI**; GGUF by
-  [realrebelai](https://huggingface.co/realrebelai/KREA-2_GGUFs); text encoder
+  [vantagewithai](https://huggingface.co/vantagewithai/Krea-2-Turbo-GGUF)
+  (previously [realrebelai](https://huggingface.co/realrebelai/KREA-2_GGUFs),
+  which was missing rungs of the ladder); text encoder
   **Qwen3-VL-4B-Instruct** by **Alibaba / Qwen team**
   ([official GGUF](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF));
   **WAN 2.1** VAE by **Alibaba / Wan team**, repackaged by
   [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
+- **TRELLIS.2 / trellis.cpp** — the native engine by
+  [pwilkin](https://github.com/pwilkin/trellis.cpp); GGUF weights by
+  [ilintar](https://huggingface.co/ilintar/trellis2-gguf); TRELLIS by
+  **Microsoft Research**.
 
 ### Upscalers
 - **ESRGAN models (GGUF)** collected by
