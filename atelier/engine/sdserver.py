@@ -155,7 +155,7 @@ def stop(reason: str = "", log: Callable[[str], None] | None = None) -> None:
     if live is None:
         return
     if log:
-        log(f"⏹️ Moteur résident arrêté{(' : ' + reason) if reason else ''}.")
+        log(f"⏹️ Resident engine stopped{(' : ' + reason) if reason else ''}.")
     try:
         live.proc.terminate()
         live.proc.wait(timeout=20)
@@ -176,14 +176,14 @@ def _wait_ready(port: int, proc: subprocess.Popen,
     while time.time() < deadline:
         if proc.poll() is not None:
             raise ServerUnavailable(
-                "Le moteur résident s'est arrêté au démarrage : "
+                "The resident engine stopped while starting up: "
                 + " | ".join(list(_TAIL)[-3:]))
         try:
             _request(url, timeout=3.0)
             return
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             time.sleep(_POLL_S)
-    raise ServerUnavailable("Le moteur résident n'a pas répondu à temps.")
+    raise ServerUnavailable("The resident engine did not answer in time.")
 
 
 def ensure(server: Path, args: list[str], gpu_index: int | None,
@@ -201,7 +201,7 @@ def ensure(server: Path, args: list[str], gpu_index: int | None,
             _SINK = log
             return _LIVE.port
         if _LIVE is not None:
-            stop("changement de modèle ou de réglages", log)
+            stop("model or settings changed", log)
 
         port = _free_port()
         cmd = [str(server), *args, "--listen-ip", "127.0.0.1",
@@ -209,8 +209,8 @@ def ensure(server: Path, args: list[str], gpu_index: int | None,
         env = sdcpp.child_env_for(gpu_index, all_gpus)
         if log:
             log("$ " + " ".join(cmd))
-            log("⏳ Premier démarrage : le modèle se charge une fois pour "
-                "toutes. Les images suivantes n'attendront plus.")
+            log("⏳ First start: the model loads once and for all. The images "
+                "that follow will not wait.")
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             bufsize=1, cwd=str(settings.ROOT), env=env,
@@ -336,7 +336,7 @@ def cancel_active() -> str:
         return ""
     try:
         _request(f"{_base_url(live.port)}/jobs/{job}/cancel", payload={})
-        return "⏹️ Génération annulée."
+        return "⏹️ Generation cancelled."
     except (urllib.error.URLError, OSError):
         return ""
 
@@ -347,17 +347,17 @@ def generate(server: Path, req: "sdcpp.GenRequest", output: Path,
     """Une image via le moteur résident. Lève ServerUnavailable pour replier."""
     global _JOB
     if not can_serve(req):
-        raise ServerUnavailable("Demande hors du périmètre du moteur résident.")
+        raise ServerUnavailable("Request outside the resident engine's scope.")
     port = ensure(server, server_args(server, req), gpu_index, all_gpus, log)
     base = _base_url(port)
     try:
         job = _request(f"{base}/img_gen", payload=request_payload(req),
                        timeout=60.0)
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-        raise ServerUnavailable(f"Requête refusée par le serveur : {exc}")
+        raise ServerUnavailable(f"Request refused by the server: {exc}")
     job_id = job.get("id")
     if not job_id:
-        raise ServerUnavailable("Le serveur n'a pas ouvert de tâche.")
+        raise ServerUnavailable("The server opened no job.")
     with _LOCK:
         _JOB = job_id
 
@@ -367,22 +367,22 @@ def generate(server: Path, req: "sdcpp.GenRequest", output: Path,
             try:
                 state = _request(f"{base}/jobs/{job_id}")
             except (urllib.error.URLError, OSError) as exc:
-                raise ServerUnavailable(f"Suivi de tâche perdu : {exc}")
+                raise ServerUnavailable(f"Lost track of the job: {exc}")
             status = state.get("status") or ""
             if status == "completed":
                 images = ((state.get("result") or {}).get("images")) or []
                 written = _write_images(images, output, req.batch_count)
                 if not written:
-                    raise ServerUnavailable("Tâche terminée sans image.")
+                    raise ServerUnavailable("The job finished with no image.")
                 return written
             if status == "cancelled":
-                raise sdcpp.EngineError("Interrompu par l'utilisateur.")
+                raise sdcpp.EngineError("Interrupted by the user.")
             if status == "failed":
                 error = (state.get("error") or {}).get("message") or "inconnue"
                 # Un échec de GÉNÉRATION n'est pas un échec du serveur : le
                 # relancer en ligne de commande donnerait la même erreur, et
                 # avec 80 s de chargement en plus.
-                raise sdcpp.EngineError(f"Le moteur a échoué : {error}")
+                raise sdcpp.EngineError(f"The engine failed: {error}")
     finally:
         with _LOCK:
             _JOB = None

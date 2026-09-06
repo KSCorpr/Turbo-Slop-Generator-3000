@@ -42,7 +42,7 @@ DEFAULT_PORT = 8000
 
 # Résolutions proposées. Seul le 512 tient sur 11-12 Go (les autres ~16 Go+).
 RESOLUTIONS = [
-    ("512 — léger (recommandé, ≤ 12 Go)", 512),
+    ("512 — light (recommended, ≤ 12 GB)", 512),
     ("1024 — cascade (≥ 16 Go)", 1024),
     ("1536 — haute (≥ 16 Go+)", 1536),
 ]
@@ -80,9 +80,9 @@ def find_server() -> Path | None:
 # q4/ en sous-dossiers. Quantifier réduit fortement l'empreinte mémoire, ce qui
 # peut rendre les modes 1024/1536 atteignables sur une carte modeste.
 VARIANTS = [
-    ("f16 — référence (~16,5 Go)", "f16"),
-    ("q8 — quasi sans perte (~9,9 Go)", "q8"),
-    ("q4 — léger grain, plus léger (~6 Go)", "q4"),
+    ("f16 — reference (~16.5 GB)", "f16"),
+    ("q8 — near lossless (~9.9 GB)", "q8"),
+    ("q4 — slight grain, lighter (~6 GB)", "q4"),
 ]
 
 
@@ -111,15 +111,15 @@ def diagnose() -> str:
     """
     srv = find_server()
     lines = [f"- Moteur : {'`' + str(srv) + '`' if srv else '**introuvable**'}",
-             f"- Dossier des modèles : `{MODELS_DIR}`"]
+             f"- Models folder: `{MODELS_DIR}`"]
     if not MODELS_DIR.exists():
-        lines.append("  - ⚠️ **ce dossier n'existe pas** — rien n'a été "
-                     "installé ici.")
+        lines.append("  - ⚠️ **this folder does not exist** — nothing was "
+                     "installed here.")
     for lbl, v in VARIANTS:
         d = variant_dir(v)
         if models_ready(v):
             n = len(list(d.glob("*.gguf")))
-            lines.append(f"- ✅ **{v}** — {n} fichier(s) dans `{d}`")
+            lines.append(f"- ✅ **{v}** — {n} file(s) in `{d}`")
         else:
             lines.append(f"- — {v} : absent (`{d}`)")
     # Un jeu de modèles présent dans le dossier PROJET alors qu'on regarde
@@ -127,10 +127,10 @@ def diagnose() -> str:
     proj = settings.DEFAULT_MODELS_DIR / "trellis"
     if proj.resolve() != MODELS_DIR.resolve() and proj.is_dir() \
             and any(proj.rglob("*.gguf")):
-        lines.append(f"\n⚠️ **Des modèles trellis existent aussi dans le dossier "
-                     f"du projet** (`{proj}`) alors que l'app regarde "
-                     f"`{MODELS_DIR}`. Déplace-les vers le dossier ci-dessus "
-                     "(ou relance l'installation) pour qu'ils soient vus.")
+        lines.append(f"\n⚠️ **Trellis models also exist inside the project "
+                     f"folder** (`{proj}`) while the app is looking at "
+                     f"`{MODELS_DIR}`. Move them to the folder above (or run "
+                     "the installation again) so they are seen.")
     return "\n".join(lines)
 
 
@@ -214,11 +214,11 @@ def _diagnose_crash(gpu_index: "int | None" = None) -> str:
     lines = list(_CRASH)
     joined = " ".join(lines).lower()
     card = _gpu_hint(gpu_index)
-    who = f" sur **{card}**" if card else ""
+    who = f" on **{card}**" if card else ""
     if "no kernel image" in joined or "invalid device function" in joined:
         return (
-            f"❌ **Le binaire trellis installé n'a pas de code machine pour "
-            f"votre carte**{who}.\n\n"
+            f"❌ **The installed trellis binary has no machine code for "
+            f"your card**{who}.\n\n"
             "Ce n'est ni un manque de VRAM ni un réglage : le binaire a été "
             "compilé pour d'autres architectures que la vôtre. Comme les "
             "erreurs CUDA sont rémanentes, c'est l'opération ggml suivante "
@@ -235,16 +235,16 @@ def _diagnose_crash(gpu_index: "int | None" = None) -> str:
             "reste le repli si aucune ne la couvre. Les ~10 Go de modèles ne "
             "sont pas retéléchargés.")
     if "out of memory" in joined or "cudamalloc" in joined:
-        return ("❌ **Mémoire GPU insuffisante** — le serveur trellis a été tué "
-                "pendant le calcul.\n\nBaissez la résolution (512), fermez les "
-                "autres applications 3D/IA, et vérifiez qu'aucun serveur "
-                "résident ne retient déjà la VRAM.")
+        return ("❌ **Not enough GPU memory** — the trellis server was killed "
+                "mid-computation.\n\nLower the resolution (512), close other "
+                "3D/AI applications, and check that no resident server is "
+                "already holding the VRAM.")
     if lines:
-        return ("❌ **Le serveur trellis s'est arrêté pendant la génération.**\n\n"
-                "Dernières lignes avant l'arrêt :\n```\n"
+        return ("❌ **The trellis server stopped during generation.**\n\nLast "
+                "lines before it stopped:\n```\n"
                 + "\n".join(lines[-6:]) + "\n```")
-    return ("❌ **Le serveur trellis s'est arrêté pendant la génération** sans "
-            "message exploitable. Voir le journal complet ci-dessous.")
+    return ("❌ **The trellis server stopped during generation** with no "
+            "usable message. See the full log below.")
 
 
 _RESIDENT: dict = {"proc": None, "port": None, "res": None, "sig": None,
@@ -259,10 +259,9 @@ def resident_is_running() -> bool:
 
 def resident_status() -> str:
     if resident_is_running():
-        return f"🟢 Serveur résident actif (port {_RESIDENT['port']}, "\
-               f"res {_RESIDENT['res']}) — VRAM occupée."
-    return "⚪ Serveur résident arrêté (mode transitoire : démarrage/arrêt à "\
-           "chaque génération, VRAM libérée)."
+        return f"🟢 Resident server running (port {_RESIDENT['port']}, "\
+               f"res {_RESIDENT['res']}) — VRAM still occupied."
+    return "⚪ Resident server stopped (transient mode: start/stop on every generation, VRAM freed)."
 
 
 def resident_stop() -> str:
@@ -279,7 +278,7 @@ def resident_stop() -> str:
                 pass
         _RESIDENT.update({"proc": None, "port": None, "res": None,
                           "sig": None, "log": None})
-    return "⏹️ Serveur résident arrêté — VRAM libérée."
+    return "⏹️ Resident server stopped — VRAM freed."
 
 
 def build_server_args(res: int, decim: int = 0, atlas: int = 0,
@@ -344,8 +343,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
             "Serveur trellis introuvable — installez trellis.cpp (onglet 3D).")
     if not models_ready(variant):
         raise sdcpp.EngineError(
-            f"Modèles trellis « {variant} » absents — installez cette variante "
-            "(onglet 3D).")
+            f"Trellis models “{variant}” missing — install that variant "
+            "(3D tab).")
     settings.ensure_dirs()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -383,22 +382,22 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
             use_port = _RESIDENT["port"]
             with _RES_LOCK:
                 _RESIDENT["log"] = _log      # journal de CETTE génération
-            _log(f"♻️ Réutilisation du serveur résident (port {use_port}) — "
-                 "pas de rechargement des modèles.")
+            _log(f"♻️ Reusing the resident server (port {use_port}) — "
+                 "no model reload.")
             _CRASH.clear()
             _post_generate(image_path, out_path, res, seed, bg_removal,
                            use_port, _log, gpu_index)
             _sidecar(out_path, {**params, "seed": info.get("seed", seed)})
             return out_path
-        _log("🔄 Réglages de lancement modifiés (résolution/décimation/atlas/"
-             "GPU…) — redémarrage du serveur pour les appliquer.")
+        _log("🔄 Launch settings changed (resolution/decimation/atlas/GPU…) — "
+             "restarting the server to apply them.")
 
     # Un résident aux réglages différents doit céder la place.
     if resident_is_running():
         _log(resident_stop())
     # Le moteur d'images résident aussi : deux serveurs qui gardent chacun
     # leur modèle sur la même carte, c'est un OOM avec deux coupables.
-    release_resident_engine("la 3D a besoin du GPU", _log)
+    release_resident_engine("3D needs the GPU", _log)
 
     cmd = [str(server)] + launch_args
     # NB : on n'utilise PAS CUDA_VISIBLE_DEVICES ici — le flag « --gpu N » de
@@ -435,7 +434,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
     try:
         # Attente du chargement des modèles (~10 Go) puis de /health.
-        _log("⏳ Démarrage du serveur trellis (chargement des modèles)…")
+        _log("⏳ Starting the trellis server (loading the models)…")
         deadline = time.time() + 600
         use_port = port
         # Laisse au serveur le temps d'annoncer son port dans ses logs.
@@ -453,11 +452,11 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                 # Il a parlé avant de mourir : autant le citer.
                 raise sdcpp.EngineError(_diagnose_crash(gpu_index))
             raise sdcpp.EngineError(
-                f"Le serveur trellis n'a pas répondu sur le port {use_port} "
-                "(voir le journal : port différent, VRAM insuffisante, ou "
-                "modèles incomplets ?).")
+                f"The trellis server did not answer on port {use_port} "
+                "(see the log: a different port, not enough VRAM, or "
+                "incomplete models?).")
 
-        _log(f"✅ Serveur prêt (port {use_port}) — envoi de l'image…")
+        _log(f"✅ Server ready (port {use_port}) — sending the image…")
         _post_generate(image_path, out_path, res, seed, bg_removal, use_port,
                        _log, gpu_index)
     finally:
@@ -467,8 +466,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
             with _RES_LOCK:
                 _RESIDENT.update({"proc": proc, "port": use_port,
                                   "res": int(res), "sig": sig, "log": _log})
-            _log("♻️ Serveur gardé résident (VRAM occupée — « Arrêter le "
-                 "serveur résident » pour la libérer).")
+            _log("♻️ Server kept resident (VRAM occupied — use “Stop the "
+                 "resident server” to free it).")
         else:
             # Mode transitoire : arrêt → libération VRAM (stratégie low-VRAM).
             try:
@@ -529,11 +528,11 @@ def _post_generate(image_path: Path, out_path: Path, res: int,
         raise sdcpp.EngineError(_diagnose_crash(gpu_index)) from exc
     if not r.ok:
         raise sdcpp.EngineError(
-            f"trellis /generate a échoué (HTTP {r.status_code}) : "
+            f"trellis /generate failed (HTTP {r.status_code}) : "
             f"{r.text[:300]}")
     out_path.write_bytes(r.content)
     if not out_path.is_file() or out_path.stat().st_size == 0:
         raise sdcpp.EngineError(
-            "Aucun GLB produit — voir le journal (VRAM insuffisante en 512 ?).")
-    _log(f"✅ GLB reçu : {out_path.name} ({out_path.stat().st_size/1e6:.1f} Mo)")
+            "No GLB produced — see the log (not enough VRAM even at 512?).")
+    _log(f"✅ GLB received: {out_path.name} ({out_path.stat().st_size/1e6:.1f} Mo)")
     return out_path

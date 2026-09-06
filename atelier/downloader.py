@@ -26,12 +26,12 @@ def download_lora(repo: str, log: Callable[[str], None] | None = None) -> str:
     files = list_repo_files(repo)
     cands = [f for f in files if f.lower().endswith(".safetensors")]
     if not cands:
-        raise RuntimeError(f"Aucun .safetensors dans {repo}")
+        raise RuntimeError(f"No .safetensors in {repo}")
     chosen = sorted(cands, key=len)[0]
     dest = settings.LORA_DIR / Path(chosen).name
     if not dest.is_file():
         if log:
-            log(f"Téléchargement du LoRA {repo}/{chosen}…")
+            log(f"Downloading the LoRA {repo}/{chosen}…")
         got = Path(hf_hub_download(repo_id=repo, filename=chosen,
                                    local_dir=str(settings.LORA_DIR)))
         if got.resolve() != dest.resolve() and got.is_file():
@@ -54,21 +54,21 @@ def download_lora_civitai(ref: str, token: str | None = None,
     m = re.search(r"modelVersionId=(\d+)", s) or re.search(r"/(\d+)(?:[/?#]|$)", s)
     vid = m.group(1) if m else (s if s.isdigit() else None)
     if not vid:
-        raise RuntimeError("ID de version Civitai introuvable. Collez l'URL "
-                           "contenant « modelVersionId=… » ou l'ID numérique.")
+        raise RuntimeError("Civitai version ID not found. Paste the URL "
+                           "containing “modelVersionId=…”, or the numeric ID.")
     token = token or settings.load_prefs().get("civitai_token") or ""
     url = f"https://civitai.com/api/download/models/{vid}"
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     if log:
-        log(f"Téléchargement Civitai (version {vid})…")
+        log(f"Civitai download (version {vid})…")
     r = requests.get(url, headers=headers, stream=True, allow_redirects=True,
                      timeout=120)
     ctype = r.headers.get("content-type", "")
     if r.status_code in (401, 403) or "text/html" in ctype:
         raise RuntimeError(
-            "Civitai a refusé le téléchargement (connexion/token requis pour ce "
-            "modèle). Ajoutez un token Civitai dans Réglages, ou téléchargez le "
-            "fichier manuellement dans le dossier loras/.")
+            "Civitai refused the download (this model needs a login or "
+            "token). Add a Civitai token in Settings, or download the file by "
+            "hand into the loras/ folder.")
     r.raise_for_status()
     cd = r.headers.get("content-disposition", "")
     fn = re.search(r'filename="?([^";]+)"?', cd)
@@ -127,11 +127,11 @@ def download_component(comp: Component,
         relevant = [f for f in files
                     if f.lower().endswith((".gguf", ".safetensors", ".sft"))]
         listing = "\n      - " + "\n      - ".join(sorted(relevant)[:40]) \
-            if relevant else " (aucun .gguf/.safetensors trouvé)"
+            if relevant else " (no .gguf/.safetensors found)"
         raise RuntimeError(
-            f"Aucun fichier de {comp.repo} ne correspond à "
-            f"« {comp.requested()} » ni à « {comp.base_glob()} ».\n"
-            f"    Fichiers disponibles dans le dépôt :{listing}")
+            f"No file in {comp.repo} matches neither "
+            f"“{comp.requested()}” nor “{comp.base_glob()}”.\n"
+            f"    Files available in the repository:{listing}")
 
     # Transparence : si le quant exact demandé n'existe pas dans le dépôt, on a
     # pris le plus proche EN DESSOUS (repli sûr). On le dit clairement.
@@ -140,14 +140,14 @@ def download_component(comp: Component,
         if got and got != comp.quant:
             sense = "≤" if quant._idx(got) is not None and quant._idx(comp.quant) \
                 is not None and quant._idx(got) <= quant._idx(comp.quant) else "≥"
-            log(f"  ⚠️ {comp.quant} indisponible dans {comp.repo} → {got} "
-                f"(repli, quant {sense} le plus proche disponible)")
+            log(f"  ⚠️ {comp.quant} unavailable in {comp.repo} → {got} "
+                f"(repli, quant {sense} the closest one available)")
 
     local_dir = settings.model_repo_dir(comp.repo)
     dest = local_dir / chosen
     if dest.is_file():
         if log:
-            log(f"  ✓ déjà présent : {comp.role} ({chosen})")
+            log(f"  ✓ already there: {comp.role} ({chosen})")
         return dest
     if log:
         log(f"  ↓ {comp.role} : {comp.repo}/{chosen}")
@@ -160,7 +160,7 @@ def download_model(model: BaseModel,
                    log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge tous les composants manquants d'un modèle. Yields des messages."""
     settings.ensure_dirs()
-    yield f"Téléchargement de « {model.name} »…"
+    yield f"Downloading “{model.name} »…"
     for comp in model.components:
         try:
             download_component(comp, log=log)
@@ -168,7 +168,7 @@ def download_model(model: BaseModel,
         except Exception as exc:  # noqa: BLE001
             yield f"  ✗ {comp.role} : {exc}"
             return
-    yield f"« {model.name} » est prêt. ✅"
+    yield f"« {model.name}” is ready. ✅"
 
 
 def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str]:
@@ -180,19 +180,19 @@ def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str
     repo = cfg.get("repo")
     files = cfg.get("files") or []
     if not repo or not files:
-        yield "Upscalers non configurés."
+        yield "Upscalers not configured."
         return
     from huggingface_hub import hf_hub_download
 
     local_dir = upscalers_dir()
     local_dir.mkdir(parents=True, exist_ok=True)
-    yield f"Téléchargement de {len(files)} upscalers ESRGAN ({repo})…"
+    yield f"Downloading {len(files)} upscalers ESRGAN ({repo})…"
     ok = 0
     for fn in files:
         dest = local_dir / fn
         if dest.is_file():
             ok += 1
-            yield f"  ✓ déjà présent : {fn}"
+            yield f"  ✓ already there: {fn}"
             continue
         try:
             hf_hub_download(repo_id=repo, filename=fn, local_dir=str(local_dir))
@@ -200,4 +200,4 @@ def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str
             yield f"  ↓ {fn}"
         except Exception as exc:  # noqa: BLE001
             yield f"  ✗ {fn} : {exc}"
-    yield f"Upscalers prêts ({ok}/{len(files)}). ✅"
+    yield f"Upscalers ready ({ok}/{len(files)}). ✅"

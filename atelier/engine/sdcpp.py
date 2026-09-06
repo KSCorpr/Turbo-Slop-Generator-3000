@@ -39,14 +39,14 @@ def cancel_active() -> str:
     with _LOCK:
         procs = list(_ACTIVE)
     if not procs:
-        return "Aucune génération en cours."
+        return "No generation running."
     _CANCELLED = True
     for p in procs:
         try:
             p.terminate()
         except Exception:  # noqa: BLE001
             pass
-    return "⏹️ Génération annulée."
+    return "⏹️ Generation cancelled."
 
 
 def was_cancelled() -> bool:
@@ -222,8 +222,8 @@ def _require(*paths: Path | None) -> None:
     for p in paths:
         if p is not None and not Path(p).is_file():
             raise EngineError(
-                f"Fichier requis introuvable : {p}\n"
-                "Téléchargez le modèle depuis l'onglet Catalogue de modèles.")
+                f"Required file not found: {p}\n"
+                "Download the model from the Model catalog tab.")
 
 
 def _ref_list(ref) -> list[Path]:
@@ -552,11 +552,11 @@ class DiskWatch:
             return None
         self._said = True
         ssd = size_mb / 550.0          # SSD SATA, l'hypothèse la plus prudente
-        return (f"⚠️ Modèle lu à {speed:.0f} Mo/s "
-                f"({size_mb / 1024:.1f} Go en {read_s:.0f} s) : c'est une "
-                f"vitesse de disque mécanique. Sur un SSD la même lecture "
-                f"prendrait ~{ssd:.0f} s, soit ~{read_s - ssd:.0f} s de moins "
-                f"À CHAQUE image. Déplacez le dossier models/.")
+        return (f"⚠️ Model read at {speed:.0f} MB/s "
+                f"({size_mb / 1024:.1f} GB in {read_s:.0f} s): that is "
+                f"mechanical-disk speed. On an SSD the same read would take "
+                f"~{ssd:.0f} s, i.e. ~{read_s - ssd:.0f} s less ON EVERY "
+                f"image. Move the models/ folder.")
 
 
 def child_env_for(gpu_index: int | None,
@@ -584,7 +584,7 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
     # par-dessus (LoRA, passe HD, upscale ESRGAN — tout ce que le serveur ne
     # sert pas) tomberait sur une carte déjà pleine. Il rend la place ici et se
     # rechargera à la prochaine image qu'il sait servir.
-    release_resident_engine("une commande a besoin de toute la carte", log)
+    release_resident_engine("a command needs the whole card", log)
     env = child_env_for(gpu_index, all_gpus)
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))
@@ -613,7 +613,7 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
         with _LOCK:
             _ACTIVE.discard(proc)
     if _CANCELLED:
-        raise EngineError("Interrompu par l'utilisateur.")
+        raise EngineError("Interrupted by the user.")
     if code != 0:
         raise _failure_error(code, cmd, tail)
 
@@ -642,20 +642,19 @@ def _failure_error(code: int, cmd: list[str],
         for ln in reversed(tail):
             m = _OOM_SIZE.search(ln)
             if m:
-                want = (f" Il manquait un bloc de "
+                want = (f" It was short by a block of "
                         f"{float(m.group(1)) / 1024:.1f} Go.")
                 break
         return VramError(
-            "❌ Mémoire GPU insuffisante." + want + "\n"
-            + ("La passe HD re-débruite l'image ENTIÈRE : son coût grimpe avec "
-               "le nombre de pixels, et s'ajoute aux poids du modèle déjà sur "
-               "la carte.\n"
-               "→ Baissez le facteur d'agrandissement, ou passez par "
-               "« 🔼 Agrandir (ESRGAN) » puis « ✨ Upscale créatif (SDXL) », "
-               "qui travaille par tuiles et tient dans beaucoup moins de VRAM."
+            "❌ Not enough GPU memory." + want + "\n"
+            + ("The HD pass re-denoises the WHOLE image: its cost climbs with "
+               "the pixel count, and it adds to the model weights already on "
+               "the card.\n→ Lower the enlargement factor, or go through “🔼 "
+               "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
+               "works in tiles and fits in far less VRAM."
                if "--hires" in cmd else
-               "→ Réduisez la résolution, ou choisissez une quantification plus "
-               "légère dans Réglages (le modèle occupera moins de VRAM)."))
+               "→ Lower the resolution, or pick a lighter quantization in "
+               "Settings (the model will take up less VRAM)."))
     return EngineError(_diagnose_failure(code, cmd, tail))
 
 
@@ -670,20 +669,19 @@ def _diagnose_failure(code: int, cmd: list[str], tail: "deque[str]") -> str:
         has_lora = "--lora-model-dir" in cmd or any("<lora:" in c for c in cmd)
         if has_lora:
             return (
-                "❌ Crash pendant l'application d'un LoRA (formes de tenseurs "
-                "incompatibles).\n"
-                "Ce LoRA n'est pas compatible avec le modèle sélectionné — "
-                "souvent un LoRA entraîné pour une autre base (ex. Krea 2 "
-                "« full » alors que vous utilisez Krea 2 Turbo).\n"
-                "→ Réessayez sans ce LoRA, ou utilisez le modèle pour lequel "
-                "il a été entraîné.")
+                "❌ Crash while applying a LoRA (incompatible tensor "
+                "shapes).\nThis LoRA is not compatible with the selected "
+                "model — usually a LoRA trained for a different base (e.g. "
+                "Krea 2 “full” while you are using Krea 2 Turbo).\n→ Try "
+                "again without that LoRA, or use the model it was trained "
+                "for.")
         return (
-            "❌ sd-cli a planté sur un reshape de tenseur (dimensions "
-            "incompatibles).\n"
-            "Vérifiez que la résolution respecte la grille du modèle "
-            "(multiple de 64 px pour Krea, 32 px pour Flux.2).\n"
-            f"(code de sortie {code})")
-    return f"sd-cli s'est terminé avec le code {code}."
+            "❌ sd-cli crashed on a tensor reshape (incompatible "
+            "dimensions).\n"
+            "Check that the resolution follows the model's grid "
+            "(a multiple of 64 px for Krea, 32 px for Flux.2).\n"
+            f"(exit code {code})")
+    return f"sd-cli exited with code {code}."
 
 
 def _q(s: str) -> str:

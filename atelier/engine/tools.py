@@ -254,7 +254,7 @@ def _install_stream(tool: str):
     code = proc.wait()
     buf.append("")
     buf.append("✅ Installation complete." if code == 0
-               else f"❌ Échec (code {code}). Voir le journal ci-dessus.")
+               else f"❌ Failed (code {code}). See the log above.")
     yield "\n".join(buf[-500:])
 
 
@@ -306,7 +306,7 @@ def install_seedvr2_stream():
         yield "\n".join(buf[-500:])
     code = proc.wait()
     buf += ["", "✅ SeedVR2 installation complete." if code == 0
-            else f"❌ Échec SeedVR2 (code {code}). Voir le journal."]
+            else f"❌ SeedVR2 failed (code {code}). See the log."]
     yield "\n".join(buf[-500:])
 
 
@@ -345,7 +345,7 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
     # Un outil PyTorch qui démarre pendant que le moteur résident garde 8 Go de
     # modèle en VRAM, c'est un OOM. Le serveur rend la place ; il se rechargera
     # tout seul à la prochaine image.
-    release_resident_engine("un outil du Toolkit a besoin du GPU", log)
+    release_resident_engine("a Toolkit tool needs the GPU", log)
     run_env = env if env is not None else settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))
@@ -411,11 +411,11 @@ def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
         raise ToolError("Face restoration is not installed (“Install” button "
                         "in the Toolkit).")
     if model not in FACE_MODEL_FILES:
-        raise ToolError(f"Modèle de restauration inconnu : {model}")
+        raise ToolError(f"Unknown restoration model: {model}")
     weights = FACE_MODEL_DIR / model
     if not weights.is_file():
-        raise ToolError(f"Le modèle « {model} » n'est pas téléchargé. "
-                        "Relancez l'installation depuis le Toolkit.")
+        raise ToolError(f"The model “{model}” is not downloaded. "
+                        "Run the installation again from the Toolkit.")
     src = _to_src(image, "face")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"face_out_{stamp}"
@@ -503,7 +503,7 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
         psd_writer.write_psd(dest, rgb, layers)
         size = dest.stat().st_size / (1024 * 1024)
         if log:
-            log(f"[calques] PSD écrit : {dest.name} ({size:.1f} Mo, "
+            log(f"[layers] PSD written: {dest.name} ({size:.1f} Mo, "
                 f"{len(layers)} calques)")
         out.append(dest)
     if want_png:
@@ -757,25 +757,26 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
         factor = registry.upscaler_factor(esrgan_model)
         try:
             if log:
-                log(f"Pré-agrandissement ESRGAN « {esrgan_model} » (×{factor}, "
-                    "1 passe)…")
+                log(f"ESRGAN pre-enlargement “{esrgan_model}” (×{factor}, "
+                    "one pass)…")
                 if factor > float(scale):
-                    log(f"[usdu] ×{factor} pour une cible ×{scale:g} : la "
-                        "réduction qui suit sert de suréchantillonnage "
-                        "(anti-aliasing gratuit).")
+                    log(f"[usdu] ×{factor} for a ×{scale:g} target: the "
+                        "downscale that follows acts as supersampling "
+                        "(free anti-aliasing).")
                 elif factor < float(scale):
                     # Honnêteté : le runner complète en Lanczos, donc la base
                     # sera plus douce — mais pas crénelée, et SDXL la reprend.
-                    log(f"[usdu] ×{factor} < cible ×{scale:g} : le reste est "
-                        "complété en Lanczos (base plus douce, que le "
-                        "raffinage SDXL redétaille). Pour un trait net dès la "
-                        f"base, prenez un modèle ×{int(-(-float(scale) // 1))} "
-                        "ou visez un facteur plus bas.")
+                    log(f"[usdu] ×{factor} < target ×{scale:g}: the rest is "
+                        "filled in with Lanczos (a softer base, which the "
+                        "SDXL refine pass re-details). For crisp line art "
+                        "from the start, pick a ×"
+                        f"{int(-(-float(scale) // 1))} model "
+                        "or aim for a lower factor.")
             inp = gen_engine.upscale_image(src, esrgan_model, repeats=1,
                                            log=log)
         except Exception as exc:  # noqa: BLE001
             if log:
-                log(f"[usdu] ESRGAN échoué ({exc}) → repli Lanczos.")
+                log(f"[usdu] ESRGAN failed ({exc}) → repli Lanczos.")
             inp = src
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -827,7 +828,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
     if not seedvr2_is_installed():
         raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
     if model not in SEEDVR2_MODEL_FILES:
-        raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
+        raise ToolError(f"SeedVR2 model not allowed: {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
         color_correction = "wavelet"
 
@@ -862,7 +863,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
         blocks = 0
     attention = seedvr2_attention_mode()
     if log and attention != "sdpa":
-        log(f"SeedVR2 : attention accélérée ({attention}).")
+        log(f"SeedVR2: accelerated attention ({attention}).")
 
     cmd = [
         str(py), str(cli), str(src), "--output", str(output),
@@ -886,7 +887,7 @@ def seedvr2_upscale(image, resolution: int = 2048,
     _run_tool(cmd, log, "SeedVR2 failed (see the log).",
               cwd=SEEDVR2_SOURCE_DIR, env=run_env)
     if not output.is_file() or output.stat().st_size == 0:
-        raise ToolError("SeedVR2 n'a produit aucune image.")
+        raise ToolError("SeedVR2 produced no image.")
     return output
 
 
@@ -905,7 +906,7 @@ def seedvr2_batch(images, resolution: int = 2048,
     if not seedvr2_is_installed():
         raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
     if model not in SEEDVR2_MODEL_FILES:
-        raise ToolError(f"Modèle SeedVR2 non autorisé : {model}")
+        raise ToolError(f"SeedVR2 model not allowed: {model}")
     if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
         color_correction = "wavelet"
 
@@ -950,7 +951,7 @@ def seedvr2_batch(images, resolution: int = 2048,
         run_env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         offload_device = "1"
         if log:
-            log(f"SeedVR2 lot : calcul GPU #{main_gpu}, réserve GPU #{secondary}.")
+            log(f"SeedVR2 lot : calcul GPU #{main_gpu}, spare GPU #{secondary}.")
     elif main_gpu is not None:
         run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
         offload_device = "none" if offload == "none" else "cpu"
@@ -963,7 +964,7 @@ def seedvr2_batch(images, resolution: int = 2048,
     blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
     attention = seedvr2_attention_mode()
     if log and attention != "sdpa":
-        log(f"SeedVR2 : attention accélérée ({attention}).")
+        log(f"SeedVR2: accelerated attention ({attention}).")
     cmd = [
         str(py), str(cli), str(input_dir), "--output", str(output_dir),
         "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
@@ -985,7 +986,7 @@ def seedvr2_batch(images, resolution: int = 2048,
         cmd.append("--swap_io_components")
     try:
         if log:
-            log(f"SeedVR2 : {len(sources)} image(s), un seul chargement du modèle.")
+            log(f"SeedVR2 : {len(sources)} image(s), a single model load.")
         _run_tool(cmd, log, "The SeedVR2 batch failed (see the log).",
                   cwd=SEEDVR2_SOURCE_DIR, env=run_env)
     finally:

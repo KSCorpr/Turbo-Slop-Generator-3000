@@ -53,29 +53,29 @@ def validate(dest_raw: str) -> tuple[Path | None, str]:
     """Valide un dossier cible. Retourne (chemin, message d'erreur éventuel)."""
     raw = (dest_raw or "").strip().strip('"')
     if not raw:
-        return None, "Indiquez un chemin (ou utilisez « Revenir au dossier du projet »)."
+        return None, "Give a path (or use “Back to the project folder”)."
     dest = Path(raw).expanduser()
     if not dest.is_absolute():
-        return None, ("Le chemin doit être **absolu** "
-                      "(ex. `D:\\IA\\models` ou `/mnt/nvme/models`).")
+        return None, ("The path must be **absolute** (e.g. `D:\\AI\\models` "
+                      "or `/mnt/nvme/models`).")
     src = current().resolve()
     try:
         d = dest.resolve()
     except OSError as exc:
         return None, f"Chemin invalide : {exc}"
     if d == src:
-        return None, "C'est déjà le dossier de modèles actuel."
+        return None, "That is already the current models folder."
     if src in d.parents:
-        return None, ("La destination est **à l'intérieur** du dossier de "
-                      "modèles actuel — choisissez un dossier extérieur.")
+        return None, ("The destination is **inside** the current models "
+                      "folder — pick a folder outside it.")
     if d in src.parents:
-        return None, ("La destination **contient** le dossier de modèles "
-                      "actuel — choisissez un autre dossier.")
+        return None, ("The destination **contains** the current models folder "
+                      "— pick another one.")
     # Le parent doit exister (on ne crée qu'un niveau).
     if not dest.exists() and not dest.parent.exists():
-        return None, f"Le dossier parent n'existe pas : `{dest.parent}`"
+        return None, f"The parent folder does not exist: `{dest.parent}`"
     if dest.exists() and not dest.is_dir():
-        return None, "La destination existe et n'est pas un dossier."
+        return None, "The destination exists and is not a folder."
     return dest, ""
 
 
@@ -84,10 +84,10 @@ def save(dest: Path | None) -> str:
     prefs = settings.load_prefs()
     prefs["models_dir"] = None if dest is None else str(dest)
     settings.save_prefs(prefs)
-    where = "le dossier du projet (`models/`)" if dest is None else f"`{dest}`"
-    return (f"✅ Emplacement enregistré : {where}.\n\n"
-            "**Redémarrez l'application** (`run.bat` / `run.sh`) pour "
-            "l'appliquer.")
+    where = "the project folder (`models/`)" if dest is None else f"`{dest}`"
+    return (f"✅ Location saved: {where}.\n\n"
+            "**Restart the application** (`run.bat` / `run.sh`) to "
+            "apply it.")
 
 
 def move(dest: Path, log=None) -> Iterator[str]:
@@ -103,19 +103,19 @@ def move(dest: Path, log=None) -> Iterator[str]:
         return m
 
     if not src.is_dir() or not any(src.iterdir()):
-        yield _emit("Aucun modèle à déplacer (dossier source vide).")
+        yield _emit("No model to move (the source folder is empty).")
         return
 
     total = dir_size(src)
     dest.mkdir(parents=True, exist_ok=True)
     avail = free_space(dest)
-    yield _emit(f"Source : {src}")
-    yield _emit(f"Destination : {dest}")
-    yield _emit(f"À déplacer : {_human(total)} · libre sur la cible : "
+    yield _emit(f"Source: {src}")
+    yield _emit(f"Destination: {dest}")
+    yield _emit(f"To move: {_human(total)} · free at the destination: "
                 f"{_human(avail)}")
     # Marge de 2 % : la copie inter-disques a besoin de la place complète.
     if avail and avail < total * 1.02:
-        yield _emit("❌ Espace insuffisant sur la destination — abandon.")
+        yield _emit("❌ Not enough room at the destination — aborting.")
         return
 
     entries = sorted(src.iterdir())
@@ -127,20 +127,20 @@ def move(dest: Path, log=None) -> Iterator[str]:
                     f"({_human(dir_size(entry) if entry.is_dir() else entry.stat().st_size)})…")
         try:
             if target.exists():
-                yield _emit(f"    déjà présent à destination — ignoré.")
+                yield _emit(f"    already present at the destination — skipped.")
                 continue
             shutil.move(str(entry), str(target))
             done += 1
         except Exception as exc:  # noqa: BLE001
             errors += 1
-            yield _emit(f"    ⚠️ échec : {exc}")
+            yield _emit(f"    ⚠️ failed: {exc}")
 
-    yield _emit(f"\n{done} élément(s) déplacé(s)"
-                + (f", {errors} échec(s)" if errors else "") + ".")
+    yield _emit(f"\n{done} item(s) moved"
+                + (f", {errors} failure(s)" if errors else "") + ".")
     if errors:
-        yield _emit("⚠️ Des éléments n'ont pas pu être déplacés : l'emplacement "
-                    "N'A PAS été changé. Fermez ce qui pourrait les utiliser "
-                    "puis réessayez.")
+        yield _emit("⚠️ Some items could not be moved: the location was NOT "
+                    "changed. Close whatever might be using them, then try "
+                    "again.")
         return
     yield _emit(save(dest))
 
@@ -180,7 +180,7 @@ def _make_link(link: Path, target: Path) -> None:
                               str(target)],
                              capture_output=True, text=True)
         if res.returncode != 0:
-            raise OSError((res.stderr or res.stdout or "mklink a échoué").strip())
+            raise OSError((res.stderr or res.stdout or "mklink failed").strip())
     else:
         link.symlink_to(target, target_is_directory=True)
 
@@ -203,39 +203,40 @@ def relocate(paths: list[Path], dest_root: Path, log=None) -> Iterator[str]:
     dest_root.mkdir(parents=True, exist_ok=True)
     todo = [p for p in paths if p.exists() and not is_link(p)]
     if not todo:
-        yield _emit("Rien à déplacer (absent, ou déjà déplacé via un lien).")
+        yield _emit("Nothing to move (missing, or already moved through a link).")
         return
 
     total = sum(dir_size(p) for p in todo)
     avail = free_space(dest_root)
-    yield _emit(f"À déplacer : {_human(total)} · libre sur la cible : "
+    yield _emit(f"To move: {_human(total)} · free at the destination: "
                 f"{_human(avail)}")
     if avail and avail < total * 1.02:
-        yield _emit("❌ Espace insuffisant sur la destination — abandon.")
+        yield _emit("❌ Not enough room at the destination — aborting.")
         return
 
     for i, src in enumerate(todo, 1):
         target = dest_root / src.name
         yield _emit(f"[{i}/{len(todo)}] {src.name} ({_human(dir_size(src))})…")
         if target.exists():
-            yield _emit("    ⚠️ déjà présent à destination — ignoré.")
+            yield _emit("    ⚠️ already present at the destination — skipped.")
             continue
         try:
             shutil.move(str(src), str(target))
         except Exception as exc:  # noqa: BLE001
-            yield _emit(f"    ❌ déplacement impossible : {exc}")
+            yield _emit(f"    ❌ cannot move: {exc}")
             continue
         try:
             _make_link(src, target)
-            yield _emit(f"    ✓ déplacé, lien créé : {src.name} → {target}")
+            yield _emit(f"    ✓ moved, link created: {src.name} → {target}")
         except Exception as exc:  # noqa: BLE001
             # Le lien a échoué : on remet en place pour ne rien casser.
             try:
                 shutil.move(str(target), str(src))
-                yield _emit(f"    ❌ lien impossible ({exc}) — remis en place.")
+                yield _emit(f"    ❌ cannot create the link ({exc}) — put back.")
             except Exception as exc2:  # noqa: BLE001
-                yield _emit(f"    ‼️ lien impossible ({exc}) ET retour impossible "
-                            f"({exc2}). Fichiers ici : {target}")
+                yield _emit(f"    ‼️ cannot create the link ({exc}) AND could not "
+                            f"put it back ({exc2}). Files are here: "
+                            f"{target}")
 
 
 def restore(paths: list[Path], log=None) -> Iterator[str]:
@@ -247,20 +248,20 @@ def restore(paths: list[Path], log=None) -> Iterator[str]:
 
     todo = [p for p in paths if is_link(p)]
     if not todo:
-        yield _emit("Aucun élément déplacé à ramener.")
+        yield _emit("No moved item to bring back.")
         return
     for i, link in enumerate(todo, 1):
         target = link_target(link)
         yield _emit(f"[{i}/{len(todo)}] {link.name} ← {target}")
         if target is None or not target.exists():
-            yield _emit("    ❌ cible introuvable (disque débranché ?) — ignoré.")
+            yield _emit("    ❌ target not found (drive unplugged?) — skipped.")
             continue
         try:
             _unlink(link)
             shutil.move(str(target), str(link))
-            yield _emit("    ✓ ramené dans le projet.")
+            yield _emit("    ✓ brought back into the project.")
         except Exception as exc:  # noqa: BLE001
-            yield _emit(f"    ❌ échec : {exc}")
+            yield _emit(f"    ❌ failed: {exc}")
 
 
 def _human(n: int) -> str:
