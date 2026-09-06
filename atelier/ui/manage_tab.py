@@ -12,7 +12,7 @@ from .. import inventory, settings, storage
 from ..i18n import t
 from . import widgets
 
-CATEGORIES = ["Moteurs", "Models", "Add-ons Toolkit", "Your data"]
+CATEGORIES = ["Engines", "Models", "Toolkit add-ons", "Your data"]
 
 
 def _choices_and_summary():
@@ -62,7 +62,7 @@ def _move_choices() -> list[tuple[str, str]]:
 
 
 def build_manage_tab():
-    with gr.Tab("🧹 Gestion & aide"):
+    with gr.Tab("🧹 Manage & help"):
         # ------------------------------------------------------------------ #
         #  Inventaire & suppression
         # ------------------------------------------------------------------ #
@@ -111,9 +111,9 @@ def build_manage_tab():
                          outputs=[picks, summary_md, confirm, result])
 
         gr.Markdown(
-            f"*Locations: models `{settings.MODELS_DIR.name}/`, moteurs "
-            f"`{settings.BIN_DIR.name}/`, add-ons `tools_repo/`, LoRA "
-            f"`{settings.LORA_DIR.name}/`, sorties "
+            f"*Locations: models `{settings.MODELS_DIR.name}/`, engines "
+            f"`{settings.BIN_DIR.name}/`, add-ons `tools_repo/`, LoRAs "
+            f"`{settings.LORA_DIR.name}/`, outputs "
             f"`{settings.OUTPUT_DIR.name}/`.*")
 
         # ------------------------------------------------------------------ #

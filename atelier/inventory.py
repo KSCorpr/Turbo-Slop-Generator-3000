@@ -87,7 +87,7 @@ def items(prefs: dict | None = None) -> list[Item]:
 
     # --- Moteurs -----------------------------------------------------------
     out.append(Item(
-        "engine_sdcpp", "Moteur stable-diffusion.cpp (sd-cli + DLL)", "Moteurs",
+        "engine_sdcpp", "stable-diffusion.cpp engine (sd-cli + DLLs)", "Engines",
         _engine_sdcpp_paths(),
         note="Reinstallable: install.bat / update-engine.bat."))
     out.append(Item(
@@ -136,27 +136,27 @@ def items(prefs: dict | None = None) -> list[Item]:
 
     # --- Add-ons du Toolkit (PyTorch) -------------------------------------
     out += [
-        Item("tool_depth", "Toolkit — Profondeur", "Add-ons Toolkit",
+        Item("tool_depth", "Toolkit — Depth", "Toolkit add-ons",
              [tools.DEPTH_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_bg", "Toolkit — Background removal", "Add-ons Toolkit",
+        Item("tool_bg", "Toolkit — Background removal", "Toolkit add-ons",
              [tools.BG_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_sam", "Toolkit — SAM cut-out", "Add-ons Toolkit",
+        Item("tool_sam", "Toolkit — SAM cut-out", "Toolkit add-ons",
              [tools.SAM_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_enhance", "Prompt improver (LLM)", "Add-ons Toolkit",
+        Item("tool_enhance", "Prompt improver (LLM)", "Toolkit add-ons",
              [tools.ENHANCE_MODEL_DIR], note="Reinstallable in one click."),
         # `clip` et `describe` manquaient à cet inventaire : le modèle
         # image → prompt pèse 7,5 Go et n'apparaissait nulle part dans ce que
         # l'utilisateur peut voir ou libérer.
-        Item("tool_clip", "Toolkit — CLIP labelling (layers)", "Add-ons Toolkit",
+        Item("tool_clip", "Toolkit — CLIP labelling (layers)", "Toolkit add-ons",
              [tools.CLIP_MODEL_DIR], note="Reinstallable in one click."),
         Item("tool_describe", "Toolkit — Image → prompt (~7.5 GB)",
-             "Add-ons Toolkit", [tools.DESCRIBE_MODEL_DIR],
+             "Toolkit add-ons", [tools.DESCRIBE_MODEL_DIR],
              note="Reinstallable in one click."),
-        Item("tool_face", "Toolkit — Face restoration", "Add-ons Toolkit",
+        Item("tool_face", "Toolkit — Face restoration", "Toolkit add-ons",
              [tools.FACE_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Add-ons Toolkit",
+        Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Toolkit add-ons",
              [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
-        Item("tool_seedvr2", "Toolkit — Restauration SeedVR2", "Add-ons Toolkit",
+        Item("tool_seedvr2", "Toolkit — SeedVR2 restoration", "Toolkit add-ons",
              [tools.SEEDVR2_DIR], note="An isolated Python + the Q8/Q4 models."),
     ]
 

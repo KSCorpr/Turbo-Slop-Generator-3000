@@ -40,7 +40,9 @@ supprimez enregistrer annuler termine echec alors quand comme aussi tres
 bien mieux pire trop beaucoup encore deja jamais toujours rien
 quelque quelques autres meme memes seule seulement octets
 lignes boutons onglet onglets reglage reglages defaut
-cartes disque disques memoire vitesse lecture ecriture
+cartes disque disques memoire vitesse lecture ecriture gestion aide
+outils apercu reglage etape etapes couleur couleurs profondeur
+moteur moteurs catalogue detourage restauration amelioration parametres
 """.split()
 
 # English words that legitimately carry an accent — the accent rule must not

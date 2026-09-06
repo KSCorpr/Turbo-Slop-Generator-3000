@@ -121,6 +121,6 @@ def summary_markdown(report: dict[str, Any] | None = None) -> str:
     engine = data.get("engine", {})
     manifest = engine.get("manifest") or {}
     version = manifest.get("tag") or manifest.get("sd_commit") or "not traced"
-    lines.append(f"**Moteur sd.cpp :** {version}"
+    lines.append(f"**sd.cpp engine:** {version}"
                  + ("" if engine.get("present") else " · absent"))
     return "\n".join(lines)

@@ -308,7 +308,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     if img is None:
                         raise gr.Error(t("Provide an image."))
                     logs: list[str] = []
-                    progress(0.1, desc="Profondeur…")
+                    progress(0.1, desc="Depth…")
                     try:
                         out = tools.depth_map(img, log=logs.append)
                     except Exception as exc:  # noqa: BLE001
