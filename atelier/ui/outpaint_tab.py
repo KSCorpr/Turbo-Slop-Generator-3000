@@ -163,7 +163,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
-                result = gr.Image(label="Résultat", type="filepath",
+                result = gr.Image(label="Result", type="filepath",
                                   buttons=widgets.IMAGE_BUTTONS)
                 again = gr.Button("♻️ Extend the result again", size="sm")
                 log = gr.Textbox(label="Log", lines=12, autoscroll=True,
@@ -174,7 +174,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             if img is None:
                 return ""
             p = op.plan(img.size, (dirs or "").split("|"), float(amt))
-            return f"**Nouvelle taille :** {op.describe(p)}"
+            return f"**New size:** {op.describe(p)}"
 
         for comp in (image, direction, amount):
             comp.change(_preview, inputs=[image, direction, amount],
@@ -294,8 +294,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 yield gr.update(), gr.update(), "\n".join(logs[-400:])
 
             if "err" in state or not state.get("outs"):
-                logs.append(f"\n[ERREUR] {state.get('err', 'aucune sortie')}")
-                yield (t("❌ Échec — voir le journal."), gr.update(),
+                logs.append(f"\n[ERROR] {state.get('err', 'no output')}")
+                yield (t("❌ Failed — see the log."), gr.update(),
                        "\n".join(logs))
                 return
 
@@ -357,9 +357,9 @@ def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
              steps_v, d, fill_v=None, tone_v=None, mask_used=None) -> None:
     """Journal .txt à côté du PNG, comme pour les images et les GLB."""
     lines = [
-        f"Fichier: {out_path.name}",
+        f"File: {out_path.name}",
         f"Model: {model_id}",
-        f"Prompt: {prompt_txt or '(aucun)'}",
+        f"Prompt: {prompt_txt or '(none)'}",
         f"Extension: {op.describe(p)}",
         f"Seed: {seed}",
         f"Remplissage: {fill_v or 'edge'}",

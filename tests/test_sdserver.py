@@ -178,7 +178,7 @@ class JobLoopTests(unittest.TestCase):
     def test_a_cancelled_job_reads_as_a_user_interruption(self):
         with self.assertRaises(sdcpp.EngineError) as caught:
             self._run([{"status": "cancelled"}])
-        self.assertIn("Interrompu", str(caught.exception))
+        self.assertIn("Interrupted", str(caught.exception))
 
 
 class FallbackTests(unittest.TestCase):
@@ -323,12 +323,12 @@ class UnavailableReasonTests(unittest.TestCase):
     def test_a_missing_module_names_the_file_and_the_gesture(self):
         reason = self._reason(server=None)
         self.assertIn("sdserver.py", reason)
-        self.assertIn("ré-extrayez", reason)
+        self.assertIn("re-extract", reason)
 
     def test_a_missing_binary_from_our_own_build_names_the_workflow(self):
         with patch.object(sdserver, "available", return_value=False):
             reason = self._reason(server=sdserver, source="custom-ci")
-        self.assertIn("build maison", reason)
+        self.assertIn("in-house build", reason)
         self.assertIn("update-engine.bat", reason)
 
     def test_a_missing_binary_otherwise_points_at_the_updater(self):

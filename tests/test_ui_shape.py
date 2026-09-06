@@ -137,7 +137,7 @@ class SettingsTabTests(unittest.TestCase):
         cls.demo = _build(all_installed=True)
         cls.settings = [b for b in cls.demo.blocks.values()
                         if isinstance(b, gr.Tab)
-                        and (b.label or "").endswith("Réglages")]
+                        and (b.label or "").endswith("Settings")]
 
     def _inside(self, kinds):
         """Composants rendus à l'intérieur de l'onglet Réglages."""
@@ -171,7 +171,7 @@ class SettingsTabTests(unittest.TestCase):
         for lbl in labels:
             self.assertTrue(
                 any(w in lbl for w in ("facultatif", "optional", "Détail",
-                                       "details", "Langue", "Language")),
+                                       "details", "Theme", "accounts")),
                 f"repli sans promesse d'être secondaire : « {lbl} »")
 
     def test_exactly_one_decision_is_asked_up_front(self):

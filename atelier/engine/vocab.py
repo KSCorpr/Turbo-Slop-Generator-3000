@@ -28,11 +28,11 @@ SCENE_VOCAB: list[tuple[str, list[str], float]] = [
                      "an overcast grey sky"], 0.02),
     ("mer",         ["the sea", "the ocean", "a large body of water"], 0.15),
     ("montagne",    ["a mountain", "a rocky cliff", "a mountain range"], 0.2),
-    ("bâtiment",    ["a building", "a house", "city buildings",
+    ("building",    ["a building", "a house", "city buildings",
                      "an apartment block"], 0.3),
     ("ville",       ["a cityscape", "a town seen from far away"], 0.25),
     ("arbre",       ["a tree", "foliage", "trees and bushes"], 0.35),
-    ("végétation",  ["grass", "a field of vegetation", "a hedge"], 0.35),
+    ("vegetation",  ["grass", "a field of vegetation", "a hedge"], 0.35),
     ("route",       ["a road", "asphalt road surface", "a race track"], 0.45),
     ("sol",         ["the ground", "a floor", "sand", "snow on the ground"],
                     0.45),
@@ -42,11 +42,11 @@ SCENE_VOCAB: list[tuple[str, list[str], float]] = [
     # et le public derrière les grillages n'avaient aucune entrée où tomber, et
     # se faisaient donc étiqueter comme le premier objet venu — puis fusionner
     # avec lui.
-    ("fumée",       ["smoke", "steam", "a cloud of spray", "mist", "fog"],
+    ("smoke",       ["smoke", "steam", "a cloud of spray", "mist", "fog"],
                     0.6),
     ("foule",       ["a crowd of people", "spectators behind a fence",
                      "a group of people standing"], 0.55),
-    ("véhicule",    ["a car", "a racing car", "a truck", "a motorcycle",
+    ("vehicle",    ["a car", "a racing car", "a truck", "a motorcycle",
                      "a vehicle"], 0.75),
     ("personne",    ["a person", "a man", "a woman", "a human face",
                      "a driver in a helmet"], 0.8),

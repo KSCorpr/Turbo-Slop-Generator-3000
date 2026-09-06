@@ -264,16 +264,16 @@ def feather_alpha(mask: np.ndarray, radius: int = 1) -> np.ndarray:
 #  ouvrir chaque vignette : où c'est, quelle taille, et de quelle couleur.
 # --------------------------------------------------------------------------- #
 _COLOR_NAMES = [
-    ((15, 15, 18), "noir"), ((70, 70, 75), "gris foncé"),
-    ((140, 140, 145), "gris"), ((205, 205, 210), "gris clair"),
-    ((248, 248, 248), "blanc"),
-    ((190, 40, 40), "rouge"), ((235, 130, 40), "orange"),
-    ((240, 220, 90), "jaune"), ((70, 160, 70), "vert"),
-    ((35, 90, 55), "vert foncé"),
-    ((60, 120, 210), "bleu"), ((150, 190, 230), "bleu clair"),
-    ((25, 50, 110), "bleu foncé"),
-    ((120, 70, 170), "violet"), ((215, 120, 170), "rose"),
-    ((130, 90, 60), "brun"), ((235, 210, 175), "beige"),
+    ((15, 15, 18), "black"), ((70, 70, 75), "dark grey"),
+    ((140, 140, 145), "grey"), ((205, 205, 210), "light grey"),
+    ((248, 248, 248), "white"),
+    ((190, 40, 40), "red"), ((235, 130, 40), "orange"),
+    ((240, 220, 90), "yellow"), ((70, 160, 70), "green"),
+    ((35, 90, 55), "dark green"),
+    ((60, 120, 210), "blue"), ((150, 190, 230), "light blue"),
+    ((25, 50, 110), "dark blue"),
+    ((120, 70, 170), "purple"), ((215, 120, 170), "pink"),
+    ((130, 90, 60), "brown"), ((235, 210, 175), "beige"),
 ]
 
 
@@ -301,29 +301,29 @@ def dominant_color_name(rgb: np.ndarray, mask: np.ndarray) -> str:
 
 
 def position_name(mask: np.ndarray) -> str:
-    """« haut gauche », « centre », « bas droite »… d'après le centre de masse."""
+    """“top left”, “centre”, “bottom right”… from the centre of mass."""
     ys, xs = np.nonzero(mask)
     if len(ys) == 0:
         return ""
     h, w = mask.shape
     cy, cx = ys.mean() / h, xs.mean() / w
-    vert = "haut" if cy < 0.34 else ("bas" if cy > 0.66 else "milieu")
-    horiz = "gauche" if cx < 0.34 else ("droite" if cx > 0.66 else "centre")
-    if vert == "milieu" and horiz == "centre":
+    vert = "top" if cy < 0.34 else ("bottom" if cy > 0.66 else "middle")
+    horiz = "left" if cx < 0.34 else ("right" if cx > 0.66 else "centre")
+    if vert == "middle" and horiz == "centre":
         return "centre"
-    return f"{vert} {horiz}".replace("milieu ", "").replace(" centre", "")
+    return f"{vert} {horiz}".replace("middle ", "").replace(" centre", "")
 
 
 def depth_band_name(rank: int, total: int) -> str:
     """Bande de profondeur : c'est ce qui compte le plus pour un calque."""
     if total <= 1:
-        return "plan unique"
+        return "single plane"
     r = rank / max(1, total - 1)
     if r < 0.34:
-        return "arrière-plan"
+        return "background"
     if r > 0.66:
-        return "premier plan"
-    return "plan médian"
+        return "foreground"
+    return "middle ground"
 
 
 def describe(mask: np.ndarray, rgb: np.ndarray, rank: int, total: int) -> str:

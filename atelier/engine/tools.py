@@ -499,22 +499,22 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
         layers.append((name, np.dstack([rgb, alpha])))
 
     if want_psd:
-        dest = settings.OUTPUT_DIR / f"calques-{stamp}.psd"
+        dest = settings.OUTPUT_DIR / f"layers-{stamp}.psd"
         psd_writer.write_psd(dest, rgb, layers)
         size = dest.stat().st_size / (1024 * 1024)
         if log:
-            log(f"[layers] PSD written: {dest.name} ({size:.1f} Mo, "
-                f"{len(layers)} calques)")
+            log(f"[layers] PSD written: {dest.name} ({size:.1f} MB, "
+                f"{len(layers)} layers)")
         out.append(dest)
     if want_png:
-        folder = settings.OUTPUT_DIR / f"calques-{stamp}"
+        folder = settings.OUTPUT_DIR / f"layers-{stamp}"
         folder.mkdir(parents=True, exist_ok=True)
         for i, (name, rgba) in enumerate(layers):
             safe = "".join(c if (c.isalnum() or c in " -_") else "_"
-                           for c in name).strip() or f"calque{i}"
+                           for c in name).strip() or f"layer{i}"
             Image.fromarray(rgba, "RGBA").save(folder / f"{i:02d}_{safe}.png")
         if log:
-            log(f"[calques] {len(layers)} PNG transparents : {folder.name}/")
+            log(f"[layers] {len(layers)} transparent PNGs: {folder.name}/")
         out.append(folder)
     return out
 

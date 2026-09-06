@@ -72,7 +72,7 @@ class ReportTests(unittest.TestCase):
                 os.environ,
                 {"GRADIO_TEMP_DIR": str(settings.ROOT / "tmp" / "gradio")}):
             r = imgcheck.report()
-        self.assertIn("Rien d'anormal", r.markdown)
+        self.assertIn("Nothing abnormal", r.markdown)
         self.assertIsNotNone(r.test_image)
         self.assertTrue(Path(r.test_image).is_file())
 
@@ -93,7 +93,7 @@ class ReportTests(unittest.TestCase):
                 items, _dest = imgcheck.checks()
         bad = [c for c in items if c.ok is False]
         self.assertTrue(bad, "un cache hors du projet doit être signalé")
-        self.assertTrue(any("projet" in c.label for c in bad))
+        self.assertTrue(any("project" in c.label for c in bad))
 
     def test_every_failed_check_explains_what_to_do(self):
         """Un ❌ sans explication laisse l'utilisateur exactement où il était."""
@@ -129,7 +129,7 @@ class FormatProbeTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 _tiles, lines = imgcheck.format_probe(Path(d))
         self.assertTrue(all(l.startswith("❌") for l in lines), lines)
-        self.assertTrue(any("registre" in l for l in lines))
+        self.assertTrue(any("registry" in l for l in lines))
 
     def test_known_extensions_resolve_to_an_image_type(self):
         for _name, suffix in imgcheck.TEST_FORMATS:
@@ -189,7 +189,7 @@ class DescribeFileTests(unittest.TestCase):
             bad.write_bytes(good.read_bytes()[:40])
             got = imgcheck.describe_file(bad)
         self.assertIn("❌", got)
-        self.assertIn("tronqué", got)
+        self.assertIn("truncated", got)
 
     def test_a_mislabelled_extension_is_called_out(self):
         with tempfile.TemporaryDirectory() as d:
@@ -234,7 +234,7 @@ class SameVolumeTests(unittest.TestCase):
                 {"GRADIO_TEMP_DIR": str(settings.ROOT / "tmp" / "gradio")}):
             items, _dest = imgcheck.checks()
         labels = [c.label for c in items]
-        self.assertIn("Dépôt et cache sur le même disque", labels)
+        self.assertIn("Upload and cache on the same drive", labels)
 
 
 class DriveKindTests(unittest.TestCase):

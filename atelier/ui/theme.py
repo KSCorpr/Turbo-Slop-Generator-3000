@@ -85,7 +85,7 @@ def theme() -> gr.Theme:
 
 CSS = f"""
 /* ------------------------------------------------------------------ *
- *  Jetons : une seule source pour les couleurs qu'on répète.
+ *  Tokens: a single source for the colours we repeat.
  * ------------------------------------------------------------------ */
 :root {{
   --tsg-accent: {ACCENT};
@@ -107,7 +107,7 @@ CSS = f"""
 .gradio-container {{ max-width: 1750px !important; margin: auto; }}
 
 /* ------------------------------------------------------------------ *
- *  En-tête : compact. Il ne doit pas coûter un tiers du premier écran.
+ *  Header: compact. It must not cost a third of the first screen.
  * ------------------------------------------------------------------ */
 #atelier-header {{ display:flex; align-items:baseline; gap:12px;
                    flex-wrap:wrap; padding:2px 0 8px 0; }}
@@ -115,7 +115,7 @@ CSS = f"""
                       font-weight:700; color:var(--tsg-ink); }}
 #atelier-header .sub {{ color:var(--tsg-muted); font-size:.8rem; }}
 #atelier-header .dot {{ color:var(--tsg-line); }}
-/* Pastille d'état matériel : lisible d'un coup d'œil, jamais criarde. */
+/* Hardware status chip: readable at a glance, never garish. */
 #atelier-header .chip {{ font-size:.74rem; font-weight:600; padding:2px 9px;
     border-radius:999px; border:1px solid var(--tsg-line);
     color:var(--tsg-muted); white-space:nowrap; }}
@@ -129,8 +129,8 @@ CSS = f"""
     color:#fbbf24; }}
 
 /* ------------------------------------------------------------------ *
- *  Onglets. `button[role=tab]` : sémantique ARIA, donc stable d'une
- *  version de Gradio à l'autre — contrairement aux classes internes.
+ *  Tabs. `button[role=tab]`: ARIA semantics, so it stays stable from one
+ *  Gradio version to the next — unlike the internal class names.
  * ------------------------------------------------------------------ */
 .tab-container {{ border-bottom:1px solid var(--tsg-line) !important;
                   gap:2px !important; margin-bottom:14px !important; }}
@@ -148,19 +148,19 @@ button[role=tab][aria-selected=true] {{
     background:transparent !important;
     border-bottom:2px solid var(--tsg-accent) !important; }}
 .dark button[role=tab][aria-selected=true] {{ color:var(--tsg-accent) !important; }}
-/* Sous-onglets : plus discrets que les onglets racine, pour que la
-   hiérarchie se lise sans avoir à réfléchir. */
+/* Sub-tabs: quieter than the root tabs, so the hierarchy reads without
+   having to think about it. */
 .tab-container .tab-container button[role=tab] {{
     font-size:.85rem !important; padding:6px 11px !important; }}
 
 /* ------------------------------------------------------------------ *
- *  Libellés : typographiques, PAS des pastilles colorées.
+ *  Labels: typographic, NOT coloured pills.
  *
- *  Le thème « Soft » de Gradio pose un fond teinté derrière chaque
- *  libellé de bloc. Multiplié par les vingt champs d'un onglet, l'accent
- *  finit partout — donc plus nulle part : rien ne ressort, et l'ensemble
- *  a l'air d'une maquette. Les jetons du thème ne couvrent pas tous les
- *  composants (galerie, accordéon, image), d'où ces règles explicites.
+ *  Gradio's "Soft" theme puts a tinted background behind every block
+ *  label. Multiplied by the twenty fields of a tab, the accent ends up
+ *  everywhere — and therefore nowhere: nothing stands out, and the whole
+ *  thing looks like a mock-up. The theme tokens do not cover every
+ *  component (gallery, accordion, image), hence these explicit rules.
  * ------------------------------------------------------------------ */
 .block-label, .block-title, label > span:first-child,
 .gradio-container .block > .label-wrap > span {{
@@ -174,12 +174,12 @@ button[role=tab][aria-selected=true] {{
     padding-left:0 !important; }}
 .block-label {{ backdrop-filter:none !important; }}
 .gradio-container .block > .label-wrap {{ margin-bottom:4px; }}
-/* L'accordéon garde du poids : c'est un titre de section, pas un libellé. */
+/* The accordion keeps its weight: it is a section title, not a label. */
 .gradio-container .label-wrap > span {{ font-size:.88rem !important;
     color:var(--tsg-ink) !important; }}
 
 /* ------------------------------------------------------------------ *
- *  Action principale : le seul endroit où l'accent est plein.
+ *  Primary action: the only place where the accent is solid.
  * ------------------------------------------------------------------ */
 .go-row {{ gap:8px !important; }}
 .go-row button {{ font-weight:650 !important; }}
@@ -189,7 +189,7 @@ button[role=tab][aria-selected=true] {{
     box-shadow:0 1px 2px rgba(0,184,230,.4), 0 6px 18px rgba(0,184,230,.3); }}
 
 /* ------------------------------------------------------------------ *
- *  Cartes, étiquettes, états.
+ *  Cards, tags, states.
  * ------------------------------------------------------------------ */
 .model-card {{ border:1px solid var(--tsg-line); border-radius:12px;
                padding:13px 15px; background:var(--tsg-surface);
@@ -204,20 +204,20 @@ button[role=tab][aria-selected=true] {{
 .log-box textarea {{ font-family:{", ".join(_MONO)}; font-size:.78rem;
                      line-height:1.5; resize:vertical; }}
 
-/* .hint = ce qui VA se passer · .feedback = ce qui S'EST passé. */
+/* .hint = what IS GOING to happen · .feedback = what HAS happened. */
 .hint p {{ margin:.2rem 0 !important; font-size:.8rem;
            color:var(--tsg-muted); line-height:1.5; }}
 .feedback:not(:empty) {{ border-left:3px solid var(--tsg-accent);
     background:rgba(0,184,230,.06); border-radius:0 8px 8px 0;
     padding:7px 11px; margin:6px 0; }}
-/* `:not(:empty)` ci-dessus ne mord JAMAIS : Gradio pose la classe sur le
-   conteneur, qui garde un enfant même quand le Markdown est vide. Résultat,
-   une bande bleue permanente qui ressemble à un message illisible. On teste
-   donc la présence d'un paragraphe RENDU, ce qui est le vrai critère. */
+/* The `:not(:empty)` above NEVER bites: Gradio puts the class on the
+   container, which keeps a child even when the Markdown is empty. The result
+   is a permanent blue band that looks like an unreadable message. So we test
+   for a RENDERED paragraph instead, which is the real criterion. */
 .feedback:not(:has(p)) {{ display:none; }}
 .feedback p {{ margin:.15rem 0 !important; font-size:.83rem; line-height:1.5; }}
 
-/* Bandeau d'alerte au démarrage : compact, replié sur une ligne. */
+/* Start-up alert banner: compact, folded onto one line. */
 #atelier-alerts:not(:empty) {{ border:1px solid #fde68a; background:#fffbeb;
     color:#92400e; border-radius:10px; padding:8px 12px; margin-bottom:10px;
     font-size:.84rem; }}
@@ -226,7 +226,7 @@ button[role=tab][aria-selected=true] {{
     color:#fcd34d; }}
 
 /* ------------------------------------------------------------------ *
- *  Stabilité des dimensions (évite les sauts au redimensionnement).
+ *  Dimension stability (avoids jumps when resizing).
  * ------------------------------------------------------------------ */
 [data-testid="image"] img, .image-frame img, .image-container img {{
     object-fit:contain !important; width:100% !important; max-height:70vh; }}
@@ -235,7 +235,7 @@ textarea {{ resize:vertical !important; max-width:100% !important; }}
 .gr-image, .gr-gallery {{ min-height:0; }}
 footer {{ display:none !important; }}
 
-/* Accessibilité : un anneau de focus visible, à l'accent. */
+/* Accessibility: a visible focus ring, in the accent colour. */
 :where(button, input, textarea, select, [tabindex]):focus-visible {{
     outline:2px solid var(--tsg-accent) !important; outline-offset:2px; }}
 """

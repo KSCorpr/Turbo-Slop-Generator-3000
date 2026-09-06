@@ -117,9 +117,9 @@ def build_generative_tab(model_id: str, title: str,
             ("full" if (m and m.family == "flux2") else "")
         is_edit = _edit_kind in (True, "full")
         edit_optional = _edit_kind == "optional"
-        status = (f"<span class='status-ok'>{t('● modèle prêt')}</span>" if ready
+        status = (f"<span class='status-ok'>{t('● model ready')}</span>" if ready
                   else "<span class='status-missing'>"
-                       f"{t('○ à télécharger (onglet Catalogue de modèles)')}</span>")
+                       f"{t('○ to download (Model catalog tab)')}</span>")
         _mode = t("image editing") if is_edit else t("image-to-image")
         gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
             title=title, mode=_mode, status=status))
@@ -728,7 +728,7 @@ def build_generative_tab(model_id: str, title: str,
             except tools.ToolError as exc:
                 raise gr.Error(str(exc))
             except Exception as exc:  # noqa: BLE001
-                raise gr.Error(f"Échec de l'amélioration : {exc}")
+                raise gr.Error(f"Improvement failed: {exc}")
 
             # Feedback : ce qui a été fait, en une ligne repérable.
             bits = []
@@ -763,7 +763,7 @@ def build_generative_tab(model_id: str, title: str,
             parts = [{"light": t("light touch-up"),
                       "medium": t("balanced enrichment"),
                       "strong": t("full expansion")}.get(level or "medium", "")]
-            parts.append(t("1 seule proposition") if n == 1 else
+            parts.append(t("1 suggestion only") if n == 1 else
                          t("{n} propositions au choix").format(n=n))
             return "→ " + "  ·  ".join(p for p in parts if p)
 
@@ -1037,7 +1037,7 @@ def build_generative_tab(model_id: str, title: str,
                            "\n".join(logs[-400:]), gr.update(), gr.update())
 
             if "err" in state:
-                logs.append(f"\n[ERREUR] {state['err']}")
+                logs.append(f"\n[ERROR] {state['err']}")
                 # Fin (erreur) : on remet l'affichage normal (galerie visible).
                 yield (t("❌ Error — see the log below."),
                        gr.update(visible=False), gr.update(visible=True),

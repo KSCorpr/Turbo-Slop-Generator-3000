@@ -35,8 +35,8 @@ DIRECTIONS = ["left", "right", "top", "bottom"]
 
 # Modes de pré-remplissage de la nouvelle zone.
 FILLS = [
-    ("Gris neutre (modèles d'édition)", "neutral"),
-    ("Étirement flou", "edge"),
+    ("Neutral grey (editing models)", "neutral"),
+    ("Blurred stretch", "edge"),
     ("Miroir (motifs, textures)", "mirror"),
 ]
 
@@ -300,4 +300,4 @@ def composite_back(generated, original, p: dict, feather: int = 24):
 def describe(p: dict) -> str:
     parts = [f"{k} +{p[k]}px" for k in DIRECTIONS if p.get(k)]
     return (f"{p['orig'][0]}×{p['orig'][1]} → {p['width']}×{p['height']}"
-            + (" (" + ", ".join(parts) + ")" if parts else " (aucune extension)"))
+            + (" (" + ", ".join(parts) + ")" if parts else " (no extension)"))

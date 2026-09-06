@@ -48,7 +48,7 @@ def path_size(p: Path) -> int:
 def human(n: int) -> str:
     if n <= 0:
         return "—"
-    for unit in ("o", "Ko", "Mo", "Go", "To"):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024 or unit == "To":
             return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
         n /= 1024.0
@@ -91,7 +91,7 @@ def items(prefs: dict | None = None) -> list[Item]:
         _engine_sdcpp_paths(),
         note="Reinstallable: install.bat / update-engine.bat."))
     out.append(Item(
-        "engine_trellis", "Moteur trellis.cpp (image → 3D)", "Moteurs",
+        "engine_trellis", "trellis.cpp engine (image → 3D)", "Engines",
         [trellis.TRELLIS_BIN_DIR],
         note="Reinstallable: the “Image → 3D” tab."))
 
@@ -108,7 +108,7 @@ def items(prefs: dict | None = None) -> list[Item]:
         new = [d for d in model_dirs if d not in seen]
         if new:
             idx = len(out)
-            out.append(Item(f"model_{m.id}", f"Model — {m.name}", "Modèles",
+            out.append(Item(f"model_{m.id}", f"Model — {m.name}", "Models",
                             new,
                             note="Downloadable again: Model catalog."))
             shared_names[idx] = [m.name]
@@ -127,11 +127,11 @@ def items(prefs: dict | None = None) -> list[Item]:
                              "Model catalog.")
 
     # --- Autres modèles ----------------------------------------------------
-    out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Modèles",
+    out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Models",
                     [registry.upscalers_dir()],
                     note="Reinstallable: Toolkit → Enlarge."))
     out.append(Item("trellis_models", "Trellis 3D models (GGUF, ~10 GB)",
-                    "Modèles", [trellis.MODELS_DIR],
+                    "Models", [trellis.MODELS_DIR],
                     note="Reinstallable: the “Image → 3D” tab."))
 
     # --- Add-ons du Toolkit (PyTorch) -------------------------------------
@@ -149,7 +149,7 @@ def items(prefs: dict | None = None) -> list[Item]:
         # l'utilisateur peut voir ou libérer.
         Item("tool_clip", "Toolkit — CLIP labelling (layers)", "Add-ons Toolkit",
              [tools.CLIP_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_describe", "Toolkit — Image → prompt (~7,5 Go)",
+        Item("tool_describe", "Toolkit — Image → prompt (~7.5 GB)",
              "Add-ons Toolkit", [tools.DESCRIBE_MODEL_DIR],
              note="Reinstallable in one click."),
         Item("tool_face", "Toolkit — Face restoration", "Add-ons Toolkit",
@@ -162,16 +162,16 @@ def items(prefs: dict | None = None) -> list[Item]:
 
     # --- Données utilisateur (prudence) -----------------------------------
     out += [
-        Item("loras", "Installed LoRAs", "Vos données", [settings.LORA_DIR],
+        Item("loras", "Installed LoRAs", "Your data", [settings.LORA_DIR],
              note="⚠️ Your LoRA files (Civitai imports included).",
              protected=True),
-        Item("custom", "Custom models (models/custom)", "Vos données",
+        Item("custom", "Custom models (models/custom)", "Your data",
              [settings.CUSTOM_DIR],
              note="⚠️ Files you dropped in or converted by hand.", protected=True),
-        Item("outputs", "Generated images & 3D (outputs/)", "Vos données",
+        Item("outputs", "Generated images & 3D (outputs/)", "Your data",
              [settings.OUTPUT_DIR],
              note="⚠️ Your creations.", protected=True),
-        Item("tmp", "Fichiers temporaires (tmp/)", "Vos données",
+        Item("tmp", "Temporary files (tmp/)", "Your data",
              [settings.TMP_DIR],
              note="Preview caches, working files and the interface's image "
                   "cache. Safe with the application CLOSED; while it is "

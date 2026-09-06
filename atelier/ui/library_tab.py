@@ -10,8 +10,8 @@ from ..i18n import t
 
 def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
     ready = registry.model_is_ready(model)
-    status = (f"<span class='status-ok'>{t('● installé')}</span>" if ready
-              else f"<span class='status-missing'>{t('○ non installé')}</span>")
+    status = (f"<span class='status-ok'>{t('● installed')}</span>" if ready
+              else f"<span class='status-missing'>{t('○ not installed')}</span>")
     tags = " ".join(f"<span class='tag'>{t}</span>" for t in model.tags)
     reco = " · ".join(recos.get(model.id, []))
     return (f"<div class='model-card'><h3>{model.name} &nbsp; {status}</h3>"
@@ -91,5 +91,5 @@ def build_library_tab():
         refresh.click(refresh_cards, outputs=cards)
 
         gr.Markdown(
-            "---\n*Les outils (profondeur, détourage, SAM, améliorateur de "
-            "prompt, agrandissement) sont dans l'onglet Toolkit.*")
+            "---\n*The tools (depth, background removal, SAM, prompt "
+            "improver, enlargement) live in the Toolkit tab.*")

@@ -50,7 +50,7 @@ def placement_candidates(prefs: dict | None = None,
     common = {"auto_optimize": False, "gpu_index": main.index,
               "auto_fit": False, "split_mode": "layer"}
     out = [Placement(
-        "single-staged", f"{main.name} seule · poids en RAM",
+        "single-staged", f"{main.name} alone · weights in RAM",
         {**common, "encoder_gpu_index": None, "params_backend": "",
          "flags": staged})]
     secondary = next((g for g in gpus if g.index != main.index), None)
@@ -65,7 +65,7 @@ def placement_candidates(prefs: dict | None = None,
         out.extend([
             Placement(
                 "dual-resident",
-                f"{main.name} diffusion · {secondary.name} encodeur résident",
+                f"{main.name} diffusion · {secondary.name} resident encoder",
                 {**common, "encoder_gpu_index": secondary.index,
                  "encoder_placement_forced": True,
                  "params_backend": mapping, "flags": resident}),
@@ -155,11 +155,11 @@ def _run_case(model_id: str, prefs: dict, label: str,
               cancel: Callable[[], bool] | None = None) -> dict:
     model = registry.get_base_model(model_id, prefs)
     if model is None:
-        return {"label": label, "ok": False, "error": f"Modèle inconnu : {model_id}"}
+        return {"label": label, "ok": False, "error": f"Unknown model: {model_id}"}
     if not registry.model_is_ready(model):
         missing = [c.role for c in registry.missing_components(model)]
         return {"label": label, "ok": False,
-                "error": "Fichiers manquants : " + ", ".join(missing)}
+                "error": "Missing files: " + ", ".join(missing)}
     d = model.defaults
     started = time.perf_counter()
     times: list[float] = []
@@ -185,7 +185,7 @@ def _run_case(model_id: str, prefs: dict, label: str,
         times.sort()
         median = times[len(times) // 2]
         if log:
-            log(f"[benchmark] {label} — médiane {median:.2f} s "
+            log(f"[benchmark] {label} — median {median:.2f} s "
                 f"(min {times[0]:.2f} · max {times[-1]:.2f})")
         return {"label": label, "ok": True, "seconds": round(median, 3),
                 "runs_seconds": [round(x, 3) for x in times],
@@ -243,10 +243,10 @@ def run_hardware_benchmark(model_id: str | None = None,
     base = settings.load_prefs()
     selected = model_id or _pick_model(base)
     if not selected:
-        raise RuntimeError("Aucun modèle installé : téléchargez Krea 2 Turbo ou Flux.2.")
+        raise RuntimeError("No model installed: download Krea 2 Turbo or Flux.2.")
     modes = placement_candidates(base)
     if not modes:
-        raise RuntimeError("Aucun GPU NVIDIA détecté.")
+        raise RuntimeError("No NVIDIA GPU detected.")
     results = []
     for mode in modes:
         prefs = _benchmark_prefs(base, mode.prefs_patch)
@@ -289,7 +289,7 @@ def apply_recommendation(report_path: str | Path) -> str:
     data = json.loads(Path(report_path).read_text(encoding="utf-8"))
     patch = data.get("recommended_prefs_patch")
     if not isinstance(patch, dict) or not patch:
-        raise RuntimeError("Ce rapport ne contient aucun profil valide à appliquer.")
+        raise RuntimeError("This report holds no valid profile to apply.")
     prefs = _merge_prefs(settings.load_prefs(), patch)
     settings.save_prefs(prefs)
-    return str(data.get("recommended_mode") or "profil mesuré")
+    return str(data.get("recommended_mode") or "measured profile")

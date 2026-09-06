@@ -51,7 +51,7 @@ class Gpu:
 
     def label(self) -> str:
         """Libellé lisible et complet, pour les menus et les diagnostics."""
-        bits = [f"{self.vram_gb:.0f} Go", self.arch]
+        bits = [f"{self.vram_gb:.0f} GB", self.arch]
         if self.sm:
             bits.append(self.sm)
         return f"{self.name} ({', '.join(bits)})"
@@ -419,9 +419,10 @@ def _shift_quant(q: str, delta: int) -> str:
 GENERATIONS: dict[str, dict] = {
     "gtx10": {"label": "GTX 10xx (Pascal)", "arch": "pascal", "bias": -1,
               "typical_vram": 8.0,
-              "note": "Pascal (GTX 10xx / 1080 Ti) : pas de tensor cores, "
-                      "flash-attention désactivé (peu efficace). Quant légère "
-                      "pour compenser ; encodeur déchargé en RAM."},
+              "note": "Pascal (GTX 10xx / 1080 Ti): no tensor cores, "
+                      "flash-attention disabled (barely helps). A light "
+                      "quantization to compensate; the encoder offloaded to "
+                      "RAM."},
     "rtx20": {"label": "RTX 20xx (Turing)", "arch": "turing", "bias": 0,
               "typical_vram": 8.0,
               "note": "Turing: flash-attention OK, no fp8 acceleration "
@@ -585,7 +586,7 @@ def rtx3060_1080ti_prefs() -> dict:
     """
     combo = rtx3060_1080ti_combo()
     if combo is None:
-        raise ValueError("Le duo RTX 3060 12 Go + GTX 1080 Ti n'est pas détecté.")
+        raise ValueError("The RTX 3060 12 GB + GTX 1080 Ti pair was not detected.")
     main, secondary = combo
     return {
         "auto_optimize": False,
@@ -725,6 +726,6 @@ def summary_text() -> str:
         tc = t("tensor cores") if g.tensor_cores else t("no tensor cores")
         link = f" · {g.pcie_label}" if g.pcie_label else ""
         bus = f" · bus {g.bus_id}" if g.bus_id else ""
-        lines.append(f"- #{g.index} — {g.name} · {g.vram_gb:.0f} Go · "
+        lines.append(f"- #{g.index} — {g.name} · {g.vram_gb:.0f} GB · "
                      f"{g.arch} ({tc}){link}{bus}")
     return "\n".join(lines)

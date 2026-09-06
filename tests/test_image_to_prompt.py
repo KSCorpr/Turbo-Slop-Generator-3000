@@ -189,7 +189,7 @@ class EngineLayerTests(unittest.TestCase):
             self.skipTest("modèle installé sur cette machine")
         with self.assertRaises(tools.ToolError) as ctx:
             tools.image_to_prompt(ROOT / "README.md")
-        self.assertIn("pas installé", str(ctx.exception))
+        self.assertIn("not installed", str(ctx.exception))
 
 
 # Sortie RÉELLE remontée par l'utilisateur : bon début, puis le modèle s'enferme

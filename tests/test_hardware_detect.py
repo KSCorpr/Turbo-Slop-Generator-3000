@@ -41,7 +41,7 @@ class GpuLabelTests(unittest.TestCase):
 
     def test_label_is_self_contained(self):
         g = h.Gpu(0, "RTX 2080 Ti", 11.0, "turing", True, "7.5", "550")
-        for bit in ("RTX 2080 Ti", "11 Go", "turing", "sm_75"):
+        for bit in ("RTX 2080 Ti", "11 GB", "turing", "sm_75"):
             self.assertIn(bit, g.label())
 
 

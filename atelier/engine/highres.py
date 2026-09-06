@@ -147,9 +147,9 @@ def high_resolution(image, model_id: str, factor: float = 2.0,
         path = tmp / "highres_input.png"
         prepared.save(path)
         if log:
-            log(f"Haute résolution : {source.width}×{source.height} → "
+            log(f"High resolution: {source.width}×{source.height} → "
                 f"{width}×{height} (×{width / max(1, source.width):.2f}), "
-                f"débruitage {strength:.2f}.")
+                f"denoise {strength:.2f}.")
         try:
             paths = gen_engine.generate(
                 model_id=model_id, prompt=text, negative="",
@@ -170,10 +170,10 @@ def high_resolution(image, model_id: str, factor: float = 2.0,
                 raise
             width, height = new_w, new_h
             if log:
-                log(f"↻ Mémoire insuffisante — nouvelle tentative en "
+                log(f"↻ Not enough memory — retrying at "
                     f"{width}×{height}.")
     if not paths:
-        raise sdcpp.EngineError("Aucune image produite (voir le journal).")
+        raise sdcpp.EngineError("No image produced (see the log).")
 
     out = paths[0]
     if match_colors:
@@ -183,5 +183,5 @@ def high_resolution(image, model_id: str, factor: float = 2.0,
             fixed = color_match(rendered, source)
         fixed.save(out)
         if log:
-            log("Couleurs de l'original réappliquées (le détail est conservé).")
+            log("Original colours reapplied (the detail is kept).")
     return out

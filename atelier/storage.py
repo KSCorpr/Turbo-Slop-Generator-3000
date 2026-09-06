@@ -267,7 +267,7 @@ def restore(paths: list[Path], log=None) -> Iterator[str]:
 def _human(n: int) -> str:
     if n <= 0:
         return "0 o"
-    for unit in ("o", "Ko", "Mo", "Go", "To"):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024 or unit == "To":
             return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
         n /= 1024.0

@@ -62,7 +62,6 @@ def html(img, max_side: int = MAX_SIDE) -> str:
     """Vignette prête à poser dans un `gr.HTML`."""
     uri = data_uri(img, max_side)
     if not uri:
-        return ("<p style='opacity:.7'>Aucune image chargée — déposez-en une "
-                "ci-dessus.</p>")
-    return (f"<img src='{uri}' alt='aperçu' "
+        return ("<p style='opacity:.7'>No image loaded — drop one above.</p>")
+    return (f"<img src='{uri}' alt='preview' "
             "style='max-width:100%;height:auto;border-radius:8px'>")

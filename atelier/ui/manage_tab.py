@@ -40,7 +40,7 @@ def _choices_and_summary():
                 if i.protected:
                     label = "⚠️ " + label
                 choices.append((label, i.key))
-    rows.append(f"\n**Total occupé : {inventory.human(total)}**")
+    rows.append(f"\n**Total in use: {inventory.human(total)}**")
     return choices, "\n".join(rows)
 
 
@@ -54,7 +54,7 @@ def _move_choices() -> list[tuple[str, str]]:
         moved = [p for p in dirs if storage.is_link(p)]
         if moved:
             tgt = storage.link_target(moved[0])
-            label = f"↗️ {i.label} — déplacé vers {tgt}"
+            label = f"↗️ {i.label} — moved to {tgt}"
         else:
             label = f"{i.label} — {inventory.human(i.size)}"
         out.append((label, i.key))
@@ -103,7 +103,7 @@ def build_manage_tab():
             msgs, freed = inventory.delete(list(keys))
             ch, summ = _choices_and_summary()
             report = "\n".join(msgs) + \
-                f"\n\n**{inventory.human(freed)} libéré(s).**"
+                f"\n\n**{inventory.human(freed)} freed.**"
             return (gr.update(choices=ch, value=[]), gr.update(value=summ),
                     gr.update(value=False), report)
 
@@ -111,7 +111,7 @@ def build_manage_tab():
                          outputs=[picks, summary_md, confirm, result])
 
         gr.Markdown(
-            f"*Emplacements : modèles `{settings.MODELS_DIR.name}/`, moteurs "
+            f"*Locations: models `{settings.MODELS_DIR.name}/`, moteurs "
             f"`{settings.BIN_DIR.name}/`, add-ons `tools_repo/`, LoRA "
             f"`{settings.LORA_DIR.name}/`, sorties "
             f"`{settings.OUTPUT_DIR.name}/`.*")
@@ -128,17 +128,17 @@ def build_manage_tab():
                 "count.\n\n⚠️ The change takes effect **when the application "
                 "restarts**.")
             loc_now = gr.Markdown(
-                f"**Dossier actuel :** `{storage.current()}`"
+                f"**Current folder:** `{storage.current()}`"
                 + ("  *(project default)*" if storage.is_default() else ""))
             dest_box = gr.Textbox(
                 value=storage.configured(),
-                label="Nouveau dossier (chemin absolu)",
-                placeholder=r"ex. D:\IA\models  ou  /mnt/nvme/models")
+                label="New folder (absolute path)",
+                placeholder="e.g. D:\\AI\\models  or  /mnt/nvme/models")
             with gr.Row():
                 move_btn = gr.Button("📦 Move the models here",
                                      variant="primary")
                 point_btn = gr.Button("🔗 Point here without moving")
-                reset_btn = gr.Button("↩️ Revenir au dossier du projet")
+                reset_btn = gr.Button("↩️ Back to the project folder")
             loc_log = gr.Textbox(label="Log", lines=10, autoscroll=True,
                                  elem_classes="log-box")
 
@@ -153,8 +153,8 @@ def build_manage_tab():
                 for msg in storage.move(dest):
                     lines.append(msg)
                     yield gr.update(), "\n".join(lines)
-                yield (gr.update(value=f"**Dossier actuel :** `{storage.current()}` "
-                                       "— *redémarrez pour appliquer*"),
+                yield (gr.update(value=f"**Current folder:** `{storage.current()}` "
+                                       "— *restart to apply*"),
                        "\n".join(lines))
 
             move_btn.click(_do_move, inputs=[dest_box],
@@ -165,8 +165,8 @@ def build_manage_tab():
                 if err:
                     return gr.update(), f"❌ {err}"
                 msg = storage.save(dest)
-                return (gr.update(value=f"**Dossier actuel :** `{storage.current()}` "
-                                        "— *redémarrez pour appliquer*"),
+                return (gr.update(value=f"**Current folder:** `{storage.current()}` "
+                                        "— *restart to apply*"),
                         msg + "\n\n*(No file was moved: the folder you gave "
                               "must already contain your models, otherwise "
                               "they will be downloaded again.)*")
@@ -175,9 +175,9 @@ def build_manage_tab():
                             outputs=[loc_now, loc_log])
 
             def _do_reset():
-                return (gr.update(value=f"**Dossier actuel :** "
+                return (gr.update(value=f"**Current folder:** "
                                         f"`{settings.DEFAULT_MODELS_DIR}` "
-                                        "— *redémarrez pour appliquer*"),
+                                        "— *restart to apply*"),
                         storage.save(None), gr.update(value=""))
 
             reset_btn.click(_do_reset, outputs=[loc_now, loc_log, dest_box])
@@ -194,8 +194,8 @@ def build_manage_tab():
             sel_picks = gr.CheckboxGroup(choices=_move_choices(), value=[],
                                          label="Items to move out / bring back")
             sel_dest = gr.Textbox(
-                label="Dossier de destination (chemin absolu)",
-                placeholder=r"ex. E:\IA-gros-modeles  ou  /mnt/hdd/ia")
+                label="Destination folder (absolute path)",
+                placeholder="e.g. E:\\AI-big-models  or  /mnt/hdd/ai")
             with gr.Row():
                 sel_move = gr.Button("📦 Move + create the link",
                                      variant="primary")
@@ -219,8 +219,8 @@ def build_manage_tab():
                     return
                 raw = (raw or "").strip().strip('"')
                 if not raw or not Path(raw).expanduser().is_absolute():
-                    yield gr.update(), t("❌ Indiquez un dossier de destination "
-                                         "en chemin **absolu**.")
+                    yield gr.update(), t("❌ Give a destination folder as an "
+                                         "**absolute** path.")
                     return
                 lines: list[str] = []
                 yield gr.update(), t("⏳ Moving…")
@@ -283,7 +283,7 @@ def build_manage_tab():
                     # là où un contrôle général ne peut que dire « tout va
                     # bien » — ce qu'il disait, pendant que les imports
                     # cassaient.
-                    diag_tiles = gr.Gallery(label="Un format par tuile",
+                    diag_tiles = gr.Gallery(label="One format per tile",
                                             height=200, columns=5,
                                             buttons=widgets.IMAGE_VIEW_ONLY)
                     diag_last = gr.Image(

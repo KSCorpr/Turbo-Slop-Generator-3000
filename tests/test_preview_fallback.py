@@ -73,7 +73,7 @@ class DegradationTests(unittest.TestCase):
 
     def test_no_image_gives_a_readable_message(self):
         self.assertEqual(preview.data_uri(None), "")
-        self.assertIn("Aucune image", preview.html(None))
+        self.assertIn("No image loaded", preview.html(None))
 
     def test_a_corrupt_file_does_not_raise(self):
         import tempfile
@@ -81,7 +81,7 @@ class DegradationTests(unittest.TestCase):
             p = Path(d) / "coupé.png"
             p.write_bytes(b"\x89PNG et rien de plus")   # en-tete puis rien
             self.assertEqual(preview.data_uri(str(p)), "")
-            self.assertIn("Aucune image", preview.html(str(p)))
+            self.assertIn("No image loaded", preview.html(str(p)))
 
     def test_a_missing_file_does_not_raise(self):
         self.assertEqual(preview.data_uri("/nulle/part/x.png"), "")

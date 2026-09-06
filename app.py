@@ -243,10 +243,6 @@ def presentation() -> dict:
 
 def build_app() -> gr.Blocks:
     settings.ensure_dirs()
-    # Langue de l'interface : lue dans les préférences. Les chaînes dynamiques
-    # sont traduites à la construction (via t()), le reste après coup.
-    i18n.init_from_prefs()
-    first_run = not settings.PREFS_FILE.exists()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
     # Thème / CSS / <head> ne se posent plus ici : voir presentation(),
@@ -260,31 +256,13 @@ def build_app() -> gr.Blocks:
         if gpus:
             _best = max(gpus, key=lambda g: g.vram_gb)
             _chip = (f"<span class='chip ok'>{_best.name} · "
-                     f"{_best.vram_gb:.0f} Go</span>")
+                     f"{_best.vram_gb:.0f} GB</span>")
         else:
             _chip = (f"<span class='chip warn'>{i18n.t('mode CPU')}</span>")
         gr.HTML(
             f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
             f"<span class='sub'>{_subtitle} · v{__version__}</span>"
             f"{_chip}</div>")
-
-        # Premier démarrage : choix de la langue (bilingue, persisté).
-        if first_run:
-            gr.Markdown("### 🌐 Choisissez la langue · Choose your language")
-            with gr.Row():
-                _fr_btn = gr.Button("🇫🇷 Français", variant="primary")
-                _en_btn = gr.Button("🇬🇧 English", variant="primary")
-            _lang_msg = gr.Markdown("")
-
-            def _pick_lang(code):
-                p = settings.load_prefs()
-                p["lang"] = code
-                settings.save_prefs(p)
-                return ("✅ Enregistré — **redémarrez** l'application (run.bat). · "
-                        "Saved — **restart** the app.")
-
-            _fr_btn.click(lambda: _pick_lang("fr"), outputs=[_lang_msg])
-            _en_btn.click(lambda: _pick_lang("en"), outputs=[_lang_msg])
 
         # Alertes de démarrage : UN bandeau compact, pas un empilement. Deux
         # blocs Markdown pleine largeur coûtaient une centaine de pixels du
@@ -358,7 +336,6 @@ def build_app() -> gr.Blocks:
                     build_manage_tab()
                     build_convert_tab()
 
-    i18n.translate_blocks(demo)   # traduit les libellés statiques (mode EN)
     return demo
 
 
@@ -387,9 +364,9 @@ def main():
     ap.add_argument("--share", action="store_true",
                     help="lien public temporaire gradio.live")
     ap.add_argument("--listen", action="store_true",
-                    help="exposer sur le réseau local (0.0.0.0)")
+                    help="expose on the local network (0.0.0.0)")
     ap.add_argument("--auth", default=None,
-                    help="protéger par mot de passe : utilisateur:motdepasse")
+                    help="password-protect: user:password")
     args = ap.parse_args()
 
     host = "0.0.0.0" if args.listen else args.host

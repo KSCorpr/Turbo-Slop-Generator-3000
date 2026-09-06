@@ -83,9 +83,9 @@ def save_style(name: str, text: str) -> str:
     """Enregistre/écrase un style. Retourne le nom nettoyé."""
     name = (name or "").strip()
     if not name:
-        raise ValueError("Donnez un nom au style.")
+        raise ValueError("Give the style a name.")
     if not (text or "").strip():
-        raise ValueError("Le style est vide.")
+        raise ValueError("The style is empty.")
     data = _load()
     data[name] = text.strip()
     _write(data)
@@ -108,9 +108,9 @@ def delete_style(name: str | None) -> None:
         _write(data)
     if is_bundled(name):
         raise ValueError(
-            f"« {name} » est livré avec l'app : il ne peut pas être supprimé."
-            + (" Votre version personnelle a été retirée, le préréglage "
-               "d'origine est rétabli." if had_override else ""))
+            f"“{name}” ships with the app: it cannot be deleted."
+            + (" Your personal version has been removed, the original preset "
+               "is restored." if had_override else ""))
 
 
 # --------------------------------------------------------------------------

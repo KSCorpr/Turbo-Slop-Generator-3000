@@ -55,7 +55,7 @@ def _variant_choices() -> list[tuple[str, str]]:
     installed = trellis.installed_variants()
     out = []
     for lbl, v in trellis.VARIANTS:
-        out.append((lbl if v in installed else f"{lbl} — non installé", v))
+        out.append((lbl if v in installed else f"{lbl} — not installed", v))
     return out
 
 
@@ -258,7 +258,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         atlas = gr.Dropdown(
                             [("Default", 0), ("1024 px", 1024),
                              ("2048 px", 2048), ("4096 px", 4096)],
-                            value=0, label="Taille de l'atlas UV (texture)")
+                            value=0, label="UV atlas size (texture)")
                     with gr.Row():
                         no_texture = gr.Checkbox(
                             value=False,
@@ -291,7 +291,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 with gr.Accordion("Advanced options", open=False):
                     extra = gr.Textbox(
                         label="Extra trellis-server arguments (optional)",
-                        placeholder="ex. flags additionnels du serveur")
+                        placeholder="e.g. extra server flags")
                 with gr.Row():
                     run = gr.Button("🧊 Generate the 3D", variant="primary", scale=3)
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
@@ -299,7 +299,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             with gr.Column(scale=4):
                 model3d = gr.Model3D(label="3D preview (GLB)", clear_color=[
                     0.1, 0.1, 0.12, 1.0])
-                glb_file = gr.File(label="Fichier GLB", interactive=False)
+                glb_file = gr.File(label="GLB file", interactive=False)
                 with gr.Row():
                     seed_used = gr.Textbox(
                         label="Seed used (to replay this object)",
@@ -387,7 +387,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                        "\n".join(logs[-500:]), gr.update(), gr.update())
 
             if "err" in state:
-                logs.append(f"\n[ERREUR] {state['err']}")
+                logs.append(f"\n[ERROR] {state['err']}")
                 yield (t("❌ Failed — see the log."), gr.update(),
                        gr.update(), "\n".join(logs),
                        gr.update(value=trellis.resident_status()), gr.update())

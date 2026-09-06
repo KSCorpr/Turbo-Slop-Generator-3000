@@ -12,7 +12,6 @@ import ast
 import unittest
 from pathlib import Path
 
-from atelier import i18n
 from atelier.engine import tools
 from atelier.ui import xanax_tab
 
@@ -91,26 +90,29 @@ class EnhancerStyleTests(unittest.TestCase):
 
 class AnecdoteBankTests(unittest.TestCase):
     def test_the_bank_is_not_a_list_of_image_descriptions(self):
-        """Une anecdote parle de SOI. « un homme qui attend le bus » est une
+        """Une anecdote parle de SOI. « a man waiting for the bus » est une
         description : c'est précisément ce qu'on ne veut plus proposer."""
         for line in xanax_tab.ANECDOTES:
-            self.assertFalse(line.startswith(("un ", "une ", "des ", "le ",
-                                              "la ", "les ")),
+            self.assertFalse(line.lower().startswith(("a ", "an ", "the ")),
                              f"« {line} » est formulé comme une description")
 
     def test_every_anecdote_is_a_short_first_person_sentence(self):
+        """Ton de carnet, pas de légende : minuscule à l'attaque.
+
+        Sauf quand le premier mot est un nom propre — « Grandad », « New
+        Year's Eve » — qui garde sa majuscule en anglais quoi qu'il arrive.
+        Les lister vaut mieux que de relâcher la règle pour tout le monde.
+        """
+        proper = ("Grandad", "New Year")
         for line in xanax_tab.ANECDOTES:
             self.assertLess(len(line), 80, line)
             self.assertEqual(line, line.strip())
-            self.assertTrue(line[0].islower(), f"« {line} » : ton de carnet")
+            self.assertTrue(line[0].islower() or line.startswith(proper),
+                            f"« {line} » : ton de carnet")
 
     def test_no_duplicate(self):
         self.assertEqual(len(set(xanax_tab.ANECDOTES)),
                          len(xanax_tab.ANECDOTES))
-
-    def test_every_anecdote_is_translated(self):
-        missing = [a for a in xanax_tab.ANECDOTES if a not in i18n._EN]
-        self.assertEqual(missing, [], f"anecdotes sans anglais : {missing}")
 
 
 class PromptAssemblyTests(unittest.TestCase):

@@ -81,7 +81,7 @@ def _encode_channel(plane: np.ndarray) -> tuple[bytes, list[int]]:
 
 def _pascal_string(s: str, pad: int = 4) -> bytes:
     """Chaîne Pascal (longueur sur 1 octet) padée sur `pad`."""
-    raw = (s or "calque").encode("latin-1", "replace")[:255]
+    raw = (s or "layer").encode("latin-1", "replace")[:255]
     out = bytes([len(raw)]) + raw
     return out + b"\0" * ((-len(out)) % pad)
 
@@ -92,7 +92,7 @@ def _unicode_name(s: str) -> bytes:
     Le nom Pascal du bloc principal est limité au latin-1 : sans « luni », un
     accent ou un emoji ressort en charabia dans Photoshop.
     """
-    text = s or "calque"
+    text = s or "layer"
     payload = struct.pack(">I", len(text)) + text.encode("utf-16-be")
     payload += b"\0" * ((-len(payload)) % 4)
     return b"8BIM" + b"luni" + struct.pack(">I", len(payload)) + payload
@@ -120,13 +120,13 @@ def write_psd(path: Path | str, composite: np.ndarray,
     """
     path = Path(path)
     if composite.ndim != 3 or composite.shape[2] < 3:
-        raise PsdError("L'image composite doit être en RGB (HxWx3).")
+        raise PsdError("The composite image must be RGB (HxWx3).")
     height, width = composite.shape[:2]
     if max(width, height) > MAX_SIDE:
-        raise PsdError(f"PSD limité à {MAX_SIDE} px de côté "
-                       f"(demandé : {width}×{height}).")
+        raise PsdError(f"PSD capped at {MAX_SIDE} px on a side "
+                       f"(asked: {width}×{height}).")
     if not layers:
-        raise PsdError("Aucun calque à écrire.")
+        raise PsdError("No layer to write.")
 
     buf = bytearray()
     # --- En-tête -----------------------------------------------------------
@@ -141,7 +141,7 @@ def write_psd(path: Path | str, composite: np.ndarray,
     records += struct.pack(">h", len(layers))
     for name, rgba in layers:
         if rgba.shape[2] != 4:
-            raise PsdError(f"Le calque « {name} » doit être en RGBA.")
+            raise PsdError(f"Layer “{name}” must be RGBA.")
         crop, top, left = _crop_to_content(rgba)
         h, w = crop.shape[:2]
         records += struct.pack(">iiii", top, left, top + h, left + w)

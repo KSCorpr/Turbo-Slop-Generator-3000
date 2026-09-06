@@ -89,7 +89,7 @@ ANECDOTES = [
     "waited for my daughter outside the school gates",
     "stopped at the motorway services",
     "fixed the bike in the garage",
-    "a colleague's wedding, in the village hall",
+    "colleague's wedding, in the village hall",
     "mowed the lawn before the rain",
     "celebrated at the kebab shop downstairs",
 ]
@@ -240,7 +240,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                         text = out[0].strip()
                 except Exception as exc:  # noqa: BLE001
                     # Un échec de l'améliorateur ne doit pas empêcher de générer.
-                    logs.append(f"[améliorateur indisponible] {exc}")
+                    logs.append(f"[improver unavailable] {exc}")
 
             full_prompt = build_prompt(text)
             q: "queue.Queue[str | None]" = queue.Queue()
@@ -267,7 +267,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
             step_re = re.compile(rf"(\d+)\s*/\s*{steps}\b")
             logs.append(f"Seed : {base_seed}")
             logs.append(f"Prompt : {full_prompt}")
-            yield (t("⏳ Chargement du modèle…"), gr.update(), gr.update(),
+            yield (t("⏳ Loading the model…"), gr.update(), gr.update(),
                    "\n".join(logs))
             while True:
                 line = q.get()
@@ -275,7 +275,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                     break
                 mt = step_re.search(line)
                 if mt:
-                    yield (t("🎨 Étape {cur}/{total}").format(
+                    yield (t("🎨 Step {cur}/{total}").format(
                         cur=min(int(mt.group(1)), steps), total=steps),
                         gr.update(), gr.update(), "\n".join(logs[-400:]))
                     continue
@@ -286,8 +286,8 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                        "\n".join(logs[-400:]))
 
             if "err" in state or not state.get("outs"):
-                logs.append(f"\n[ERREUR] {state.get('err', 'aucune image')}")
-                yield (t("❌ Échec — voir le journal."), gr.update(),
+                logs.append(f"\n[ERROR] {state.get('err', 'no image')}")
+                yield (t("❌ Failed — see the log."), gr.update(),
                        gr.update(), "\n".join(logs[-400:]))
                 return
 
@@ -295,7 +295,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
             # « écris le prompt après chaque image ».
             yield (t("✅ Photo generated (seed {s})").format(s=base_seed),
                    gr.update(value=state["outs"][0]),
-                   gr.update(value=f"**Prompt utilisé :** {full_prompt}"),
+                   gr.update(value=f"**Prompt used:** {full_prompt}"),
                    "\n".join(logs[-400:]))
 
         evt = run.click(do_xanax, inputs=[model_pick, prompt, enhance, seed],

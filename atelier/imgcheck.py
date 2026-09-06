@@ -246,7 +246,7 @@ def describe_file(path: Path) -> str:
         size = path.stat().st_size
     except OSError as exc:
         return f"❌ illisible : {exc}"
-    parts = [f"{size / 1024:.0f} Ko"]
+    parts = [f"{size / 1024:.0f} KB"]
     try:
         from PIL import Image
         with Image.open(path) as im:
@@ -282,7 +282,7 @@ def checks() -> tuple[list[Check], Path | None]:
     except ImportError:  # pragma: no cover
         pass
 
-    out.append(Check(None, "Cache d'images", f"`{cache}`"))
+    out.append(Check(None, "Image cache", f"`{cache}`"))
 
     # 1. Le cache est-il DANS le projet ?
     #
@@ -348,7 +348,7 @@ def checks() -> tuple[list[Check], Path | None]:
     free = _free_gb(cache if cache.exists() else settings.ROOT)
     if free >= 0:
         ok = free > 1.0
-        out.append(Check(ok, f"Espace libre : {free:.1f} Go",
+        out.append(Check(ok, f"Free space: {free:.1f} GB",
                          "" if ok else "a full disk prevents writing the copy "
                                        "the browser is about to ask for."))
 
@@ -368,7 +368,7 @@ def checks() -> tuple[list[Check], Path | None]:
     # 6. Taille du cache — informatif, mais un cache énorme se nettoie.
     n, size = cache_size(cache)
     out.append(Check(None, "Cache contents",
-                     f"{n} fichier(s), {size / 1e6:.0f} Mo"))
+                     f"{n} file(s), {size / 1e6:.0f} MB"))
     return out, dest
 
 

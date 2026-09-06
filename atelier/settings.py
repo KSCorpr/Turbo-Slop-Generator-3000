@@ -48,7 +48,6 @@ CUSTOM_DIR = MODELS_DIR / "custom"   # modèles téléchargés manuellement aill
 
 # Préférences par défaut (surchargées par l'onglet Réglages, persistées en JSON).
 DEFAULT_PREFS: dict[str, Any] = {
-    "lang": "fr",               # langue de l'interface : "fr" | "en"
     "theme": "light",           # thème de l'interface : "light" | "dark"
     # Dossier des modèles. Vide/None = `models/` dans le projet. Un chemin
     # ABSOLU le déplace ailleurs (ex. "D:\\IA\\models" sur un NVMe).

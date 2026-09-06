@@ -46,8 +46,8 @@ class DiskWatchTests(unittest.TestCase):
         notes = self._notes(REAL_LOG)
         self.assertEqual(len(notes), 1)
         # 8410.71 Mo / 79.86 s = 105 Mo/s.
-        self.assertIn("105 Mo/s", notes[0])
-        self.assertIn("8.2 Go", notes[0])
+        self.assertIn("105 MB/s", notes[0])
+        self.assertIn("8.2 GB", notes[0])
 
     def test_says_how_much_an_ssd_would_save(self):
         note = self._notes(REAL_LOG)[0]

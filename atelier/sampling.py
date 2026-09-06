@@ -137,7 +137,7 @@ SAMPLERS: dict[str, tuple] = {
         "TCD",
         "Like LCM: reserved for models distilled **in TCD**.",
         "Very few steps — on a TCD model.",
-        "Ours are not.",
+        "Ours are not distilled that way; it washes the render out.",
         {"flux2": BAD, "krea2": BAD}),
     "res_multistep": (
         "Res Multistep",

@@ -25,12 +25,12 @@ from . import widgets
 # qui sont refusés par le moteur (« invalid weight format »). Du plus fidèle au
 # plus léger.
 QTYPES = [
-    ("q5_1 — 5 bits · recommandé (bon compromis taille/qualité)", "q5_1"),
-    ("q8_0 — 8 bits · quasi sans perte (plus gros)", "q8_0"),
+    ("q5_1 — 5 bits · recommended (a good size/quality compromise)", "q5_1"),
+    ("q8_0 — 8 bits · near lossless (larger)", "q8_0"),
     ("q5_0 — 5 bits", "q5_0"),
-    ("q4_1 — 4 bits · léger", "q4_1"),
-    ("q4_0 — 4 bits · le plus léger", "q4_0"),
-    ("f16 — 16 bits (aucune perte, aucun allègement)", "f16"),
+    ("q4_1 — 4 bits · light", "q4_1"),
+    ("q4_0 — 4 bits · the lightest", "q4_0"),
+    ("f16 — 16 bits (no loss, no saving either)", "f16"),
 ]
 _DEFAULT_QTYPE = "q5_1"
 
@@ -43,34 +43,34 @@ def _suggest_name(model_name: str | None, qtype: str) -> str:
 
 
 def build_convert_tab():
-    with gr.Tab("🔧 Convertir en GGUF"):
+    with gr.Tab("🔧 Convert to GGUF"):
         gr.Markdown(
-            "### Quantifier un modèle en GGUF\n"
-            "Transforme un modèle **checkpoint / safetensors / diffusion** en "
-            "**GGUF** plus léger, pour le faire tenir sur ta carte. C'est du "
-            "**100% CPU** (pas de diffusion) : quelques minutes selon la taille "
-            "et le disque. Une seule fois — ensuite tu réutilises le GGUF.\n\n"
-            f"1. Dépose ton modèle dans **`{settings.CUSTOM_DIR}`** puis "
-            "**↻ Rafraîchir**.  \n"
-            "2. Choisis la quant : `q8_0` ≈ sans perte → `q5_1` bon compromis → "
-            "`q4_0` le plus léger. *(sd.cpp ne gère que "
-            "q8_0/q5_1/q5_0/q4_1/q4_0/f16 en conversion — pas de k-quants.)*  \n"
-            "3. **Convertir** : le GGUF est écrit dans le même dossier "
-            "`models/custom/` et devient utilisable comme **modèle local** dans "
-            "les onglets de génération (bouton « Rafraîchir les fichiers "
+            "### Quantize a model to GGUF\n"
+            "Turns a **checkpoint / safetensors / diffusion** model into a "
+            "lighter **GGUF**, so it fits on your card. This is **100% CPU** "
+            "(no diffusion): a few minutes depending on the size and the "
+            "disk. Once only — after that you reuse the GGUF.\n\n"
+            f"1. Drop your model into **`{settings.CUSTOM_DIR}`** then "
+            "**↻ Refresh**.  \n"
+            "2. Pick the quantization: `q8_0` ≈ lossless → `q5_1` a good "
+            "compromise → `q4_0` the lightest. *(sd.cpp only handles "
+            "q8_0/q5_1/q5_0/q4_1/q4_0/f16 when converting — no k-quants.)*  \n"
+            "3. **Convert**: the GGUF is written into that same "
+            "`models/custom/` folder and becomes usable as a **local model** "
+            "in the generation tabs (the “Refresh local files "
             "locaux »).")
 
         with gr.Row():
             src = gr.Dropdown(
                 gen_engine.list_custom_models(), value=None, scale=3,
-                label="Modèle à convertir (dans models/custom/)",
+                label="Model to convert (in models/custom/)",
                 allow_custom_value=False)
             refresh = gr.Button("↻ Refresh", size="sm", scale=1)
         with gr.Row():
             qtype = gr.Dropdown(QTYPES, value=_DEFAULT_QTYPE, scale=2,
                                 label="Quantification cible")
-            out_name = gr.Textbox(label="Nom du fichier GGUF de sortie", scale=3,
-                                  placeholder="ex. mon-modele-q4_k.gguf")
+            out_name = gr.Textbox(label="Name of the output GGUF file", scale=3,
+                                  placeholder="e.g. my-model-q4_k.gguf")
 
         with gr.Row():
             run = gr.Button("🔧 Convertir", variant="primary", scale=3)
@@ -98,14 +98,14 @@ def build_convert_tab():
                                  "get_sdcpp.py)."))
             in_path = gen_engine.custom_path(src_name)
             if in_path is None:
-                raise gr.Error(t("Choisissez un modèle à convertir (déposé dans "
+                raise gr.Error(t("Pick a model to convert (dropped into "
                                  "models/custom/)."))
             out = (out or "").strip() or _suggest_name(src_name, qt)
             if not out.lower().endswith(".gguf"):
                 out += ".gguf"
             out_path = settings.CUSTOM_DIR / out
             if out_path.resolve() == in_path.resolve():
-                raise gr.Error(t("Le fichier de sortie doit différer de l'entrée."))
+                raise gr.Error(t("The output file must differ from the input."))
 
             cmd = sdcpp.build_convert_cmd(sd_cli, in_path, out_path, qt)
             q: "queue.Queue[str | None]" = queue.Queue()
@@ -122,7 +122,7 @@ def build_convert_tab():
 
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
-            yield t("⏳ Conversion en cours… (CPU, quelques minutes)"), ""
+            yield t("⏳ Converting… (CPU, a few minutes)"), ""
             while True:
                 line = q.get()
                 if line is None:
@@ -131,19 +131,19 @@ def build_convert_tab():
                 yield gr.update(), "\n".join(logs[-500:])
 
             if "err" in state:
-                logs.append(f"\n[ERREUR] {state['err']}")
-                yield (t("❌ Échec de la conversion — voir le journal."),
+                logs.append(f"\n[ERROR] {state['err']}")
+                yield (t("❌ Conversion failed — see the log."),
                        "\n".join(logs))
                 return
             if not state.get("ok"):
-                yield (t("⚠️ Terminé mais fichier de sortie introuvable — voir le "
-                         "journal (quant refusée par le moteur ?)."),
+                yield (t("⚠️ Finished but the output file was not found — see "
+                         "the log (quantization refused by the engine?)."),
                        "\n".join(logs))
                 return
             size_mb = out_path.stat().st_size / 1e6
-            yield (t("✅ Converti : **{name}** ({size:.0f} Mo) dans "
-                     "`models/custom/`. Utilisable via « Rafraîchir les fichiers "
-                     "locaux » dans un onglet de génération.").format(
+            yield (t("✅ Converted: **{name}** ({size:.0f} MB) into "
+                     "`models/custom/`. Usable through “Refresh local files” "
+                     "in a generation tab.").format(
                         name=out, size=size_mb),
                    "\n".join(logs))
 

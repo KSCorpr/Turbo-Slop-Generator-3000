@@ -250,7 +250,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         logs.append(line)
                         yield gr.update(), "\n".join(logs[-500:])
                     if "err" in state:
-                        logs.append(f"\n[ERREUR] {state['err']}")
+                        logs.append(f"\n[ERROR] {state['err']}")
                         yield gr.update(), "\n".join(logs[-500:])
                         return
                     yield state["out"][0], "\n".join(logs[-500:])
@@ -312,7 +312,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     try:
                         out = tools.depth_map(img, log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
@@ -353,7 +353,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     try:
                         out = tools.bg_remove(img, log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
@@ -527,7 +527,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         out = gen_engine.upscale_image(
                             img, model, repeats=int(repeats), log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image agrandie : {out}")
@@ -729,7 +729,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                 want_psd=want_psd, want_png=want_png,
                                 log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return gr.update(), "\n".join(logs)
                     progress(1.0, desc="Done")
                     logs.append("\n✅ " + " · ".join(str(p.name) for p in out))
@@ -857,7 +857,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             prompt=prompt or "", seed=seed_i,
                             preview_path=preview, log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     if not outs:
                         logs.append("\n[ERROR] no image produced.")
@@ -962,7 +962,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             strength=float(strength), prompt=prompt,
                             match_colors=bool(colors), log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image : {out}")
@@ -1073,7 +1073,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         logs.append(line)
                         yield gr.update(), "\n".join(logs[-500:])
                     if "err" in state:
-                        logs.append(f"\n[ERREUR] {state['err']}")
+                        logs.append(f"\n[ERROR] {state['err']}")
                         yield gr.update(), "\n".join(logs[-500:])
                         return
                     progress(1.0, desc="Done")
@@ -1139,7 +1139,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             logs.append(line)
                             yield gr.update(), "\n".join(logs[-500:])
                         if "err" in state:
-                            logs.append(f"\n[ERREUR] {state['err']}")
+                            logs.append(f"\n[ERROR] {state['err']}")
                             yield gr.update(), "\n".join(logs[-500:])
                             return
                         outs = [str(p) for p in state.get("outs", [])]
@@ -1225,7 +1225,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             img, fidelity=float(fidelity), model=model,
                             only_center=bool(center), log=logs.append)
                     except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERREUR] {exc}")
+                        logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
                     logs.append(f"\n✅ Image : {out}")
@@ -1515,7 +1515,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             yield prev, "\n".join(logs[-400:])
 
                     if "err" in state:
-                        logs.append(f"\n[ERREUR] {state['err']}")
+                        logs.append(f"\n[ERROR] {state['err']}")
                         yield gr.update(), "\n".join(logs)
                         return
                     progress(1.0, desc="Done")

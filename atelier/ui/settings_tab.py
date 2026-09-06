@@ -24,8 +24,8 @@ annoncé comme facultatif.
 
 Il n'y a PAS de bouton « Enregistrer » : chaque changement s'applique aussitôt
 et le dit. Un bouton d'enregistrement est une occasion de plus de se demander
-si ça a été pris en compte — et il n'existait déjà pas pour la langue et le
-thème, ce qui rendait le reste ambigu.
+si ça a été pris en compte — et il n'existait déjà pas pour le thème, ce
+qui rendait le reste ambigu.
 """
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ from . import widgets
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
-LANGS = [("French", "fr"), ("English", "en")]
 
 # Préfixe des confirmations. Elles sont au passé et concrètes — « appliqué »,
 # pas « enregistré » : ce qu'on veut savoir, c'est que c'est FAIT.
@@ -406,11 +405,8 @@ def build_settings_tab():
         # ------------------------------------------------------------------ #
         #  Ce qui n'a rien à voir avec la génération
         # ------------------------------------------------------------------ #
-        with gr.Accordion(t("🌍 Language, theme and accounts"), open=False):
+        with gr.Accordion(t("🌍 Theme and accounts"), open=False):
             with gr.Row():
-                lang_dd = gr.Dropdown(
-                    LANGS, value=prefs.get("lang", "fr"),
-                    label="🌐 Langue / Language (restart required)")
                 theme_dd = gr.Dropdown(
                     [(t("Light"), "light"), (t("Dark"), "dark")],
                     value=prefs.get("theme", "light"),
@@ -514,14 +510,7 @@ def build_settings_tab():
         resident.change(_apply_resident, inputs=[resident],
                         outputs=[expert_status])
 
-        # ---- Langue, thème, comptes --------------------------------------- #
-        def _apply_lang(lang):
-            _save(lang=lang)
-            disp = {v: k for k, v in LANGS}.get(lang, lang)
-            return _said(_OK + t("Language saved. **Restart the app** "
-                                 "(`run.bat` / `run.sh`) to apply “{lang}”."
-                                 ).format(lang=disp))
-
+        # ---- Theme, accounts ---------------------------------------------- #
         def _apply_theme(th):
             _save(theme="dark" if th == "dark" else "light")
             return _said(_OK + t("Theme saved. **Restart the app** to apply "
@@ -535,7 +524,6 @@ def build_settings_tab():
             _save(civitai_token=(v or "").strip())
             return _said(_OK + t("Civitai token saved."))
 
-        lang_dd.change(_apply_lang, inputs=[lang_dd], outputs=[account_status])
         theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status])
         hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[account_status])
         civitai_tok.change(_apply_token, inputs=[civitai_tok],

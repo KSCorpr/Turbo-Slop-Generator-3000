@@ -138,15 +138,15 @@ class OomDiagnosisTests(unittest.TestCase):
                                    deque(self.REAL_LOG))
         self.assertIsInstance(err, sdcpp.VramError)
         # La taille manquante est citée : c'est ce qui rend le message utile.
-        self.assertIn("4.6 Go", str(err))
+        self.assertIn("4.6 GB", str(err))
 
     def test_hires_gets_its_own_advice(self):
         from collections import deque
         hires = str(sdcpp._failure_error(1, ["sd-cli", "--hires"],
                                         deque(self.REAL_LOG)))
         plain = str(sdcpp._failure_error(1, ["sd-cli"], deque(self.REAL_LOG)))
-        self.assertIn("facteur d'agrandissement", hires)
-        self.assertIn("quantification", plain)
+        self.assertIn("enlargement factor", hires)
+        self.assertIn("quantization", plain)
 
     def test_other_failures_stay_plain_engine_errors(self):
         from collections import deque

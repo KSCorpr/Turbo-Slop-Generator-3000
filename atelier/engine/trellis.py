@@ -43,8 +43,8 @@ DEFAULT_PORT = 8000
 # Résolutions proposées. Seul le 512 tient sur 11-12 Go (les autres ~16 Go+).
 RESOLUTIONS = [
     ("512 — light (recommended, ≤ 12 GB)", 512),
-    ("1024 — cascade (≥ 16 Go)", 1024),
-    ("1536 — haute (≥ 16 Go+)", 1536),
+    ("1024 — cascade (≥ 16 GB)", 1024),
+    ("1536 — high (≥ 16 GB+)", 1536),
 ]
 
 
@@ -110,7 +110,7 @@ def diagnose() -> str:
     modèles externe), au lieu d'un silencieux « pas installé ».
     """
     srv = find_server()
-    lines = [f"- Moteur : {'`' + str(srv) + '`' if srv else '**introuvable**'}",
+    lines = [f"- Engine: {'`' + str(srv) + '`' if srv else '**not found**'}",
              f"- Models folder: `{MODELS_DIR}`"]
     if not MODELS_DIR.exists():
         lines.append("  - ⚠️ **this folder does not exist** — nothing was "
@@ -121,7 +121,7 @@ def diagnose() -> str:
             n = len(list(d.glob("*.gguf")))
             lines.append(f"- ✅ **{v}** — {n} file(s) in `{d}`")
         else:
-            lines.append(f"- — {v} : absent (`{d}`)")
+            lines.append(f"- — {v}: absent (`{d}`)")
     # Un jeu de modèles présent dans le dossier PROJET alors qu'on regarde
     # ailleurs = installation faite avant/hors du déplacement des modèles.
     proj = settings.DEFAULT_MODELS_DIR / "trellis"
@@ -219,21 +219,20 @@ def _diagnose_crash(gpu_index: "int | None" = None) -> str:
         return (
             f"❌ **The installed trellis binary has no machine code for "
             f"your card**{who}.\n\n"
-            "Ce n'est ni un manque de VRAM ni un réglage : le binaire a été "
-            "compilé pour d'autres architectures que la vôtre. Comme les "
-            "erreurs CUDA sont rémanentes, c'est l'opération ggml suivante "
-            "(souvent `IM2COL`) qui la rapporte — ce qui égare le "
-            "diagnostic.\n\n"
-            "**Longtemps c'était sans issue** : le `CMakeLists.txt` amont "
-            "écrasait la liste d'architectures de sa propre CI et ne "
-            "compilait que pour les RTX 30xx et 50xx. **La v0.6.0 (août 2026) "
-            "l'a corrigé** et publie désormais deux archives CUDA :\n\n"
-            "- `cuda` — Turing et plus récent (RTX 20xx, 30xx, 40xx, 50xx) ;\n"
-            "- `cuda12` — Pascal et Volta (GTX 10xx, Titan V).\n\n"
-            "**La solution : « ⬆️ Mettre à jour le binaire »** dans cet "
-            "onglet. L'archive est choisie d'après votre carte, et Vulkan "
-            "reste le repli si aucune ne la couvre. Les ~10 Go de modèles ne "
-            "sont pas retéléchargés.")
+            "This is neither a VRAM shortage nor a setting: the binary was "
+            "compiled for architectures other than yours. Because CUDA errors "
+            "are sticky, it is the *next* ggml operation (often `IM2COL`) "
+            "that reports it — which sends the diagnosis astray.\n\n"
+            "**For a long time there was no way out**: the upstream "
+            "`CMakeLists.txt` overwrote its own CI's architecture list and "
+            "compiled only for the RTX 30xx and 50xx. **v0.6.0 (August 2026) "
+            "fixed that** and now publishes two CUDA archives:\n\n"
+            "- `cuda` — Turing and newer (RTX 20xx, 30xx, 40xx, 50xx);\n"
+            "- `cuda12` — Pascal and Volta (GTX 10xx, Titan V).\n\n"
+            "**The fix: “⬆️ Update the binary”** in this tab. The archive is "
+            "chosen from your card, and Vulkan remains the fallback if "
+            "neither list covers it. The ~10 GB of models are not downloaded "
+            "again.")
     if "out of memory" in joined or "cudamalloc" in joined:
         return ("❌ **Not enough GPU memory** — the trellis server was killed "
                 "mid-computation.\n\nLower the resolution (512), close other "
@@ -340,7 +339,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     server = find_server()
     if server is None:
         raise sdcpp.EngineError(
-            "Serveur trellis introuvable — installez trellis.cpp (onglet 3D).")
+            "trellis server not found — install trellis.cpp (3D tab).")
     if not models_ready(variant):
         raise sdcpp.EngineError(
             f"Trellis models “{variant}” missing — install that variant "
@@ -534,5 +533,5 @@ def _post_generate(image_path: Path, out_path: Path, res: int,
     if not out_path.is_file() or out_path.stat().st_size == 0:
         raise sdcpp.EngineError(
             "No GLB produced — see the log (not enough VRAM even at 512?).")
-    _log(f"✅ GLB received: {out_path.name} ({out_path.stat().st_size/1e6:.1f} Mo)")
+    _log(f"✅ GLB received: {out_path.name} ({out_path.stat().st_size/1e6:.1f} MB)")
     return out_path

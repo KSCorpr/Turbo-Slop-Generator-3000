@@ -112,15 +112,15 @@ def write_system_report() -> Path:
 def summary_markdown(report: dict[str, Any] | None = None) -> str:
     data = report or system_report()
     lines = [f"**Application :** {data['app_version']}",
-             f"**CPU / RAM :** {data['cpu'] or 'inconnu'} · {data['ram_gb']:.0f} Go"]
+             f"**CPU / RAM:** {data['cpu'] or 'unknown'} · {data['ram_gb']:.0f} GB"]
     for gpu in data.get("gpus", []):
         pcie = f" · {gpu.get('pcie')}" if gpu.get("pcie") else ""
         lines.append(
-            f"- GPU #{gpu['index']} : {gpu['name']} · {gpu['vram_gb']:.0f} Go"
+            f"- GPU #{gpu['index']}: {gpu['name']} · {gpu['vram_gb']:.0f} GB"
             f" · {gpu.get('sm') or gpu.get('arch')}{pcie}")
     engine = data.get("engine", {})
     manifest = engine.get("manifest") or {}
-    version = manifest.get("tag") or manifest.get("sd_commit") or "non tracée"
+    version = manifest.get("tag") or manifest.get("sd_commit") or "not traced"
     lines.append(f"**Moteur sd.cpp :** {version}"
                  + ("" if engine.get("present") else " · absent"))
     return "\n".join(lines)

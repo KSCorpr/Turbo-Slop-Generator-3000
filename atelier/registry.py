@@ -148,7 +148,7 @@ def upscaler_choices() -> list[tuple[str, str]]:
     draw = [n for n in names if is_drawing_upscaler(n)]
     photo = [n for n in names if n not in draw]
     return ([(f"🎨 {n}  — dessin / anime", n) for n in draw]
-            + [(f"📷 {n}  — photo / général", n) for n in photo])
+            + [(f"📷 {n}  — photo / general", n) for n in photo])
 
 
 # Modèles de dessin préférés, du meilleur au moins bon, pour le pré-agrandissement

@@ -643,7 +643,7 @@ def _failure_error(code: int, cmd: list[str],
             m = _OOM_SIZE.search(ln)
             if m:
                 want = (f" It was short by a block of "
-                        f"{float(m.group(1)) / 1024:.1f} Go.")
+                        f"{float(m.group(1)) / 1024:.1f} GB.")
                 break
         return VramError(
             "❌ Not enough GPU memory." + want + "\n"

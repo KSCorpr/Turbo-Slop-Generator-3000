@@ -88,20 +88,20 @@ class NamingTests(unittest.TestCase):
     def test_dark_grey_is_not_called_green(self):
         """Le cas qui a motivé la pondération par luminosité."""
         img, m = self._solid((70, 70, 75))
-        self.assertEqual(M.dominant_color_name(img, m), "gris foncé")
+        self.assertEqual(M.dominant_color_name(img, m), "dark grey")
 
     def test_common_colors(self):
-        for value, want in (((150, 190, 230), "bleu clair"),
+        for value, want in (((150, 190, 230), "light blue"),
                             ((230, 120, 40), "orange"),
-                            ((20, 20, 22), "noir"),
-                            ((250, 250, 250), "blanc")):
+                            ((20, 20, 22), "black"),
+                            ((250, 250, 250), "white")):
             img, m = self._solid(value)
             self.assertEqual(M.dominant_color_name(img, m), want, value)
 
     def test_position(self):
         m = np.zeros((100, 100), bool)
         m[:20, :20] = True
-        self.assertEqual(M.position_name(m), "haut gauche")
+        self.assertEqual(M.position_name(m), "top left")
         m2 = np.zeros((100, 100), bool)
         m2[40:60, 40:60] = True
         self.assertEqual(M.position_name(m2), "centre")
@@ -112,7 +112,7 @@ class NamingTests(unittest.TestCase):
         m = np.zeros((100, 100), bool)
         m[:20, :20] = True
         name = M.describe(m, img, 0, 3)
-        for bit in ("arrière-plan", "haut gauche", "orange", "%"):
+        for bit in ("background", "top left", "orange", "%"):
             self.assertIn(bit, name)
 
 

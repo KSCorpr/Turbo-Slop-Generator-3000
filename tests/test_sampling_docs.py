@@ -11,7 +11,7 @@ import re
 import unittest
 from pathlib import Path
 
-from atelier import i18n, sampling
+from atelier import sampling
 
 # Relevé dans sample_method_to_str[] (src/stable-diffusion.cpp).
 ENGINE_SAMPLERS = {
@@ -128,48 +128,6 @@ class VerdictsFollowTheModelTests(unittest.TestCase):
         self.assertGreater(self._usable("krea2"), self._usable("flux2"))
 
 
-class EnglishCoverageTests(unittest.TestCase):
-    """Une fiche ajoutée sans traduction ne casse rien : elle s'affiche en
-    français au milieu de l'anglais. Personne ne le voit avant un utilisateur."""
-
-    def tearDown(self):
-        i18n.set_lang("fr")
-
-    def test_every_prose_string_has_a_translation(self):
-        missing = []
-        for kind, table in (("sampler", sampling.SAMPLERS),
-                            ("schedule", sampling.SCHEDULES)):
-            for key, entry in table.items():
-                # Les libellés sont des noms propres (« Euler », « Karras ») :
-                # ils n'ont pas à être traduits. La prose, si.
-                for txt in entry[1:4]:
-                    if txt not in i18n._EN:
-                        missing.append(f"{kind}/{key} : {txt[:50]}…")
-        for txt in list(sampling._VERDICT.values()) + \
-                list(sampling._ADVICE.values()) + [sampling._RATIONALE]:
-            if txt not in i18n._EN:
-                missing.append(txt[:50] + "…")
-        self.assertEqual(missing, [], "\n".join(missing))
-
-    def test_rendering_in_english_leaves_no_french_behind(self):
-        i18n.set_lang("en")
-        for kind, table in (("sampler", sampling.SAMPLERS),
-                            ("schedule", sampling.SCHEDULES)):
-            for key in table:
-                for fam in FAMILIES:
-                    txt = sampling.describe(kind, key, fam)
-                    # Marqueurs typiques de la prose française.
-                    for word in (" les ", " des ", " pour ce ", "Utilisable"):
-                        self.assertNotIn(word, txt, f"{kind}/{key}/{fam}")
-
-    def test_rationale_formats_in_english(self):
-        i18n.set_lang("en")
-        for fam in FAMILIES:
-            txt = sampling.rationale(fam)
-            self.assertIn("flow matching", txt)
-            self.assertNotIn("{", txt)
-
-
 class RenderingTests(unittest.TestCase):
     def test_choices_are_annotated_and_keep_stable_values(self):
         for kind, table in (("sampler", sampling.SAMPLERS),
@@ -198,16 +156,16 @@ class RenderingTests(unittest.TestCase):
         flux = sampling.rationale("flux2")
         krea = sampling.rationale("krea2")
         self.assertIn("Flux.2 Klein", flux)
-        self.assertIn("4 pas", flux)
+        self.assertIn("4 steps", flux)
         self.assertIn("Krea 2 Turbo", krea)
-        self.assertIn("8 pas", krea)
+        self.assertIn("8 steps", krea)
         self.assertNotEqual(flux, krea)
 
     def test_the_rationale_says_the_negative_prompt_is_ignored(self):
         """Les deux modèles sont distillés à CFG 1.0. Le dépliant doit le dire,
         parce que c'est la question qu'on pose en voyant le champ grisé."""
         for fam in FAMILIES:
-            self.assertIn("prompt négatif est\nignoré", sampling.rationale(fam))
+            self.assertIn("negative prompt is\nignored", sampling.rationale(fam))
 
 
 class ReadmeStaysInSyncTests(unittest.TestCase):
