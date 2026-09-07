@@ -5,8 +5,9 @@
 > diffusion quantization from VRAM, text encoder offloaded to system RAM,
 > flash-attention, CPU offload, VAE tiling. Two advanced options live in
 > **Settings**: the **per-generation card profiles** (GTX 10xx → RTX 50xx, one
-> click) and **multi-GPU** (which card generates, whether the text encoder moves
-> to a second card, or auto-fit spreading the model across all of them).
+> click) and **multi-GPU** (which card generates, and whether the text encoder
+> moves to a second card). Weight placement itself — including letting sd.cpp
+> plan it — is **measured** by the benchmark rather than asked as a question.
 
 > **The interface is in English**, and only in English. It used to be written in
 > French and translated through a dictionary; that layer is gone and the source
@@ -594,6 +595,18 @@ single mutually-exclusive strategy:
   It remains memory-aware, not topology-aware: on a mismatched pair or a PCIe
   x4 secondary slot, benchmark it instead of assuming that more aggregate VRAM
   means more speed.
+  **So the benchmark measures it**, on every machine including single-GPU ones,
+  as the profile `single-autofit` — “placement left to sd.cpp”. It sits
+  *second* in the list, behind the current behaviour: profiles separated by
+  less than the measured noise are resolved in favour of the earlier one, so a
+  tie can never silently change how your machine runs. If it wins, **Apply the
+  measured profile** turns it on; nothing here is a new checkbox to understand.
+  One consequence inside the app: under auto-fit the out-of-memory retry cannot
+  be “put the text encoder in RAM” any more — that shortcut is translated
+  upstream into a `--backend` assignment, which *disables auto-fit*, so the
+  retry would have relaunched the command that had just failed. It now deepens
+  the budget instead (`--max-vram -3`, i.e. free memory minus 3 GiB), which
+  makes the planner move a whole module down its own ladder.
   **The flag's shape changed upstream**: it was a bare switch and now requires
   `on` or `off`. Sent bare to a recent engine it would swallow the next
   argument as its value, so the binary's help text is parsed rather than its
@@ -686,7 +699,10 @@ default**. Requires a recent engine (`update-engine.bat`).
 ### Measured hardware profile and Krea INT8 probe
 **Settings → 🧪 Measure this machine** runs a fixed 512×512 / 4-step / seed
 424242 generation through every sensible placement: main GPU with RAM staging,
-encoder resident on the second GPU, and the staged dual-GPU path.
+**placement left to sd.cpp** (`--auto-fit on`), and — with a second card —
+encoder resident on the second GPU plus the staged dual-GPU path. The first two
+run on any machine, so a single-card PC has something to compare as well; that
+is the whole reason auto-fit is here rather than behind a checkbox.
 
 **How it measures matters more than what it measures.** Each placement gets one
 **discarded warm-up run** followed by **three timed runs**, and the reported

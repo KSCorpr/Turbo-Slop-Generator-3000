@@ -91,7 +91,8 @@ def _said(msg: str):
 _STRATEGY_SAID = {
     "single": "Everything will run on a single card.",
     "encoder": "The 2nd card will read your text; the image stays on the first.",
-    "autofit": "Automatic spreading enabled — measure it before believing it.",
+    "autofit": "sd.cpp will place the weights itself — measure it before "
+               "believing it.",
 }
 
 
@@ -252,8 +253,8 @@ def build_settings_tab():
                 [(t("Everything on one card — the most reliable"), "single"),
                  (t("The 2nd card handles the text — frees memory for the "
                     "image"), "encoder"),
-                 (t("Spread it automatically — measure before believing it"),
-                  "autofit")],
+                 (t("Let sd.cpp place the weights — measure before believing "
+                    "it"), "autofit")],
                 value=_strategy_of(prefs), label="Split",
                 show_label=False)
             tools_gpu = gr.Dropdown(

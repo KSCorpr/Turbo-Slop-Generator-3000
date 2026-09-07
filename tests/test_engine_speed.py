@@ -186,7 +186,7 @@ class EncoderResidencyTests(unittest.TestCase):
 class VramRetryTests(unittest.TestCase):
     """Ramener l'encodeur sur la carte principale peut faire déborder 12 Go."""
 
-    def _generate(self, failures):
+    def _generate(self, failures, **extra_prefs):
         import tempfile
         from atelier import registry
         calls = []
@@ -213,16 +213,19 @@ class VramRetryTests(unittest.TestCase):
                  patch.object(sdcpp, "supported_options",
                               return_value=frozenset()), \
                  patch.object(sdcpp, "build_gen_cmd",
-                              side_effect=lambda c, req, o: list(
-                                  ["--clip-on-cpu"] if req.flags.get("clip_on_cpu")
-                                  else [])), \
+                              side_effect=lambda c, req, o: (
+                                  (["--clip-on-cpu"]
+                                   if req.flags.get("clip_on_cpu") else [])
+                                  + (["--max-vram", req.max_vram]
+                                     if req.max_vram else []))), \
                  patch.object(sdcpp, "run", side_effect=run), \
                  patch.object(sdcpp, "collect_outputs", return_value=[]):
                 generate.generate("krea2-turbo", "p", "", 4, 1.0, 512, 512,
                                   42, 1, save_prompt=False,
                                   prefs_override={"auto_optimize": False,
                                                   "gpu_index": 0,
-                                                  "flags": {}})
+                                                  "flags": {},
+                                                  **extra_prefs})
         return calls
 
     def test_an_oom_is_retried_once_with_the_encoder_in_ram(self):
@@ -237,6 +240,34 @@ class VramRetryTests(unittest.TestCase):
     def test_the_retry_is_not_repeated_forever(self):
         with self.assertRaises(sdcpp.VramError):
             self._generate(failures=2)
+
+    def test_under_auto_fit_the_retry_changes_the_budget_not_the_encoder(self):
+        """Le cas où la reprise ne reprenait rien du tout.
+
+        Sous auto-fit, `memory_args` efface `clip_on_cpu` — c'est voulu, le
+        placement appartient au planificateur. Mais la reprise après OOM ne
+        savait faire QUE ça : elle relançait donc, à l'identique, la commande
+        qui venait d'échouer. Un rechargement complet du modèle pour rater
+        pareil. Ici le second tir doit être RÉELLEMENT différent, et par le
+        levier prévu en amont pour ce cas : le budget.
+        """
+        calls = self._generate(failures=1, auto_fit=True)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("--max-vram", calls[0])
+        self.assertIn("--max-vram", calls[1])
+        self.assertEqual(calls[1][calls[1].index("--max-vram") + 1], "-3")
+        # Et surtout pas l'ancien levier : sous auto-fit il ne survit pas
+        # jusqu'à la ligne de commande (cf. `memory_args`).
+        self.assertNotIn("--clip-on-cpu", calls[1])
+
+    def test_auto_fit_does_not_spend_the_relief_before_trying(self):
+        """Un profil matériel qui contient déjà `clip_on_cpu` ne doit pas faire
+        démarrer la génération en mode reprise : le placement demandé n'a
+        alors jamais été essayé."""
+        calls = self._generate(failures=0, auto_fit=True,
+                               flags={"clip_on_cpu": True})
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("--max-vram", calls[0])
 
 
 class PresetTests(unittest.TestCase):

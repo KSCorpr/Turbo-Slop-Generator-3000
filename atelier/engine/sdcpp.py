@@ -122,8 +122,13 @@ class GenRequest:
     # Backend de RÉSIDENCE des poids, distinct du backend de CALCUL ci-dessus.
     # Ex. "diffusion=cuda0,vae=cuda0,te=cuda1".
     params_backend: str = ""
-    # EXPÉRIMENTAL : répartition auto du modèle sur tous les GPU (--auto-fit).
-    # Prioritaire sur le split d'encodeur (auto-fit remplace --backend).
+    # Placement planifié par sd.cpp (--auto-fit). Ce n'était au départ qu'une
+    # répartition multi-GPU ; l'amont en a fait un ÉTAGEMENT : une carte pour
+    # le calcul, puis les poids de chaque module en VRAM, en RAM, sur une autre
+    # carte ou sur disque selon ce qui tient. Prioritaire sur le split
+    # d'encodeur, et incompatible avec toute affectation explicite — une seule
+    # entrée de `--backend` ou `--params-backend` le désactive en amont, quel
+    # que soit l'ordre des arguments.
     auto_fit: bool = False
     split_mode: str = ""               # --split-mode : "layer" | "row" (vide=défaut)
     # Accélération par cache (docs/caching.md) : réutilise les calculs entre pas.

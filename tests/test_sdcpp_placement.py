@@ -64,12 +64,53 @@ class BenchmarkPlanTests(unittest.TestCase):
             }
             modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
         self.assertEqual([m.key for m in modes],
-                         ["single-staged", "dual-resident", "dual-staged"])
-        resident = modes[1].prefs_patch
+                         ["single-staged", "single-autofit",
+                          "dual-resident", "dual-staged"])
+        resident = modes[2].prefs_patch
         self.assertEqual(resident["params_backend"],
                          "diffusion=cuda0,vae=cuda0,te=cuda1")
         self.assertFalse(resident["flags"]["offload_to_cpu"])
-        self.assertEqual(modes[2].prefs_patch["params_backend"], "*=cpu")
+        self.assertEqual(modes[3].prefs_patch["params_backend"], "*=cpu")
+
+    def test_the_safest_profile_stays_first_so_a_tie_changes_nothing(self):
+        """`_winner` départage les ex æquo en faveur du PREMIER de la liste.
+
+        Un nouveau profil placé en tête gagnerait donc chaque égalité, et le
+        banc d'essai déplacerait le comportement de la machine sans qu'aucune
+        mesure ne le justifie.
+        """
+        gpus = (hardware.Gpu(0, "NVIDIA GeForce RTX 2080 Ti", 11.0,
+                             "turing", True),)
+        with patch.object(hardware, "auto_profile") as auto:
+            auto.return_value.flags.return_value = {}
+            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+        self.assertEqual(modes[0].key, "single-staged")
+        self.assertFalse(modes[0].prefs_patch["auto_fit"])
+
+    def test_the_auto_fit_profile_carries_nothing_that_would_disable_it(self):
+        """Auto-fit refuse de planifier dès qu'une affectation est présente.
+
+        `--clip-on-cpu`, `--vae-on-cpu` et `--offload-to-cpu` en sont : l'amont
+        les traduit en entrées de `--backend` / `--params-backend`. Un profil
+        « auto-fit » qui en laisserait passer un mesurerait donc le placement
+        d'à côté, et le rapport dirait le contraire de ce qui a tourné.
+        """
+        gpus = (hardware.Gpu(0, "NVIDIA GeForce RTX 3060", 12.0,
+                             "ampere", True),)
+        with patch.object(hardware, "auto_profile") as auto:
+            auto.return_value.flags.return_value = {
+                "offload_to_cpu": True, "clip_on_cpu": True,
+                "vae_on_cpu": True, "diffusion_fa": True}
+            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+        patch_ = next(m.prefs_patch for m in modes if m.key == "single-autofit")
+        self.assertTrue(patch_["auto_fit"])
+        self.assertEqual(patch_["params_backend"], "")
+        self.assertIsNone(patch_["encoder_gpu_index"])
+        for legacy in ("offload_to_cpu", "clip_on_cpu", "vae_on_cpu"):
+            self.assertFalse(patch_["flags"][legacy], legacy)
+        # Ce qui ne relève PAS du placement doit survivre : le banc mesure
+        # auto-fit, pas une machine déshabillée.
+        self.assertTrue(patch_["flags"]["diffusion_fa"])
 
 
 class Int8PlacementTests(unittest.TestCase):

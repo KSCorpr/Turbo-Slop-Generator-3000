@@ -35,7 +35,17 @@ def _selected_gpu(prefs: dict, gpus: tuple[hardware.Gpu, ...]) -> hardware.Gpu |
 def placement_candidates(prefs: dict | None = None,
                          gpus: tuple[hardware.Gpu, ...] | None = None
                          ) -> list[Placement]:
-    """Scénarios réellement comparables sur la machine, sans Auto-Fit."""
+    """Scénarios réellement comparables sur cette machine.
+
+    Auto-fit en fait partie depuis qu'il a changé de nature en amont. C'était
+    une option MULTI-GPU — répartir un modèle sur plusieurs cartes — et
+    l'application la refusait partout pour cette raison. Ce n'est plus ce
+    qu'elle fait : sur UNE carte, elle étage désormais chaque module (VRAM,
+    puis RAM, puis une autre carte, puis le disque) selon les budgets
+    réellement libres. C'est exactement l'arbitrage qu'on règle à la main avec
+    l'échelle de quantification et les raccourcis CPU — donc quelque chose à
+    MESURER, pas à activer par principe ni à refuser par habitude.
+    """
     prefs = prefs or settings.load_prefs()
     gpus = gpus if gpus is not None else hardware.detect_gpus()
     main = _selected_gpu(prefs, gpus)
@@ -49,10 +59,25 @@ def placement_candidates(prefs: dict | None = None,
                 "clip_on_cpu": False, "vae_on_cpu": False}
     common = {"auto_optimize": False, "gpu_index": main.index,
               "auto_fit": False, "split_mode": "layer"}
-    out = [Placement(
-        "single-staged", f"{main.name} alone · weights in RAM",
-        {**common, "encoder_gpu_index": None, "params_backend": "",
-         "flags": staged})]
+    out = [
+        Placement(
+            "single-staged", f"{main.name} alone · weights in RAM",
+            {**common, "encoder_gpu_index": None, "params_backend": "",
+             "flags": staged}),
+        # Auto-fit refuse de planifier dès qu'une affectation explicite est
+        # donnée — `--backend` comme `--params-backend`, et les raccourcis
+        # `--clip-on-cpu` / `--offload-to-cpu` en sont, l'amont les traduit en
+        # affectations. Un profil « auto-fit » qui les laisserait passer
+        # mesurerait donc le placement d'à côté en croyant mesurer celui-ci.
+        # D'où la résidence vide ET les raccourcis explicitement éteints.
+        Placement(
+            "single-autofit", f"{main.name} alone · placement left to sd.cpp",
+            {**common, "auto_fit": True, "encoder_gpu_index": None,
+             "params_backend": "",
+             "flags": {**base_flags, "offload_to_cpu": False,
+                       "clip_on_cpu": False, "vae_on_cpu": False,
+                       "vae_tiling": True}}),
+    ]
     secondary = next((g for g in gpus if g.index != main.index), None)
     if secondary is not None:
         mapping = (f"diffusion=cuda{main.index},vae=cuda{main.index},"

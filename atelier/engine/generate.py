@@ -95,6 +95,13 @@ _SLOW_ENCODER_GPU = (
     "them.")
 
 
+# Réserve creusée par la reprise après OOM sous auto-fit. 3 Gio et non 1 : le
+# but n'est pas de frôler la limite une seconde fois mais de faire basculer un
+# module entier hors de la carte, et le module le plus petit (le VAE) pèse déjà
+# plus d'un gigaoctet une fois son espace de calcul compté.
+_OOM_RELIEF_SPARE_GIB = 3.0
+
+
 def _te_on_cpu(params_backend: str) -> str:
     """La même résidence, mais avec l'encodeur en RAM.
 
@@ -382,9 +389,11 @@ def generate(
     flags, gpu_index = _resolved_flags(prefs)
     loras = loras or []
 
-    # Multi-GPU. auto-fit répartit tout le modèle sur les GPU visibles (prioritaire) ;
-    # sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les deux nécessitent que
-    # tous les GPU soient visibles (all_gpus) avec l'ordre CUDA par bus PCI.
+    # Placement. auto-fit laisse sd.cpp planifier la résidence de chaque module
+    # (prioritaire) ; sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les
+    # deux rendent toutes les cartes visibles (all_gpus) avec l'ordre CUDA par
+    # bus PCI — auto-fit parce que la RAM d'une autre carte est l'un de ses
+    # paliers, pas parce qu'il calculerait sur plusieurs.
     auto_fit = bool(prefs.get("auto_fit"))
     enc_gpu = prefs.get("encoder_gpu_index")
     # La carte d'encodeur est écartée ICI, avant tout le reste : plusieurs
@@ -485,16 +494,39 @@ def generate(
         stream_layers=stream_layers,
     )
     out = sdcpp.unique_output(model.family)
+    base_max_vram = req.max_vram
 
-    def _attempt(clip_cpu: bool) -> list[Path]:
-        req.flags = {**flags, "clip_on_cpu": True} if clip_cpu else flags
+    def _attempt(relief: bool) -> list[Path]:
+        if relief and auto_fit:
+            # Sous auto-fit, `--clip-on-cpu` ne sert à RIEN : le raccourci
+            # est effacé par `memory_args` (auto-fit décide seul du
+            # placement), et il désactiverait de toute façon auto-fit en
+            # amont puisqu'il se traduit par une affectation `--backend`.
+            # La reprise relancerait donc la commande qui vient d'échouer.
+            #
+            # Le levier prévu pour ce cas est le BUDGET. Une valeur négative
+            # se lit « mémoire libre moins tant de Gio » : en creusant la
+            # réserve, le planificateur descend d'un cran dans sa cascade
+            # (VRAM → RAM → autre carte → disque) au lieu de retenter le
+            # même placement. On écrase le budget précédent sans état d'âme :
+            # il vient de prouver qu'il ne passait pas.
+            req.flags = flags
+            req.params_backend = params_backend
+            req.max_vram = sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO,
+                                              spare_gib=_OOM_RELIEF_SPARE_GIB)
+            return _run_attempt()
+        req.flags = {**flags, "clip_on_cpu": True} if relief else flags
         # Sortir l'encodeur du GPU demande DEUX choses : que son calcul parte
         # sur le CPU (`--clip-on-cpu`) et que ses poids n'y restent pas
         # résidents. Sans la seconde, la résidence explicite le ramène sur la
         # carte et la reprise relance une commande identique à celle qui vient
         # d'échouer — un rechargement complet du modèle pour rater pareil.
         req.params_backend = (_te_on_cpu(params_backend)
-                              if clip_cpu else params_backend)
+                              if relief else params_backend)
+        req.max_vram = base_max_vram
+        return _run_attempt()
+
+    def _run_attempt() -> list[Path]:
         resident = _resident_server(prefs, req, log)
         if resident is not None:
             sdserver, binary = resident
@@ -515,17 +547,24 @@ def generate(
         return sdcpp.collect_outputs(out, batch_count)
 
     try:
-        paths = _attempt(bool(flags.get("clip_on_cpu")))
+        # Sous auto-fit la reprise n'est PAS « l'encodeur en RAM » mais un
+        # budget plus serré : partir directement en reprise dépenserait ce
+        # levier avant même d'avoir essayé le placement demandé.
+        paths = _attempt(not auto_fit and bool(flags.get("clip_on_cpu")))
     except sdcpp.VramError:
         # L'encodeur revenu sur le GPU de génération peut faire déborder une
         # carte juste. Plutôt que de renvoyer l'utilisateur à ses réglages, on
         # reprend une fois avec l'encodeur en RAM : plus lent que le GPU, mais
         # toujours bien plus rapide qu'une Pascal, et ça ne coûte pas un octet
         # de VRAM.
-        if flags.get("clip_on_cpu"):
+        if flags.get("clip_on_cpu") and not auto_fit:
             raise
         if log:
-            log("↻ Not enough GPU memory — retrying with the text encoder in "
+            log("↻ Not enough GPU memory — retrying with a tighter budget "
+                f"(--max-vram -{_OOM_RELIEF_SPARE_GIB:g}), so automatic "
+                "placement moves more weights out of the card."
+                if auto_fit else
+                "↻ Not enough GPU memory — retrying with the text encoder in "
                 "RAM (--clip-on-cpu).")
         paths = _attempt(True)
 
