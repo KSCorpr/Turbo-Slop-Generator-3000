@@ -144,20 +144,26 @@ class GenRequest:
 #  nom d'option et d'échouer à l'exécution, on lit « sd-cli -h » une fois et on
 #  s'adapte. Coût : un lancement de quelques millisecondes, mis en cache.
 # --------------------------------------------------------------------------- #
-_OPTS_CACHE: dict[tuple, frozenset] = {}
+_HELP_CACHE: dict[tuple, str] = {}
 
 
-def supported_options(sd_cli: Path | None) -> frozenset:
-    """Ensemble des options longues (« --xxx ») acceptées par le binaire."""
+def binary_help(sd_cli: Path | None) -> str:
+    """Texte de « sd-cli -h », lu une fois par révision de binaire.
+
+    On garde le TEXTE et pas seulement la liste d'options : certaines options
+    ont changé de forme sans changer de nom (`--auto-fit` est devenu
+    `--auto-fit on|off`), et seule l'aide permet de le voir.
+    """
     if not sd_cli or not Path(sd_cli).is_file():
-        return frozenset()
+        return ""
     p = Path(sd_cli)
     try:
-        key = (str(p), p.stat().st_mtime_ns, p.stat().st_size)
+        st = p.stat()
+        key = (str(p), st.st_mtime_ns, st.st_size)
     except OSError:
-        return frozenset()
-    if key in _OPTS_CACHE:
-        return _OPTS_CACHE[key]
+        return ""
+    if key in _HELP_CACHE:
+        return _HELP_CACHE[key]
     text = ""
     try:
         # -h sort parfois sur stderr et/ou avec un code de retour non nul.
@@ -166,9 +172,102 @@ def supported_options(sd_cli: Path | None) -> frozenset:
         text = (r.stdout or "") + "\n" + (r.stderr or "")
     except Exception:  # noqa: BLE001
         text = ""
-    opts = frozenset(re.findall(r"--[A-Za-z][A-Za-z0-9_-]*", text))
-    _OPTS_CACHE[key] = opts
-    return opts
+    # Une sonde ratée (binaire en cours de remplacement, antivirus) ne doit pas
+    # être mémorisée comme « ce moteur ne sait rien faire » : on la laisse
+    # retentable. Et on purge les entrées de l'ancien binaire au même chemin,
+    # sinon une mise à jour de moteur les accumulerait indéfiniment.
+    if "--" in text:
+        for old in [k for k in _HELP_CACHE if k[0] == str(p)]:
+            _HELP_CACHE.pop(old, None)
+        _HELP_CACHE[key] = text
+    return text
+
+
+def supported_options(sd_cli: Path | None) -> frozenset:
+    """Ensemble des options longues (« --xxx ») acceptées par le binaire."""
+    return frozenset(re.findall(r"--[A-Za-z][A-Za-z0-9_-]*",
+                                binary_help(sd_cli)))
+
+
+def auto_fit_args(sd_cli: Path | None, enabled: bool) -> list[str]:
+    """`--auto-fit` sous la forme que CE binaire attend.
+
+    L'option a changé de nature en amont : commutateur nu à l'origine, elle
+    exige aujourd'hui `on` ou `off`. Envoyer la forme nue à un moteur récent ne
+    donne pas « auto-fit désactivé » — l'argument suivant est avalé comme
+    valeur. On lit donc l'aide plutôt que de parier sur la version.
+    """
+    if "--auto-fit" not in supported_options(sd_cli):
+        if enabled:
+            raise EngineError(
+                "Auto-fit needs a newer engine. Run update-engine.bat.")
+        return []
+    modern = bool(re.search(r"--auto-fit[^\n]*(?:on\|off|'on' or 'off')",
+                            binary_help(sd_cli)))
+    if modern:
+        return ["--auto-fit", "on" if enabled else "off"]
+    return ["--auto-fit"] if enabled else []
+
+
+def memory_args(sd_cli: Path | None, req: "GenRequest") -> list[str]:
+    """Placement mémoire : résidence des poids, budget VRAM, multi-GPU.
+
+    UN seul constructeur pour la ligne de commande ET le serveur résident. Les
+    deux avaient leur copie, elles ont divergé, et c'est exactement là que le
+    bug de reprise après OOM s'est logé : la copie CLI effaçait `clip_on_cpu`
+    dès qu'une résidence explicite était demandée, ce qui rendait la seconde
+    tentative identique à la première.
+    """
+    known = supported_options(sd_cli)
+    args: list[str] = []
+    flags = dict(req.flags)
+    params = req.params_backend if "--params-backend" in known else ""
+
+    if req.auto_fit:
+        # auto-fit décide seul de tout le placement : lui adjoindre une
+        # résidence explicite ou les anciens raccourcis rendrait le résultat
+        # dépendant de l'ordre de parsing.
+        params = ""
+        for legacy in ("offload_to_cpu", "clip_on_cpu", "vae_on_cpu"):
+            flags[legacy] = False
+    elif params:
+        # `--offload-to-cpu` est un ancien raccourci équivalent à params *=cpu.
+        # Quand l'option moderne existe, elle est seule à décider de la
+        # RÉSIDENCE. `clip_on_cpu` / `vae_on_cpu`, eux, portent aussi le CALCUL
+        # et sont donc conservés : les effacer était le bug.
+        args += ["--params-backend", params]
+        flags["offload_to_cpu"] = False
+
+    if req.max_vram and "--max-vram" in known:
+        args += ["--max-vram", req.max_vram]
+    # Le streaming ne dépend pas de --max-vram. Il dépend de poids de diffusion
+    # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
+    if req.stream_layers and stream_layers_possible(sd_cli, flags, params):
+        args.append("--stream-layers")
+    args += _flag_args(flags, sd_cli)
+    args += auto_fit_args(sd_cli, req.auto_fit)
+
+    if req.auto_fit:
+        # `--split-mode` ne change rien sous auto-fit : la doc amont dit que
+        # celui-ci ne sélectionne pas le calcul multi-GPU par couche/rangée.
+        # On ne l'envoie donc qu'aux moteurs où il avait encore un effet.
+        if (req.split_mode and "--split-mode" in known
+                and "--disable-segmented-compute" not in known):
+            args += ["--split-mode", req.split_mode]
+    elif (req.encoder_gpu_index is not None
+            and req.encoder_gpu_index != req.gpu_index):
+        if "--backend" not in known:
+            raise EngineError("Splitting the text encoder onto a second card "
+                              "needs a newer engine. Run update-engine.bat.")
+        # Split d'encodeur : diffusion + VAE sur le GPU principal, encodeur
+        # (te) sur l'autre. Ordre CUDA par bus PCI forcé via l'environnement.
+        # `clip_on_cpu` gagne sur le split : c'est la reprise après OOM qui le
+        # demande, et elle doit pouvoir sortir l'encodeur des deux cartes.
+        g = req.gpu_index if req.gpu_index is not None else 0
+        te = "cpu" if flags.get("clip_on_cpu") else f"cuda{req.encoder_gpu_index}"
+        vae = "cpu" if flags.get("vae_on_cpu") else f"cuda{g}"
+        args += ["--backend", f"diffusion=cuda{g},vae={vae},te={te}"]
+    return args
 
 
 # Orthographes possibles de l'option « image de masque », par ordre de préférence.
@@ -384,8 +483,6 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
     known = supported_options(sd_cli)
-    if req.max_vram and "--max-vram" in known:
-        cmd += ["--max-vram", req.max_vram]
     if req.hires and hires_supported(sd_cli):
         cmd += hires_args(req.hires)
     if req.preview_path:
@@ -394,41 +491,16 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     # Accélération par cache (opt-in) : saute des calculs quasi identiques entre
     # pas. Nécessite un sd-cli récent (update-engine.bat si flag inconnu).
     if req.cache_mode:
+        # Un moteur qui ne connaît pas l'option échouerait sur un argument
+        # inconnu, message illisible à l'appui. On le dit avant de lancer.
+        if ("--cache-mode" not in known
+                or (req.cache_option and "--cache-option" not in known)):
+            raise EngineError("This cache setting needs a newer engine. "
+                              "Run update-engine.bat.")
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
-    # Résidence explicite des poids. `--offload-to-cpu` est un ancien raccourci
-    # équivalent à params *=cpu : l'envoyer en même temps rendrait le résultat
-    # dépendant de l'ordre de parsing. Quand l'option moderne existe, elle est
-    # seule à décider de la résidence.
-    params_supported = "--params-backend" in known
-    effective_flags = dict(req.flags)
-    if req.params_backend and params_supported:
-        cmd += ["--params-backend", req.params_backend]
-        for legacy in ("offload_to_cpu", "clip_on_cpu", "vae_on_cpu"):
-            effective_flags[legacy] = False
-
-    # Le streaming ne dépend pas de --max-vram. Il dépend de poids de diffusion
-    # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
-    if req.stream_layers and stream_layers_possible(
-            sd_cli, effective_flags, req.params_backend if params_supported
-            else ""):
-        cmd.append("--stream-layers")
-
-    cmd += _flag_args(effective_flags, sd_cli)
-    # Multi-GPU. auto-fit répartit TOUT le modèle sur les GPU visibles (prioritaire,
-    # remplace --backend) ; sinon, split d'encodeur : diffusion+VAE sur le GPU
-    # principal, encodeur (te) sur l'autre. Ordre CUDA par bus PCI forcé via env.
-    if req.auto_fit:
-        cmd += ["--auto-fit"]
-        if req.split_mode:
-            cmd += ["--split-mode", req.split_mode]
-    elif (req.encoder_gpu_index is not None
-            and req.encoder_gpu_index != req.gpu_index):
-        g = req.gpu_index if req.gpu_index is not None else 0
-        e = req.encoder_gpu_index
-        cmd += ["--backend",
-                f"diffusion=cuda{g},vae=cuda{g},te=cuda{e}"]
+    cmd += memory_args(sd_cli, req)
     cmd += ["-o", str(output), "-v"]
     return cmd
 

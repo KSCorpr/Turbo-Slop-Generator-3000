@@ -97,6 +97,10 @@ def _benchmark_prefs(base: dict, patch: dict) -> dict:
     merged["cache_by_model"] = {}
     merged["max_vram"] = ""
     merged["stream_layers"] = False
+    # Ce banc mesure la voie sd-cli. Un moteur résident laissé actif fausserait
+    # deux choses à la fois : il tient déjà la VRAM quand la ligne de base est
+    # relevée, et il sauterait le chargement que le tir est censé chronométrer.
+    merged["resident_engine"] = False
     return merged
 
 
@@ -125,6 +129,11 @@ def _one_run(model_id: str, prefs: dict, defaults: dict,
     # nous intéresse est ce que le tir consomme, pas ce que le bureau occupait
     # déjà. Sans ça, deux machines identiques donnent des chiffres différents
     # selon ce qui tourne à côté.
+    # Libéré AVANT la ligne de base, pas pendant le tir : sinon la VRAM du
+    # serveur résident entre dans la ligne de base puis en sort, et le pic
+    # mesuré au-dessus d'elle est faux — parfois négatif.
+    from .engine import release_resident_engine
+    release_resident_engine("hardware benchmark", log)
     baseline = hardware.used_vram_gb()
     peak = dict(baseline)
     stop = threading.Event()

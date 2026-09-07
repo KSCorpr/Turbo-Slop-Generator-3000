@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from .fileio import atomic_write_text
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # Dossiers (créés au besoin). Tout est local au projet -> portable.
@@ -155,7 +157,7 @@ def load_prefs() -> dict[str, Any]:
 
 def save_prefs(prefs: dict[str, Any]) -> None:
     ensure_dirs()
-    PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+    atomic_write_text(PREFS_FILE, json.dumps(prefs, indent=2))
 
 
 # --- localisation du binaire stable-diffusion.cpp --------------------------

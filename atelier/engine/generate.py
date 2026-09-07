@@ -95,6 +95,20 @@ _SLOW_ENCODER_GPU = (
     "them.")
 
 
+def _te_on_cpu(params_backend: str) -> str:
+    """La même résidence, mais avec l'encodeur en RAM.
+
+    Utilisé par la reprise après OOM. On réécrit le champ `te=` au lieu de le
+    concaténer : `"…,te=cuda1,te=cpu"` laisserait sd.cpp arbitrer selon son
+    ordre de parsing, ce qui est précisément le genre de dépendance qu'on
+    évite partout ailleurs.
+    """
+    if not params_backend:
+        return ""
+    parts = [p for p in params_backend.split(",") if not p.startswith("te=")]
+    return ",".join([*parts, "te=cpu"])
+
+
 def encoder_gpu_too_slow(enc_index: int | None,
                          gen_index: int | None) -> bool:
     """La 2e carte est-elle un mauvais endroit pour CALCULER l'encodeur ?
@@ -375,6 +389,13 @@ def generate(
 
     def _attempt(clip_cpu: bool) -> list[Path]:
         req.flags = {**flags, "clip_on_cpu": True} if clip_cpu else flags
+        # Sortir l'encodeur du GPU demande DEUX choses : que son calcul parte
+        # sur le CPU (`--clip-on-cpu`) et que ses poids n'y restent pas
+        # résidents. Sans la seconde, la résidence explicite le ramène sur la
+        # carte et la reprise relance une commande identique à celle qui vient
+        # d'échouer — un rechargement complet du modèle pour rater pareil.
+        req.params_backend = (_te_on_cpu(params_backend)
+                              if clip_cpu else params_backend)
         resident = _resident_server(prefs, req, log)
         if resident is not None:
             sdserver, binary = resident

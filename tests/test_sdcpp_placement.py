@@ -15,14 +15,30 @@ class ParamsBackendTests(unittest.TestCase):
             return sdcpp.build_gen_cmd(Path("sd-cli"), req, Path("out.png"))
 
     def test_explicit_residency_wins_over_legacy_offload(self):
+        """`--offload-to-cpu` est de la RÉSIDENCE : il cède à params-backend."""
         mapping = "diffusion=cuda0,vae=cuda0,te=cuda1"
         req = sdcpp.GenRequest(
             diffusion_model=Path("model.gguf"), params_backend=mapping,
-            flags={"offload_to_cpu": True, "clip_on_cpu": True})
+            flags={"offload_to_cpu": True})
         cmd = self._cmd(req, {"--params-backend"})
         self.assertEqual(cmd[cmd.index("--params-backend") + 1], mapping)
         self.assertNotIn("--offload-to-cpu", cmd)
-        self.assertNotIn("--clip-on-cpu", cmd)
+
+    def test_cpu_computation_survives_explicit_residency(self):
+        """`--clip-on-cpu` est du CALCUL : il n'a pas à céder, et c'est le bug.
+
+        La reprise après manque de VRAM demande justement le calcul CPU de
+        l'encodeur. Quand une résidence explicite l'effaçait — donc sur toute
+        machine multi-GPU — la seconde tentative relançait une commande
+        IDENTIQUE à celle qui venait d'échouer, après avoir rechargé le modèle
+        en entier. Elle échouait pareil, forcément.
+        """
+        req = sdcpp.GenRequest(
+            diffusion_model=Path("model.gguf"),
+            params_backend="diffusion=cuda0,vae=cuda0,te=cpu",
+            flags={"clip_on_cpu": True})
+        cmd = self._cmd(req, {"--params-backend", "--clip-on-cpu"})
+        self.assertIn("--clip-on-cpu", cmd)
 
     def test_old_engine_keeps_the_compatible_offload(self):
         req = sdcpp.GenRequest(

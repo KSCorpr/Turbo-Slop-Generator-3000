@@ -112,7 +112,9 @@ def _pick_file(comp: Component, files: list[str]) -> str | None:
 
 
 def download_component(comp: Component,
-                       log: Callable[[str], None] | None = None) -> Path:
+                       log: Callable[[str], None] | None = None,
+                       *, _repo_files: dict[str, list[str]] | None = None
+                       ) -> Path:
     settings.configure_hf_env()
     try:
         from huggingface_hub import hf_hub_download, list_repo_files
@@ -120,7 +122,36 @@ def download_component(comp: Component,
         raise RuntimeError("huggingface_hub manquant : "
                            "pip install -r requirements.txt") from exc
 
-    files = list_repo_files(comp.repo)
+    # Déjà sur le disque : inutile d'interroger le Hub. Ça rend « Télécharger »
+    # utilisable hors ligne sur un modèle complet, et instantané au lieu de
+    # plusieurs secondes de listage par composant.
+    #
+    # La condition porte sur le fichier DEMANDÉ, pas sur n'importe quel fichier
+    # du même modèle : `resolve_component_path` sait se rabattre sur un quant
+    # voisin, et accepter ce repli ici empêcherait toute MONTÉE en qualité —
+    # un Q4 déjà installé bloquerait le Q6 qu'on vient de demander.
+    from .registry import resolve_component_path
+    local_dir = settings.model_repo_dir(comp.repo)
+    installed = resolve_component_path(comp)
+    if installed is not None and installed.stat().st_size > 0:
+        try:
+            relative = installed.relative_to(local_dir).as_posix()
+        except ValueError:
+            relative = installed.name
+        if _fn(relative, comp.requested()) or _fn(installed.name,
+                                                  comp.requested()):
+            if log:
+                log(f"  ✓ already there: {comp.role} ({installed.name})")
+            return installed
+
+    # Un modèle peut tirer deux composants du MÊME dépôt (l'encodeur et son
+    # projecteur vision, par exemple) : une seule liste suffit alors.
+    if _repo_files is not None and comp.repo in _repo_files:
+        files = _repo_files[comp.repo]
+    else:
+        files = list_repo_files(comp.repo)
+        if _repo_files is not None:
+            _repo_files[comp.repo] = files
     chosen = _pick_file(comp, files)
     if not chosen:
         # On liste les fichiers pertinents pour diagnostiquer le vrai nommage.
@@ -143,9 +174,8 @@ def download_component(comp: Component,
             log(f"  ⚠️ {comp.quant} unavailable in {comp.repo} → {got} "
                 f"(repli, quant {sense} the closest one available)")
 
-    local_dir = settings.model_repo_dir(comp.repo)
     dest = local_dir / chosen
-    if dest.is_file():
+    if dest.is_file() and dest.stat().st_size > 0:
         if log:
             log(f"  ✓ already there: {comp.role} ({chosen})")
         return dest
@@ -160,15 +190,16 @@ def download_model(model: BaseModel,
                    log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge tous les composants manquants d'un modèle. Yields des messages."""
     settings.ensure_dirs()
-    yield f"Downloading “{model.name} »…"
+    yield f"Downloading “{model.name}”…"
+    repo_files: dict[str, list[str]] = {}
     for comp in model.components:
         try:
-            download_component(comp, log=log)
+            download_component(comp, log=log, _repo_files=repo_files)
             yield f"  ✓ {comp.role}"
         except Exception as exc:  # noqa: BLE001
-            yield f"  ✗ {comp.role} : {exc}"
+            yield f"  ✗ {comp.role}: {exc}"
             return
-    yield f"« {model.name}” is ready. ✅"
+    yield f"“{model.name}” is ready. ✅"
 
 
 def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str]:

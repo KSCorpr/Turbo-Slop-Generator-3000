@@ -44,8 +44,19 @@ SERVER_NAMES = ("sd-server.exe", "sd-server")
 # Le chargement, lui, n'a pas accéléré : sur un disque mécanique un modèle de
 # 8 Go met plus d'une minute. Ce délai couvre le pire cas observé, largement.
 READY_TIMEOUT_S = 900.0
+# Plafond d'une génération. Il n'existe pas pour protéger d'une image lente —
+# une passe 2K sur une carte modeste prend des minutes — mais pour qu'un
+# serveur qui a cessé de répondre finisse par rendre la main plutôt que de
+# laisser l'interface attendre indéfiniment.
+JOB_TIMEOUT_S = 7200.0
 _POLL_S = 0.4
 _HTTP_TIMEOUT_S = 30.0
+
+# Ce client ne parle QU'À 127.0.0.1. Sans cet opener, un `HTTP_PROXY` présent
+# dans l'environnement (fréquent en entreprise) enverrait les images encodées
+# en base64 vers le proxy — qui ne saurait pas les router, quand il ne les
+# journaliserait pas.
+_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class ServerUnavailable(RuntimeError):
@@ -70,11 +81,15 @@ def can_serve(req: "sdcpp.GenRequest") -> bool:
 
     On refuse tout ce dont le comportement n'est pas vérifié à l'identique :
     les LoRA (l'API ignore délibérément les balises `<lora:…>` du prompt), la
-    passe HD, l'édition multi-référence, les caches inter-pas et l'auto-fit.
-    Ce n'est pas une limite définitive, c'est la liste de ce qui n'a pas encore
-    été mesuré — et un repli silencieux vaut mieux qu'une image fausse.
+    passe HD, les caches inter-pas et l'auto-fit. Ce n'est pas une limite
+    définitive, c'est la liste de ce qui n'a pas encore été mesuré — et un
+    repli silencieux vaut mieux qu'une image fausse.
+
+    L'édition multi-référence, elle, est bien au menu de l'API (`ref_images`).
+    On ne la refuse plus d'avance : on demande au serveur s'il l'annonce, au
+    moment de la demande, et on se replie sinon.
     """
-    if req.lora_dir or req.hires or req.ref_image or req.auto_fit:
+    if req.lora_dir or req.hires or req.auto_fit:
         return False
     if req.cache_mode:
         return False
@@ -93,6 +108,13 @@ class _Live:
 
 _LIVE: _Live | None = None
 _LOCK = threading.RLock()
+# Une seule génération à la fois : le serveur détient le modèle, deux demandes
+# concurrentes se marcheraient dessus (et la seconde relancerait le processus
+# sous la première).
+_BUSY = threading.Lock()
+# Annulation demandée par l'utilisateur. Distinguée d'une panne : une panne se
+# replie sur sd-cli, une annulation ne doit RIEN relancer.
+_CANCEL = threading.Event()
 _TAIL: deque[str] = deque(maxlen=200)
 _SINK: Callable[[str], None] | None = None
 _JOB: str | None = None
@@ -127,6 +149,20 @@ def _pump(proc: subprocess.Popen) -> None:
                 pass
 
 
+def _weights_signature(values: list[str]) -> list[tuple]:
+    """(chemin, taille, date) des fichiers cités dans une ligne de commande."""
+    out: list[tuple] = []
+    for value in values:
+        try:
+            path = Path(value)
+            if path.is_file():
+                st = path.stat()
+                out.append((str(path.resolve()), st.st_size, st.st_mtime_ns))
+        except OSError:
+            pass
+    return out
+
+
 def _base_url(port: int) -> str:
     return f"http://127.0.0.1:{port}/sdcpp/v1"
 
@@ -137,7 +173,7 @@ def _request(url: str, payload: dict | None = None,
     req = urllib.request.Request(
         url, data=data,
         headers={"Content-Type": "application/json"} if data else {})
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    with _HTTP.open(req, timeout=timeout) as response:
         body = response.read()
     return json.loads(body.decode("utf-8")) if body else {}
 
@@ -172,8 +208,12 @@ atexit.register(stop)
 def _wait_ready(port: int, proc: subprocess.Popen,
                 log: Callable[[str], None] | None) -> None:
     url = _base_url(port) + "/capabilities"
-    deadline = time.time() + READY_TIMEOUT_S
-    while time.time() < deadline:
+    # Horloge MONOTONE : un changement d'heure système pendant un chargement
+    # de plusieurs minutes ne doit pas déclarer un timeout ou l'annuler.
+    deadline = time.monotonic() + READY_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if _CANCEL.is_set():
+            raise sdcpp.EngineError("Interrupted by the user.")
         if proc.poll() is not None:
             raise ServerUnavailable(
                 "The resident engine stopped while starting up: "
@@ -193,9 +233,15 @@ def ensure(server: Path, args: list[str], gpu_index: int | None,
     La clé est la ligne de commande complète : changer de modèle, de quant, de
     résidence ou de carte relance le processus. C'est voulu — un serveur qui
     servirait un autre modèle que celui demandé serait bien pire que lent.
+
+    Elle inclut aussi la TAILLE et la DATE des fichiers cités. Remplacer des
+    poids sans changer leur chemin — une conversion GGUF réécrite au même nom,
+    une mise à jour de moteur — laissait sinon le serveur servir les anciens
+    indéfiniment, sans rien dans le journal pour le dire.
     """
     global _LIVE, _SINK
-    key = json.dumps([str(server), args, gpu_index, all_gpus])
+    key = json.dumps([str(server), args, gpu_index, all_gpus,
+                      _weights_signature(args)])
     with _LOCK:
         if _LIVE is not None and _LIVE.proc.poll() is None and _LIVE.key == key:
             _SINK = log
@@ -249,30 +295,19 @@ def server_args(server: Path, req: "sdcpp.GenRequest") -> list[str]:
             args += ["--vae", str(req.vae)]
         if req.text_encoder:
             args += ["--llm", str(req.text_encoder)]
+        # Projecteur vision : c'est lui qui permet au modèle de REGARDER une
+        # image de référence. Sans lui, servir `ref_images` rendrait une image
+        # qui ignore la référence — pire qu'un repli sur sd-cli.
+        if req.llm_vision:
+            args += ["--llm_vision", str(req.llm_vision)]
         if req.t5xxl:
             args += ["--t5xxl", str(req.t5xxl)]
         if req.clip_l:
             args += ["--clip_l", str(req.clip_l)]
     args += list(req.extra_flags)
-
-    known = sdcpp.supported_options(server)
-    flags = dict(req.flags)
-    if req.params_backend and "--params-backend" in known:
-        args += ["--params-backend", req.params_backend]
-        for legacy in ("offload_to_cpu", "clip_on_cpu", "vae_on_cpu"):
-            flags[legacy] = False
-    if req.max_vram and "--max-vram" in known:
-        args += ["--max-vram", req.max_vram]
-    if req.stream_layers and sdcpp.stream_layers_possible(
-            server, flags, req.params_backend if "--params-backend" in known
-            else ""):
-        args.append("--stream-layers")
-    args += sdcpp._flag_args(flags, server)
-    if (req.encoder_gpu_index is not None
-            and req.encoder_gpu_index != req.gpu_index):
-        g = req.gpu_index if req.gpu_index is not None else 0
-        args += ["--backend",
-                 f"diffusion=cuda{g},vae=cuda{g},te=cuda{req.encoder_gpu_index}"]
+    # Le placement mémoire vient du MÊME constructeur que la ligne de commande.
+    # Les deux copies avaient divergé, et la divergence était un bug.
+    args += sdcpp.memory_args(server, req)
     return args
 
 
@@ -284,8 +319,12 @@ def _b64(path: Path | None) -> str | None:
 
 def request_payload(req: "sdcpp.GenRequest") -> dict:
     """La demande d'image, telle que l'API native l'attend."""
+    # `guidance` est un OBJET, pas un nombre : l'API attend
+    # `sample_params.guidance.txt_cfg`. Envoyé comme flottant, le CFG demandé
+    # n'arrivait pas — invisible ici parce que nos deux modèles tournent à 1.0,
+    # qui se trouve être le défaut du serveur. De la chance, pas un design.
     sample: dict = {"sample_method": req.sampler, "sample_steps": int(req.steps),
-                    "guidance": float(req.cfg_scale)}
+                    "guidance": {"txt_cfg": float(req.cfg_scale)}}
     if req.schedule:
         sample["scheduler"] = req.schedule
     if req.flow_shift and req.flow_shift > 0:
@@ -305,6 +344,8 @@ def request_payload(req: "sdcpp.GenRequest") -> dict:
         payload["strength"] = float(req.strength)
         if req.mask_image:
             payload["mask_image"] = _b64(req.mask_image)
+    if req.ref_image:
+        payload["ref_images"] = [_b64(p) for p in sdcpp._ref_list(req.ref_image)]
     return payload
 
 
@@ -329,27 +370,75 @@ def _write_images(images: list[dict], output: Path,
 
 
 def cancel_active() -> str:
-    """Annule le travail en cours côté serveur (le processus, lui, survit)."""
+    """Arrête la génération en cours. Le processus n'y survit pas.
+
+    L'API ne sait PAS interrompre un travail déjà en calcul : elle annonce
+    `cancel_generating: false` dans ses capacités et répond 409 « job is
+    currently generating and cannot be interrupted yet ». Comme `HTTPError`
+    dérive de `URLError`, la version précédente avalait ce 409 et annonçait
+    quand même « annulé » — le bouton Stop ne faisait rien et l'image arrivait
+    malgré tout.
+
+    Puisque le protocole ne peut pas, on tue le processus. Ça rend la VRAM tout
+    de suite, au prix d'un rechargement du modèle à l'image suivante. C'est le
+    marché honnête ; prétendre annuler ne l'était pas.
+    """
     with _LOCK:
-        live, job = _LIVE, _JOB
-    if live is None or not job:
+        live = _LIVE
+    if live is None:
         return ""
-    try:
-        _request(f"{_base_url(live.port)}/jobs/{job}/cancel", payload={})
-        return "⏹️ Generation cancelled."
-    except (urllib.error.URLError, OSError):
-        return ""
+    _CANCEL.set()
+    stop()
+    return "⏹️ Generation cancelled."
 
 
 def generate(server: Path, req: "sdcpp.GenRequest", output: Path,
              gpu_index: int | None = None, all_gpus: bool = False,
              log: Callable[[str], None] | None = None) -> list[Path]:
-    """Une image via le moteur résident. Lève ServerUnavailable pour replier."""
+    """Une image via le moteur résident. Lève ServerUnavailable pour replier.
+
+    Une génération à la fois, et une annulation ne se replie JAMAIS sur
+    sd-cli : relancer en ligne de commande ce que l'utilisateur vient d'arrêter
+    serait la pire réponse possible à un clic sur Stop.
+    """
+    if not _BUSY.acquire(blocking=False):
+        raise sdcpp.EngineError(
+            "The resident engine is already generating an image.")
+    _CANCEL.clear()
+    try:
+        return _generate(server, req, output, gpu_index, all_gpus, log)
+    except sdcpp.EngineError:
+        raise
+    except (ServerUnavailable, OSError, ValueError) as exc:
+        if _CANCEL.is_set():
+            raise sdcpp.EngineError("Interrupted by the user.") from exc
+        if isinstance(exc, ServerUnavailable):
+            raise
+        raise ServerUnavailable(f"Resident engine unavailable: {exc}") from exc
+    finally:
+        _BUSY.release()
+
+
+def _generate(server: Path, req: "sdcpp.GenRequest", output: Path,
+              gpu_index: int | None, all_gpus: bool,
+              log: Callable[[str], None] | None) -> list[Path]:
     global _JOB
     if not can_serve(req):
         raise ServerUnavailable("Request outside the resident engine's scope.")
     port = ensure(server, server_args(server, req), gpu_index, all_gpus, log)
     base = _base_url(port)
+    if req.ref_image:
+        # On DEMANDE au serveur au lieu de déduire de son numéro de version :
+        # le même numéro couvre des binaires officiels et maison qui ne
+        # proposent pas la même chose.
+        caps = _request(f"{base}/capabilities")
+        features = ((caps.get("features_by_mode") or {}).get("img_gen")
+                    or caps.get("features") or {})
+        if not features.get("ref_images"):
+            raise ServerUnavailable(
+                "This engine does not serve reference images.")
+    if _CANCEL.is_set():
+        raise sdcpp.EngineError("Interrupted by the user.")
     try:
         job = _request(f"{base}/img_gen", payload=request_payload(req),
                        timeout=60.0)
@@ -361,14 +450,25 @@ def generate(server: Path, req: "sdcpp.GenRequest", output: Path,
     with _LOCK:
         _JOB = job_id
 
+    deadline = time.monotonic() + JOB_TIMEOUT_S
     try:
         while True:
             time.sleep(_POLL_S)
+            if _CANCEL.is_set():
+                raise sdcpp.EngineError("Interrupted by the user.")
+            if time.monotonic() >= deadline:
+                # Un serveur muet garde la VRAM ET l'interface. On le libère.
+                stop("generation timed out", log)
+                raise sdcpp.EngineError(
+                    "The resident engine stopped answering; it was shut down.")
             try:
                 state = _request(f"{base}/jobs/{job_id}")
             except (urllib.error.URLError, OSError) as exc:
                 raise ServerUnavailable(f"Lost track of the job: {exc}")
             status = state.get("status") or ""
+            if status and status not in {"queued", "generating", "completed",
+                                         "cancelled", "failed"}:
+                raise ServerUnavailable(f"Unknown job status: {status!r}")
             if status == "completed":
                 images = ((state.get("result") or {}).get("images")) or []
                 written = _write_images(images, output, req.batch_count)
@@ -378,9 +478,14 @@ def generate(server: Path, req: "sdcpp.GenRequest", output: Path,
             if status == "cancelled":
                 raise sdcpp.EngineError("Interrupted by the user.")
             if status == "failed":
-                error = (state.get("error") or {}).get("message") or "inconnue"
-                # Un échec de GÉNÉRATION n'est pas un échec du serveur : le
-                # relancer en ligne de commande donnerait la même erreur, et
+                error = (state.get("error") or {}).get("message") or "unknown"
+                # Un manque de VRAM, lui, se rattrape : c'est le seul cas où
+                # réessayer plus petit peut réussir. On le type pour que
+                # l'échelle de reprise de generate.py le reconnaisse.
+                if any(m.lower() in error.lower() for m in sdcpp._OOM_MARKERS):
+                    raise sdcpp.VramError(f"The engine ran out of memory: {error}")
+                # Un autre échec de GÉNÉRATION n'est pas un échec du serveur :
+                # le relancer en ligne de commande donnerait la même erreur, et
                 # avec 80 s de chargement en plus.
                 raise sdcpp.EngineError(f"The engine failed: {error}")
     finally:

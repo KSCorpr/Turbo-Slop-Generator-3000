@@ -42,9 +42,17 @@ class ScopeTests(unittest.TestCase):
         # cette demande produirait une image SANS le LoRA, sans rien dire.
         self.assertFalse(sdserver.can_serve(_req(lora_dir=Path("loras"))))
 
-    def test_hd_pass_and_multi_reference_go_back_too(self):
+    def test_the_hd_pass_goes_back_to_the_cli(self):
         self.assertFalse(sdserver.can_serve(_req(hires=object())))
-        self.assertFalse(sdserver.can_serve(_req(ref_image=Path("r.png"))))
+
+    def test_reference_editing_is_no_longer_refused_up_front(self):
+        """`ref_images` EST au menu de l'API : le refus était une invention.
+
+        Le périmètre est décidé à la demande, en interrogeant `/capabilities`,
+        pas ici — un même numéro de version couvre des binaires qui n'offrent
+        pas la même chose.
+        """
+        self.assertTrue(sdserver.can_serve(_req(ref_image=Path("r.png"))))
 
     def test_auto_fit_and_step_cache_go_back_too(self):
         self.assertFalse(sdserver.can_serve(_req(auto_fit=True)))
@@ -89,7 +97,11 @@ class PayloadTests(unittest.TestCase):
         payload = sdserver.request_payload(
             _req(schedule="karras", flow_shift=3.0))
         self.assertEqual(payload["sample_params"], {
-            "sample_method": "euler", "sample_steps": 8, "guidance": 1.0,
+            "sample_method": "euler", "sample_steps": 8,
+            # `guidance` est un OBJET côté API. Envoyé comme flottant, le CFG
+            # demandé n'arrivait jamais — masqué par le fait que nos modèles
+            # tournent à 1.0, qui se trouve être le défaut du serveur.
+            "guidance": {"txt_cfg": 1.0},
             "scheduler": "karras", "flow_shift": 3.0})
         self.assertEqual(payload["width"], 1024)
         self.assertEqual(payload["batch_count"], 1)
@@ -111,6 +123,66 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(payload["strength"], 0.4)
         self.assertTrue(base64.b64decode(payload["init_image"])
                         .startswith(b"\x89PNG"))
+
+
+class ReferenceEditingTests(unittest.TestCase):
+    """Servir une référence que le moteur ignorerait est pire que se replier."""
+
+    def _generate(self, features):
+        with patch.object(sdserver, "ensure", return_value=7860), \
+             patch.object(sdserver, "_request", return_value=features) as req:
+            with self.assertRaises(sdserver.ServerUnavailable) as caught:
+                sdserver._generate(Path("sd-server"),
+                                   _req(ref_image=Path("r.png")),
+                                   Path("out.png"), None, False, None)
+            return str(caught.exception), req
+
+    def test_a_server_without_reference_support_falls_back(self):
+        message, _ = self._generate({"features_by_mode": {"img_gen": {}}})
+        self.assertIn("reference images", message)
+
+    def test_the_capability_is_asked_for_not_assumed(self):
+        _message, request = self._generate({})
+        self.assertTrue(request.call_args[0][0].endswith("/capabilities"))
+
+
+class StartupIdentityTests(unittest.TestCase):
+    """Les poids font partie de l'identité de la session, pas juste leur nom."""
+
+    def test_replacing_weights_at_the_same_path_changes_the_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            weights = Path(tmp) / "model.gguf"
+            weights.write_bytes(b"first")
+            before = sdserver._weights_signature([str(weights)])
+            weights.write_bytes(b"second, and longer")
+            after = sdserver._weights_signature([str(weights)])
+        self.assertNotEqual(before, after)
+
+    def test_a_path_that_is_not_a_file_is_simply_skipped(self):
+        self.assertEqual(sdserver._weights_signature(
+            ["--max-vram", "-1", "/nope/model.gguf"]), [])
+
+
+class LocalOnlyClientTests(unittest.TestCase):
+    def test_the_client_never_goes_through_a_system_proxy(self):
+        """127.0.0.1 avec un HTTP_PROXY d'entreprise : les images y partaient.
+
+        Le payload contient l'image de départ et les références en base64. Les
+        envoyer à un proxy qui ne sait pas les router est au mieux un échec, au
+        pire une fuite dans ses journaux.
+        """
+        import urllib.request
+
+        def has_proxy(opener):
+            return any(type(h).__name__ == "ProxyHandler"
+                       for h in opener.handlers)
+
+        # Passer un ProxyHandler VIDE ne l'installe pas en no-op : urllib le
+        # retire purement et simplement, ce qui est justement l'effet voulu.
+        # On vérifie donc l'absence, pas une configuration.
+        with patch.dict("os.environ", {"HTTP_PROXY": "http://proxy.corp:3128"}):
+            self.assertTrue(has_proxy(urllib.request.build_opener()))
+        self.assertFalse(has_proxy(sdserver._HTTP))
 
 
 class ResultTests(unittest.TestCase):

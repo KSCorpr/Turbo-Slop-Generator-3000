@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from . import settings
+from .fileio import atomic_write_text
 
 STYLES_FILE = settings.USERDATA_DIR / "style_presets.json"
 # Préréglages LIVRÉS avec l'app (lecture seule). Ils apparaissent dans le menu
@@ -45,8 +46,8 @@ def _load() -> Dict[str, str]:
 
 def _write(data: Dict[str, str]) -> None:
     settings.ensure_dirs()
-    STYLES_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                           encoding="utf-8")
+    atomic_write_text(STYLES_FILE,
+                      json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def _load_bundled() -> Dict[str, str]:

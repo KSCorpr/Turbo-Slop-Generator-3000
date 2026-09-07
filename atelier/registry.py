@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -58,10 +60,26 @@ class BaseModel:
     presets: list[dict] = None  # type: ignore[assignment]
 
 
-def _catalog() -> dict[str, Any]:
-    path = settings.CONFIG_DIR / "models.yaml"
+@lru_cache(maxsize=4)
+def _parse_catalog(path: Path, mtime_ns: int, size: int) -> dict[str, Any]:
     with open(path, encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
+
+
+def _catalog() -> dict[str, Any]:
+    """Le catalogue, sans le relire du disque à chaque appel.
+
+    Il est lu par presque tous les constructeurs de widgets, donc des dizaines
+    de fois au démarrage. La date et la taille du fichier font partie de la
+    clé : le modifier à la main pendant que l'app tourne reste pris en compte.
+
+    La COPIE n'est pas une précaution de style : les appelants modifient les
+    `defaults` et les `presets` qu'ils reçoivent, et sans elle ces écritures
+    empoisonneraient l'entrée mise en cache pour tout le monde.
+    """
+    path = settings.CONFIG_DIR / "models.yaml"
+    st = path.stat()
+    return deepcopy(_parse_catalog(path, st.st_mtime_ns, st.st_size))
 
 
 def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
