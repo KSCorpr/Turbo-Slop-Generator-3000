@@ -526,7 +526,7 @@ ENGINE_FEATURES = [
     {"option": "--hires", "needed_by": "the “🚀 HD” tab",
      "blocking": True},
     {"option": "--upscale-tile-size",
-     "needed_by": "l'agrandissement ESRGAN sans coutures", "blocking": False},
+     "needed_by": "seam-free ESRGAN upscaling", "blocking": False},
     {"option": "--max-vram",
      "needed_by": "segmented execution (HD on a tight card)",
      "blocking": False},

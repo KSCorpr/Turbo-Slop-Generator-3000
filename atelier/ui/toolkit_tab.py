@@ -432,11 +432,19 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             # ---------- Agrandir (ESRGAN, sd.cpp) ----------
             with gr.Tab("🔼 Upscale", id="esrgan"):
                 gr.Markdown(
-                    "**Plain** enlargement by an ESRGAN network, native to "
-                    "**sd.cpp**: deterministic, **100% GPU**, no PyTorch and "
-                    "no prompt. The factor (×2 or ×4) comes from the model "
-                    "you pick; “Repeat” applies the model a second time (×2 "
-                    "twice = ×4).\n\n🎨 **Comics, illustration, line art**: "
+                    "**Plain, deterministic** enlargement — no prompt, no diffusion, no "
+                    "seed: the same image always gives exactly the same "
+                    "result. That is what separates it from a *creative* "
+                    "upscale, whose “painted” look is not a setting gone "
+                    "wrong but how it works.\n\n⚙️ **Two engines, one "
+                    "list.** A `.gguf` model runs on **sd.cpp** (100% GPU, no "
+                    "PyTorch). Anything else runs on **spandrel**, which "
+                    "reads 42 architectures — DAT, SPAN, PLKSR, ATD, HAT, "
+                    "SwinIR… sd.cpp implements exactly **one**, RRDBNet "
+                    "(ESRGAN, 2018), so every GGUF here is that same 2018 "
+                    "network. Its halo on crisp lines is not a setting you "
+                    "have not found yet — it is what that architecture "
+                    "does.\n\n🎨 **Comics, illustration, line art**: "
                     "pick a model marked **drawing / anime**. Photo models "
                     "(Remacri, Nomos, UltraSharp…) are trained on natural "
                     "textures: on a flat colour area they invent grain, and "
@@ -453,13 +461,27 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 with gr.Accordion("⬇️ Download the upscalers (1 click)",
                                   open=not registry.upscalers_ready()):
                     gr.Markdown(
-                        "Fetches **all** the GGUF ESRGAN models (~1 GB total) "
-                        "from `wbruna/upscalers-sdcpp-gguf`. Reusable offline "
-                        "afterwards.")
+                        "**GGUF pack (sd.cpp)** — fetches **all** the ESRGAN "
+                        "models (~1 GB total) from "
+                        "`wbruna/upscalers-sdcpp-gguf`. Runs without PyTorch, "
+                        "and every one of them is the same 2018 "
+                        "architecture.\n\n**Modern pack (spandrel)** — six "
+                        "models on six *different* architectures (DAT, "
+                        "RealPLKSR, ATD, SPAN, Compact, SwinIR), ~450 MB "
+                        "total, by Philip Hofmann, all **CC-BY-4.0 so "
+                        "commercial use is allowed with attribution**. They "
+                        "need no new environment: spandrel already comes with "
+                        "the **🙂 Faces** add-on. Start with the SPAN 2x — it "
+                        "is 9 MB and the fastest way to see the difference on "
+                        "your own images.")
                     u_inst_log = gr.Textbox(label="Download log",
                                             lines=8, autoscroll=True,
                                             elem_classes="log-box")
-                    u_inst = gr.Button("⬇️ Download the upscalers")
+                    with gr.Row():
+                        u_inst = gr.Button("⬇️ GGUF pack (sd.cpp, ~1 GB)")
+                        u_inst_modern = gr.Button(
+                            "⬇️ Modern pack (spandrel, ~450 MB)",
+                            variant="primary")
 
                 with gr.Row():
                     with gr.Column(scale=3):
@@ -475,7 +497,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "comics page, a photo model smears and lays "
                                  "down halos.")
                         u_repeats = gr.Radio(
-                            [("×1 (natif)", 1), ("Repeat ×2", 2)],
+                            [("×1 (native)", 1), ("Repeat ×2", 2)],
                             value=1, label="Repeat",
                             info="⚠️ Repeating runs the network on its OWN "
                                  "output: it mistakes the high frequencies it "
@@ -509,6 +531,19 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 u_inst.click(_install_upscalers, outputs=[u_inst_log, u_model])
 
+                def _install_modern():
+                    lines: list[str] = []
+                    for msg in downloader.download_modern_upscalers(
+                            log=lines.append):
+                        lines.append(msg)
+                        yield "\n".join(lines), gr.update()
+                    yield ("\n".join(lines),
+                           gr.update(choices=registry.upscaler_choices(),
+                                     value=registry.default_upscaler()))
+
+                u_inst_modern.click(_install_modern,
+                                    outputs=[u_inst_log, u_model])
+
                 def _refresh_upscalers():
                     return gr.update(choices=registry.upscaler_choices(),
                                      value=registry.default_upscaler())
@@ -522,15 +557,30 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         raise gr.Error(t("Choose an upscale model (download "
                                          "them first)."))
                     logs: list[str] = []
-                    progress(0.1, desc="Agrandissement…")
+                    progress(0.1, desc="Upscaling…")
+                    engine = registry.upscaler_engine(model)
                     try:
-                        out = gen_engine.upscale_image(
-                            img, model, repeats=int(repeats), log=logs.append)
+                        if engine == "spandrel":
+                            # Le facteur vient du modèle : « Repeat » n'a pas
+                            # de sens ici, et l'enchaînement est justement ce
+                            # qui fabrique les escaliers sur les diagonales.
+                            if int(repeats) > 1:
+                                logs.append(
+                                    "[upscale] “Repeat” is ignored for a "
+                                    "modern model: chaining a network over "
+                                    "its own output is what creates the "
+                                    "staircase. Pick a ×4 model instead.")
+                            out = tools.modern_upscale(img, model,
+                                                       log=logs.append)
+                        else:
+                            out = gen_engine.upscale_image(
+                                img, model, repeats=int(repeats),
+                                log=logs.append)
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERROR] {exc}")
                         return None, "\n".join(logs)
                     progress(1.0, desc="Done")
-                    logs.append(f"\n✅ Image agrandie : {out}")
+                    logs.append(f"\n✅ Upscaled: {out}")
                     return str(out), "\n".join(logs)
 
                 u_evt = u_run.click(do_upscale,

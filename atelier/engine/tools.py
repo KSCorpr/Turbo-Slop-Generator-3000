@@ -396,6 +396,48 @@ def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
     return _collect(out_dir, "depth", stamp)
 
 
+def modern_upscale(image, model_name: str,
+                   log: Callable[[str], None] | None = None) -> Path:
+    """Agrandissement par un modèle MODERNE (DAT, SPAN, PLKSR…) via spandrel.
+
+    Aucune diffusion, aucun prompt, aucune graine : la même image donne
+    toujours exactement le même résultat. C'est ce qui le distingue des
+    upscales génératifs, dont « l'effet peinture » n'est pas un défaut de
+    réglage mais leur fonctionnement même.
+
+    Le facteur vient du MODÈLE, pas d'une cible : on ne redimensionne jamais
+    après coup pour tomber juste. Un ×4 réduit ensuite à ×3 est propre (c'est
+    du suréchantillonnage) ; un ×2 étiré jusqu'à ×3 est exactement
+    l'interpolation qu'on cherche à fuir.
+    """
+    if not face_is_installed():
+        # spandrel arrive avec la restauration de visages : c'est le même
+        # paquet, donc rien de plus à installer une fois celle-ci en place.
+        raise ToolError(
+            "Modern upscalers need the “🙂 Faces” add-on installed — they "
+            "share the same spandrel package. Install it once from the "
+            "Toolkit, and no further download is needed.")
+    from .. import registry
+    weights = registry.upscaler_path(model_name)
+    if weights is None:
+        raise ToolError(f"Upscaler not found: “{model_name}”.")
+    src = _to_src(image, "upscale")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = settings.TMP_DIR / f"upscale_out_{stamp}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"upscale-{stamp}.png"
+    runner = settings.ROOT / "scripts" / "tools" / "run_spandrel.py"
+    cmd = [sys.executable, str(runner), "--model", str(weights),
+           "--input", str(src), "--output", str(out)]
+    _run_tool(cmd, log, "The upscale failed (see the log).",
+              gpu_index=_gen_gpu_index())
+    if not out.is_file():
+        raise ToolError("The upscale produced no image (see the log).")
+    final = settings.OUTPUT_DIR / out.name
+    out.replace(final)
+    return final
+
+
 def face_restore(image, fidelity: float = 0.5, only_center: bool = False,
                  model: str = FACE_DEFAULT,
                  log: Callable[[str], None] | None = None) -> Path:

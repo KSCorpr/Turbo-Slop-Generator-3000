@@ -43,6 +43,7 @@ lignes boutons onglet onglets reglage reglages defaut
 cartes disque disques memoire vitesse lecture ecriture gestion aide
 outils apercu reglage etape etapes couleur couleurs profondeur
 moteur moteurs catalogue detourage restauration amelioration parametres
+agrandissement agrandie agrandi natif couture coutures
 """.split()
 
 # English words that legitimately carry an accent — the accent rule must not

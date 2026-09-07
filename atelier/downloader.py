@@ -202,6 +202,47 @@ def download_model(model: BaseModel,
     yield f"“{model.name}” is ready. ✅"
 
 
+def download_modern_upscalers(
+        log: Callable[[str], None] | None = None) -> Iterator[str]:
+    """Télécharge les agrandisseurs MODERNES (spandrel), un par dépôt.
+
+    Ils vivent dans le même dossier que les GGUF : c'est le moteur qui est
+    choisi d'après le fichier, pas l'inverse, donc l'utilisateur n'a qu'une
+    seule liste de modèles à regarder.
+    """
+    from .registry import modern_upscaler_files, upscalers_dir
+    settings.configure_hf_env()
+    settings.ensure_dirs()
+    entries = modern_upscaler_files()
+    if not entries:
+        yield "No modern upscaler is configured."
+        return
+    from huggingface_hub import hf_hub_download
+
+    local_dir = upscalers_dir()
+    local_dir.mkdir(parents=True, exist_ok=True)
+    yield f"Downloading {len(entries)} modern upscaler(s)…"
+    ok = 0
+    for entry in entries:
+        name, repo = entry["file"], entry["repo"]
+        dest = local_dir / name
+        if dest.is_file() and dest.stat().st_size > 0:
+            ok += 1
+            yield f"  ✓ already there: {name}"
+            continue
+        try:
+            # local_dir plat : le fichier atterrit sous son propre nom, à côté
+            # des GGUF, sans arborescence de dépôt intermédiaire.
+            hf_hub_download(repo_id=repo, filename=name,
+                            local_dir=str(local_dir))
+            ok += 1
+            yield f"  ↓ {name}  ({entry['arch']})"
+        except Exception as exc:  # noqa: BLE001
+            yield f"  ✗ {name}: {exc}"
+    yield (f"✅ {ok}/{len(entries)} ready. They appear in the model list after "
+           "“↻ Refresh”.")
+
+
 def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge tous les upscalers ESRGAN GGUF (wbruna/upscalers-sdcpp-gguf)."""
     from .registry import upscaler_config, upscalers_dir

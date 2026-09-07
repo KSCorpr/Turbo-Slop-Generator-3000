@@ -156,17 +156,40 @@ def is_drawing_upscaler(name: str) -> bool:
     return any(k in low for k in _DRAWING_HINTS)
 
 
+def upscaler_engine(name: str) -> str:
+    """Quel moteur sait lire CE fichier : "sdcpp" ou "spandrel".
+
+    sd.cpp n'implémente qu'UNE architecture de super-résolution, RRDBNet
+    (ESRGAN, 2018) — vérifié dans `src/model/upscaler/esrgan.hpp`. Tout ce qui
+    n'est pas ça (DAT, SPAN, PLKSR, ATD, HAT…) ne se charge tout simplement
+    pas, et c'est la vraie raison pour laquelle le catalogue historique n'a
+    qu'une seule famille de modèles.
+
+    La règle est l'extension, pas une sonde : le GGUF est le format que sd.cpp
+    s'est vu confier, le reste part chez spandrel qui, lui, lit l'en-tête et
+    reconnaît l'architecture exacte — ESRGAN compris. Rien n'est donc perdu.
+    """
+    return "sdcpp" if Path(name or "").suffix.lower() == ".gguf" else "spandrel"
+
+
 def upscaler_choices() -> list[tuple[str, str]]:
     """(libellé, nom de fichier) — modèles DESSIN d'abord, et étiquetés.
 
     Le tri alphabétique brut mettait « 2x-ESRGAN » (photo, générique) en tête :
     sur une planche de BD c'est le pire choix possible, et rien ne l'indiquait.
+    L'architecture est annoncée aussi : c'est elle qui décide du halo sur les
+    traits, pas le nom du modèle.
     """
     names = list_upscalers()
     draw = [n for n in names if is_drawing_upscaler(n)]
     photo = [n for n in names if n not in draw]
-    return ([(f"🎨 {n}  — dessin / anime", n) for n in draw]
-            + [(f"📷 {n}  — photo / general", n) for n in photo])
+
+    def label(n: str, icon: str, kind: str) -> tuple[str, str]:
+        modern = " · modern" if upscaler_engine(n) == "spandrel" else ""
+        return (f"{icon} {n}  — {kind}{modern}", n)
+
+    return ([label(n, "🎨", "drawing / anime") for n in draw]
+            + [label(n, "📷", "photo / general") for n in photo])
 
 
 # Modèles de dessin préférés, du meilleur au moins bon, pour le pré-agrandissement
@@ -216,6 +239,18 @@ def upscaler_path(name: str) -> Path | None:
         return None
     p = upscalers_dir() / name
     return p if p.is_file() else None
+
+
+def modern_upscaler_files() -> list[dict]:
+    """Entrées du catalogue « modern_upscalers » (repo, file, arch, note)."""
+    cfg = _catalog().get("modern_upscalers") or {}
+    return list(cfg.get("files") or [])
+
+
+def modern_upscalers_ready() -> bool:
+    """Au moins un agrandisseur moderne présent sur le disque."""
+    installed = set(list_upscalers())
+    return any(e.get("file") in installed for e in modern_upscaler_files())
 
 
 def upscalers_ready() -> bool:

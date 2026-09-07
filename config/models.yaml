@@ -202,3 +202,47 @@ upscalers:
     - RealESRGAN_x4plus.gguf
     - RealESRGAN_x4plus_anime_6B.gguf
     - smbss_2x_RRDB_Animation.gguf
+
+# --------------------------------------------------------------------------- #
+#  Agrandisseurs MODERNES (PyTorch/spandrel, pas sd.cpp)
+#
+#  sd.cpp n'implémente qu'une architecture de super-résolution : RRDBNet
+#  (ESRGAN, 2018). Tous les modèles de la liste ci-dessus sont donc la MÊME
+#  architecture, et son défaut — halo sur les traits nets, grain inventé sur
+#  les aplats — n'est pas un réglage à trouver.
+#
+#  spandrel en charge 42 sous licence permissive. Il est déjà installé (c'est
+#  la dépendance de la restauration de visages), donc ces modèles ne coûtent
+#  que leur propre poids.
+#
+#  Tous CC-BY-4.0 : usage COMMERCIAL autorisé avec attribution — ce qui compte
+#  quand les images partent sur une banque d'images. Auteur : Philip Hofmann.
+# --------------------------------------------------------------------------- #
+modern_upscalers:
+  name: "Modern upscalers (DAT / SPAN / PLKSR / ATD)"
+  credit: "Philip Hofmann (Phips) — CC-BY-4.0"
+  files:
+    - repo: Phips/4xNomos8kDAT
+      file: 4xNomos8kDAT.safetensors
+      arch: DAT
+      note: "photo, the reference for clean 4x — slowest of the set"
+    - repo: Phips/4xNomosWebPhoto_RealPLKSR
+      file: 4xNomosWebPhoto_RealPLKSR.safetensors
+      arch: RealPLKSR
+      note: "photo, trained on realistic noise, lens blur and jpg/webp"
+    - repo: Phips/4xNomos8k_atd_jpg
+      file: 4xNomos8k_atd_jpg.safetensors
+      arch: ATD
+      note: "photo, strong on jpeg artefacts"
+    - repo: Phips/2xNomosUni_span_multijpg_ldl
+      file: 2xNomosUni_span_multijpg_ldl.safetensors
+      arch: SPAN
+      note: "universal 2x, very fast, the one to try first"
+    - repo: Phips/2xHFA2kCompact
+      file: 2xHFA2kCompact.safetensors
+      arch: Compact
+      note: "anime / drawing 2x, tiny and fast"
+    - repo: Phips/4xHFA2kLUDVAESwinIR_light
+      file: 4xHFA2kLUDVAESwinIR_light.safetensors
+      arch: SwinIR
+      note: "anime / drawing 4x, cleaner linework than an ESRGAN"
