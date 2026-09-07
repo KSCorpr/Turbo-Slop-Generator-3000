@@ -571,12 +571,21 @@ single mutually-exclusive strategy:
 - **Text encoder computed on the 2nd card, weights in RAM** — a compatibility
   fallback kept as a measurable option. It can win on unusual topologies, but
   normally loses to resident weights because it crosses PCIe repeatedly.
-- **Auto-fit** — sd.cpp spreads diffusion / encoder / VAE across all cards
-  (`--auto-fit`). Current sd.cpp can time-share modules, use RAM/disk parameter
-  residency, split oversized modules and retry VAE decoding with tiling when a
-  full-VRAM placement does not fit. It is memory-aware, not topology-aware: on a
-  mismatched pair or a PCIe x4 secondary slot, benchmark it instead of assuming
-  that more aggregate VRAM means more speed.
+- **Auto-fit** — `--auto-fit on`. **It is no longer a multi-GPU feature**, and
+  this section used to say it was. Current sd.cpp picks **one** GPU for
+  diffusion / encoder / VAE *computation* — the one with the most free memory —
+  then places the *weights* on that GPU, in RAM, on another GPU or on disk, in
+  that order, according to what fits. On a single 11–12 GB card that tiered
+  placement is exactly the problem we otherwise hand-tune, which makes it worth
+  measuring rather than assuming.
+  Two things follow. It is **on by default** when the flag is omitted, so the
+  app sends `off` explicitly when you have not asked for it. And an explicit
+  `--backend` or `--params-backend` **disables it regardless of argument
+  order** — so the encoder-split and INT8-streaming placements, which set one,
+  silently win over it. That is why the app never sends both.
+  It remains memory-aware, not topology-aware: on a mismatched pair or a PCIe
+  x4 secondary slot, benchmark it instead of assuming that more aggregate VRAM
+  means more speed.
   **The flag's shape changed upstream**: it was a bare switch and now requires
   `on` or `off`. Sent bare to a recent engine it would swallow the next
   argument as its value, so the binary's help text is parsed rather than its
