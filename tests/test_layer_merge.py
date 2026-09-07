@@ -143,7 +143,7 @@ class MergeByLabelTests(unittest.TestCase):
             [a, b], [("véhicule", 0.001), ("véhicule", 0.2)], self.log,
             min_margin=0.012)
         self.assertEqual(len(out_m), 2)
-        self.assertTrue(any("marge" in l for l in self.lines), self.lines)
+        self.assertTrue(any("margin" in l for l in self.lines), self.lines)
 
     def test_a_group_cannot_swallow_the_image(self):
         """Même contiguë, une chaîne de même nom ne devient pas un fond."""
@@ -153,7 +153,7 @@ class MergeByLabelTests(unittest.TestCase):
         out_m, _ = run_layers._merge_by_label(
             [a, b], [("mur", 0.2)] * 2, self.log, max_share=0.35)
         self.assertEqual(len(out_m), 2)
-        self.assertTrue(any("taille" in l for l in self.lines), self.lines)
+        self.assertTrue(any("size" in l for l in self.lines), self.lines)
 
     def test_merging_is_transitive_through_contact(self):
         """A touche B, B touche C, A ne touche pas C : un seul objet quand
@@ -303,7 +303,7 @@ class RawDuplicateRejectionTests(unittest.TestCase):
         kept = run_layers._filter_masks(raws, 0.004 * H * W, 0.85 * H * W,
                                         0.75, lines.append)
         self.assertEqual(len(kept), 1, "\n".join(lines))
-        self.assertTrue(any("avant nettoyage" in l for l in lines), lines)
+        self.assertTrue(any("before cleanup" in l for l in lines), lines)
 
     def test_genuinely_different_masks_all_survive(self):
         H = W = 256

@@ -176,7 +176,7 @@ def _pick_asset(assets: list[dict], backend: str = "cuda") -> dict | None:
 def install_binary(force: bool = False, log=print,
                    backend: str | None = None) -> bool:
     if has_cli() and not force:
-        log("Binaire trellis-cli déjà présent, on saute (--force pour MAJ).")
+        log("The trellis-cli binary is already there, skipping (--force to update).")
         return True
     if backend is None:
         # Choix guidé par la carte : voir CUDA_ARCHS plus haut.
@@ -192,22 +192,22 @@ def install_binary(force: bool = False, log=print,
         sm = f"sm_{cap.replace('.', '')}" if cap else ""
         if backend == "vulkan":
             log("Paquet VULKAN retenu : "
-                + (f"aucune des deux archives CUDA amont ne compile pour {sm}."
-                   if cap else "votre carte n'a pas pu être identifiée.")
-                + " Vulkan marche sur toutes les cartes.")
+                + (f"neither upstream CUDA archive compiles for {sm}."
+                   if cap else "your card could not be identified.")
+                + " Vulkan works on every card.")
         elif backend == "cuda12":
-            log(f"Paquet CUDA12 retenu ({sm} — Pascal/Volta, archive CUDA 12.9 "
-                "prévue pour les cartes anciennes).")
+            log(f"CUDA12 package picked ({sm} — Pascal/Volta, the CUDA 12.9 "
+                "archive meant for older cards).")
         else:
-            log(f"Paquet CUDA retenu ({sm} — Turing ou plus récent).")
-    log("Recherche de la dernière release pwilkin/trellis.cpp…")
+            log(f"CUDA package picked ({sm} — Turing or newer).")
+    log("Looking for the latest pwilkin/trellis.cpp release…")
     rel = get_sdcpp._fetch_json(GH_RELEASE)
     if isinstance(rel, dict) and rel.get("message") and not rel.get("assets"):
         log(f"API GitHub : {rel.get('message')}")
         return False
     asset = _pick_asset(rel.get("assets", []), backend)
     if not asset:
-        log("Aucune archive Windows trouvée dans la release. Disponibles :")
+        log("No Windows archive found in the release. Available:")
         for a in rel.get("assets", []):
             log("  " + a.get("name", "?"))
         return False
@@ -218,7 +218,7 @@ def install_binary(force: bool = False, log=print,
     if force and TRELLIS_BIN_DIR.exists():
         import shutil
         shutil.rmtree(TRELLIS_BIN_DIR, ignore_errors=True)
-        log("     (ancienne version du moteur retiree)")
+        log("     (previous engine version removed)")
     TRELLIS_BIN_DIR.mkdir(parents=True, exist_ok=True)
     blob = get_sdcpp._download(asset["browser_download_url"])
     import io
@@ -227,23 +227,23 @@ def install_binary(force: bool = False, log=print,
         z.extractall(TRELLIS_BIN_DIR)
     found = _find_binary()
     if found is not None:
-        log(f"[OK] Binaire installé : {found}")
+        log(f"[OK] Binary installed: {found}")
         return True
     exes = _list_exes(TRELLIS_BIN_DIR)
-    log("[!] trellis-cli introuvable après extraction. Exécutables trouvés :")
+    log("[!] trellis-cli not found after extraction. Executables found:")
     for name in exes:
         log("    - " + name)
     if not exes:
-        log("    (aucun .exe — l'archive n'a peut-être pas le binaire attendu)")
+        log("    (no .exe — the archive may not carry the expected binary)")
     return False
 
 
 # Variantes de poids : f16 (défaut, dépôt racine) ou quantifiées (sous-dossiers
 # q8/ et q4/ du dépôt HF). Tailles annoncées en amont.
 VARIANTS = {
-    "f16": ("racine du dépôt", "~16,5 Go — référence"),
-    "q8": ("q8/", "~9,9 Go — quasi sans perte"),
-    "q4": ("q4/", "~6 Go — léger grain de texture"),
+    "f16": ("repository root", "~16.5 GB — reference"),
+    "q8": ("q8/", "~9.9 GB — near lossless"),
+    "q4": ("q4/", "~6 GB — slight texture grain"),
 }
 
 
@@ -267,7 +267,7 @@ def install_models(variant: str = "f16", log=print) -> bool:
             f"{', '.join(VARIANTS)}).")
         return False
     if has_models(variant):
-        log(f"Modèles trellis « {variant} » déjà présents, on saute.")
+        log(f"Trellis models “{variant}” already there, skipping.")
         return True
     try:
         import os
@@ -284,20 +284,20 @@ def install_models(variant: str = "f16", log=print) -> bool:
     else:
         allow = [f"{variant}/*"]
         ignore = None
-    log(f"Téléchargement des modèles trellis « {variant} » "
-        f"({VARIANTS[variant][1]}) → {variant_dir(variant)} (reprise auto)…")
+    log(f"Downloading the trellis models “{variant}” "
+        f"({VARIANTS[variant][1]}) → {variant_dir(variant)} (auto-resume)…")
     try:
         # local_dir = racine : les fichiers q8/ et q4/ atterrissent
         # naturellement dans leur sous-dossier.
         snapshot_download(repo_id=HF_MODEL_REPO, local_dir=str(MODELS_DIR),
                           allow_patterns=allow, ignore_patterns=ignore)
     except Exception as exc:  # noqa: BLE001
-        log(f"Échec du téléchargement des modèles : {exc}")
+        log(f"Model download failed: {exc}")
         return False
     if has_models(variant):
-        log(f"[OK] Modèles trellis « {variant} » en place.")
+        log(f"[OK] Trellis models “{variant}” in place.")
         return True
-    log("[!] Aucun .gguf après téléchargement — vérifiez le dépôt HF.")
+    log("[!] No .gguf after the download — check the HF repository.")
     return False
 
 
@@ -319,16 +319,16 @@ def main():
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", action="store_true", help="binaire seul")
-    ap.add_argument("--models", action="store_true", help="modèles seuls")
+    ap.add_argument("--models", action="store_true", help="models only")
     ap.add_argument("--variant", choices=list(VARIANTS), default="f16",
-                    help="variante de poids : f16 (défaut), q8 ou q4")
+                    help="weight variant: f16 (default), q8 or q4")
     ap.add_argument("--force", action="store_true",
-                    help="re-télécharger le binaire même s'il est présent")
+                    help="download the binary again even if it is present")
     ap.add_argument("--backend", choices=["auto", "cuda", "cuda12", "vulkan"],
                     default="auto",
-                    help="paquet à installer. auto (défaut) = cuda pour "
-                         "Turing et plus récent, cuda12 pour Pascal/Volta, "
-                         "vulkan si aucune archive CUDA ne couvre la carte.")
+                    help="package to install. auto (default) = cuda for "
+                         "Turing and newer, cuda12 for Pascal/Volta, vulkan "
+                         "when no CUDA archive covers the card.")
     ap.add_argument("--allow-ipv6", action="store_true")
     args = ap.parse_args()
     if not args.allow_ipv6:
@@ -336,8 +336,8 @@ def main():
 
     # Trace explicite : on voit tout de suite OÙ ça s'installe (et donc si un
     # dossier de modèles externe est bien pris en compte).
-    print(f"Dossier des modèles : {MODELS_DIR}")
-    print(f"Dossier du moteur   : {TRELLIS_BIN_DIR}")
+    print(f"Models folder: {MODELS_DIR}")
+    print(f"Engine folder: {TRELLIS_BIN_DIR}")
 
     backend = None if args.backend == "auto" else args.backend
     if args.binary:
@@ -347,7 +347,7 @@ def main():
     else:
         ok = install_all(force=args.force, variant=args.variant,
                          backend=backend)
-    print("Terminé." if ok else "Terminé avec des erreurs (voir ci-dessus).")
+    print("Done." if ok else "Finished with errors (see above).")
     sys.exit(0 if ok else 1)
 
 

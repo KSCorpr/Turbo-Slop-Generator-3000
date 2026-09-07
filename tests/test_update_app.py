@@ -48,11 +48,11 @@ class ArchiveTests(unittest.TestCase):
             U._archive_files(b"<html>Access denied</html>")
 
     def test_an_archive_without_the_application_is_refused(self):
-        with self.assertRaisesRegex(RuntimeError, "app.py absent"):
+        with self.assertRaisesRegex(RuntimeError, "no app.py"):
             U._archive_files(archive({"LISEZMOI.txt": "rien"}))
 
     def test_a_path_that_climbs_out_is_refused(self):
-        with self.assertRaisesRegex(RuntimeError, "dangereux"):
+        with self.assertRaisesRegex(RuntimeError, "unsafe path"):
             U._archive_files(archive({**SANE, "../evade.py": "bad"}))
 
     def test_user_data_inside_the_archive_is_ignored(self):

@@ -107,19 +107,19 @@ def ensure_cuda_runtime(target: Path = BIN_DIR) -> bool:
     """
     target.mkdir(parents=True, exist_ok=True)
     if _cuda_runtime_present(target):
-        print("Runtime CUDA déjà présent.")
+        print("The CUDA runtime is already there.")
         return True
 
     # 1) Réutiliser les DLL embarquées par un torch CUDA déjà installé.
     lib = _torch_lib_dir()
     if lib and (lib / "cudart64_12.dll").is_file():
-        print("Copie des DLL CUDA depuis torch/lib…")
+        print("Copying the CUDA DLLs from torch/lib…")
         if _copy_dlls_from(lib, target) >= 2:
             return True
 
     # 2) Wheels NVIDIA depuis PyPI (léger, et PyPI fonctionne sur votre réseau).
     try:
-        print("Récupération du runtime CUDA via PyPI (nvidia-*-cu12)…")
+        print("Fetching the CUDA runtime from PyPI (nvidia-*-cu12)…")
         _pip("nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12")
         nv = _nvidia_pkg_dir()
         if nv and _copy_dlls_from(nv, target) >= 2:
@@ -129,7 +129,7 @@ def ensure_cuda_runtime(target: Path = BIN_DIR) -> bool:
 
     # 3) Dernier recours : torch CUDA (volumineux) puis copie des DLL.
     try:
-        print("Installation de PyTorch CUDA 12.1 (fournit le runtime CUDA)…")
+        print("Installing PyTorch CUDA 12.1 (it carries the CUDA runtime)…")
         # On évite --force-reinstall (verrouille tbb/mkl). On désinstalle juste
         # torch/torchvision puis on réinstalle la build CUDA.
         subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
@@ -140,7 +140,7 @@ def ensure_cuda_runtime(target: Path = BIN_DIR) -> bool:
         if lib and _copy_dlls_from(lib, target) >= 2:
             return True
     except Exception as exc:  # noqa: BLE001
-        print(f"   (échec torch : {exc})", flush=True)
+        print(f"   (torch failed: {exc})", flush=True)
 
     return _cuda_runtime_present(target)
 
@@ -251,7 +251,7 @@ def _latest_release_with_assets() -> dict:
     for rel in data:
         if rel.get("assets"):
             return rel
-    sys.exit("Aucune release avec archives trouvée.")
+    sys.exit("No release with archives was found.")
 
 
 def _progress(got: int, total: int, last: int) -> int:
@@ -261,7 +261,7 @@ def _progress(got: int, total: int, last: int) -> int:
             print(f"     {got/1e6:6.1f} / {total/1e6:.1f} Mo ({got*100//total}%)",
                   flush=True)
         else:
-            print(f"     {got/1e6:6.1f} Mo téléchargés…", flush=True)
+            print(f"     {got/1e6:6.1f} MB downloaded…", flush=True)
         return got
     return last
 
@@ -295,8 +295,8 @@ def _download(url: str) -> bytes:
                 tmp.unlink()
             return _resumable(m + url, tmp, retries=3, resume=True)
         except Exception as exc:  # noqa: BLE001
-            print(f"     (miroir échoué : {exc})", flush=True)
-    raise RuntimeError("téléchargement impossible (direct + miroirs)")
+            print(f"     (mirror failed: {exc})", flush=True)
+    raise RuntimeError("download failed (direct and mirrors)")
 
 
 def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
@@ -343,7 +343,7 @@ def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
                         last_print = _progress(got, total or 0, last_print)
             if total is None or tmp.stat().st_size >= total:
                 break  # terminé
-            raise IOError(f"interrompu à {tmp.stat().st_size}/{total} octets")
+            raise IOError(f"interrupted at {tmp.stat().st_size}/{total} bytes")
         except Exception as exc:  # noqa: BLE001
             if attempt >= retries:
                 raise
@@ -353,7 +353,7 @@ def _resumable(url: str, tmp: Path, retries: int, resume: bool) -> bytes:
 
     data = tmp.read_bytes()
     tmp.unlink(missing_ok=True)
-    print(f"     terminé ({len(data)/1e6:.1f} Mo).", flush=True)
+    print(f"     done ({len(data)/1e6:.1f} Mo).", flush=True)
     return data
 
 
@@ -374,7 +374,7 @@ def _restore_exec_bits(root: Path = BIN_DIR) -> None:
             try:
                 mode = p.stat().st_mode
                 p.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                print(f"     + exécutable : {p.name}", flush=True)
+                print(f"     + executable: {p.name}", flush=True)
             except OSError:
                 pass
 
@@ -394,13 +394,13 @@ def _extract_to(blob: bytes, name: str, target: Path) -> None:
         with zipfile.ZipFile(io.BytesIO(blob)) as z:
             if any(not _inside(target, target / member.filename)
                    for member in z.infolist()):
-                raise RuntimeError("archive ZIP dangereuse (chemin hors dossier)")
+                raise RuntimeError("unsafe ZIP archive (path outside the folder)")
             z.extractall(target)
     else:
         with tarfile.open(fileobj=io.BytesIO(blob)) as t:
             if any(not _inside(target, target / member.name)
                    for member in t.getmembers()):
-                raise RuntimeError("archive TAR dangereuse (chemin hors dossier)")
+                raise RuntimeError("unsafe TAR archive (path outside the folder)")
             t.extractall(target, filter="data")
     _restore_exec_bits(target)
 
@@ -436,20 +436,20 @@ def _validate_staged(root: Path) -> tuple[Path, list[str]]:
     """Smoke-test du nouveau binaire avant de remplacer le moteur courant."""
     cli = _find_sd_cli(root)
     if cli is None:
-        raise RuntimeError("archive invalide : aucun sd-cli / sd trouvé")
+        raise RuntimeError("invalid archive: no sd-cli / sd found")
     _restore_exec_bits(root)
     try:
         proc = subprocess.run([str(cli), "-h"], cwd=str(cli.parent),
                               capture_output=True, text=True, timeout=45,
                               encoding="utf-8", errors="replace")
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"le nouveau moteur ne démarre pas : {exc}") from exc
+        raise RuntimeError(f"the new engine does not start: {exc}") from exc
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
     options = sorted(set(re.findall(r"--[A-Za-z][A-Za-z0-9_-]*", text)))
     if "--mode" not in options and "--diffusion-model" not in options:
         tail = "\n".join(text.splitlines()[-10:])
         raise RuntimeError(
-            "le smoke-test sd-cli -h n'a pas reconnu le moteur\n" + tail)
+            "the sd-cli -h smoke test did not recognize the engine\n" + tail)
     return cli, options
 
 
@@ -488,7 +488,7 @@ def _keep_what_the_archive_does_not_bring(old: Path, stage: Path) -> None:
                 shutil.copytree(item, target)
             else:
                 shutil.copy2(item, target)
-            print(f"     - conservé : {item.name}")
+            print(f"     - kept: {item.name}")
         except OSError as exc:
             print(f"     [!] impossible de conserver {item.name} : {exc}")
 
@@ -502,9 +502,9 @@ def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
         _extract_to(blob, archive_name, stage)
         if needs_cuda_runtime and platform.system() == "Windows" \
                 and not _cuda_runtime_present(stage):
-            print("Runtime CUDA absent du nouveau moteur — préparation en staging…")
+            print("The new engine has no CUDA runtime — preparing it in staging…")
             if not ensure_cuda_runtime(stage):
-                raise RuntimeError("runtime CUDA 12 impossible à préparer")
+                raise RuntimeError("could not prepare the CUDA 12 runtime")
         _co_locate_cuda_runtime(stage)
         cli, options = _validate_staged(stage)
         embedded = _read_embedded_metadata(stage)
@@ -543,7 +543,7 @@ def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
                 os.replace(PREVIOUS_DIR, BIN_DIR)
             shutil.rmtree(broken, ignore_errors=True)
             raise
-        print("Mise à jour validée. L'ancien moteur reste disponible pour rollback.")
+        print("Update accepted. The previous engine stays available for rollback.")
     except Exception:
         # Avant le swap, BIN_DIR n'a pas bougé. Après un échec de swap, le bloc
         # ci-dessus l'a déjà restauré. Dans les deux cas, on ne purge rien.
@@ -557,7 +557,7 @@ def _transactional_install(blob: bytes, archive_name: str, metadata: dict,
 
 def _rollback() -> None:
     if not PREVIOUS_DIR.exists():
-        raise RuntimeError("aucun moteur précédent disponible")
+        raise RuntimeError("no previous engine available")
     _validate_staged(PREVIOUS_DIR)
     swap = ROOT / ".engine-swap"
     if swap.exists():
@@ -575,7 +575,7 @@ def _rollback() -> None:
         if swap.exists():
             os.replace(swap, BIN_DIR)
         raise
-    print("Rollback terminé : le moteur précédent est de nouveau actif.")
+    print("Rollback done: the previous engine is active again.")
 
 
 def _purge_old_binaries() -> None:
@@ -583,7 +583,7 @@ def _purge_old_binaries() -> None:
         for p in BIN_DIR.rglob(n):
             try:
                 p.unlink()
-                print(f"     - ancien binaire retiré : {p.name}", flush=True)
+                print(f"     - old binary removed: {p.name}", flush=True)
             except OSError:
                 pass
 
@@ -593,15 +593,15 @@ def main():
     ap.add_argument("--variant", choices=["cuda", "cpu", "metal"],
                     default=None,
                     help="cuda (Windows/Linux NVIDIA) · metal (macOS Apple "
-                         "Silicon) · cpu. Par défaut : selon la machine.")
+                         "Silicon) · cpu. Default: from the machine.")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--force", action="store_true",
-                    help="re-télécharger même si un binaire est déjà présent "
-                         "(pour METTRE À JOUR le moteur)")
+                    help="download again even if a binary is present (to "
+                         "UPDATE the engine)")
     ap.add_argument("--allow-ipv6", action="store_true",
-                    help="ne pas forcer l'IPv4 (par défaut on force l'IPv4)")
+                    help="do not force IPv4 (IPv4 is forced by default)")
     ap.add_argument("--rollback", action="store_true",
-                    help="réactive le moteur sauvegardé avant la dernière MAJ")
+                    help="restore the engine saved before the last update")
     args = ap.parse_args()
     if args.rollback:
         try:
@@ -611,12 +611,12 @@ def main():
         return
     if args.variant is None:
         args.variant = default_variant()
-        print(f"Variante retenue pour cette machine : {args.variant}")
+        print(f"Variant picked for this machine: {args.variant}")
 
     if not args.allow_ipv6:
         _force_ipv4()
 
-    print("Recherche de la dernière release stable-diffusion.cpp…")
+    print("Looking for the latest stable-diffusion.cpp release…")
     rel = _latest_release_with_assets()
     assets = rel["assets"]
     print(f"Release : {rel.get('tag_name')}")
@@ -626,8 +626,8 @@ def main():
                          rel.get("tag_name") or "", re.IGNORECASE)
     if match and int(match.group(1)) < MIN_OFFICIAL_BUILD:
         sys.exit(
-            f"Release trop ancienne ({rel.get('tag_name')}) : build "
-            f"{MIN_OFFICIAL_BUILD}+ requis pour les correctifs VRAM.")
+            f"Release too old ({rel.get('tag_name')}) : build "
+            f"{MIN_OFFICIAL_BUILD}+ required for the VRAM fixes.")
     if args.list:
         for a in assets:
             print(" ", a["name"])
@@ -635,16 +635,16 @@ def main():
 
     best = max(assets, key=lambda a: _score_main(a["name"], args.variant))
     if _score_main(best["name"], args.variant) <= 0:
-        print("Aucune archive principale ne correspond. Disponibles :")
+        print("No matching main archive. Available:")
         for a in assets:
             print(" ", a["name"])
-        sys.exit("Téléchargez-en une manuellement dans ./bin.")
+        sys.exit("Download one by hand into ./bin.")
 
     # Binaire principal (skip si déjà présent, utile en cas de relance).
     if _has_sd_cli() and not args.force:
-        print("Binaire sd-cli déjà présent, on saute le téléchargement.")
+        print("The sd-cli binary is already there, skipping the download.")
     else:
-        print(f"Téléchargement (binaire) : {best['name']}")
+        print(f"Downloading (binary): {best['name']}")
         blob = _download(best["browser_download_url"])
         _transactional_install(
             blob, best["name"],
@@ -653,7 +653,7 @@ def main():
              "published_at": rel.get("published_at")},
             needs_cuda_runtime=(args.variant == "cuda"))
 
-    print(f"Installé dans {BIN_DIR}. Binaire sd-cli prêt.")
+    print(f"Installed into {BIN_DIR}. The sd-cli binary is ready.")
 
 
 if __name__ == "__main__":

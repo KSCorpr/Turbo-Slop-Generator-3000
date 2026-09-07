@@ -28,7 +28,7 @@ def main():
     ap.add_argument("--x", type=int, required=True)
     ap.add_argument("--y", type=int, required=True)
     ap.add_argument("--overlay-path", default="",
-                    help="si fourni : enregistre un aperçu (zone en surbrillance)")
+                    help="if given: save a preview (region highlighted)")
     args = ap.parse_args()
 
     import numpy as np
@@ -37,10 +37,10 @@ def main():
     try:
         from transformers import SamModel, SamProcessor
     except ImportError:
-        sys.exit("transformers manquant. Réinstallez l'outil depuis le Toolkit.")
+        sys.exit("transformers is missing. Reinstall the tool from the Toolkit.")
 
     device = pick_device(torch)
-    print(f"[sam] chargement du modèle sur {label(device)}…", flush=True)
+    print(f"[sam] loading the model on {label(device)}…", flush=True)
     model = SamModel.from_pretrained(args.model_dir).to(device).eval()
     processor = SamProcessor.from_pretrained(args.model_dir)
 
@@ -81,7 +81,7 @@ def main():
         d.ellipse([args.x - r, args.y - r, args.x + r, args.y + r],
                   outline=(255, 0, 0), width=3)
         ov.save(args.overlay_path)
-        print(f"[sam] aperçu de la zone : {args.overlay_path}", flush=True)
+        print(f"[sam] region preview: {args.overlay_path}", flush=True)
 
 
 if __name__ == "__main__":

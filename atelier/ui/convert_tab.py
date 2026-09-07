@@ -57,8 +57,7 @@ def build_convert_tab():
             "q8_0/q5_1/q5_0/q4_1/q4_0/f16 when converting — no k-quants.)*  \n"
             "3. **Convert**: the GGUF is written into that same "
             "`models/custom/` folder and becomes usable as a **local model** "
-            "in the generation tabs (the “Refresh local files "
-            "locaux »).")
+            "in the generation tabs (the “Refresh local files” button).")
 
         with gr.Row():
             src = gr.Dropdown(

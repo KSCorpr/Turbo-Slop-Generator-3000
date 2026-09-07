@@ -50,6 +50,21 @@ moteur moteurs catalogue detourage restauration amelioration parametres
 _LOANWORDS = ("café", "cafés", "fête", "fêtes", "naïve", "résumé", "cliché",
               "façade", "crème", "déjà vu")
 
+# The one place French is CORRECT, and it is not a slip.
+#
+# The Xanax enhancer's system prompt is written in English and addressed to a
+# model, not to the user. It quotes French diary lines as EXAMPLES of the input
+# it must handle, because that is what a French user types into that box, and
+# because the whole job of that prompt is teaching the model to turn a French
+# chain name into what the thing physically looks like. Translating the
+# examples would remove the very demonstration they exist for.
+#
+# Listed as an exception, deliberately narrow: the detector stays strict for
+# everything else rather than being loosened to accommodate this one string.
+_INTENTIONAL_FRENCH = (
+    "The user writes ONE sentence about a moment of their ordinary life",
+)
+
 _FRENCH = re.compile(
     r"[éèêëàâçùûôîïÉÈÊÀÂÇÙÛÔÎÏœ]"
     r"|\b(" + "|".join(_FRENCH_WORDS) + r")\b", re.IGNORECASE)
@@ -64,13 +79,24 @@ def _strip_loanwords(text: str) -> str:
 
 
 def _is_french(text: str) -> bool:
+    if any(marker in text for marker in _INTENTIONAL_FRENCH):
+        return False
     clean = _strip_loanwords(text)
     return bool(_FRENCH.search(clean) or _UNITS.search(clean))
 
 
 def _files() -> list[Path]:
-    """The interface layer: every module that can put text on screen."""
-    return sorted(_ROOT.glob("atelier/**/*.py")) + [_ROOT / "app.py"]
+    """Every module that can put text in front of the user.
+
+    `scripts/` belongs here and was the gap: those files look like build
+    plumbing, but `setup_tools.py`, `get_sdcpp.py` and `get_trellis.py` are run
+    as subprocesses whose stdout is piped **into the Gradio log box**. Their
+    French was showing inside the interface, one click on any Install button
+    away — while a guard scoped to `atelier/` reported everything clean.
+    """
+    return (sorted(_ROOT.glob("atelier/**/*.py"))
+            + sorted(_ROOT.glob("scripts/**/*.py"))
+            + [_ROOT / "app.py"])
 
 
 def _docstring_ids(tree: ast.Module) -> set[int]:

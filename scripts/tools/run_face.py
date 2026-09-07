@@ -50,14 +50,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-dir", required=True)
     ap.add_argument("--weights", default="GFPGANv1.4.pth",
-                    help="fichier du restaurateur, dans --model-dir")
+                    help="restorer file, inside --model-dir")
     ap.add_argument("--input", required=True)
     ap.add_argument("--output-dir", required=True)
     # 0 = le modèle recrée librement (visages très abîmés), 1 = il colle au
     # pixel d'origine. La valeur du CodeFormer officiel est 0.5.
     ap.add_argument("--fidelity", type=float, default=0.5)
     ap.add_argument("--only-center", action="store_true",
-                    help="ne restaurer que le visage le plus central")
+                    help="restore only the most central face")
     args = ap.parse_args()
 
     import cv2
@@ -69,8 +69,8 @@ def main():
         import spandrel
         import spandrel_extra_arches
     except ImportError as exc:
-        sys.exit(f"Dépendance manquante ({exc}). Réinstallez l'outil "
-                 "« Visages » depuis le Toolkit.")
+        sys.exit(f"Missing dependency ({exc}). Reinstall the “Faces” "
+                 "tool from the Toolkit.")
 
     model_dir = Path(args.model_dir)
     # `name` : on refuse tout chemin — un « ../.. » dans l'argument sortirait
@@ -81,7 +81,7 @@ def main():
 
     dev = pick_device(torch)
     device = torch.device(dev)
-    print(f"[face] chargement de CodeFormer sur {label(dev)}…", flush=True)
+    print(f"[face] loading CodeFormer on {label(dev)}…", flush=True)
 
     # CodeFormer est sous licence non commerciale : spandrel le range donc dans
     # le paquet « extra_arches », qu'il faut enregistrer explicitement. GFPGAN
@@ -90,7 +90,7 @@ def main():
     descriptor = spandrel.ModelLoader().load_from_file(str(weights))
     arch = descriptor.architecture.id
     if arch not in ("CodeFormer", "GFPGAN", "RestoreFormer"):
-        sys.exit(f"Ce fichier n'est pas un restaurateur de visages reconnu "
+        sys.exit("This file is not a recognized face restorer "
                  f"({arch}).")
     descriptor.to(device).eval()
     net = descriptor.model
@@ -111,13 +111,13 @@ def main():
         only_center_face=bool(args.only_center), resize=640,
         eye_dist_threshold=5)
     if not count:
-        sys.exit("Aucun visage détecté sur cette image.")
-    print(f"[face] {count} visage(s) détecté(s).", flush=True)
+        sys.exit("No face detected in this image.")
+    print(f"[face] {count} face(s) detected.", flush=True)
     helper.align_warp_face()
 
     fidelity = min(1.0, max(0.0, float(args.fidelity)))
     if arch != "CodeFormer" and abs(fidelity - 0.5) > 0.01:
-        print("[face] ce modèle n'a pas de curseur de fidélité : ignoré.",
+        print("[face] this model has no fidelity dial: ignored.",
               flush=True)
     for index, cropped in enumerate(helper.cropped_faces, 1):
         face = img2tensor(cropped / 255.0, bgr2rgb=True,
@@ -139,10 +139,10 @@ def main():
         except RuntimeError as exc:
             # Un visage raté ne doit pas perdre les autres : on recolle
             # l'original à sa place et on le dit.
-            print(f"[face] visage {index} non restauré ({exc}).", flush=True)
+            print(f"[face] visage {index} not restored ({exc}).", flush=True)
             restored = cropped.astype("uint8")
         helper.add_restored_face(restored)
-        print(f"[face] visage {index}/{count} restauré.", flush=True)
+        print(f"[face] visage {index}/{count} restored.", flush=True)
 
     helper.get_inverse_affine(None)
     # `use_parse=True` : le masque suit la segmentation du visage (peau, yeux,
@@ -154,7 +154,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / (Path(args.input).stem + "_face.png")
     cv2.imwrite(str(dest), result)
-    print(f"[face] image écrite : {dest}", flush=True)
+    print(f"[face] image written: {dest}", flush=True)
 
 
 if __name__ == "__main__":

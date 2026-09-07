@@ -209,21 +209,21 @@ def main():
     ap.add_argument("--level", default="medium", choices=list(LEVELS))
     ap.add_argument("--max-new-tokens", type=int, default=0)
     ap.add_argument("--variants", type=int, default=1,
-                    help="nombre de propositions produites en un chargement")
+                    help="how many suggestions to produce in one model load")
     ap.add_argument("--style-constraint", default="",
-                    help="préfixe de style déjà appliqué à la génération : le "
-                         "prompt produit doit rester compatible avec lui")
+                    help="style prefix already applied to the generation: the "
+                         "produced prompt must stay compatible with it")
     args = ap.parse_args()
 
     import torch
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError:
-        sys.exit("transformers manquant. Réinstallez l'outil (« ✨ Améliorer »).")
+        sys.exit("transformers is missing. Reinstall the tool (“✨ Enhance”).")
 
     device = pick_device(torch)
     dtype = pick_dtype(torch, device)
-    print(f"[enhance] chargement du modèle sur {label(device)}…", flush=True)
+    print(f"[enhance] loading the model on {label(device)}…", flush=True)
     tok = AutoTokenizer.from_pretrained(args.model_dir)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_dir, torch_dtype=dtype).to(device).eval()
@@ -253,7 +253,7 @@ def main():
     text = tok.apply_chat_template(messages, tokenize=False,
                                    add_generation_prompt=True)
     inputs = tok(text, return_tensors="pt").to(device)
-    print(f"[enhance] génération ({args.style}, niveau {args.level}, "
+    print(f"[enhance] generating ({args.style}, niveau {args.level}, "
           f"{n} proposition(s))…", flush=True)
     with torch.no_grad():
         out = model.generate(**inputs, max_new_tokens=max_new,
@@ -269,13 +269,13 @@ def main():
             seen.add(key)
             results.append(cand)
     if not results:
-        sys.exit("[enhance] le modèle n'a produit aucun texte exploitable.")
+        sys.exit("[enhance] the model produced no usable text.")
 
     dest = Path(args.output)
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Toujours du JSON : un seul format à lire côté application.
     dest.write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
-    print(f"[enhance] {len(results)} proposition(s) écrite(s) : {dest}",
+    print(f"[enhance] {len(results)} suggestion(s) written: {dest}",
           flush=True)
 
 

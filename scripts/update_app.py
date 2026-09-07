@@ -123,8 +123,8 @@ def _archive_files(blob: bytes) -> dict[str, bytes]:
         archive = zipfile.ZipFile(io.BytesIO(blob))
     except zipfile.BadZipFile:
         raise RuntimeError(
-            "le téléchargement n'est pas une archive ZIP (proxy ou "
-            "connexion filtrée ?)")
+            "the download is not a ZIP archive (a proxy or a filtered "
+            "connection?)")
     out: dict[str, bytes] = {}
     for info in archive.infolist():
         if info.is_dir():
@@ -135,14 +135,14 @@ def _archive_files(blob: bytes) -> dict[str, bytes]:
         rel = parts[1]
         # Zip-slip : un chemin qui remonte n'a rien à faire ici.
         if rel.startswith("/") or ".." in Path(rel).parts:
-            raise RuntimeError(f"chemin dangereux dans l'archive : {rel}")
+            raise RuntimeError(f"unsafe path in the archive: {rel}")
         if _is_protected(rel):
             continue
         out[rel] = archive.read(info)
     if "app.py" not in out or not any(f.startswith("atelier/") for f in out):
         raise RuntimeError(
-            "l'archive ne contient pas l'application (app.py absent) — "
-            "téléchargement incomplet ou redirigé")
+            "the archive does not contain the application (no app.py) — an "
+            "incomplete or redirected download")
     return out
 
 
@@ -234,7 +234,7 @@ def _compiles() -> str:
     if ok:
         return ""
     detail = [x for x in buf.getvalue().strip().splitlines() if x.strip()]
-    return detail[-1] if detail else "erreur de syntaxe dans le code téléchargé"
+    return detail[-1] if detail else "syntax error in the downloaded code"
 
 
 def _restore(stamp_dir: Path, written: list[str], removed: list[str]) -> None:
@@ -288,11 +288,11 @@ def missing_files() -> list[str]:
 # --------------------------------------------------------------------------- #
 def _rollback() -> int:
     if not BACKUP_DIR.is_dir():
-        _say(ERR + "aucune sauvegarde : rien à annuler.")
+        _say(ERR + "no backup: nothing to undo.")
         return 1
     saves = sorted(p for p in BACKUP_DIR.iterdir() if p.is_dir())
     if not saves:
-        _say(ERR + "aucune sauvegarde : rien à annuler.")
+        _say(ERR + "no backup: nothing to undo.")
         return 1
     last = saves[-1]
     state = {}
@@ -300,61 +300,61 @@ def _rollback() -> int:
         state = json.loads((last / "_update.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         pass
-    _say(f"Annulation de la mise à jour du {last.name}…")
+    _say(f"Rolling back the update of {last.name}…")
     _restore(last, state.get("written") or [], state.get("removed") or [])
     _purge_pycache()
     shutil.rmtree(last, ignore_errors=True)
-    _say(OK + "installation revenue à son état précédent.")
+    _say(OK + "the installation is back to its previous state.")
     return 0
 
 
 def update(check_only: bool = False) -> int:
     _say("=" * 60)
-    _say("  Mise à jour de Turbo Slop Generator 3000")
+    _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
 
     commit = _latest_commit()
     if commit:
         _say(f"{INFO}dernier commit : {commit['sha']} — {commit['title']}")
 
-    _say("Téléchargement du code depuis GitHub…")
+    _say("Downloading the code from GitHub…")
     try:
         blob = _fetch(ARCHIVE)
         files = _archive_files(blob)
     except Exception as exc:  # noqa: BLE001
-        _say(ERR + f"téléchargement impossible : {exc}")
-        _say("    Sur un réseau d'entreprise, définissez HTTPS_PROXY avant de")
-        _say("    lancer update.bat, ou récupérez l'archive à la main :")
+        _say(ERR + f"download failed: {exc}")
+        _say("    On a corporate network, set HTTPS_PROXY before running")
+        _say("    update.bat, or fetch the archive by hand:")
         _say(f"    https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip")
         return 1
-    _say(OK + f"archive lue : {len(files)} fichiers, "
-         f"empreinte {_sha(blob)[:12]}.")
+    _say(OK + f"archive read: {len(files)} files, "
+         f"fingerprint {_sha(blob)[:12]}.")
 
     manifest = _load_manifest()
     added, updated, removed = _plan(files, manifest)
     absent = missing_files()
 
     if not (added or updated or removed):
-        _say(OK + "déjà à jour — aucun fichier ne change.")
+        _say(OK + "already up to date — no file changes.")
         _save_manifest(files, commit or manifest.get("commit") or {})
         return 0
 
     _say("")
-    for label, group in (("ajouté", added), ("mis à jour", updated),
-                         ("supprimé", removed)):
+    for label, group in (("added", added), ("updated", updated),
+                         ("deleted", removed)):
         if group:
-            _say(f"  {len(group)} fichier(s) {label} :")
+            _say(f"  {len(group)} file(s) {label}:")
             for rel in group[:12]:
                 _say(f"    - {rel}")
             if len(group) > 12:
-                _say(f"    … et {len(group) - 12} autre(s)")
+                _say(f"    … and {len(group) - 12} more")
     if absent:
-        _say(f"{WARN}{len(absent)} fichier(s) de la version installée avaient "
-             "disparu — ils sont remis.")
+        _say(f"{WARN}{len(absent)} file(s) from the installed version had gone "
+             "missing — they are restored.")
 
     if check_only:
         _say("")
-        _say(INFO + "mode --check : rien n'a été écrit.")
+        _say(INFO + "--check mode: nothing was written.")
         return 0
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -362,7 +362,7 @@ def update(check_only: bool = False) -> int:
     stamp_dir.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
     _say("")
-    _say("Écriture…")
+    _say("Writing…")
     try:
         for rel in added + updated:
             _backup(rel, stamp_dir)
@@ -372,9 +372,9 @@ def update(check_only: bool = False) -> int:
             _backup(rel, stamp_dir)
             (ROOT / rel).unlink(missing_ok=True)
     except OSError as exc:
-        _say(ERR + f"écriture impossible ({exc}).")
-        _say("    L'application est-elle encore ouverte ? Fermez-la et "
-             "relancez update.bat.")
+        _say(ERR + f"cannot write ({exc}).")
+        _say("    Is the application still open? Close it and run update.bat "
+             "again.")
         _restore(stamp_dir, written, [])
         shutil.rmtree(stamp_dir, ignore_errors=True)
         return 1
@@ -384,17 +384,17 @@ def update(check_only: bool = False) -> int:
 
     caches = _purge_pycache()
     if caches:
-        _say(OK + f"{caches} dossier(s) __pycache__ purgé(s).")
+        _say(OK + f"{caches} __pycache__ folder(s) purged.")
 
     problem = _compiles()
     if problem:
-        _say(ERR + f"le code mis à jour ne compile pas : {problem}")
-        _say("    Retour à la version précédente…")
+        _say(ERR + f"the updated code does not compile: {problem}")
+        _say("    Rolling back to the previous version…")
         _restore(stamp_dir, written, removed)
         _purge_pycache()
         shutil.rmtree(stamp_dir, ignore_errors=True)
         return 1
-    _say(OK + "tout le code compile.")
+    _say(OK + "all the code compiles.")
 
     _save_manifest(files, commit or {})
     # Une seule sauvegarde conservée : celle qui précède la mise à jour.
@@ -403,8 +403,8 @@ def update(check_only: bool = False) -> int:
             shutil.rmtree(old, ignore_errors=True)
 
     _say("")
-    _say(OK + f"mise à jour terminée ({len(written)} fichier(s) écrits).")
-    _say(INFO + "annulable avec : update.bat --rollback")
+    _say(OK + f"update finished ({len(written)} file(s) written).")
+    _say(INFO + "undo it with: update.bat --rollback")
     _say(INFO + "relancez run.bat.")
     return 0
 
@@ -412,9 +412,9 @@ def update(check_only: bool = False) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
-                    help="montrer ce qui changerait, sans rien écrire")
+                    help="show what would change, without writing anything")
     ap.add_argument("--rollback", action="store_true",
-                    help="annuler la dernière mise à jour")
+                    help="undo the last update")
     args = ap.parse_args()
     if args.rollback:
         return _rollback()

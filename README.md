@@ -838,6 +838,18 @@ case-sensitively so `To use` and `Go high resolution` stay legal. A short list
 of accented English loanwords (`café`, `fête`, `naïve`…) is excepted rather than
 weakening the accent rule.
 
+**`scripts/` is inside that scope, and was the gap.** Those files look like
+build plumbing, but `setup_tools.py`, `get_sdcpp.py` and `get_trellis.py` run as
+subprocesses whose stdout is piped **into the Gradio log box** — their French
+was on screen, one click on any Install button away, while a guard scoped to
+`atelier/` reported everything clean. The 346 strings they held are translated
+and the guard now covers them.
+
+One string is deliberately French and listed as an explicit exception: the
+Xanax enhancer's system prompt quotes French diary lines as *examples of the
+input it must handle*. Translating them would remove the demonstration they
+exist for.
+
 **Code comments and docstrings are still French** and deliberately out of scope:
 they are the source's own language, not the interface's, and nobody reads them
 from the app.

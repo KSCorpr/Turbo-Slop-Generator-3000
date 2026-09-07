@@ -291,7 +291,7 @@ def main() -> None:
 
     device = pick_device(torch)
     dtype = pick_dtype(torch, device)
-    print(f"[image→prompt] chargement du modèle sur {label(device)}…",
+    print(f"[image→prompt] loading the model on {label(device)}…",
           flush=True)
     processor = AutoProcessor.from_pretrained(args.model_dir)
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -321,7 +321,7 @@ def main() -> None:
     # répéter « high heels, fashion, modern, wet » jusqu'à la fin.
     budget = {"full": 200, "style": 110, "plain": 150}[args.mode]
     max_new = int(args.max_new_tokens) or budget
-    print(f"[image→prompt] rédaction ({args.mode}, {n} proposition(s))…",
+    print(f"[image→prompt] writing ({args.mode}, {n} proposition(s))…",
           flush=True)
     # DÉCRIRE N'EST PAS CRÉER. Le tirage aléatoire, c'est demander au modèle de
     # choisir parfois un jeton MOINS probable — donc, sur une description,
@@ -362,12 +362,12 @@ def main() -> None:
             seen.add(key)
             results.append(cand)
     if not results:
-        sys.exit("[image→prompt] le modèle n'a produit aucun texte.")
+        sys.exit("[image→prompt] the model produced no text.")
 
     dest = Path(args.output)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
-    print(f"[image→prompt] {len(results)} proposition(s) écrite(s) : {dest}",
+    print(f"[image→prompt] {len(results)} suggestion(s) written: {dest}",
           flush=True)
 
 

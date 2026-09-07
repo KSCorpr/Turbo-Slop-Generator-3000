@@ -42,20 +42,20 @@ def _safe_extract(blob: bytes, destination: Path) -> Path:
         for member in archive.infolist():
             target = (destination / member.filename).resolve()
             if target != root and root not in target.parents:
-                raise RuntimeError(f"Chemin dangereux dans l'archive : {member.filename}")
+                raise RuntimeError(f"Unsafe path in the archive: {member.filename}")
         archive.extractall(destination)
     dirs = [p for p in destination.iterdir() if p.is_dir()]
     if len(dirs) != 1:
-        raise RuntimeError("Structure inattendue dans l'archive SeedVR2.")
+        raise RuntimeError("Unexpected structure in the SeedVR2 archive.")
     return dirs[0]
 
 
 def _install_source() -> None:
     marker = SOURCE / ".turbo-slop-seedvr2-ref"
     if marker.is_file() and marker.read_text(encoding="utf-8").strip() == SEEDVR2_REF:
-        print("[OK] Sources SeedVR2 déjà présentes.")
+        print("[OK] SeedVR2 sources already there.")
         return
-    print("Téléchargement des sources SeedVR2 officielles…", flush=True)
+    print("Downloading the official SeedVR2 sources…", flush=True)
     req = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "Turbo-Slop/1"})
     with urllib.request.urlopen(req, timeout=180) as response:
         blob = response.read()
@@ -68,18 +68,18 @@ def _install_source() -> None:
     shutil.move(str(extracted), str(SOURCE))
     shutil.rmtree(staging, ignore_errors=True)
     marker.write_text(SEEDVR2_REF, encoding="utf-8")
-    print(f"[OK] SeedVR2 épinglé au commit {SEEDVR2_REF[:12]}.")
+    print(f"[OK] SeedVR2 pinned to commit {SEEDVR2_REF[:12]}.")
 
 
 def _install_python() -> Path:
     try:
         import uv  # noqa: F401
     except ImportError:
-        print("Installation du gestionnaire d'environnement uv…")
+        print("Installing the uv environment manager…")
         _run([sys.executable, "-m", "pip", "install", "uv>=0.8,<1"])
     py = _venv_python()
     if not py.is_file():
-        print("Création du Python 3.12 isolé…")
+        print("Creating the isolated Python 3.12…")
         _run([sys.executable, "-m", "uv", "venv", "--python", "3.12",
               "--seed", str(VENV)])
     return py
@@ -90,7 +90,7 @@ def _install_dependencies(py: Path) -> None:
     _run([sys.executable, "-m", "uv", "pip", "install", "--python", str(py),
           "--index-url", "https://download.pytorch.org/whl/cu126",
           "torch==2.7.1", "torchvision==0.22.1"])
-    print("Installation des dépendances SeedVR2…")
+    print("Installing the SeedVR2 dependencies…")
     deps = [
         "safetensors", "numpy>=1.26,<2", "tqdm", "psutil", "einops",
         "omegaconf>=2.3.0", "diffusers>=0.33.1,<0.36", "peft>=0.17,<0.19",
@@ -108,8 +108,8 @@ def main() -> None:
     _install_dependencies(py)
     probe = "import torch; print(torch.__version__, torch.version.cuda)"
     _run([str(py), "-c", probe])
-    print("\n[OK] SeedVR2 installé. Les poids Q8/Q4 seront téléchargés "
-          "automatiquement au premier upscale.")
+    print("\n[OK] SeedVR2 installed. The Q8/Q4 weights download automatically "
+          "on the first upscale.")
 
 
 if __name__ == "__main__":

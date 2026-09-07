@@ -43,15 +43,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-model", required=True)
     ap.add_argument("--vae", default="",
-                    help="VAE externe (dossier). Vide = VAE intégrée au modèle.")
+                    help="External VAE (folder). Empty = the model's built-in VAE.")
     ap.add_argument("--input", required=True)
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--width", type=int, default=0,
-                    help="cible explicite (sinon scale × taille source)")
+                    help="explicit target (otherwise scale × source size)")
     ap.add_argument("--height", type=int, default=0)
     ap.add_argument("--denoise", type=float, default=0.35,
-                    help="force du raffinage (0.2 fidèle, 0.5 inventif)")
+                    help="refine strength (0.2 faithful, 0.5 inventive)")
     ap.add_argument("--steps", type=int, default=24)
     ap.add_argument("--cfg", type=float, default=6.0)
     ap.add_argument("--tile", type=int, default=1024)
@@ -65,9 +65,9 @@ def main():
     ap.add_argument("--low-vram", action="store_true")
     ap.add_argument("--max-size", type=int, default=8192)
     ap.add_argument("--controlnet", default="",
-                    help="dossier ControlNet Tile SDXL (verrouille la structure)")
+                    help="SDXL ControlNet Tile folder (locks the structure)")
     ap.add_argument("--cn-scale", type=float, default=0.6,
-                    help="force du ControlNet (↑ = plus fidèle à la structure)")
+                    help="ControlNet strength (↑ = more faithful to the structure)")
     args = ap.parse_args()
 
     import warnings
@@ -88,15 +88,15 @@ def main():
     try:
         from diffusers import AutoencoderKL, StableDiffusionXLImg2ImgPipeline
     except ImportError:
-        sys.exit("diffusers manquant. Réinstallez l'upscale SDXL (onglet Toolkit).")
+        sys.exit("diffusers is missing. Reinstall the SDXL upscale (Toolkit tab).")
 
     device = pick_device(torch)
     dtype = pick_dtype(torch, device)
     if device == "cpu":
-        print("⚠️  Aucun GPU disponible : l'upscale SDXL tournerait sur CPU "
-              "(très lent). Vérifiez les pilotes NVIDIA, ou côté Mac que MPS "
-              "est bien actif.", flush=True)
-    print(f"[usdu] calcul sur {label(device)}.", flush=True)
+        print("⚠️  No GPU available: the SDXL upscale would run on the CPU "
+              "(very slow). Check the NVIDIA drivers, or on a Mac that MPS is "
+              "active.", flush=True)
+    print(f"[usdu] computing on {label(device)}.", flush=True)
 
     # VAE : externe (fp16-fix) si fournie, sinon celle intégrée au checkpoint.
     load_kw = dict(torch_dtype=dtype, add_watermarker=False)
@@ -104,7 +104,7 @@ def main():
         load_kw["vae"] = AutoencoderKL.from_pretrained(args.vae, torch_dtype=dtype)
         print("[usdu] VAE externe (fp16-fix).", flush=True)
     else:
-        print("[usdu] VAE intégrée au modèle.", flush=True)
+        print("[usdu] using the model's built-in VAE.", flush=True)
     # ControlNet Tile (optionnel) : conditionne chaque tuile sur la source -> on
     # peut pousser la créativité sans dériver de la structure d'origine.
     use_cn = bool(args.controlnet)
@@ -113,20 +113,20 @@ def main():
             from diffusers import (ControlNetModel,
                                    StableDiffusionXLControlNetImg2ImgPipeline)
         except ImportError:
-            sys.exit("diffusers trop ancien pour ControlNet. Réinstallez l'upscale.")
-        print(f"[usdu] chargement SDXL + ControlNet Tile sur {label(device)}…",
+            sys.exit("diffusers is too old for ControlNet. Reinstall the upscale.")
+        print(f"[usdu] loading SDXL + ControlNet Tile on {label(device)}…",
               flush=True)
         load_kw["controlnet"] = ControlNetModel.from_pretrained(
             args.controlnet, torch_dtype=dtype)
         pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_single_file(
             args.base_model, **load_kw)
     else:
-        print(f"[usdu] chargement SDXL sur {label(device)}…", flush=True)
+        print(f"[usdu] loading SDXL on {label(device)}…", flush=True)
         pipe = StableDiffusionXLImg2ImgPipeline.from_single_file(
             args.base_model, **load_kw)
     pipe.set_progress_bar_config(disable=True)
     if device == "cuda" and args.low_vram:
-        print("[usdu] VRAM serrée → offload CPU du modèle (plus lent mais tient).",
+        print("[usdu] VRAM is tight → CPU offload for the model (slower, but it fits).",
               flush=True)
         pipe.enable_model_cpu_offload()
     elif device != "cpu":
@@ -152,9 +152,9 @@ def main():
     if max(tw, th) > args.max_size:
         r = args.max_size / max(tw, th)
         tw, th = _round8(int(tw * r)), _round8(int(th * r))
-        print(f"[usdu] cible plafonnée à {tw}x{th} (max {args.max_size}px).",
+        print(f"[usdu] target capped at {tw}x{th} (max {args.max_size}px).",
               flush=True)
-    print(f"[usdu] pré-agrandissement {src.width}x{src.height} -> {tw}x{th} "
+    print(f"[usdu] pre-enlargement {src.width}x{src.height} -> {tw}x{th} "
           "(Lanczos)…", flush=True)
     # Base Lanczos PROPRE (pas de pré-accentuation : elle introduit des halos et
     # du grain que la diffusion fige ensuite). SDXL ajoute le détail net.
@@ -171,8 +171,8 @@ def main():
     xs = list(range(0, max(1, tw - overlap), step)) or [0]
     ys = list(range(0, max(1, th - overlap), step)) or [0]
     total = len(xs) * len(ys)
-    print(f"[usdu] raffinage SDXL : {total} tuiles de {tile}px "
-          f"(débruitage {args.denoise}, {args.steps} pas)…", flush=True)
+    print(f"[usdu] SDXL refine: {total} tiles of {tile}px "
+          f"(denoise {args.denoise}, {args.steps} steps)…", flush=True)
 
     acc = np.zeros((th, tw, 3), np.float32)
     wsum = np.zeros((th, tw, 1), np.float32)

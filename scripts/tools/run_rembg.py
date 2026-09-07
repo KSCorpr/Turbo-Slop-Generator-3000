@@ -34,10 +34,10 @@ def main():
     try:
         from transformers import AutoModelForImageSegmentation
     except ImportError:
-        sys.exit("transformers manquant. Réinstallez l'outil depuis le Toolkit.")
+        sys.exit("transformers is missing. Reinstall the tool from the Toolkit.")
 
     device = pick_device(torch)
-    print(f"[rembg] chargement du modèle sur {label(device)}…", flush=True)
+    print(f"[rembg] loading the model on {label(device)}…", flush=True)
     model = AutoModelForImageSegmentation.from_pretrained(
         args.model_dir, trust_remote_code=True)
     model.to(device).eval()
@@ -69,7 +69,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / (Path(args.input).stem + "_nobg.png")
     cutout.save(dest)
-    print(f"[rembg] image écrite : {dest}", flush=True)
+    print(f"[rembg] image written: {dest}", flush=True)
 
 
 if __name__ == "__main__":

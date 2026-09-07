@@ -92,15 +92,15 @@ def _filter_masks(masks, min_area, max_area, iou_max, log):
         raw.append(m)
         raw_grids.append(g)
     if twins:
-        log(f"[calques] {twins} masque(s) brut(s) quasi identiques écartés "
-            "avant nettoyage.")
+        log(f"[layers] {twins} near-identical raw mask(s) discarded "
+            "before cleanup.")
 
     pieces: list = []
     for m in raw:
         for part in M.largest_components(M.fill_holes(m), int(min_area)):
             pieces.append(part)
-    log(f"[calques] {len(masks)} masque(s) bruts -> {len(raw)} distincts -> "
-        f"{len(pieces)} morceau(x) connexes après nettoyage.")
+    log(f"[layers] {len(masks)} raw mask(s) -> {len(raw)} distinct -> "
+        f"{len(pieces)} connected piece(s) after cleanup.")
 
     # Le dédoublonnage compare CHAQUE zone à toutes les précédentes : c'est
     # quadratique. À pleine résolution sur une image 4096×4096, un seul IoU
@@ -128,8 +128,8 @@ def _filter_masks(masks, min_area, max_area, iou_max, log):
             continue
         kept.append(m)
         grids.append(g)
-    log(f"[calques] {len(kept)} zone(s) retenue(s) — écartées : "
-        + (", ".join(f"{v} {k}" for k, v in dropped.items() if v) or "aucune"))
+    log(f"[layers] {len(kept)} region(s) kept — discarded: "
+        + (", ".join(f"{v} {k}" for k, v in dropped.items() if v) or "none"))
     return kept
 
 
@@ -171,9 +171,9 @@ def _partition(ordered, log, min_area=0):
         idx.append(i)
     lost = len(out) - len(kept)
     if lost:
-        log(f"[calques] {lost} zone(s) retirée(s) après découpe "
-            f"({thin} réduite(s) à une frange, {lost - thin} entièrement "
-            "cachée(s) par l'avant-plan).")
+        log(f"[layers] {lost} region(s) removed after cutting "
+            f"({thin} reduced to a fringe, {lost - thin} completely "
+            "hidden by the foreground).")
     return kept, idx
 
 
@@ -195,7 +195,7 @@ def _auto_masks(model_dir, img, points_per_side, batch, log, iou_max=0.75):
     from atelier.engine import masks as M
 
     device = pick_device(torch)
-    log(f"[calques] chargement de SAM sur {label(device)}…")
+    log(f"[layers] loading SAM on {label(device)}…")
     model = SamModel.from_pretrained(model_dir).to(device).eval()
     processor = SamProcessor.from_pretrained(model_dir)
 
@@ -204,7 +204,7 @@ def _auto_masks(model_dir, img, points_per_side, batch, log, iou_max=0.75):
     step_x, step_y = W / (points_per_side + 1), H / (points_per_side + 1)
     grid = [[int(step_x * (i + 1)), int(step_y * (j + 1))]
             for j in range(points_per_side) for i in range(points_per_side)]
-    log(f"[calques] {len(grid)} points de sondage sur {W}×{H}…")
+    log(f"[layers] {len(grid)} probe points on {W}×{H}…")
 
     out: list = []
     seen: list = []                     # grilles des masques déjà retenus
@@ -233,8 +233,8 @@ def _auto_masks(model_dir, img, points_per_side, batch, log, iou_max=0.75):
                 continue                            # déjà vu, à l'octet près
             out.append(m)
             seen.append(g)
-        log(f"[calques]   {min(start + batch, len(grid))}/{len(grid)} points "
-            f"— {len(out)} zone(s) distincte(s), {twins} doublon(s) écarté(s)…")
+        log(f"[layers]   {min(start + batch, len(grid))}/{len(grid)} points "
+            f"— {len(out)} zone(s) distincte(s), {twins} duplicate(s) discarded…")
     return out
 
 
@@ -253,8 +253,8 @@ def _clip_labels(clip_dir, img, masks, log):
     vers un gris neutre : l'objet ressort sans que sa scène disparaisse.
     """
     if not clip_dir or not Path(clip_dir).is_dir():
-        log("[calques] CLIP non installé → pas d'étiquetage sémantique "
-            "(les calques seront nommés par position et couleur).")
+        log("[layers] CLIP not installed → no semantic labelling (layers will "
+            "be named by position and colour).")
         return None
     import numpy as np
     from PIL import Image
@@ -263,11 +263,11 @@ def _clip_labels(clip_dir, img, masks, log):
         from transformers import CLIPModel, CLIPProcessor
         from atelier.engine import vocab
     except Exception as exc:  # noqa: BLE001
-        log(f"[calques] CLIP indisponible ({exc}) → pas d'étiquetage.")
+        log(f"[layers] CLIP unavailable ({exc}) → no labelling.")
         return None
 
     device = pick_device(torch)
-    log(f"[calques] étiquetage CLIP de {len(masks)} zone(s) sur {label(device)}…")
+    log(f"[layers] CLIP labelling of {len(masks)} region(s) out of {label(device)}…")
     model = CLIPModel.from_pretrained(clip_dir).to(device).eval()
     processor = CLIPProcessor.from_pretrained(clip_dir)
     texts, owner = vocab.prompts()
@@ -368,7 +368,7 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
             i = parent[i]
         return i
 
-    refused = {"marge": 0, "taille": 0}
+    refused = {"margin": 0, "size": 0}
     for a in range(len(order)):
         for b in range(a + 1, len(order)):
             i, j = order[a], order[b]
@@ -378,12 +378,12 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
             if ri == rj:
                 continue
             if labels[i][1] < min_margin or labels[j][1] < min_margin:
-                refused["marge"] += 1
+                refused["margin"] += 1
                 continue
             if not M.grid_touches(grid[ri], grid[rj], gap):
                 continue
             if area[ri] + area[rj] > limit:
-                refused["taille"] += 1
+                refused["size"] += 1
                 continue
             keep, gone = min(ri, rj), max(ri, rj)
             parent[gone] = keep
@@ -396,10 +396,10 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
         groups.setdefault(find(i), []).append(i)
     for reason, n in refused.items():
         if n:
-            log(f"[calques] {n} fusion(s) refusée(s) — {reason}.")
+            log(f"[layers] {n} merge(s) refused — {reason}.")
     if len(groups) == len(masks):
-        log("[calques] aucune fusion sémantique (aucune zone contiguë de même "
-            "nature).")
+        log("[layers] no semantic merge (no adjacent regions of the same "
+            "kind).")
         return masks, labels
 
     out_m, out_l = [], []
@@ -414,8 +414,8 @@ def _merge_by_label(masks, labels, log, gap=2, min_margin=0.0,
         # On garde la meilleure marge du groupe : c'est le membre le plus sûr
         # qui répond de l'étiquette commune.
         out_l.append(max((labels[k] for k in members), key=lambda x: x[1]))
-    log(f"[calques] fusion sémantique : {len(masks)} zone(s) -> {len(out_m)} "
-        "(morceaux d'un même objet regroupés).")
+    log(f"[layers] semantic merge: {len(masks)} region(s) -> {len(out_m)} "
+        "(pieces of one object grouped together).")
     return out_m, out_l
 
 
@@ -423,8 +423,8 @@ def _depth_order(depth_dir, img, masks, log):
     """Indices des masques triés du PLUS LOIN au plus près, ou None."""
     import numpy as np
     if not depth_dir or not Path(depth_dir).is_dir():
-        log("[calques] profondeur non installée → tri par surface "
-            "(approximation : les grandes zones passent derrière).")
+        log("[layers] depth not installed → sorted by area (an approximation: "
+            "large regions go to the back).")
         return None
     try:
         import torch
@@ -435,11 +435,11 @@ def _depth_order(depth_dir, img, masks, log):
         pipe = pipeline("depth-estimation", model=str(depth_dir), device=idx)
         depth = np.asarray(pipe(img)["depth"], dtype="float32")
     except Exception as exc:  # noqa: BLE001
-        log(f"[calques] profondeur indisponible ({exc}) → tri par surface.")
+        log(f"[layers] depth unavailable ({exc}) → sorted by area.")
         return None
     # Depth Anything : valeur ÉLEVÉE = proche. On veut le fond d'abord.
     medians = [float(np.median(depth[m])) if m.any() else 0.0 for m in masks]
-    log("[calques] ordre d'empilement déduit de la carte de profondeur.")
+    log("[layers] stacking order taken from the depth map.")
     return sorted(range(len(masks)), key=lambda i: medians[i])
 
 
@@ -448,24 +448,23 @@ def main():
     ap.add_argument("--sam-dir", required=True)
     ap.add_argument("--depth-dir", default="")
     ap.add_argument("--clip-dir", default="",
-                    help="modèle CLIP : étiquetage sémantique + fusion des "
-                         "morceaux d'un même objet. Facultatif.")
+                    help="CLIP model: semantic labelling + merging the pieces "
+                         "of one object. Optional.")
     ap.add_argument("--junk-margin", type=float, default=0.012,
-                    help="marge minimale entre la 1re et la 2e étiquette : "
-                         "en dessous, l'étiquette est un tirage au sort")
+                    help="minimum margin between the 1st and 2nd label: below "
+                         "it, the label is a coin toss")
     ap.add_argument("--input", required=True)
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--points-per-side", type=int, default=12)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--min-area", type=float, default=0.004,
-                    help="surface minimale d'un calque, en fraction de l'image")
+                    help="minimum layer area, as a fraction of the image")
     ap.add_argument("--max-area", type=float, default=0.85)
     ap.add_argument("--iou-max", type=float, default=0.75)
     ap.add_argument("--max-layers", type=int, default=24)
     ap.add_argument("--max-merge", type=float, default=0.35,
-                    help="part maximale de l'image qu'un groupe "
-                         "fusionné peut occuper : au-delà, ce n'est "
-                         "plus un objet mais un fond")
+                    help="largest share of the image a merged group may "
+                         "cover: past it, this is a background, not an object")
     args = ap.parse_args()
 
     def log(msg):
@@ -477,11 +476,11 @@ def main():
     img = Image.open(args.input).convert("RGB")
     total = img.width * img.height
     masks = _auto_masks(args.sam_dir, img, args.points_per_side, args.batch, log)
-    log(f"[calques] {len(masks)} masque(s) bruts.")
+    log(f"[layers] {len(masks)} raw mask(s).")
     kept = _filter_masks(masks, args.min_area * total, args.max_area * total,
                          args.iou_max, log)
     if not kept:
-        log("[calques] aucune zone exploitable — image trop uniforme ?")
+        log("[layers] no usable region — is the image too uniform?")
     # --- Sémantique (facultative) : étiqueter, écarter le vide, fusionner ---
     labels = _clip_labels(args.clip_dir, img, kept, log) if kept else None
     if labels:
@@ -495,16 +494,16 @@ def main():
             keep_idx.append(i)
         dropped = len(kept) - len(keep_idx)
         if dropped:
-            log(f"[calques] {dropped} zone(s) écartée(s) : ne correspondent à "
-                "rien d'identifiable (flou, aplat, fragment).")
+            log(f"[layers] {dropped} region(s) discarded: they match "
+                "nothing identifiable (blur, flat colour, fragment).")
         # Garde-fou : si TOUT est écarté, l'étiquetage s'est trompé, pas
         # l'image. Mieux vaut des calques sans nom que pas de calques.
         if keep_idx:
             kept = [kept[i] for i in keep_idx]
             labels = [labels[i] for i in keep_idx]
         else:
-            log("[calques] toutes les zones jugées non identifiables — "
-                "étiquetage ignoré.")
+            log("[layers] every region judged unidentifiable — labelling "
+                "skipped.")
             labels = None
     if labels:
         # La marge sert deux fois : à écarter une zone sans nom (plus haut) et
@@ -522,8 +521,8 @@ def main():
         from atelier.engine import vocab
         order = sorted(range(len(kept)),
                        key=lambda i: vocab.typical_depth(labels[i][0]))
-        log("[calques] ordre d'empilement déduit des étiquettes "
-            "(ciel et sol derrière, sujets devant).")
+        log("[layers] stacking order inferred from the labels (sky and ground "
+            "behind, subjects in front).")
     if order is None:
         order = sorted(range(len(kept)), key=lambda i: int(kept[i].sum()),
                        reverse=True)
@@ -552,7 +551,7 @@ def main():
     (out / "layers.json").write_text(
         json.dumps({"width": img.width, "height": img.height,
                     "masks": entries}, indent=2), encoding="utf-8")
-    log(f"[calques] {len(entries)} calque(s) écrits dans {out}")
+    log(f"[layers] {len(entries)} layer(s) written into {out}")
 
 
 if __name__ == "__main__":

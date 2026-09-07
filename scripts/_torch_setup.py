@@ -51,11 +51,11 @@ def _torch_install_args():
         # PyTorch standard : pas d'index CUDA, et pas d'épinglage 2.4.1 — cette
         # version-là existe pour couvrir les vieilles cartes NVIDIA, contrainte
         # qui n'a aucun sens ici.
-        print("macOS -> PyTorch standard (accélération Metal/MPS).")
+        print("macOS -> standard PyTorch (Metal/MPS acceleration).")
         return ["torch", "torchvision"]
     arch = _gpu_arch()
     if arch == "blackwell":
-        print("GPU Blackwell détecté -> PyTorch CUDA 12.8 (récent).")
+        print("Blackwell GPU detected -> PyTorch CUDA 12.8 (recent).")
         return ["torch", "torchvision", "--index-url", CU128]
     print(f"GPU {arch} -> PyTorch 2.4.1 CUDA 12.1.")
     return ["torch==2.4.1", "torchvision==0.19.1", "--index-url", CU121]
@@ -103,7 +103,7 @@ def ensure_torch_cuda():
     _clean_broken_dists()
     backend = "Metal (MPS)" if is_macos() else "CUDA"
     if _torch_gpu_ok():
-        print(f"PyTorch {backend} déjà opérationnel.")
+        print(f"PyTorch {backend} already working.")
         return
     print(f"Mise en place de PyTorch {backend} (volumineux)…")
     subprocess.call([sys.executable, "-m", "pip", "uninstall", "-y",
@@ -113,15 +113,15 @@ def ensure_torch_cuda():
     # Vérification finale : si torch ne voit toujours pas le GPU, on le DIT fort
     # (sinon les outils tourneraient sur CPU = extrêmement lent, sans prévenir).
     if _torch_gpu_ok():
-        print(f"✅ PyTorch {backend} opérationnel.")
+        print(f"✅ PyTorch {backend} working.")
     elif is_macos():
-        print("⚠️  ATTENTION : PyTorch ne voit pas Metal (MPS indisponible). "
-              "Les outils tourneraient sur CPU (très lent). Vérifiez que vous "
-              "êtes bien sur un Mac Apple Silicon avec macOS 12.3 ou plus.")
+        print("⚠️  WARNING: PyTorch does not see Metal (MPS unavailable). The "
+              "tools would run on the CPU (very slow). Check that you are on "
+              "an Apple Silicon Mac with macOS 12.3 or newer.")
     else:
-        print("⚠️  ATTENTION : PyTorch ne voit PAS le GPU (CUDA indisponible). "
-              "Les outils tourneraient sur CPU (très lent). Vérifiez vos pilotes "
-              "NVIDIA (nvidia-smi) puis relancez l'installation.")
+        print("⚠️  WARNING: PyTorch does NOT see the GPU (CUDA unavailable). "
+              "The tools would run on the CPU (very slow). Check your NVIDIA "
+              "drivers (nvidia-smi), then run the installation again.")
 
 
 def pin_numpy():

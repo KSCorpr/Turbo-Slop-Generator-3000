@@ -69,11 +69,11 @@ DESCRIBE_TRANSFORMERS_PIN = "transformers>=4.49,<4.50"
 FACE_SHARED = (
     ("detection_Resnet50_Final.pth",
      "https://github.com/xinntao/facexlib/releases/download/v0.1.0/"
-     "detection_Resnet50_Final.pth", "détecteur de visages (~110 Mo)",
+     "detection_Resnet50_Final.pth", "face detector (~110 MB)",
      "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"),
     ("parsing_parsenet.pth",
      "https://github.com/xinntao/facexlib/releases/download/v0.2.2/"
-     "parsing_parsenet.pth", "segmentation du visage (~85 Mo)",
+     "parsing_parsenet.pth", "face segmentation (~85 MB)",
      "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"),
 )
 # Les trois restaurateurs, installés ENSEMBLE (~1 Go). Ils ne se valent pas
@@ -83,15 +83,15 @@ FACE_SHARED = (
 FACE_RESTORERS = (
     ("GFPGANv1.4.pth",
      "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/"
-     "GFPGANv1.4.pth", "GFPGAN v1.4 — Apache-2.0 (~349 Mo)",
+     "GFPGANv1.4.pth", "GFPGAN v1.4 — Apache-2.0 (~349 MB)",
      "e2cd4703ab14f4d01fd1383a8a8b266f9a5833dacee8e6a79d3bf21a1b6be5ad"),
     ("RestoreFormer++.ckpt",
      "https://github.com/wzhouxiff/RestoreFormerPlusPlus/releases/download/"
-     "v1.0.0/RestoreFormer++.ckpt", "RestoreFormer++ — Apache-2.0 (~294 Mo)",
+     "v1.0.0/RestoreFormer++.ckpt", "RestoreFormer++ — Apache-2.0 (~294 MB)",
      "613fe52805f86bf8c2bffff08ae9f7a0b99f408be1bf221767af6183038be3a2"),
     ("codeformer.pth",
      "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/"
-     "codeformer.pth", "CodeFormer — S-Lab 1.0, NON COMMERCIAL (~377 Mo)",
+     "codeformer.pth", "CodeFormer — S-Lab 1.0, NON-COMMERCIAL (~377 MB)",
      "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"),
 )
 FACE_URLS = FACE_SHARED + FACE_RESTORERS
@@ -155,11 +155,11 @@ def install_depth():
     print("Installation de transformers…")
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
-    print(f"\nTéléchargement du modèle de profondeur ({DEPTH_REPO})…")
+    print(f"\nDownloading the depth model ({DEPTH_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
     pin_numpy()  # transformers peut réintroduire NumPy 2 -> on re-fige
-    print("\n[OK] Depth Anything V2 installé (profondeur + normales).")
+    print("\n[OK] Depth Anything V2 installed (depth + normals).")
 
 
 def install_bg():
@@ -168,11 +168,11 @@ def install_bg():
     print("Installation de transformers…")
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "scikit-image", "pillow"])
-    print(f"\nTéléchargement du modèle de suppression d'arrière-plan ({BG_REPO})…")
+    print(f"\nDownloading the background-removal model ({BG_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
     pin_numpy()
-    print("\n[OK] RMBG-1.4 installé. Disponible dans l'onglet Toolkit.")
+    print("\n[OK] RMBG-1.4 installed. Available in the Toolkit tab.")
 
 
 def install_clip():
@@ -181,12 +181,12 @@ def install_clip():
     print("Installation de transformers…")
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
-    print(f"\nTéléchargement de CLIP ({CLIP_REPO})…")
+    print(f"\nDownloading CLIP ({CLIP_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=CLIP_REPO, local_dir=str(model_dir))
     pin_numpy()
-    print("\n[OK] CLIP installé — la décomposition en calques sait maintenant "
-          "nommer et regrouper les zones.")
+    print("\n[OK] CLIP installed — splitting into layers can now name and "
+          "group the regions.")
 
 
 def install_sam():
@@ -195,11 +195,11 @@ def install_sam():
     print("Installation de transformers…")
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
-    print(f"\nTéléchargement de Segment Anything ({SAM_REPO})…")
+    print(f"\nDownloading Segment Anything ({SAM_REPO})…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=SAM_REPO, local_dir=str(model_dir))
     pin_numpy()
-    print("\n[OK] Segment Anything installé. Disponible dans l'onglet Toolkit.")
+    print("\n[OK] Segment Anything installed. Available in the Toolkit tab.")
 
 
 def install_enhance():
@@ -208,13 +208,13 @@ def install_enhance():
     print("Installation de transformers + accelerate…")
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "accelerate", "safetensors"])
-    print(f"\nTéléchargement de l'améliorateur de prompt ({ENHANCE_REPO}, ~6 Go)…")
+    print(f"\nDownloading the prompt enhancer ({ENHANCE_REPO}, ~6 GB)…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=ENHANCE_REPO, local_dir=str(model_dir),
                       allow_patterns=["*.json", "*.safetensors", "*.txt",
                                       "tokenizer*", "vocab*", "merges*"])
     pin_numpy()
-    print("\n[OK] Améliorateur de prompt installé. Bouton « ✨ Améliorer ».")
+    print("\n[OK] Prompt enhancer installed. Use the “✨ Enhance” button.")
 
 
 def install_describe():
@@ -224,15 +224,15 @@ def install_describe():
     sh([sys.executable, "-m", "pip", "install",
         DESCRIBE_TRANSFORMERS_PIN, NUMPY_PIN, "accelerate", "safetensors",
         "pillow"])
-    print(f"\nTéléchargement du modèle image → prompt ({DESCRIBE_REPO}, "
-          f"~7,5 Go)…")
+    print(f"\nDownloading the image → prompt model ({DESCRIBE_REPO}, "
+          f"~7.5 GB)…")
     from huggingface_hub import snapshot_download
     snapshot_download(repo_id=DESCRIBE_REPO, local_dir=str(model_dir),
                       allow_patterns=["*.json", "*.safetensors", "*.txt",
                                       "tokenizer*", "vocab*", "merges*",
                                       "preprocessor*", "chat_template*"])
     pin_numpy()
-    print("\n[OK] Image → prompt installé. Onglet Outils → « 📝 Image → prompt ».")
+    print("\n[OK] Image → prompt installed. Tools tab → “📝 Image → prompt”.")
 
 
 def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
@@ -250,19 +250,19 @@ def _hf_fetch(fn, desc: str, manual_url: str, dest) -> None:
         except Exception as exc:  # noqa: BLE001
             if attempt < 2:
                 wait = 2 ** (attempt + 1)
-                print(f"  [!] échec ({type(exc).__name__}) — nouvel essai "
-                      f"dans {wait} s…")
+                print(f"  [!] failed ({type(exc).__name__}) — retrying "
+                      f"in {wait} s…")
                 time.sleep(wait)
             else:
-                print(f"\n[X] Téléchargement impossible : {desc}")
-                print("    Causes fréquentes sur un réseau d'entreprise :")
-                print("    • proxy obligatoire → définissez HTTPS_PROXY="
-                      "http://proxy:port avant de lancer run.bat ;")
-                print("    • inspection SSL → REQUESTS_CA_BUNDLE="
-                      "chemin\\vers\\ca-entreprise.pem ;")
-                print("    • huggingface.co filtré → téléchargez à la main :")
+                print(f"\n[X] Download failed: {desc}")
+                print("    Common causes on a corporate network:")
+                print("    • mandatory proxy → set "
+                      "HTTPS_PROXY=http://proxy:port before running run.bat;")
+                print("    • SSL inspection → "
+                      "REQUESTS_CA_BUNDLE=path\\to\\corporate-ca.pem;")
+                print("    • huggingface.co filtered → download by hand:")
                 print(f"      {manual_url}")
-                print(f"      et placez le fichier dans : {dest}")
+                print(f"      and put the file into: {dest}")
                 raise
 
 
@@ -289,16 +289,16 @@ def _fetch_release_file(url: str, dest: Path, desc: str, sha256: str) -> None:
     import urllib.request
     if dest.is_file():
         if _sha256(dest) == sha256:
-            print(f"  [OK] {desc} déjà présent et vérifié.")
+            print(f"  [OK] {desc} already there and verified.")
             return
-        print(f"  [!] {dest.name} incomplet ou corrompu — retéléchargement.")
+        print(f"  [!] {dest.name} incomplete or corrupt — downloading again.")
         dest.unlink()
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
     req = urllib.request.Request(url, headers={"User-Agent": "Turbo-Slop/1"})
     for attempt in range(3):
         try:
-            print(f"\nTéléchargement : {desc}…", flush=True)
+            print(f"\nDownloading: {desc}…", flush=True)
             with urllib.request.urlopen(req, timeout=120) as response, \
                     open(part, "wb") as out:
                 shutil.copyfileobj(response, out, 1024 * 256)
@@ -306,21 +306,21 @@ def _fetch_release_file(url: str, dest: Path, desc: str, sha256: str) -> None:
             if got != sha256:
                 raise RuntimeError(f"empreinte inattendue ({got[:12]}…)")
             part.replace(dest)
-            print(f"  [OK] {dest.name} vérifié.")
+            print(f"  [OK] {dest.name} verified.")
             return
         except Exception as exc:  # noqa: BLE001
             part.unlink(missing_ok=True)
             if attempt < 2:
                 wait = 2 ** (attempt + 1)
-                print(f"  [!] échec ({type(exc).__name__}) — nouvel essai dans "
+                print(f"  [!] failed ({type(exc).__name__}) — retrying in "
                       f"{wait} s…")
                 time.sleep(wait)
             else:
-                print(f"\n[X] Téléchargement impossible : {desc}")
-                print("    Sur un réseau d'entreprise, github.com est souvent")
-                print("    filtré. Téléchargez le fichier à la main :")
+                print(f"\n[X] Download failed: {desc}")
+                print("    On a corporate network, github.com is often")
+                print("    filtered. Download the file by hand:")
                 print(f"      {url}")
-                print(f"    et placez-le dans : {dest.parent}")
+                print(f"    and put it into: {dest.parent}")
                 raise
 
 
@@ -339,15 +339,14 @@ def install_face():
     print("Installation de spandrel (architectures) + OpenCV…")
     sh([sys.executable, "-m", "pip", "install", NUMPY_PIN, "opencv-python",
         "spandrel>=0.4,<0.5", "spandrel-extra-arches>=0.2,<0.3", "pillow"])
-    print("Installation de facexlib (détection et recollage), sans ses extras…")
+    print("Installing facexlib (detection and paste-back), without its extras…")
     sh([sys.executable, "-m", "pip", "install", "--no-deps", "facexlib>=0.3"])
     for name, url, desc, sha in FACE_URLS:
         _fetch_release_file(url, model_dir / name, desc, sha)
     pin_numpy()
-    print("\n[OK] Restauration de visages installée "
-          "(onglet Toolkit → « 🙂 Visages »).")
-    print("     Trois modèles disponibles : GFPGAN et RestoreFormer++ "
-          "(Apache-2.0, usage commercial libre),")
+    print("\n[OK] Face restoration installed (Toolkit tab → “🙂 Faces”).")
+    print("     Three models available: GFPGAN and RestoreFormer++ "
+          "(Apache-2.0, free for commercial use),")
     print("     CodeFormer (S-Lab 1.0, NON COMMERCIAL).")
 
 
@@ -371,11 +370,11 @@ def install_upscale():
         any((base / "controlnet").glob("*.safetensors"))
 
     if base_ck.is_file():
-        print(f"  [OK] checkpoint SDXL déjà présent ({SDXL_FILE}) — pas de "
-              "téléchargement.")
+        print(f"  [OK] SDXL checkpoint already there ({SDXL_FILE}) — "
+              "nothing to download.")
     else:
-        print(f"\nTéléchargement du checkpoint SDXL ({SDXL_REPO}/{SDXL_FILE}, "
-              "~6,6 Go)…")
+        print(f"\nDownloading the SDXL checkpoint ({SDXL_REPO}/{SDXL_FILE}, "
+              "~6.6 GB)…")
         _hf_fetch(lambda: hf_hub_download(repo_id=SDXL_REPO, filename=SDXL_FILE,
                                           local_dir=str(base)),
                   f"checkpoint SDXL ({SDXL_FILE})",
@@ -383,9 +382,9 @@ def install_upscale():
                   base)
 
     if vae_ok:
-        print("  [OK] VAE fp16-fix déjà présente — pas de téléchargement.")
+        print("  [OK] fp16-fix VAE already there — nothing to download.")
     else:
-        print(f"\nTéléchargement de la VAE fp16-fix ({VAE_FIX_REPO})…")
+        print(f"\nDownloading the fp16-fix VAE ({VAE_FIX_REPO})…")
         _hf_fetch(lambda: snapshot_download(repo_id=VAE_FIX_REPO,
                                             local_dir=str(base / "vae"),
                                             allow_patterns=["*.json", "*.safetensors"]),
@@ -396,10 +395,10 @@ def install_upscale():
     # ControlNet Tile : OPTIONNEL (l'upscale marche sans). Un échec ici n'arrête
     # pas l'install.
     if cn_ok:
-        print("  [OK] ControlNet Tile déjà présent — pas de téléchargement.")
+        print("  [OK] ControlNet Tile already there — nothing to download.")
     else:
-        print(f"\nTéléchargement du ControlNet Tile ({CN_TILE_REPO}, ~2,5 Go, "
-              "optionnel)…")
+        print(f"\nDownloading ControlNet Tile ({CN_TILE_REPO}, ~2.5 GB, "
+              "optional)…")
         try:
             _hf_fetch(lambda: snapshot_download(repo_id=CN_TILE_REPO,
                                                 local_dir=str(base / "controlnet"),
@@ -408,12 +407,13 @@ def install_upscale():
                       f"https://huggingface.co/{CN_TILE_REPO}/tree/main",
                       base / "controlnet")
         except Exception:  # noqa: BLE001
-            print("  [!] ControlNet Tile non installé (optionnel) — l'upscale "
-                  "créatif fonctionne sans, décochez « ControlNet » dans l'UI.")
+            print("  [!] ControlNet Tile not installed (optional) — the "
+                  "creative upscale works without it, untick “ControlNet” in "
+                  "the UI.")
 
     pin_numpy()
-    print("\n[OK] Upscale créatif SDXL installé "
-          "(onglet Toolkit → Upscale créatif).")
+    print("\n[OK] Creative SDXL upscale installed (Toolkit tab → SDXL "
+          "upscale).")
 
 
 def main():

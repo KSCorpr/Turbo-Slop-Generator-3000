@@ -33,13 +33,13 @@ def main():
     try:
         from transformers import pipeline
     except ImportError:
-        sys.exit("transformers manquant. Réinstallez l'outil depuis le Toolkit.")
+        sys.exit("transformers is missing. Reinstall the tool from the Toolkit.")
 
     dev = pick_device(torch)
     # transformers.pipeline veut un index CUDA, -1 pour le CPU, ou une chaîne
     # de device pour le reste : « mps » ne se code pas en entier.
     device = 0 if dev == "cuda" else (-1 if dev == "cpu" else dev)
-    print(f"[depth] chargement du modèle sur {label(dev)}…", flush=True)
+    print(f"[depth] loading the model on {label(dev)}…", flush=True)
     pipe = pipeline("depth-estimation", model=args.model_dir, device=device)
 
     img = Image.open(args.input).convert("RGB")
@@ -59,7 +59,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / (Path(args.input).stem + "_depth.png")
     depth.save(dest)
-    print(f"[depth] carte écrite : {dest}", flush=True)
+    print(f"[depth] map written: {dest}", flush=True)
 
 
 if __name__ == "__main__":

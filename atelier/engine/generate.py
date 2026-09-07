@@ -472,7 +472,7 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     tile = sdcpp.upscale_tile_size(w, h, vram)
     out = sdcpp.unique_output("upscale")
     if log:
-        log(f"Upscale ESRGAN « {model_name} » (×{repeats or 1}) on the GPU…")
+        log(f"ESRGAN upscale “{model_name}” (×{repeats or 1}) on the GPU…")
         if "--upscale-tile-size" in sdcpp.supported_options(sd_cli):
             log(f"[esrgan] tiles of {tile} px"
                 + (" — the whole image in one pass, no seam."
@@ -728,8 +728,8 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             # correction de tuilage que pour l'agrandissement simple.
             tile_size=sdcpp.upscale_tile_size(tw, th, vram))
         if log:
-            log(f"HD « {model.name} » : {ow}×{oh} → {tw}×{th} (×{sc:.2f}), "
-                f"agrandisseur « {hires.upscaler}”, detail {denoise:g}.")
+            log(f"HD “{model.name}”: {ow}×{oh} → {tw}×{th} (×{sc:.2f}), "
+                f"enlarger “{hires.upscaler}”, detail {denoise:g}.")
             log("[hd] second denoise over the WHOLE image: no tiles, so no "
                 "seam is possible.")
         got = generate(

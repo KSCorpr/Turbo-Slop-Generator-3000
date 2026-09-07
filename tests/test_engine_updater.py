@@ -69,7 +69,7 @@ class TransactionalUpdateTests(unittest.TestCase):
     def test_zip_slip_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with self.assertRaisesRegex(RuntimeError, "dangereuse"):
+            with self.assertRaisesRegex(RuntimeError, "unsafe"):
                 U._extract_to(archive({"../escape": "bad"}), "bad.zip", root / "out")
             self.assertFalse((root / "escape").exists())
 

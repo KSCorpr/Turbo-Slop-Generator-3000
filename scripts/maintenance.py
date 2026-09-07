@@ -64,7 +64,7 @@ sys.path.insert(0, str(ROOT))
 #  maintenant au CODE ACTUEL s'il utilise le fichier avant de le supprimer.
 # --------------------------------------------------------------------------- #
 REMOVED_FEATURES = [
-    {"name": "Onglet Upscale (ancienne version)",
+    {"name": "Upscale tab (old version)",
      "files": ["atelier/ui/creative_tab.py",
                "scripts/tools/run_creative_upscale.py"],
      "dirs": []},
@@ -78,11 +78,11 @@ REMOVED_FEATURES = [
                "config/comfyui_workflows/krea2int8.json",
                "config/comfyui_workflows/krea2convrot.json"],
      "dirs": ["config/comfyui_workflows", "comfyui"]},
-    {"name": "Build maison du moteur (CI du projet)",
+    {"name": "In-house engine build (the project's own CI)",
      "files": ["update-engine-ci.bat",
                ".github/workflows/build-sdcpp.yml"],
      "dirs": []},
-    {"name": "Génération vidéo (LTX-2.3, MiniMax-H3)",
+    {"name": "Video generation (LTX-2.3, MiniMax-H3)",
      "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
      "dirs": []},
     # La sonde MiniMax-H3 a répondu à sa question (l'encodeur ne tient pas sur
@@ -167,7 +167,7 @@ def clean_removed_features(purge: bool) -> int:
     supprimer plusieurs gigaoctets de poids sans prévenir n'est pas à nous de
     le décider. Renvoie l'espace récupérable restant, en octets.
     """
-    print("• Fonctions retirées (code + données laissées derrière)…")
+    print("• Removed features (code + the data they left behind)…")
     touched = False
     recoverable = 0
     for feat in REMOVED_FEATURES:
@@ -176,9 +176,9 @@ def clean_removed_features(purge: bool) -> int:
             f = ROOT / rel
             if f.exists():
                 if _still_in_service(rel):
-                    _warn(f"{rel} est listé comme retiré mais le code actuel "
-                          "l'utilise : NON supprimé. Le nom a été repris — "
-                          "retirez-le de REMOVED_FEATURES.")
+                    _warn(f"{rel} is listed as removed but the current code "
+                          "uses it: NOT deleted. The name was reused — "
+                          "take it out of REMOVED_FEATURES.")
                     continue
                 try:
                     f.unlink()
@@ -187,8 +187,7 @@ def clean_removed_features(purge: bool) -> int:
                     _warn(f"impossible de supprimer {rel} : {exc}")
         if gone:
             touched = True
-            print(OK + f"{feat['name']} : {len(gone)} fichier(s) de code "
-                  "supprimé(s).")
+            print(OK + f"{feat['name']}: {len(gone)} code file(s) deleted.")
         for rel in feat["dirs"]:
             d = ROOT / rel
             if not d.is_dir():
@@ -198,7 +197,7 @@ def clean_removed_features(purge: bool) -> int:
                 # Dossier vide : aucune donnée en jeu, on peut l'enlever.
                 try:
                     shutil.rmtree(d)
-                    print(OK + f"{feat['name']} : dossier vide {rel}/ supprimé.")
+                    print(OK + f"{feat['name']}: empty folder {rel}/ deleted.")
                     touched = True
                 except OSError:
                     pass
@@ -206,17 +205,17 @@ def clean_removed_features(purge: bool) -> int:
             if purge:
                 shutil.rmtree(d, ignore_errors=True)
                 if d.exists():
-                    _warn(f"suppression partielle : {rel}/")
+                    _warn(f"partial deletion: {rel}/")
                 else:
-                    print(OK + f"{feat['name']} : {rel}/ supprimé "
-                          f"({_human(size)} libérés).")
+                    print(OK + f"{feat['name']}: {rel}/ deleted "
+                          f"({_human(size)} reclaimed).")
                     touched = True
             else:
                 recoverable += size
-                print(INFO + f"{feat['name']} : {rel}/ occupe encore "
+                print(INFO + f"{feat['name']} : {rel}/ still holds "
                       f"{_human(size)}.")
     if not touched and recoverable == 0:
-        print(OK + "rien à nettoyer (propre).")
+        print(OK + "nothing to clean up (clean).")
     return recoverable
 
 
@@ -244,7 +243,7 @@ def _known_addon_dirs() -> set[str]:
 
 def report_orphan_addons(purge: bool) -> int:
     """Dossiers de tools_repo/ ne correspondant à aucun add-on du code actuel."""
-    print("• Add-ons orphelins (tools_repo/)…")
+    print("• Orphan add-ons (tools_repo/)…")
     try:
         from atelier.engine import tools
         base, known = tools.TOOLS_DIR, _known_addon_dirs()
@@ -252,7 +251,7 @@ def report_orphan_addons(purge: bool) -> int:
         _warn(f"analyse impossible : {exc}")
         return 0
     if not base.is_dir():
-        print(OK + "aucun add-on installé.")
+        print(OK + "no add-on installed.")
         return 0
     # Les dossiers déjà nommés dans REMOVED_FEATURES sont traités plus haut :
     # les recompter ici gonflerait le total d'espace récupérable.
@@ -260,7 +259,7 @@ def report_orphan_addons(purge: bool) -> int:
     orphans = [d for d in sorted(base.iterdir())
                if d.is_dir() and d.name not in known and d.name not in declared]
     if not orphans:
-        print(OK + "aucun add-on orphelin (propre).")
+        print(OK + "no orphan add-on (clean).")
         return 0
     total = 0
     for d in orphans:
@@ -274,28 +273,28 @@ def report_orphan_addons(purge: bool) -> int:
             shutil.rmtree(d, ignore_errors=True)
             if not d.exists():
                 freed += sz
-                print(OK + f"supprimé : {d.name}")
+                print(OK + f"deleted: {d.name}")
             else:
-                _warn(f"suppression partielle : {d.name}")
-        print(OK + f"{_human(freed)} libérés.")
+                _warn(f"partial deletion: {d.name}")
+        print(OK + f"{_human(freed)} reclaimed.")
         return 0
-    print(INFO + f"{len(orphans)} add-on(s) d'une version précédente = "
-          f"{_human(total)} récupérables.")
+    print(INFO + f"{len(orphans)} add-on(s) from a previous version = "
+          f"{_human(total)} reclaimable.")
     return total
 
 
 def clean_pycache() -> None:
-    print("• Caches Python (__pycache__ / .pyc)…")
+    print("• Python caches (__pycache__ / .pyc)…")
     n = 0
     for p in ROOT.rglob("__pycache__"):
         if p.is_dir() and not any(part in PROTECTED for part in p.parts):
             shutil.rmtree(p, ignore_errors=True)
             n += 1
-    print(OK + f"{n} dossier(s) __pycache__ purgé(s).")
+    print(OK + f"{n} __pycache__ folder(s) purged.")
 
 
 def clean_tmp() -> None:
-    print("• Dossier tmp/…")
+    print("• tmp/ folder…")
     tmp = ROOT / "tmp"
     n = 0
     if tmp.is_dir():
@@ -308,7 +307,7 @@ def clean_tmp() -> None:
                 n += 1
             except OSError:
                 pass
-    print(OK + f"{n} élément(s) temporaire(s) effacé(s).")
+    print(OK + f"{n} temporary item(s) deleted.")
 
 
 def _expected_model_dirs() -> set[str]:
@@ -326,7 +325,7 @@ def _expected_model_dirs() -> set[str]:
 
 
 def report_orphan_models(prune: bool) -> int:
-    print("• Modèles orphelins (dossiers plus référencés par le catalogue)…")
+    print("• Orphan models (folders the catalog no longer references)…")
     try:
         from atelier import settings
         models_dir = settings.MODELS_DIR
@@ -335,12 +334,12 @@ def report_orphan_models(prune: bool) -> int:
         _warn(f"analyse impossible : {exc}")
         return 0
     if not models_dir.is_dir():
-        print(OK + "aucun dossier models/.")
+        print(OK + "no models/ folder.")
         return 0
     orphans = [d for d in sorted(models_dir.iterdir())
                if d.is_dir() and d.name != "custom" and d.name not in expected]
     if not orphans:
-        print(OK + "aucun modèle orphelin (propre).")
+        print(OK + "no orphan model (clean).")
         return 0
     total = 0
     for d in orphans:
@@ -354,45 +353,45 @@ def report_orphan_models(prune: bool) -> int:
             shutil.rmtree(d, ignore_errors=True)
             if not d.exists():
                 freed += sz
-                print(OK + f"supprimé : {d.name}")
+                print(OK + f"deleted: {d.name}")
             else:
-                _warn(f"suppression partielle : {d.name}")
-        print(OK + f"{_human(freed)} libérés.")
+                _warn(f"partial deletion: {d.name}")
+        print(OK + f"{_human(freed)} reclaimed.")
         return 0
-    print(INFO + f"{len(orphans)} dossier(s) orphelin(s) = "
-          f"{_human(total)} récupérables.")
+    print(INFO + f"{len(orphans)} orphan folder(s) = "
+          f"{_human(total)} reclaimable.")
     return total
 
 
 def compile_check() -> None:
-    print("• Compilation (syntaxe)…")
+    print("• Compilation (syntax)…")
     import compileall
     ok = True
     for target in ("atelier", "scripts"):
         ok &= compileall.compile_dir(str(ROOT / target), quiet=1, force=True)
     ok &= compileall.compile_file(str(ROOT / "app.py"), quiet=1, force=True)
     if ok:
-        print(OK + "tout le code Python compile.")
+        print(OK + "all the Python code compiles.")
     else:
         global _problems
         _problems += 1
-        print(ERR + "erreur(s) de syntaxe ci-dessus — mise à jour incomplète ?")
+        print(ERR + "syntax error(s) above — an incomplete update?")
 
 
 def check_catalog() -> None:
-    print("• Catalogue de modèles (config/models.yaml)…")
+    print("• Model catalog (config/models.yaml)…")
     try:
         import yaml
         cat = yaml.safe_load((ROOT / "config" / "models.yaml")
                              .read_text(encoding="utf-8")) or {}
         models = [m.get("id") for m in cat.get("base_models", [])]
-        print(OK + f"YAML valide — modèles : {', '.join(models) or '(aucun)'}.")
+        print(OK + f"valid YAML — models: {', '.join(models) or '(none)'}.")
     except Exception as exc:  # noqa: BLE001
-        _warn(f"models.yaml illisible : {exc}")
+        _warn(f"models.yaml is unreadable: {exc}")
 
 
 def check_deps() -> None:
-    print("• Dépendances Python…")
+    print("• Python dependencies…")
     missing = []
     for mod in ("gradio", "yaml", "PIL", "requests", "huggingface_hub"):
         try:
@@ -400,10 +399,10 @@ def check_deps() -> None:
         except Exception:  # noqa: BLE001
             missing.append(mod)
     if missing:
-        _warn(f"manquantes : {', '.join(missing)} → relancez install.bat "
-              "(ou install.sh).")
+        _warn(f"missing: {', '.join(missing)} → run install.bat again "
+              "(or install.sh).")
     else:
-        print(OK + "présentes.")
+        print(OK + "present.")
     check_gradio_major()
     check_diffusers()
 
@@ -416,7 +415,7 @@ GRADIO_MAJOR = 6
 
 
 def check_gradio_major() -> None:
-    print("• Version de Gradio…")
+    print("• Gradio version…")
     try:
         import gradio
     except Exception as exc:  # noqa: BLE001
@@ -429,15 +428,15 @@ def check_gradio_major() -> None:
         _warn(f"version illisible : {version}")
         return
     if major < GRADIO_MAJOR:
-        _warn(f"gradio {version} installé — l'application demande la "
+        _warn(f"gradio {version} installed — the application asks for "
               f"{GRADIO_MAJOR}.x.")
-        _warn("  Les composants image refuseront `buttons=` et l'interface "
-              "ne se construira pas.")
-        _warn("  Correctif : relancez install.bat (ou "
-              "`pip install -U -r requirements.txt`).")
+        _warn("  The image components will refuse `buttons=` and the "
+              "interface will not build.")
+        _warn("  Fix: run install.bat again (or `pip install -U -r "
+              "requirements.txt`).")
     elif major > GRADIO_MAJOR:
-        _warn(f"gradio {version} installé, l'application est écrite pour la "
-              f"{GRADIO_MAJOR}.x — à vérifier.")
+        _warn(f"gradio {version} installed, the application is written for "
+              f"{GRADIO_MAJOR}.x — worth checking.")
     else:
         print(OK + f"gradio {version}.")
 
@@ -450,12 +449,12 @@ def check_diffusers() -> None:
     qu'au premier usage de l'autre — sous forme d'une erreur illisible à
     l'import. On vérifie donc chaque paquet épinglé par l'installeur.
     """
-    print("• Paquets partagés par les add-ons PyTorch…")
+    print("• Packages shared by the PyTorch add-ons…")
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         from setup_tools import _PINS
     except Exception:  # noqa: BLE001
-        print(OK + "non vérifiable (installeur absent).")
+        print(OK + "cannot be checked (the installer is missing).")
         return
 
     import importlib.metadata as md
@@ -468,13 +467,13 @@ def check_diffusers() -> None:
         checked += 1
         if not _spec_ok(got, spec):
             bad += 1
-            _warn(f"{name} {got} installé — attendu « {spec} ».")
+            _warn(f"{name} {got} installed — expected “{spec}”.")
     if not checked:
-        print(OK + "aucun add-on PyTorch installé.")
+        print(OK + "no PyTorch add-on installed.")
     elif bad:
-        _warn("  Un add-on a changé une version sous les autres.")
-        _warn("  Correctif : relancez l'installation de l'add-on concerné "
-              "(Toolkit → Installer), qui repose les bonnes versions.")
+        _warn("  One add-on changed a version out from under the others.")
+        _warn("  Fix: run that add-on's installer again (Toolkit → Install); "
+              "it puts the right versions back.")
     else:
         print(OK + f"{checked} paquet(s) conforme(s).")
 
@@ -524,29 +523,29 @@ def _spec_ok(version: str, spec: str) -> bool:
 #  personne, « l'onglet HD ne marchera pas » si.
 # --------------------------------------------------------------------------- #
 ENGINE_FEATURES = [
-    {"option": "--hires", "needed_by": "l'onglet « 🚀 HD »",
+    {"option": "--hires", "needed_by": "the “🚀 HD” tab",
      "blocking": True},
     {"option": "--upscale-tile-size",
      "needed_by": "l'agrandissement ESRGAN sans coutures", "blocking": False},
     {"option": "--max-vram",
-     "needed_by": "l'exécution segmentée (HD sur carte serrée)",
+     "needed_by": "segmented execution (HD on a tight card)",
      "blocking": False},
     {"option": "--diffusion-conv-direct",
-     "needed_by": "la convolution directe (Réglages)", "blocking": False},
-    {"option": "--preview", "needed_by": "l'aperçu temps réel",
+     "needed_by": "direct convolution (Settings)", "blocking": False},
+    {"option": "--preview", "needed_by": "the live preview",
      "blocking": False},
 ]
 
 
 def check_engine(update: bool) -> bool:
     """Présence ET capacités du moteur. Renvoie True si une MAJ est conseillée."""
-    print("• Moteur stable-diffusion.cpp (sd-cli)…")
+    print("• stable-diffusion.cpp engine (sd-cli)…")
     try:
         from atelier import settings
         from atelier.engine import sdcpp
         sd = settings.find_sd_cli()
     except Exception as exc:  # noqa: BLE001
-        _warn(f"vérification impossible : {exc}")
+        _warn(f"cannot check: {exc}")
         return False
 
     if sd is None:
@@ -555,32 +554,32 @@ def check_engine(update: bool) -> bool:
         if update:
             print(INFO + "binaire absent → installation…")
             return not _run_get_sdcpp()
-        _warn("binaire sd-cli introuvable → maintenance.bat --update-engine "
-              "(ou install.bat)")
+        _warn("sd-cli binary not found → maintenance.bat --update-engine (or "
+              "install.bat)")
         return True
-    print(OK + f"trouvé : {sd}")
+    print(OK + f"found: {sd}")
 
     opts = sdcpp.supported_options(sd)
     if not opts:
-        _warn("le binaire ne répond pas à « -h » : impossible de vérifier ses "
-              "capacités. S'il ne démarre pas non plus, réinstallez-le "
+        _warn("the binary does not answer “-h”: its capabilities cannot be "
+              "checked. If it does not start either, reinstall it "
               "(maintenance.bat --update-engine).")
         return False
 
     missing = [f for f in ENGINE_FEATURES if f["option"] not in opts]
     if not missing:
-        print(OK + f"{len(ENGINE_FEATURES)} capacité(s) attendue(s) présente(s).")
+        print(OK + f"{len(ENGINE_FEATURES)} expected capability/capabilities present.")
         return False
     for f in missing:
-        line = f"{f['option']} absent → {f['needed_by']} ne fonctionnera pas."
+        line = f"{f['option']} absent → {f['needed_by']} will not work."
         if f["blocking"]:
             _warn(line)
         else:
             print(INFO + line)
     if update:
-        print(INFO + "mise à jour du moteur…")
+        print(INFO + "updating the engine…")
         return not _run_get_sdcpp(force=True)
-    print(INFO + "Moteur d'une version antérieure au code. Pour l'aligner :")
+    print(INFO + "The engine is older than the code. To bring it in line:")
     print("        maintenance.bat --update-engine"
           "   (./maintenance.sh --update-engine)")
     return True
@@ -607,10 +606,10 @@ def _run_get_sdcpp(force: bool = False) -> bool:
         # Le cache d'options est indexé sur (chemin, mtime, taille) : un
         # nouveau binaire produit une clé différente, la relecture est donc
         # automatique. On revérifie pour AFFICHER le résultat, pas pour purger.
-        print(OK + "moteur installé/mis à jour.")
+        print(OK + "engine installed/updated.")
         return True
-    _warn(f"la mise à jour du moteur a échoué (code {code}). Réseau ? "
-          "Réessayez, ou lancez update-engine.bat.")
+    _warn(f"the engine update failed (code {code}). Network? "
+          "Try again, or run update-engine.bat.")
     return False
 
 
@@ -719,36 +718,34 @@ def check_orphan_modules() -> None:
     on suit les imports, et tout module de atelier/ jamais atteint est un reste
     d'une version précédente — quelle qu'elle soit, déclarée ou non.
     """
-    print("• Modules Python orphelins (plus importés par personne)…")
+    print("• Orphan Python modules (nothing imports them any more)…")
     files = _module_map()
     seen = _reachable_modules()
     orphans = sorted(m for m in files if m not in seen and m != "atelier")
     if not orphans:
-        print(OK + "aucun module orphelin (propre).")
+        print(OK + "no orphan module (clean).")
         return
     for m in orphans:
         print(f"    - {files[m].relative_to(ROOT)}")
-    _warn(f"{len(orphans)} module(s) que rien n'importe — probablement des "
-          "restes d'une version précédente. Vérifiez avant de supprimer : un "
-          "module chargé dynamiquement apparaîtrait ici à tort.")
+    _warn(f"{len(orphans)} module(s) nothing imports — probably leftovers "
+          "from a previous version. Check before deleting: a dynamically "
+          "loaded module would show up here wrongly.")
 
 
-USAGE = """\
-Maintenance — Turbo Slop Generator 3000
+USAGE = """Maintenance — Turbo Slop Generator 3000
 
-  maintenance.bat                   vérifie et nettoie le CODE (aucune donnée
-                                    supprimée, l'espace récupérable est chiffré)
-  maintenance.bat --update-engine   + aligne le moteur sd-cli sur le code
-  maintenance.bat --purge           + supprime les données des fonctions
-                                    retirées et les orphelins
-  maintenance.bat --all             tout : purge + mise à jour du moteur
-                                    (« après une MAJ, tout est nickel »)
+  maintenance.bat                   check and clean up the CODE (no data is
+                                    deleted; reclaimable space is measured)
+  maintenance.bat --update-engine   + bring the sd-cli engine in line with the code
+  maintenance.bat --purge           + delete the data of removed features,
+                                    and the orphans
+  maintenance.bat --all             everything: purge + engine update
+                                    ("after an update, all tidy")
 
-Pour mettre à jour l'APPLICATION elle-même : update.bat (ce script ne
-télécharge rien).
+To update the APPLICATION itself: update.bat (this script downloads nothing).
 
-(./maintenance.sh … sur Linux/Mac)
-Ne touche jamais à models/custom/, loras/, outputs/, userdata/, python/.
+(./maintenance.sh … on Linux/Mac)
+Never touches models/custom/, loras/, outputs/, userdata/, python/.
 """
 
 
@@ -760,26 +757,26 @@ def check_install_complete() -> None:
     mais pas la cause. Le manifeste de `update.bat` sait exactement ce qui
     devrait être là.
     """
-    print("• Intégrité de l'installation…")
+    print("• Installation integrity…")
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         from update_app import MANIFEST, missing_files
     except Exception as exc:  # noqa: BLE001
-        print(INFO + f"non vérifiable ({exc}).")
+        print(INFO + f"cannot be checked ({exc}).")
         return
     if not MANIFEST.is_file():
-        print(INFO + "jamais mise à jour par update.bat — rien à comparer.")
+        print(INFO + "never updated by update.bat — nothing to compare.")
         return
     missing = missing_files()
     if not missing:
-        print(OK + "tous les fichiers de la dernière mise à jour sont là.")
+        print(OK + "every file from the last update is there.")
         return
     for rel in missing[:10]:
         print(f"    - {rel}")
     if len(missing) > 10:
-        print(f"    … et {len(missing) - 10} autre(s)")
-    _warn(f"{len(missing)} fichier(s) de l'application ont disparu. "
-          "Relancez update.bat : il les remettra.")
+        print(f"    … and {len(missing) - 10} more")
+    _warn(f"{len(missing)} application file(s) have gone missing. "
+          "Run update.bat: it will put them back.")
 
 
 def main() -> int:
@@ -797,9 +794,9 @@ def main() -> int:
     print("  Maintenance — Turbo Slop Generator 3000")
     modes = []
     if purge:
-        modes.append("suppression des restes des fonctions retirées")
+        modes.append("deleting what removed features left behind")
     if update_engine:
-        modes.append("mise à jour du moteur")
+        modes.append("engine update")
     if modes:
         print("  (" + " + ".join(modes) + ")")
     print("=" * 60)
@@ -818,20 +815,20 @@ def main() -> int:
     if recoverable > 0:
         # Un chiffre global, puis la commande exacte : c'est tout ce qu'il faut
         # pour décider, sans avoir à additionner les lignes soi-même.
-        print(f"💾 {_human(recoverable)} récupérables (restes de fonctions "
-              "retirées).")
-        print("   Pour libérer :  maintenance.bat --purge"
-              "   (./maintenance.sh --purge sur Linux/Mac)")
+        print(f"💾 {_human(recoverable)} reclaimable (leftovers from removed "
+              "features).")
+        print("   To reclaim it:  maintenance.bat --purge   (./maintenance.sh "
+              "--purge on Linux/Mac)")
     if engine_stale and not update_engine:
-        print("🔧 Le moteur est en retard sur le code.")
-        print("   Pour tout aligner d'un coup :  maintenance.bat --all")
+        print("🔧 The engine is behind the code.")
+        print("   To bring everything in line at once:  maintenance.bat --all")
     if recoverable > 0 or (engine_stale and not update_engine):
         print("-" * 60)
     if _problems == 0:
-        print("✅ Tout est propre et vérifié. Vous pouvez lancer run.bat.")
+        print("✅ Everything is clean and checked. You can run run.bat.")
     else:
-        print(f"⚠️  Terminé avec {_problems} point(s) d'attention "
-              "ci-dessus (voir les lignes [!]/[X]).")
+        print(f"⚠️  Finished with {_problems} point(s) needing attention "
+              "above (see the [!]/[X] lines).")
     print("=" * 60)
     return 0 if _problems == 0 else 1
 
