@@ -576,6 +576,12 @@ single mutually-exclusive strategy:
   full-VRAM placement does not fit. It is memory-aware, not topology-aware: on a
   mismatched pair or a PCIe x4 secondary slot, benchmark it instead of assuming
   that more aggregate VRAM means more speed.
+  **The flag's shape changed upstream**: it was a bare switch and now requires
+  `on` or `off`. Sent bare to a recent engine it would swallow the next
+  argument as its value, so the binary's help text is parsed rather than its
+  version guessed. `--split-mode` is no longer sent alongside it either —
+  upstream states that auto-fit does not select per-layer/row multi-GPU
+  computation, so the option had no effect there.
 
 A separate **prompt-enhancer GPU** can also be chosen (the text LLM runs there;
 image generation and SDXL upscale always stay on the generation GPU). The GPU
@@ -739,17 +745,43 @@ When the option cannot be offered, Settings says which of the two pieces is
 missing and what to do about it, instead of hiding the checkbox.
 
 It is deliberately **never mandatory**:
-- LoRAs, the HD pass, multi-reference editing, step caches and auto-fit are
-  **not** served — they fall back to `sd-cli` silently (the API ignores
-  `<lora:…>` prompt tags by design, so serving them would quietly produce an
-  image *without* the LoRA);
+- LoRAs, the HD pass, step caches and auto-fit are **not** served — they fall
+  back to `sd-cli` silently (the API ignores `<lora:…>` prompt tags by design,
+  so serving them would quietly produce an image *without* the LoRA);
+- **multi-reference editing is served**, but only when the running server
+  answers `/capabilities` with `ref_images`. It was refused outright until an
+  external review pointed out the field is in the API; the capability is now
+  asked for at request time rather than deduced from a version number, since
+  one release number covers official and self-built binaries that do not offer
+  the same things;
 - any startup failure, timeout or protocol surprise falls back to `sd-cli`
   with the reason in the log;
 - **no live preview**: the image arrives at the end, and the log says so;
 - the model holds VRAM, so `sd-cli` runs, Toolkit tools and trellis 3D all
   **stop the server first** and let it reload on the next image;
 - changing model, quantization or residency restarts it — serving a different
-  model than the one requested would be far worse than being slow.
+  model than the one requested would be far worse than being slow. The **size
+  and date** of the weight files are part of that identity too: replacing a
+  GGUF at the same path used to leave the old one being served indefinitely,
+  with nothing in the log to say so.
+
+**Stopping is a process kill, and that is not laziness.** The API reports
+`cancel_generating: false` and answers **409 "job is currently generating and
+cannot be interrupted yet"**. The code used to post `/cancel`, swallow that 409
+(`HTTPError` subclasses `URLError`) and announce "cancelled" while the GPU kept
+going to completion. The protocol cannot interrupt, so pressing Stop terminates
+the server: VRAM back immediately, at the cost of a reload on the next image.
+An honest trade beats a button that lies.
+
+Two more guards, neither of which you should ever see: **one generation at a
+time** (two concurrent requests would fight over a server that holds one
+model), and a **two-hour job ceiling** — not to cut off a slow image, but so a
+server that has stopped answering eventually releases the interface instead of
+hanging it.
+
+The client also talks to `127.0.0.1` **through no proxy**. A corporate
+`HTTP_PROXY` in the environment would otherwise receive the request — init
+images and references included, base64-encoded in the payload.
 
 (The earlier ComfyUI backend stays removed: too fragile.)
 
@@ -975,13 +1007,24 @@ would rather wait than not get the image at all.
 diffusion layers from system RAM and therefore only applies when the diffusion
 parameters are CPU-resident (for example `diffusion=cpu`). Setting
 `--max-vram` while keeping all parameters on the GPU does not make layer
-streaming valid; the interface now enforces that distinction.
+streaming valid; the interface enforces that distinction.
 
-**The retry ladder tries streaming before it gives up pixels.** sd.cpp
-documents the escalation as `--offload-to-cpu` → `+ --max-vram` →
-`+ --stream-layers`, and says the three combined run models roughly 3–4× larger
+> ⚠️ **`--stream-layers` no longer exists upstream.** Current sd.cpp
+> ([`performance.md`](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/performance.md))
+> cuts the graph and prefetches the next segment **on its own**, and exposes
+> `--disable-prefetch` / `--disable-segmented-compute` to turn that *off*
+> rather than a flag to turn streaming on. This section described an older
+> engine. The code reads the installed binary's help before sending the flag,
+> so nothing breaks either way: on a recent engine the streaming rung is simply
+> not taken, and the automatic segmentation does the same job. The paragraph
+> below still describes what happens on the engine you have if it predates the
+> change.
+
+**The retry ladder tries streaming before it gives up pixels.** Older sd.cpp
+documented the escalation as `--offload-to-cpu` → `+ --max-vram` →
+`+ --stream-layers`, and said the three combined run models roughly 3–4× larger
 than the raw VRAM allows. HD had the first two rungs and not the third, so the
-first out-of-memory immediately cost 20% of the factor. Now the first recovery
+first out-of-memory immediately cost 20% of the factor. The first recovery now
 **keeps the requested size** and loads the diffusion layers from RAM as the
 computation walks through them; only if that still fails does the factor drop.
 The order follows what each one costs: a lower factor loses pixels for good,
