@@ -347,6 +347,11 @@ def hires_supported(sd_cli: Path | None) -> bool:
     return "--hires" in supported_options(sd_cli)
 
 
+def adetailer_supported(sd_cli: Path | None) -> bool:
+    """Ce binaire sait-il détecter puis redessiner une zone (`--ad-model`) ?"""
+    return "--ad-model" in supported_options(sd_cli)
+
+
 # --------------------------------------------------------------------------- #
 #  Exécution SEGMENTÉE (« graph cut »).
 #

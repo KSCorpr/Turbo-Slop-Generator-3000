@@ -49,10 +49,11 @@ def human(n: int) -> str:
     if n <= 0:
         return "—"
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "To":
-            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+        if n < 1024 or unit == "TB":
+            # Les octets s'écrivent en entier : « 512.0 B » n'a pas de sens.
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024.0
-    return f"{n:.1f} To"
+    return f"{n:.1f} TB"
 
 
 def _engine_sdcpp_paths() -> list[Path]:
@@ -154,6 +155,9 @@ def items(prefs: dict | None = None) -> list[Item]:
              note="Reinstallable in one click."),
         Item("tool_face", "Toolkit — Face restoration", "Toolkit add-ons",
              [tools.FACE_MODEL_DIR], note="Reinstallable in one click."),
+        Item("tool_adetailer", "Toolkit — ADetailer detectors (YOLOv8)",
+             "Toolkit add-ons", [tools.ADETAILER_DIR],
+             note="Reinstallable in one click (~12 MB)."),
         Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Toolkit add-ons",
              [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
         Item("tool_seedvr2", "Toolkit — SeedVR2 restoration", "Toolkit add-ons",

@@ -266,9 +266,10 @@ def restore(paths: list[Path], log=None) -> Iterator[str]:
 
 def _human(n: int) -> str:
     if n <= 0:
-        return "0 o"
+        return "0 B"
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "To":
-            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+        if n < 1024 or unit == "TB":
+            # Les octets s'écrivent en entier : « 512.0 B » n'a pas de sens.
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024.0
-    return f"{n:.1f} To"
+    return f"{n:.1f} TB"

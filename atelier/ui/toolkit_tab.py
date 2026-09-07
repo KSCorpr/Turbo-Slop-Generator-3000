@@ -1302,6 +1302,143 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
             _hand_over_to_faces(seed_to_face, seed_result)
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
+            with gr.Tab("🖐️ Details", id="adetailer"):
+                gr.Markdown(
+                    "Finds a **face or a pair of hands**, redraws just that "
+                    "region with **your own generation model**, and blends it "
+                    "back. Native to sd.cpp — no PyTorch, no add-on beyond a "
+                    "6 MB detector.\n\n**This is the only tool here that "
+                    "repairs HANDS.** GFPGAN and RestoreFormer are trained on "
+                    "faces and can do nothing else; a hand with six fingers "
+                    "has nothing to *restore*, it has to be redrawn.\n\n"
+                    "⚠️ On a **face**, prefer **🙂 Faces**: it restores, this "
+                    "redraws — so the person can come back slightly "
+                    "different. Run it **after** the upscale, like the face "
+                    "restorer: the region is then larger, better detected and "
+                    "better blended.")
+
+                _ad_reason = tools.adetailer_reason()
+                if _ad_reason:
+                    gr.Markdown(f"> ⚠️ {_ad_reason}")
+
+                # Même bloc que les sept autres outils : il DISPARAÎT une fois
+                # l'installation faite. Un onglet garni ne doit pas payer à vie
+                # un accordéon pour une opération qui ne sert qu'une fois.
+                _installer_block(
+                    "the detectors",
+                    "Downloads four **YOLOv8** detectors (faces and hands) "
+                    "from `Bingsu/adetailer` and converts them to the format "
+                    "sd.cpp expects — about **12 MB** kept in the "
+                    "end.\n\nThe conversion needs `ultralytics`, which is "
+                    "AGPL and would fight the NumPy version the other add-ons "
+                    "pin. It is therefore installed in a **throwaway "
+                    "environment that is deleted right afterwards**: nothing "
+                    "permanent is added to the application.",
+                    tools.install_adetailer_stream,
+                    tools.adetailer_is_installed())
+
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        ad_image = gr.Image(label="Image to repair", type="pil",
+                                            buttons=widgets.IMAGE_VIEW_ONLY)
+                        _ad_models = [(m.name, m.id)
+                                      for m in registry.load_base_models(
+                                          settings.load_prefs())
+                                      if registry.model_is_ready(m)]
+                        ad_model = gr.Dropdown(
+                            choices=_ad_models,
+                            value=(_ad_models[0][1] if _ad_models else None),
+                            label="Generation model",
+                            info="The region is redrawn by this model — use "
+                                 "the one that made the image.")
+                        ad_detector = gr.Dropdown(
+                            tools.adetailer_models_installed(),
+                            value=(tools.adetailer_models_installed() or
+                                   [None])[0],
+                            label="What to look for")
+                        ad_prompt = gr.Textbox(
+                            label="Prompt for the region (optional)",
+                            placeholder="e.g. detailed hands, five fingers",
+                            info="Empty inherits nothing here — describe the "
+                                 "region, not the whole picture.")
+                        ad_denoise = gr.Slider(
+                            0.1, 0.8, value=0.4, step=0.05,
+                            label="How much it redraws",
+                            info="0.4 is the reference. Below 0.3 it barely "
+                                 "changes anything; above 0.6 the region "
+                                 "stops matching its surroundings.")
+                        with gr.Accordion("Detection settings", open=False):
+                            ad_conf = gr.Slider(
+                                0.1, 0.9, value=0.3, step=0.05,
+                                label="Confidence",
+                                info="Lower finds more, including things that "
+                                     "are not hands.")
+                            ad_pad = gr.Slider(
+                                0, 128, value=32, step=8,
+                                label="Padding around the region (px)",
+                                info="Context given to the model. Too little "
+                                     "and it redraws a hand without a wrist.")
+                            ad_blur = gr.Slider(
+                                0, 32, value=4, step=1,
+                                label="Blend feather (px)")
+                            ad_largest = gr.Slider(
+                                0, 5, value=0, step=1,
+                                label="Keep only the N largest (0 = all)")
+                            ad_seed = gr.Number(value=-1, precision=0,
+                                                label="Seed (-1 = random)")
+                        with gr.Row():
+                            ad_refresh = gr.Button("↻ Refresh", size="sm")
+                            ad_run = gr.Button("🖐️ Repair", variant="primary",
+                                               size="lg", scale=2)
+                        ad_stop = gr.Button("⏹️ Cancel", variant="stop",
+                                            size="sm")
+                    with gr.Column(scale=4):
+                        ad_result = gr.Image(label="Result", height=520,
+                                             format="png",
+                                             buttons=widgets.IMAGE_BUTTONS)
+                        ad_log = gr.Textbox(label="Log", lines=10,
+                                            autoscroll=True,
+                                            elem_classes="log-box")
+
+                def _refresh_adetailer():
+                    installed = tools.adetailer_models_installed()
+                    return gr.update(choices=installed,
+                                     value=installed[0] if installed else None)
+
+                ad_refresh.click(_refresh_adetailer, outputs=[ad_detector])
+
+                def do_adetailer(img, model, detector, prompt, denoise, conf,
+                                 pad, blur, largest, seed,
+                                 progress=gr.Progress()):
+                    if img is None:
+                        raise gr.Error(t("Provide an image."))
+                    if not detector:
+                        raise gr.Error(t("Install the detectors first."))
+                    logs: list[str] = []
+                    progress(0.1, desc="Detecting and redrawing…")
+                    try:
+                        out = tools.adetailer_repair(
+                            img, model, detector, prompt=prompt,
+                            denoise=float(denoise), confidence=float(conf),
+                            padding=int(pad), mask_blur=int(blur),
+                            only_largest=int(largest), seed=int(seed),
+                            log=logs.append)
+                    except Exception as exc:  # noqa: BLE001
+                        logs.append(f"\n[ERROR] {exc}")
+                        return None, "\n".join(logs)
+                    progress(1.0, desc="Done")
+                    logs.append(f"\n✅ Repaired: {out}")
+                    return str(out), "\n".join(logs)
+
+                ad_evt = ad_run.click(
+                    do_adetailer,
+                    inputs=[ad_image, ad_model, ad_detector, ad_prompt,
+                            ad_denoise, ad_conf, ad_pad, ad_blur, ad_largest,
+                            ad_seed],
+                    outputs=[ad_result, ad_log])
+                widgets.stop_into_log(ad_stop, gen_engine.cancel, ad_log,
+                                      [ad_evt])
+
             with gr.Tab("✨ SDXL upscale", id="creative"):
                 gr.Markdown(
                     "**Creative** “Ultimate SD Upscale”: pre-enlarges then "

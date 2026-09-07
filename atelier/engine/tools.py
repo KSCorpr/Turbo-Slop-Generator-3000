@@ -16,7 +16,7 @@ from typing import Callable
 from PIL import Image
 
 from .. import hardware, settings
-from . import release_resident_engine
+from . import release_resident_engine, sdcpp
 from ..i18n import t
 
 TOOLS_DIR = settings.ROOT / "tools_repo"
@@ -290,9 +290,13 @@ def install_upscale_stream():
     yield from _install_stream("upscale")
 
 
-def install_seedvr2_stream():
-    """Installe SeedVR2 dans son Python 3.12 isolé."""
-    setup = settings.ROOT / "scripts" / "setup_seedvr2.py"
+def _setup_script_stream(script: str, label: str):
+    """Lance un script d'installation et rend son journal ligne par ligne.
+
+    Ces installations durent des minutes : sans flux, le bouton reste muet et
+    on ne sait pas distinguer « ça travaille » de « c'est planté ».
+    """
+    setup = settings.ROOT / "scripts" / script
     cmd = [sys.executable, str(setup)]
     buf: list[str] = [f"$ {' '.join(cmd)}", ""]
     yield "\n".join(buf)
@@ -305,9 +309,19 @@ def install_seedvr2_stream():
         buf.append(line.rstrip("\n"))
         yield "\n".join(buf[-500:])
     code = proc.wait()
-    buf += ["", "✅ SeedVR2 installation complete." if code == 0
-            else f"❌ SeedVR2 failed (code {code}). See the log."]
+    buf += ["", f"✅ {label} installation complete." if code == 0
+            else f"❌ {label} failed (code {code}). See the log."]
     yield "\n".join(buf[-500:])
+
+
+def install_seedvr2_stream():
+    """Installe SeedVR2 dans son Python 3.12 isolé."""
+    yield from _setup_script_stream("setup_seedvr2.py", "SeedVR2")
+
+
+def install_adetailer_stream():
+    """Convertit les détecteurs YOLOv8 dans un environnement jetable."""
+    yield from _setup_script_stream("setup_adetailer.py", "ADetailer")
 
 
 def _gen_gpu_index() -> int | None:
@@ -394,6 +408,101 @@ def depth_map(image, log: Callable[[str], None] | None = None) -> Path:
     _run_tool(cmd, log, "Depth estimation failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "depth", stamp)
+
+
+# --------------------------------------------------------------------------- #
+#  ADetailer : détecter une zone, la redessiner, la recoller
+#
+#  C'est le seul outil de la boîte qui répare les MAINS. Les restaurateurs de
+#  visages (GFPGAN, RestoreFormer) sont entraînés sur des visages et ne savent
+#  rien faire d'autre ; ici un détecteur YOLOv8 trouve la zone et c'est le
+#  modèle de génération qui la redessine en inpainting.
+#
+#  Contrepartie assumée : ça REDESSINE. Sur un visage, « 🙂 Faces » reste plus
+#  fidèle parce qu'il restaure au lieu d'inventer. Sur une main à six doigts,
+#  il n'y a rien à restaurer.
+# --------------------------------------------------------------------------- #
+ADETAILER_DIR = settings.MODELS_DIR / "adetailer"
+
+ADETAILER_MODELS: tuple[tuple[str, str], ...] = (
+    ("face_yolov8n.safetensors", "Faces — fast"),
+    ("face_yolov8s.safetensors", "Faces — more accurate"),
+    ("hand_yolov8n.safetensors", "Hands — fast"),
+    ("hand_yolov8s.safetensors", "Hands — more accurate"),
+)
+
+
+def adetailer_models_installed() -> list[str]:
+    """Détecteurs convertis présents sur le disque."""
+    if not ADETAILER_DIR.is_dir():
+        return []
+    return [name for name, _label in ADETAILER_MODELS
+            if (ADETAILER_DIR / name).is_file()]
+
+
+def adetailer_is_installed() -> bool:
+    return bool(adetailer_models_installed())
+
+
+def adetailer_reason() -> str:
+    """Ce qui manque pour utiliser ADetailer, ou "" si tout est prêt.
+
+    On NOMME la pièce absente au lieu de cacher l'onglet : « rien ne
+    s'affiche » est le pire message d'erreur possible.
+    """
+    sd_cli = settings.find_sd_cli()
+    if sd_cli is None:
+        return ("The sd-cli binary was not found. Run install.bat.")
+    if not sdcpp.adetailer_supported(sd_cli):
+        return ("Your sd.cpp engine does not know ADetailer yet (the "
+                "`--ad-model` option). Run update-engine.bat, then come back.")
+    if not adetailer_is_installed():
+        return ("No detector installed — use the button below (~12 MB once "
+                "converted).")
+    return ""
+
+
+def adetailer_repair(image, model_id: str, detector: str,
+                     prompt: str = "", negative: str = "",
+                     denoise: float = 0.4, steps: int = 0,
+                     confidence: float = 0.3, padding: int = 32,
+                     mask_blur: int = 4, only_largest: int = 0,
+                     seed: int = -1,
+                     log: Callable[[str], None] | None = None) -> Path:
+    """Détecte puis redessine chaque zone trouvée, sur une image existante.
+
+    Passe par `sd-cli -M adetailer`, donc par le MÊME moteur et le même modèle
+    que la génération : pas de PyTorch, pas d'add-on, rien à installer sinon le
+    détecteur. C'est aussi ce qui garantit que la zone redessinée est dans le
+    style du modèle qui a fait l'image.
+    """
+    from .. import registry
+    from . import generate as gen_engine
+
+    reason = adetailer_reason()
+    if reason:
+        raise ToolError(reason)
+    weights = ADETAILER_DIR / detector
+    if not weights.is_file():
+        raise ToolError(f"Detector not found: “{detector}”.")
+
+    src = _to_src(image, "adetail")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out = settings.OUTPUT_DIR / f"adetail-{stamp}.png"
+    settings.ensure_dirs()
+    # La commande de génération est construite par le pipeline habituel : c'est
+    # lui qui sait résoudre les composants du modèle, la quantification et le
+    # placement mémoire. On ne réimplémente rien de tout ça ici.
+    cmd = gen_engine.adetailer_command(
+        model_id, src, out, weights,
+        prompt=prompt, negative=negative, denoise=denoise, steps=steps,
+        seed=seed,
+        extra={"confidence": confidence, "inpaint_padding": padding,
+               "mask_blur": mask_blur, "mask_k_largest": only_largest})
+    sdcpp.run(cmd, log=log, gpu_index=_gen_gpu_index())
+    if not out.is_file():
+        raise ToolError("ADetailer produced no image (see the log).")
+    return out
 
 
 def modern_upscale(image, model_name: str,

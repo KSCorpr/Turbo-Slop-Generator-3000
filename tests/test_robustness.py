@@ -131,3 +131,40 @@ class _FakeHub:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HumanSizeTests(unittest.TestCase):
+    """Le renommage des unités FR→EN avait laissé des comparaisons mortes.
+
+    `unit == "To"` ne pouvait plus être vrai une fois l'unité devenue « TB » :
+    les octets s'affichaient « 512.0 B », et surtout le repli final
+    réintroduisait un « To » français à l'exécution — invisible pour un
+    détecteur qui ne lit que les littéraux du code.
+    """
+
+    def test_bytes_are_written_whole(self):
+        from atelier.inventory import human
+        self.assertEqual(human(512), "512 B")
+
+    def test_the_ladder_climbs_all_the_way(self):
+        from atelier.inventory import human
+        self.assertEqual(human(2048), "2.0 KB")
+        self.assertEqual(human(3 * 1024 ** 3), "3.0 GB")
+        self.assertEqual(human(2 * 1024 ** 4), "2.0 TB")
+
+    def test_no_french_unit_survives_at_the_top_of_the_ladder(self):
+        from atelier.inventory import human
+        from atelier.storage import _human
+        for size in (9 * 1024 ** 5, 1024 ** 6):
+            for text in (human(size), _human(size)):
+                self.assertNotIn("To", text, text)
+                self.assertNotIn("Mo", text, text)
+
+    def test_both_modules_agree(self):
+        """Deux copies de la même échelle : elles doivent dire pareil."""
+        from atelier.inventory import human
+        from atelier.storage import _human
+        # 0 diffère volontairement : « — » dans un tableau,
+        # « 0 B » dans une phrase. On compare le reste.
+        for size in (1, 999, 4096, 7 * 1024 ** 3):
+            self.assertEqual(human(size), _human(size))

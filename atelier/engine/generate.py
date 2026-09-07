@@ -190,6 +190,141 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             pass
 
 
+def resolve_model_files(model: "registry.BaseModel",
+                        diffusion_override=None, vae_override=None,
+                        encoder_override=None, want_vision: bool = False
+                        ) -> dict:
+    """Chemins des fichiers d'UN modèle du catalogue, ou une erreur lisible.
+
+    Extrait de `generate()` pour être partagé avec le mode ADetailer : les
+    deux ont besoin exactement du même modèle, résolu exactement pareil, et
+    une seconde copie de cette logique dériverait — c'est déjà ce qui était
+    arrivé entre la ligne de commande et le serveur résident.
+    """
+    # Famille « checkpoint complet » : un seul fichier via -m.
+    has_full = any(c.role == "model" for c in model.components)
+    if has_full:
+        model_path = Path(diffusion_override) if diffusion_override \
+            else _component(model, "model")
+        vae = Path(vae_override) if vae_override else _component(model, "vae")
+        diffusion = enc = uncond = t5xxl = clip_l = llm_vision = None
+        if model_path is None or not Path(model_path).is_file():
+            raise sdcpp.EngineError(
+                f"“{model.name}”: checkpoint missing. Download it "
+                "(Model catalog tab) or supply a local file.")
+    else:
+        model_path = None
+        diffusion = Path(diffusion_override) if diffusion_override else _component(model, "diffusion")
+        vae = Path(vae_override) if vae_override else _component(model, "vae")
+        enc = Path(encoder_override) if encoder_override else _component(model, "text_encoder")
+        uncond = _component(model, "uncond")
+        t5xxl = _component(model, "t5xxl")
+        clip_l = _component(model, "clip_l")
+        # Projecteur vision (mmproj) : chargé UNIQUEMENT quand une image de
+        # référence est fournie (édition Krea 2 / Ostris Edit) — inutile en
+        # text-to-image pur, et ça évite son coût mémoire.
+        llm_vision = _component(model, "text_encoder_vision") if want_vision else None
+        # On exige UNIQUEMENT les composants que le modèle déclare : certains
+        # modèles peuvent ne pas avoir de VAE, ou utiliser t5xxl/clip_l au lieu
+        # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
+        declared = {c.role for c in model.components}
+        need: dict[str, "Path | None"] = {"diffusion": diffusion}
+        if "vae" in declared:
+            need["vae"] = vae
+        if "text_encoder" in declared:
+            need["text_encoder"] = enc
+        if "t5xxl" in declared:
+            need["t5xxl"] = t5xxl
+        if "clip_l" in declared:
+            need["clip_l"] = clip_l
+        absent = [role for role, p in need.items()
+                  if p is None or not Path(p).is_file()]
+        if absent:
+            raise sdcpp.EngineError(
+                f"“{model.name}”: missing files ({', '.join(absent)}). "
+                "Download the model (Model catalog tab) or supply valid "
+                "local files.")
+
+    return {"model_path": model_path, "diffusion": diffusion, "vae": vae,
+            "enc": enc, "uncond": uncond, "t5xxl": t5xxl, "clip_l": clip_l,
+            "llm_vision": llm_vision}
+
+
+def adetailer_command(model_id: str, source: Path, output: Path,
+                      detector: Path, prompt: str = "", negative: str = "",
+                      denoise: float = 0.4, steps: int = 0, seed: int = -1,
+                      extra: dict | None = None) -> list[str]:
+    """Commande `sd-cli -M adetailer` : détecter, redessiner, recoller.
+
+    Le modèle, sa quantification et le placement mémoire viennent du MÊME
+    chemin que la génération normale (`resolve_model_files` + `memory_args`).
+    C'est voulu : la zone redessinée doit sortir du modèle qui a fait l'image,
+    sinon le raccord se voit — et une seconde copie de cette résolution
+    dériverait, comme celle du serveur résident l'avait fait.
+    """
+    prefs = settings.load_prefs()
+    sd_cli = settings.find_sd_cli()
+    if sd_cli is None:
+        raise sdcpp.EngineError("The sd-cli binary was not found. "
+                                "Run install.bat.")
+    if not sdcpp.adetailer_supported(sd_cli):
+        raise sdcpp.EngineError(
+            "Your sd.cpp engine does not know ADetailer yet (the `--ad-model` "
+            "option). Run update-engine.bat, then restart the application.")
+    model = registry.get_base_model(model_id, prefs)
+    if model is None:
+        raise sdcpp.EngineError(f"Unknown model: {model_id}")
+    files = resolve_model_files(model)
+    flags, gpu_index = _resolved_flags(prefs)
+    d = dict(model.defaults)
+
+    req = GenRequest(
+        model_path=files["model_path"], diffusion_model=files["diffusion"],
+        vae=files["vae"], text_encoder=files["enc"],
+        uncond_model=files["uncond"], t5xxl=files["t5xxl"],
+        clip_l=files["clip_l"],
+        prompt=prompt, negative=negative,
+        steps=int(steps or d.get("steps", 8) or 8),
+        cfg_scale=float(d.get("cfg_scale", 1.0)),
+        sampler=d.get("sampler", "euler"), schedule=d.get("schedule", ""),
+        seed=int(seed), strength=float(denoise),
+        flags=flags, gpu_index=gpu_index,
+        params_backend=(prefs.get("params_backend") or ""),
+    )
+
+    cmd = [str(sd_cli), "-M", "adetailer",
+           "-i", str(source), "-o", str(output),
+           "--ad-model", str(detector)]
+    if req.model_path:
+        cmd += ["-m", str(req.model_path)]
+    else:
+        cmd += ["--diffusion-model", str(req.diffusion_model)]
+        if req.uncond_model:
+            cmd += ["--uncond-diffusion-model", str(req.uncond_model)]
+        if req.text_encoder:
+            cmd += ["--llm", str(req.text_encoder)]
+        if req.t5xxl:
+            cmd += ["--t5xxl", str(req.t5xxl)]
+        if req.clip_l:
+            cmd += ["--clip_l", str(req.clip_l)]
+    if req.vae:
+        cmd += ["--vae", str(req.vae)]
+    cmd += ["-p", req.prompt, "--steps", str(req.steps),
+            "--cfg-scale", str(req.cfg_scale),
+            "--sampling-method", req.sampler,
+            "--strength", f"{req.strength:.2f}", "-s", str(req.seed)]
+    if req.negative and req.cfg_scale > 1.0:
+        cmd += ["-n", req.negative]
+    if req.schedule:
+        cmd += ["--scheduler", req.schedule]
+    cmd += sdcpp.memory_args(sd_cli, req)
+    if extra:
+        cmd += ["--extra-ad-args",
+                ",".join(f"{k}={v}" for k, v in extra.items() if v != "")]
+    cmd += ["-v"]
+    return cmd
+
+
 def generate(
     model_id: str,
     prompt: str,
@@ -236,49 +371,13 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
-    # Famille « checkpoint complet » : un seul fichier via -m.
-    has_full = any(c.role == "model" for c in model.components)
-    if has_full:
-        model_path = Path(diffusion_override) if diffusion_override \
-            else _component(model, "model")
-        vae = Path(vae_override) if vae_override else _component(model, "vae")
-        diffusion = enc = uncond = t5xxl = clip_l = llm_vision = None
-        if model_path is None or not Path(model_path).is_file():
-            raise sdcpp.EngineError(
-                f"“{model.name}”: checkpoint missing. Download it "
-                "(Model catalog tab) or supply a local file.")
-    else:
-        model_path = None
-        diffusion = Path(diffusion_override) if diffusion_override else _component(model, "diffusion")
-        vae = Path(vae_override) if vae_override else _component(model, "vae")
-        enc = Path(encoder_override) if encoder_override else _component(model, "text_encoder")
-        uncond = _component(model, "uncond")
-        t5xxl = _component(model, "t5xxl")
-        clip_l = _component(model, "clip_l")
-        # Projecteur vision (mmproj) : chargé UNIQUEMENT quand une image de
-        # référence est fournie (édition Krea 2 / Ostris Edit) — inutile en
-        # text-to-image pur, et ça évite son coût mémoire.
-        llm_vision = _component(model, "text_encoder_vision") if ref_image else None
-        # On exige UNIQUEMENT les composants que le modèle déclare : certains
-        # modèles peuvent ne pas avoir de VAE, ou utiliser t5xxl/clip_l au lieu
-        # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
-        declared = {c.role for c in model.components}
-        need: dict[str, "Path | None"] = {"diffusion": diffusion}
-        if "vae" in declared:
-            need["vae"] = vae
-        if "text_encoder" in declared:
-            need["text_encoder"] = enc
-        if "t5xxl" in declared:
-            need["t5xxl"] = t5xxl
-        if "clip_l" in declared:
-            need["clip_l"] = clip_l
-        absent = [role for role, p in need.items()
-                  if p is None or not Path(p).is_file()]
-        if absent:
-            raise sdcpp.EngineError(
-                f"“{model.name}”: missing files ({', '.join(absent)}). "
-                "Download the model (Model catalog tab) or supply valid "
-                "local files.")
+    files = resolve_model_files(model, diffusion_override, vae_override,
+                                encoder_override, want_vision=bool(ref_image))
+    model_path, diffusion, vae = (files["model_path"], files["diffusion"],
+                                  files["vae"])
+    enc, uncond = files["enc"], files["uncond"]
+    t5xxl, clip_l, llm_vision = (files["t5xxl"], files["clip_l"],
+                                 files["llm_vision"])
 
     flags, gpu_index = _resolved_flags(prefs)
     loras = loras or []

@@ -82,6 +82,7 @@ The exact tab tree, since two of the six are containers:
   - [🌱 Restore (SeedVR2)](#-restore-seedvr2-3b--7b)
   - [🔍 High resolution (Flux.2)](#-high-resolution-flux2-as-its-own-upscaler)
   - [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer)
+  - [🖐️ Details — hands and faces](#-details--hands-faces-and-anything-a-detector-finds)
   - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
 - [Outpaint](#outpaint)
 - [Image → 3D](#image--3d)
@@ -1165,6 +1166,54 @@ our NumPy pin.
 
 ⚠️ CodeFormer is **non-commercial** (S-Lab License 1.0).
 
+### 🖐️ Details — hands, faces, and anything a detector finds
+
+Finds a region with a **YOLOv8 detector**, redraws just that region with **your
+own generation model**, and blends it back. Native to sd.cpp (`-M adetailer`) —
+no PyTorch, no add-on beyond a 6 MB detector.
+
+**This is the only tool here that repairs hands.** GFPGAN and RestoreFormer are
+trained on faces and can do nothing else, and a hand with six fingers has
+nothing to *restore* — it has to be redrawn. That is also the honest limit of
+this tool: on a **face**, prefer [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer),
+because restoring keeps the person and redrawing can quietly change them.
+
+Run it **last**, after the upscale, for the same reason as the face restorer:
+the region is bigger, so it is better detected and better blended.
+
+**Installing the detectors is the awkward part, and it is handled once.**
+sd.cpp will not read Ultralytics `.pt` files — it needs a safetensors with its
+own tensor names and BatchNorm already fused into the convolutions, and nobody
+publishes those. The conversion needs `ultralytics`, which is AGPL-3.0, pulls
+opencv/pandas/scipy and wants a NumPy the other add-ons do not have; installing
+it beside them would cause exactly the breakage `maintenance.bat` spends its
+time reporting. So the one-click install builds a **throwaway environment,
+converts, and deletes it**: about 12 MB of detectors stay, and nothing
+permanent — nor anything AGPL — is added to the application.
+
+Four detectors, all YOLOv8 **detection** models from
+[`Bingsu/adetailer`](https://huggingface.co/Bingsu/adetailer): faces and hands,
+each in a fast and a more accurate variant. The `-seg` segmentation models and
+the YOLOv9 ones in that same repo are deliberately **not** offered — sd.cpp
+does not support them, so listing them would guarantee a failure on the first
+click.
+
+| Control | What it does |
+| --- | --- |
+| **Generation model** | the region is redrawn by this model — use the one that made the image, or the seam shows |
+| **What to look for** | which detector runs (faces / hands) |
+| **Prompt for the region** | *optional*, and it describes the **region**, not the picture |
+| **How much it redraws** | 0.4 is the reference. Below 0.3 it barely changes anything; above 0.6 the region stops matching its surroundings |
+| **Confidence** | lower finds more, including things that are not hands |
+| **Padding** | context given to the model — too little and it redraws a hand without a wrist |
+| **Blend feather** | width of the join with the untouched image |
+| **Keep only the N largest** | ignore the small detections; 0 keeps all |
+
+Regions are processed **one after another**, each result feeding the next, and
+the seed is incremented per region. Requires a recent engine: on an `sd-cli`
+that predates `--ad-model`, the tab says so and points at `update-engine.bat`
+instead of failing at the first click.
+
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
 Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
 SDXL img2img at low denoise. The model stays **resident** on the GPU so tiles are
@@ -1404,6 +1453,7 @@ subprocesses so torch DLLs never lock the UI process):
 | **🔍 High resolution** | Flux.2 as its own upscaler ([Upscaling](#-high-resolution-flux2-as-its-own-upscaler)) | none — uses your model |
 | **🌱 Restore** | SeedVR2 3B/7B ([Upscaling](#-restore-seedvr2-3b--7b)) | isolated venv + GGUF |
 | **🙂 Faces** | GFPGAN · RestoreFormer++ · CodeFormer ([Upscaling](#-faces-gfpgan--restoreformer--codeformer)) | ~1.5 GB, five weights |
+| **🖐️ Details** | redraws hands / faces found by a detector ([below](#-details--hands-faces-and-anything-a-detector-finds)) | ~12 MB, native engine |
 | **✨ SDXL upscale** | creative, tile-by-tile ([Upscaling](#-creative-sdxl-ultimate-sd-upscale)) | ~9.5 GB with ControlNet |
 
 Every generation tab has a **Send to Toolkit** control that pushes the selected

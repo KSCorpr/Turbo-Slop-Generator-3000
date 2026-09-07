@@ -515,9 +515,13 @@ def build_manage_tab():
                 "faithful.\n- **Restore (SeedVR2)** — one-step diffusion "
                 "restoration, 3B or 7B.\n- **Faces** — GFPGAN, "
                 "RestoreFormer++ or CodeFormer on the detected faces only.\n  "
-                "Run it last.\n- **Creative upscale (SDXL)** — tiled img2img "
+                "Run it last.\n- **Details (ADetailer)** — the only tool "
+                "that repairs HANDS: a YOLOv8 detector finds the region and "
+                "your own generation model redraws it, natively in sd.cpp. On "
+                "a face prefer *Faces*, which restores instead of "
+                "redrawing.\n- **Creative upscale (SDXL)** — tiled img2img "
                 "that openly invents detail.\n\nEach tool installs in one "
-                "click (PyTorch, on demand).")
+                "click (PyTorch on demand — *Details* needs none).")
 
         with gr.Accordion("🔄 Update the app",
                           open=False):
