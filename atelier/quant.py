@@ -16,6 +16,25 @@ ORDER = [
 _BY_LEN = sorted(ORDER, key=len, reverse=True)
 
 
+def shift(q: str | None, rungs: int) -> str | None:
+    """Décale une quantification de `rungs` crans sur l'échelle.
+
+    Le profil automatique déduit la quantification de la VRAM en supposant un
+    modèle de la taille de Flux.2 ou Krea 2 (9B+). Un modèle nettement plus
+    petit rentre bien plus haut sur l'échelle : sur 12 Go, un 6B tient en Q8_0
+    là où la règle générale n'aurait proposé que Q5. Sans ce décalage, ajouter
+    un petit modèle au catalogue reviendrait à le brider.
+
+    Le décalage est BORNÉ aux extrémités : mieux vaut le meilleur cran
+    disponible qu'une erreur, et c'est de toute façon le repli tolérant de
+    `best()` qui tranche ensuite face aux fichiers réellement publiés.
+    """
+    i = _idx(q)
+    if i is None or not rungs:
+        return q
+    return ORDER[max(0, min(len(ORDER) - 1, i + int(rungs)))]
+
+
 def find_quant(name: str) -> str | None:
     up = name.upper()
     for q in _BY_LEN:

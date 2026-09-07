@@ -100,7 +100,9 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             if "{enc_quant}" in template:
                 q = q_enc
             elif "{quant}" in template:
-                q = q_diff
+                # `quant_bias` : ce modèle est-il plus petit (ou plus gros) que
+                # ce que l'échelle VRAM suppose ? Voir quant.shift().
+                q = quant.shift(q_diff, int(spec.get("quant_bias") or 0))
             else:
                 q = None
             comps.append(Component(role, spec["repo"], template, q,

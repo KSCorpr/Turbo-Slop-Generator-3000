@@ -176,6 +176,56 @@ base_models:
     vram_min_gb: 12
 
 
+  # --------------------------------------------------------------------------
+  #  Z-Image Turbo — le plus léger du catalogue, et le seul en Apache-2.0
+  #  de bout en bout (modèle + encodeur + VAE). 6B distillé, 8 pas, CFG 1.0.
+  # --------------------------------------------------------------------------
+  - id: z-image-turbo
+    name: "Z-Image Turbo"
+    family: z_image
+    tags: [rapide, distillé, apache-2.0]
+    description: >
+      Z-Image Turbo (Tongyi-MAI, **6B distillé**) en GGUF — 8 pas, CFG 1.0,
+      photoréalisme et rendu de texte bilingue EN/ZH. **Le plus léger du
+      catalogue** : 6,6 Go en Q8_0, soit un cran de qualité de plus que Krea 2
+      sur la même carte (11–12 Go). Encodeur **Qwen3-4B-Instruct** (via --llm,
+      déchargé en RAM) + VAE Flux. **Licence Apache-2.0 de bout en bout** —
+      modèle, encodeur et VAE — donc sans restriction pour un usage commercial.
+    sources:
+      diffusion:
+        repo: leejet/Z-Image-Turbo-GGUF
+        match: "z_image_turbo-{quant}.gguf"
+        quantizable: true
+        # 6B au lieu de 9B+ : sans ce décalage l'échelle VRAM, calibrée sur
+        # Flux.2 / Krea 2, brimerait le modèle de trois crans (Q5 au lieu de Q8
+        # sur 12 Go). Voir quant.shift().
+        quant_bias: 3
+      text_encoder:
+        repo: unsloth/Qwen3-4B-Instruct-2507-GGUF
+        match: "Qwen3-4B-Instruct-2507-{enc_quant}.gguf"
+        quantizable: true
+      vae:
+        # Miroir Comfy-Org, et PAS black-forest-labs/FLUX.1-schnell : ce
+        # dernier est « gated » et bloquerait le téléchargement 1 clic sur une
+        # acceptation de licence. Même fichier, même licence Apache-2.0.
+        repo: Comfy-Org/z_image_turbo
+        match: "*vae/ae.safetensors"
+    defaults:
+      steps: 8
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: false
+    presets:
+      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
+      - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
+      - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+    vram_min_gb: 6
+
+
+
 # ============================================================================
 #  Upscalers ESRGAN GGUF — agrandissement SIMPLE, natif sd.cpp (--mode upscale)
 #  Réseaux ESRGAN (2x/4x) : déterministe, 100% GPU, aucun PyTorch ni prompt.

@@ -15,7 +15,7 @@ elles suffisent à classer tout le reste :
    ignoré, quel que soit l'échantillonneur.
 
 3. **Ils tournent en TRÈS PEU DE PAS** — 4 pour Flux.2 Klein, 8 pour Krea 2
-   Turbo. Deux conséquences : les méthodes ANCESTRALES réinjectent du bruit à
+   Turbo et Z-Image Turbo. Deux conséquences : les méthodes ANCESTRALES réinjectent du bruit à
    chaque pas et n'ont pas le temps de reconverger ; les méthodes MULTI-PAS
    doivent d'abord accumuler un historique d'évaluations, qui n'existe presque
    pas sur un budget aussi court.
@@ -41,7 +41,9 @@ _VERDICT = {
 
 # clé -> (libellé, résumé, avantage, inconvénient, {famille: niveau})
 #
-# `flux2` = Flux.2 Klein (4 pas) · `krea2` = Krea 2 Turbo (8 pas).
+# `flux2` = Flux.2 Klein (4 pas) · `krea2` = Krea 2 Turbo (8 pas)
+# · `z_image` = Z-Image Turbo (8 pas). Les trois sont en FLOW_PRED côté
+# sd.cpp et distillés à CFG 1.0 : les mêmes familles de samplers tombent.
 SAMPLERS: dict[str, tuple] = {
     "euler": (
         "Euler",
@@ -51,7 +53,7 @@ SAMPLERS: dict[str, tuple] = {
         "models.",
         "No refinement: over MANY steps other methods beat it — but that is "
         "not the regime we are in.",
-        {"flux2": BEST, "krea2": BEST}),
+        {"flux2": BEST, "krea2": BEST, "z_image": BEST}),
     "euler_a": (
         "Euler Ancestral",
         "Euler plus a fresh injection of noise at every step.",
@@ -60,85 +62,85 @@ SAMPLERS: dict[str, tuple] = {
         "The injected noise then has to be reconverged, which takes a "
         "comfortable step budget. Too short: a soft or noisy render. And no "
         "two renders are ever alike.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "heun": (
         "Heun",
         "Euler with a correction: two evaluations per step.",
         "A more accurate trajectory per step.",
         "**Twice as slow** for the same step count. When steps are scarce, "
         "that budget is better spent on extra Euler steps.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "dpm2": (
         "DPM2",
         "A second-order method, two evaluations per step.",
         "Good per-step accuracy on classic models.",
         "The same doubled cost as Heun; it takes enough steps for the gain to "
         "show.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
     "dpm++2s_a": (
         "DPM++ 2S Ancestral",
         "Second order, single-step memory, with ancestral noise.",
         "Well regarded on SD1.5/SDXL at 20-30 steps.",
         "It stacks the two flaws that matter here: doubled cost AND "
         "unreconverged ancestral noise.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "dpm++2m": (
         "DPM++ 2M",
         "Multistep: it reuses the previous evaluation instead of computing a new one.",
         "The best quality/time ratio of the lot… from about fifteen steps up.",
         "Its history only exists after the 2nd step: on a very short run, a "
         "good part of it happens without one.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "dpm++2mv2": (
         "DPM++ 2M v2",
         "A DPM++ 2M variant with a revised step computation.",
         "Fixes some v1 artefacts on the first steps.",
         "Same limit: multistep needs steps.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "dpm++2m_sde": (
         "DPM++ 2M SDE",
         "DPM++ 2M in stochastic form (noise at every step).",
         "Richer texture on long sampling runs.",
         "Stochastic: the same step requirement as the ancestral ones, and a "
         "non-reproducible render.",
-        {"flux2": BAD, "krea2": MEH}),
+        {"flux2": BAD, "krea2": MEH, "z_image": MEH}),
     "dpm++2m_sde_bt": (
         "DPM++ 2M SDE (Brownian)",
         "A Brownian-tree variant: the noise becomes reproducible.",
         "Recovers the reproducibility the plain SDE version loses.",
         "Still stochastic in principle: it needs steps.",
-        {"flux2": BAD, "krea2": MEH}),
+        {"flux2": BAD, "krea2": MEH, "z_image": MEH}),
     "ipndm": (
         "iPNDM",
         "Improved pseudo-multistep, with no added noise.",
         "Sober and deterministic; quality climbs from about ten steps up.",
         "A history to build, like every multistep method.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "ipndm_v": (
         "iPNDM v",
         "iPNDM with variable coefficients.",
         "Slightly more stable than iPNDM on irregular schedules.",
         "Same reservation about the step count.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "lcm": (
         "LCM",
         "The sampler for models distilled **by Latent Consistency**.",
         "Excellent — on an LCM model.",
-        "Neither Flux.2 Klein nor Krea 2 Turbo is LCM-distilled. Applying its "
-        "trajectory to them gives a washed-out render.",
-        {"flux2": BAD, "krea2": BAD}),
+        "None of our models is LCM-distilled. Applying its trajectory to "
+        "them gives a washed-out render.",
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "ddim_trailing": (
         "DDIM Trailing",
         "DDIM with “trailing” timestep alignment.",
         "Useful on models whose end of trajectory is poorly sampled.",
         "Designed for classic diffusion; moot on flow matching.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
     "tcd": (
         "TCD",
         "Like LCM: reserved for models distilled **in TCD**.",
         "Very few steps — on a TCD model.",
         "Ours are not distilled that way; it washes the render out.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "res_multistep": (
         "Res Multistep",
         "An exponential multistep integrator.",
@@ -146,27 +148,27 @@ SAMPLERS: dict[str, tuple] = {
         "Multistep: hobbled when steps are missing. The most credible "
         "candidate for trying something other than Euler as soon as there are "
         "some.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "res_2s": (
         "Res 2S",
         "A single-step, second-order exponential integrator.",
         "Accurate from the very first steps, with no history to build — which "
         "makes this one compatible with a tight budget.",
         "Two evaluations per step: for the same wall time, Euler does twice as many.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
     "er_sde": (
         "ER SDE",
         "An exactly reversible SDE solver.",
         "The most rigorous of the stochastic methods.",
         "Stochastic: it needs steps to show what it can do.",
-        {"flux2": BAD, "krea2": MEH}),
+        {"flux2": BAD, "krea2": MEH, "z_image": MEH}),
     "euler_cfg_pp": (
         "Euler CFG++",
         "Euler with the “CFG++” guidance correction.",
         "Removes the over-saturation caused by a high CFG.",
         "**Both of our models run at CFG 1.0**: there is no guidance to "
         "correct. This variant has no business here.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "euler_a_cfg_pp": (
         "Euler Ancestral CFG++",
         "The ancestral version of the above: CFG++ correction plus a noise "
@@ -175,7 +177,7 @@ SAMPLERS: dict[str, tuple] = {
         "the ancestral noise, which Euler Ancestral already provides.",
         "It stacks the uselessness of CFG++ at CFG 1.0 with ancestral noise, "
         "which needs a comfortable step budget to settle.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "euler_ge": (
         "Euler GE",
         "Euler with gradient extrapolation (the `gamma` parameter).",
@@ -183,13 +185,13 @@ SAMPLERS: dict[str, tuple] = {
         "the lot explicitly aimed at that regime.",
         "Not exposed here: `gamma` is set through `--extra-sample-args`, and "
         "without it the effect is marginal.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
     "lms": (
         "LMS (linear multi-step)",
         "Classic linear multistep (`lms_divisions`, default 1000).",
         "A recent sd.cpp addition; a method proven on long runs.",
         "Multistep: without a real step budget, the history never exists.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
 }
 
 # clé -> (libellé, résumé, avantage, inconvénient, {famille: niveau})
@@ -200,81 +202,81 @@ SCHEDULES: dict[str, tuple] = {
         "Always consistent with the model: `flux2` for Flux.2 Klein, "
         "`discrete` for Krea 2. This is the setting sd.cpp documents.",
         "None — unless you want to experiment knowingly.",
-        {"flux2": BEST, "krea2": BEST}),
+        {"flux2": BEST, "krea2": BEST, "z_image": BEST}),
     "discrete": (
         "Discrete",
         "A uniform spread over the model's sigmas.",
         "Neutral and unsurprising. This is what “Auto” picks on Krea 2.",
         "Nothing in particular; simply not tuned for any one model.",
-        {"flux2": OK, "krea2": BEST}),
+        {"flux2": OK, "krea2": BEST, "z_image": BEST}),
     "karras": (
         "Karras",
         "A spread that concentrates the steps towards the low sigmas.",
         "The reference on SD1.5 / SDXL, where it gains a lot.",
         "Designed for **EDM epsilon-prediction diffusion**. Our models are "
         "flow matching: the curve does not match the trajectory.",
-        {"flux2": BAD, "krea2": MEH}),
+        {"flux2": BAD, "krea2": MEH, "z_image": MEH}),
     "exponential": (
         "Exponential",
         "Exponential decay of the sigmas.",
         "Simple, occasionally useful on v-prediction models.",
         "The same mismatch as Karras with respect to flow matching.",
-        {"flux2": BAD, "krea2": MEH}),
+        {"flux2": BAD, "krea2": MEH, "z_image": MEH}),
     "ays": (
         "AYS (Align Your Steps)",
         "A spread optimised by NVIDIA for **small step budgets**.",
         "Designed for exactly the 8-12 step regime — the idea is sound here.",
         "Its tables are calibrated on SD1.5/SDXL, not on our models: the "
         "transfer is plausible but not guaranteed. Worth trying on Krea 2.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "gits": (
         "GITS",
         "A spread derived from a graph search.",
         "Good published results at low step counts.",
         "Same reservation as AYS: calibrated elsewhere.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "smoothstep": (
         "Smoothstep",
         "A curve smoothed at both ends.",
         "Soft transitions, few jolts at the start of the run.",
         "A subtle effect; nothing that makes up for a model-appropriate scheduler.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
     "sgm_uniform": (
         "SGM Uniform",
         "Uniform, in the style of the SGM implementations.",
         "Close to Discrete, predictable behaviour.",
         "No identified advantage on our models.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
     "simple": (
         "Simple",
         "An elementary linear spread.",
         "Robust, parameter-free. The default for DDIM Trailing.",
         "Coarse when the steps are few.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
     "kl_optimal": (
         "KL Optimal",
         "A spread minimising a KL divergence along the trajectory.",
         "Theoretically well founded, correct at medium step counts.",
         "No demonstrated gain when steps are scarce.",
-        {"flux2": MEH, "krea2": OK}),
+        {"flux2": MEH, "krea2": OK, "z_image": OK}),
     "lcm": (
         "LCM",
         "The spread for Latent Consistency models.",
         "Indispensable — with the LCM sampler.",
         "Outside that pairing it crushes the trajectory and washes the render out.",
-        {"flux2": BAD, "krea2": BAD}),
+        {"flux2": BAD, "krea2": BAD, "z_image": BAD}),
     "bong_tangent": (
         "Bong Tangent",
         "A tangent curve, very pronounced.",
         "An occasionally interesting stylistic effect.",
         "Empirical, with no grounding for our models.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
     "flux2": (
         "Flux.2",
         "A spread **cut for Flux.2**.",
         "What “Auto” selects on Flux.2 Klein: the right choice, made explicit.",
         "On Krea 2, nothing says it transfers.",
-        {"flux2": BEST, "krea2": MEH}),
+        {"flux2": BEST, "krea2": MEH, "z_image": MEH}),
     "flux": (
         "Flux",
         "A sigma spread cut for the **Flux.1** models, with the shift "
@@ -283,27 +285,27 @@ SCHEDULES: dict[str, tuple] = {
         "gives a slightly more contrasted render on close-ups.",
         "Flux.2 has its own; using the Flux.1 one amounts to picking the "
         "previous version of a bespoke setting.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
     "beta": (
         "Beta",
         "A spread following a Beta law (`alpha`, `beta` parameters).",
         "Highly tunable — through `--extra-sample-args`.",
         "Without tuning its parameters, no benefit over Discrete.",
-        {"flux2": MEH, "krea2": MEH}),
+        {"flux2": MEH, "krea2": MEH, "z_image": MEH}),
     "logit_normal": (
         "Logit Normal",
         "A logit-normal spread, the one used to train many flow models.",
         "Consistent with how these models were trained — the most defensible "
         "avenue after “Auto”.",
         "Its parameters (`mu`, `std`) are not exposed here.",
-        {"flux2": OK, "krea2": OK}),
+        {"flux2": OK, "krea2": OK, "z_image": OK}),
 }
 
 
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2")
+FAMILIES = ("flux2", "krea2", "z_image")
 
 
 def _family(model_family: str) -> str:
@@ -375,12 +377,16 @@ _ADVICE = {
     "krea2": "Over 8 steps the margin is a little wider: `Res Multistep`, "
              "`DPM++ 2M` and the `AYS` scheduler (designed for small step "
              "budgets) are worth a side-by-side try at a fixed seed.",
+    "z_image": "Over 8 steps the margin is a little wider: `Res Multistep`, "
+               "`DPM++ 2M` and the `AYS` scheduler (designed for small step "
+               "budgets) are worth a side-by-side try at a fixed seed.",
 }
 
 
 # (nom affiché, pas, CFG) par famille documentée.
 _MODEL = {
     "flux2": ("Flux.2 Klein", "4", "1.0"),
+    "z_image": ("Z-Image Turbo", "8", "1.0"),
     "krea2": ("Krea 2 Turbo", "8", "1.0"),
 }
 

@@ -41,8 +41,11 @@ XANAX_STYLE = (
 )
 
 # Format 4:3 imposé par le brief, sur la grille NATIVE de chaque modèle (32 px
-# pour Flux.2, 64 px pour Krea 2 — sortir de la grille dégrade le rendu).
-XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896)}
+# pour Flux.2, 64 px pour Krea 2, 16 px pour Z-Image — sortir de la grille
+# dégrade le rendu). 1152×896 tombe juste sur les grilles de 64 ET de 16, d'où
+# la même paire pour les deux derniers.
+XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896),
+              "z_image": (1152, 896)}
 
 # --------------------------------------------------------------------------- #
 #  DE QUOI ON PART : une phrase de la vie courante, pas une description
@@ -113,11 +116,12 @@ def build_prompt(subject: str) -> str:
     return f"{XANAX_STYLE}, {(subject or '').strip().strip(',')}".strip(", ")
 
 
-# Modèles proposés dans l'onglet, du plus rapide au plus lourd. Un SEUL onglet
-# pour les deux : le style est identique, seul le moteur change — deux onglets
-# jumeaux, c'était deux fois le même écran à maintenir et une case de plus à
-# lire dans la barre.
-XANAX_MODELS = [("⚡ Krea 2 Turbo", "krea2-turbo"),
+# Modèles proposés dans l'onglet, du plus léger au plus lourd. Un SEUL onglet
+# pour tous : le style est identique, seul le moteur change — des onglets
+# jumeaux, c'était le même écran à maintenir plusieurs fois et autant de cases
+# de plus à lire dans la barre.
+XANAX_MODELS = [("🟢 Z-Image Turbo", "z-image-turbo"),
+                ("⚡ Krea 2 Turbo", "krea2-turbo"),
                 ("🟣 Flux.2 Klein 9B", "flux2-klein-9b")]
 
 
@@ -128,6 +132,22 @@ def _model_info(model_id: str):
     d = dict(model.defaults) if model else {}
     w, h = _size_for(family)
     return model, family, d, w, h, int(d.get("steps", 8) or 8)
+
+
+def _default_model() -> str:
+    """Le premier modèle DÉJÀ INSTALLÉ, sinon le premier de la liste.
+
+    L'ordre de `XANAX_MODELS` va du plus léger au plus lourd ; s'en servir tel
+    quel comme valeur par défaut ferait tomber sur « à télécharger » les
+    utilisateurs qui ont l'autre modèle depuis toujours. On ouvre donc sur ce
+    qui peut générer tout de suite.
+    """
+    prefs = settings.load_prefs()
+    for _lbl, mid in XANAX_MODELS:
+        model = registry.get_base_model(mid, prefs)
+        if model is not None and registry.model_is_ready(model):
+            return mid
+    return XANAX_MODELS[0][1]
 
 
 def _recap_for(model_id: str) -> str:
@@ -159,8 +179,8 @@ def build_xanax_tab(title: str = "💊 Xanax"):
             with gr.Column(scale=3):
                 model_pick = gr.Radio(
                     choices=[(t(lbl), mid) for lbl, mid in XANAX_MODELS],
-                    value=XANAX_MODELS[0][1], label="Model")
-                model_state = gr.Markdown(_recap_for(XANAX_MODELS[0][1]),
+                    value=_default_model(), label="Model")
+                model_state = gr.Markdown(_recap_for(_default_model()),
                                           elem_classes="hint")
                 prompt = gr.Textbox(
                     label="What you did", lines=3,

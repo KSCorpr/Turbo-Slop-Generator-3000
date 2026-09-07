@@ -48,6 +48,20 @@ RATIOS_KREA2: dict[str, tuple[int, int]] = {
     "Vertical 9:16 — 768×1344": (768, 1344),
     "Custom (sliders)": (0, 0),
 }
+# Z-Image : latent 16 canaux, patch 2 -> grille de 16 px (VAE ×8 × patch 2).
+# Résolution native 1024². Les mêmes ratios que Krea 2 tombent tous sur 16 px,
+# donc on garde une grille familière plutôt que d'inventer des tailles.
+RATIOS_ZIMAGE: dict[str, tuple[int, int]] = {
+    "Square 1:1 — 1024×1024": (1024, 1024),
+    "Square 1:1 — 1536×1536 (2K)": (1536, 1536),
+    "Landscape 3:2 — 1216×832": (1216, 832),
+    "Portrait 2:3 — 832×1216": (832, 1216),
+    "Landscape 4:3 — 1152×896": (1152, 896),
+    "Portrait 3:4 — 896×1152": (896, 1152),
+    "Wide 16:9 — 1344×768": (1344, 768),
+    "Vertical 9:16 — 768×1344": (768, 1344),
+    "Custom (sliders)": (0, 0),
+}
 _CUSTOM_LABEL = "Custom (sliders)"
 
 # Entrée « neutre » en tête du menu des styles perso : la sélectionner RETIRE
@@ -70,6 +84,8 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     # une autre demain) partage l'architecture du Turbo, donc ses résolutions
     # natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
+    if family.startswith("z_image"):
+        return RATIOS_ZIMAGE
     return RATIOS_KREA2 if family.startswith("krea2") else RATIOS_FLUX2
 
 

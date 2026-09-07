@@ -14,7 +14,8 @@
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B** and **Krea 2 Turbo**, with an
+CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Krea 2 Turbo** and **Z-Image
+Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
 editing, three upscalers, and a utility toolkit.
@@ -32,17 +33,19 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
-**Six root tabs**, arranged by what they do rather than by what they are: what
+**Seven root tabs**, arranged by what they do rather than by what they are: what
 *produces* an image stays at the root, what *retouches* one lives under **Tools**,
 what administers the machine lives under **System**. (Eleven root tabs used to
 overflow into a `…` menu, which made Manage and Settings invisible at a glance —
-so the grouping is not decoration.)
+so the grouping is not decoration. Three of the seven are generation tabs, one
+per model; adding a model adds a tab, never a setting.)
 
 | Tab | What it does |
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for either engine |
+| 🟢 **Z-Image Turbo** | the lightest of the three (6B, 8 steps) · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
+| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for any of the three engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
@@ -50,7 +53,8 @@ so the grouping is not decoration.)
 The exact tab tree, since two of the six are containers:
 
 ```
-🟣 Flux.2 Klein 9B   ⚡ Krea 2 Turbo   💊 Xanax   📚 Model Catalog
+🟣 Flux.2 Klein 9B   ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
+💊 Xanax   📚 Model Catalog
 🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Image → 3D
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
 
@@ -388,6 +392,8 @@ best on these):
   1568×672… (+ a 2K option).
 - **Krea 2** — 1024 family (multiples of 64): 1024², 1216×832, 1152×896,
   1344×768… (+ a 2K option).
+- **Z-Image Turbo** — 1024 family on a **16-px grid** (patch size 2 × VAE
+  factor 8): 1024², 1216×832, 1152×896, 1344×768… (+ a 2K option).
 
 Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
 height (256–2048, step 16). Loading a reference image auto-fits width/height to
@@ -430,7 +436,8 @@ its aspect.
 ## Xanax tab
 
 **💊 Xanax** takes **one sentence about your day and returns one photo**. Pick
-the model with a radio button (Krea 2 Turbo or Flux.2 Klein); everything else is
+the model with a radio button (Z-Image Turbo, Krea 2 Turbo or Flux.2 Klein —
+the tab opens on the first one you already have installed); everything else is
 compiled in. No style dropdown, no system-prompt box, no preset menu — **the
 style cannot be changed**. That is the point of the tab; the normal generation
 tabs are there when you want to tune something.
@@ -438,7 +445,8 @@ tabs are there when you want to tune something.
 The fixed style: amateur snapshot, provincial France, 1995–2005, cheap
 point-and-shoot, ordinary people, unstaged, always overcast, no grain, no filter,
 no post-processing, **4:3** on each model's native grid (1184×880 for Flux.2,
-1152×896 for Krea 2).
+1152×896 for Krea 2 and for Z-Image — that pair happens to sit on both the
+64-px and the 16-px grid).
 
 ### Write a diary line, not an image description
 This is the part that decides whether the result works:
@@ -1776,6 +1784,28 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
+**Z-Image Turbo** (family `z_image`, sd.cpp)
+- diffusion — [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (6B distilled, 8 steps, CFG 1.0)
+- text encoder — [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (via `--llm`, offloaded to RAM)
+- VAE — [`Comfy-Org/z_image_turbo`](https://huggingface.co/Comfy-Org/z_image_turbo) (`split_files/vae/ae.safetensors`)
+
+> **Why this model earns a tab.** Two reasons, and neither is “one more model”.
+>
+> *It is the only chain that is Apache-2.0 from end to end* — diffusion model,
+> text encoder and VAE. Flux.2 Klein and Krea 2 both ship under
+> non-commercial or bespoke licences, which matters if you sell what you
+> generate. Note the VAE comes from `Comfy-Org/z_image_turbo` and **not** from
+> `black-forest-labs/FLUX.1-schnell`: that repo is gated, so a first run would
+> stop on an access request. The Comfy-Org mirror is the same 335 MB file,
+> ungated.
+>
+> *It is 6B, not 9B.* On a 12 GB card it lands on **Q8_0 (6.58 GB)** — the top
+> of the ladder, not a compromise. This needed one fix in the catalog: the
+> VRAM → quantization ladder was calibrated on 9B-and-up models, so a 6B model
+> came out three rungs too low. The entry therefore carries `quant_bias: 3`,
+> which shifts it back up; the ladder itself is unchanged for every other
+> model.
+
 
 > Why the Klein source changed too: the previous repo
 > (`leejet/FLUX.2-klein-9B-GGUF`) publishes **only Q4_0 and Q8_0**. Measured
@@ -2129,6 +2159,12 @@ authors. Please read and respect each model's own license on its page.
   ([official GGUF](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF));
   **WAN 2.1** VAE by **Alibaba / Wan team**, repackaged by
   [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
+- **Z-Image Turbo** — base model by **Tongyi-MAI (Alibaba)**, Apache-2.0; GGUF
+  by [leejet](https://huggingface.co/leejet/Z-Image-Turbo-GGUF); text encoder
+  **Qwen3-4B-Instruct-2507** by **Alibaba / Qwen team**
+  ([GGUF by Unsloth](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF));
+  VAE repackaged by
+  [Comfy-Org](https://huggingface.co/Comfy-Org/z_image_turbo).
 - **TRELLIS.2 / trellis.cpp** — the native engine by
   [pwilkin](https://github.com/pwilkin/trellis.cpp); GGUF weights by
   [ilintar](https://huggingface.co/ilintar/trellis2-gguf); TRELLIS by

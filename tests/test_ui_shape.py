@@ -28,12 +28,17 @@ import gradio as gr  # noqa: E402
 from atelier.engine import tools  # noqa: E402
 
 
-def _build(all_installed: bool):
+def _build(all_installed: bool, titles: list | None = None):
     """Construit l'application en simulant une machine donnée.
 
     On bascule les sondes `*_is_installed` : c'est exactement ce dont dépend la
     visibilité des blocs d'installation, et c'est la seule différence entre le
     premier lancement et la vie courante.
+
+    `titles`, s'il est fourni, recueille le titre de chaque onglet de
+    GÉNÉRATION. On les reconnaît en enveloppant leur constructeur plutôt qu'en
+    devinant d'après un libellé : renommer « 🎨 Styles » ne doit pas transformer
+    silencieusement un test de forme en test qui ne mesure plus rien.
     """
     saved = {}
     if all_installed:
@@ -41,10 +46,17 @@ def _build(all_installed: bool):
             if name.endswith("_is_installed"):
                 saved[name] = getattr(tools, name)
                 setattr(tools, name, lambda *a, **k: True)
+    import app
+    real = app.build_generative_tab
+    if titles is not None:
+        def spy(model_id, title, *a, **k):
+            titles.append(title)
+            return real(model_id, title, *a, **k)
+        app.build_generative_tab = spy
     try:
-        import app
         return app.build_app()
     finally:
+        app.build_generative_tab = real
         for name, fn in saved.items():
             setattr(tools, name, fn)
 
@@ -57,10 +69,30 @@ class AccordionBudgetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fresh = _build(all_installed=False)
-        cls.settled = _build(all_installed=True)
+        cls.generative = []
+        cls.settled = _build(all_installed=True, titles=cls.generative)
 
     def _visible(self, demo):
         return [a for a in _accordions(demo) if getattr(a, "visible", True)]
+
+    def _root_tab(self, block) -> str:
+        """Onglet RACINE dans lequel un bloc finit par se trouver.
+
+        C'est l'unité qui compte : personne ne voit les 42 replis de
+        l'application, on en voit ceux de l'écran où l'on est.
+        """
+        node, outermost = block.parent, None
+        while node is not None:
+            if isinstance(node, gr.Tab):
+                outermost = node
+            node = node.parent
+        return outermost.label if outermost is not None else ""
+
+    def _per_tab(self, demo) -> dict[str, list]:
+        out: dict[str, list] = {}
+        for acc in self._visible(demo):
+            out.setdefault(self._root_tab(acc), []).append(acc.label)
+        return out
 
     def test_installers_disappear_once_the_tool_is_there(self):
         """Le cœur du problème : sept blocs « Installer … » qui restaient à vie.
@@ -76,12 +108,58 @@ class AccordionBudgetTests(unittest.TestCase):
         self.assertGreaterEqual(fresh - settled, 5)
 
     def test_the_settled_machine_has_few_things_to_unfold(self):
-        """C'est l'état dans lequel l'utilisateur passe sa vie."""
-        visible = self._visible(self.settled)
+        """C'est l'état dans lequel l'utilisateur passe sa vie.
+
+        Le budget se compte PAR ÉCRAN, pas sur l'application entière. Un total
+        global se serait révélé être un compteur de modèles : chaque nouvel
+        onglet de génération reproduit à l'identique une forme déjà acceptée
+        (mêmes six replis) sans rien ajouter à ce que l'utilisateur a sous les
+        yeux, et le seuil aurait été relevé d'un cran à chaque fois — c'est-à-
+        dire jamais franchi, donc inutile. Ce qui doit faire du bruit, c'est
+        un SEPTIÈME repli sur un écran ; c'est ce que ce test mesure.
+        """
+        for tab, labels in sorted(self._per_tab(self.settled).items()):
+            self.assertLessEqual(
+                len(labels), 14,
+                f"trop de blocs à déplier dans « {tab} » :\n" +
+                "\n".join(f"  - {lbl}" for lbl in labels))
+
+    def test_the_generation_tabs_stay_the_lightest_screen(self):
+        """L'écran où l'on passe sa journée est celui qui doit le moins replier.
+
+        Les onglets de génération sortent tous du même constructeur : ils
+        doivent donc offrir le même NOMBRE de replis. Les libellés, eux, ont le
+        droit de différer là où le modèle diffère vraiment — Flux.2 édite une
+        image de référence quand Krea 2 et Z-Image partent d'une image de
+        départ. Ce qu'on refuse, c'est un repli de plus dans un seul onglet :
+        le début d'une interface qui change de forme selon le modèle.
+        """
+        self.assertGreaterEqual(len(self.generative), 2,
+                                "aucun onglet de génération détecté")
+        per_tab = self._per_tab(self.settled)
+        counts = {title: len(per_tab.get(title, []))
+                  for title in self.generative}
+        self.assertLessEqual(max(counts.values()), 7, counts)
+        self.assertEqual(
+            len(set(counts.values())), 1,
+            "les onglets de génération ne replient pas pareil : " +
+            ", ".join(f"{t} = {n}" for t, n in counts.items()))
+
+    def test_the_rest_of_the_app_does_not_grow_with_the_catalogue(self):
+        """Le total HORS génération : lui n'a aucune raison d'augmenter.
+
+        Ajouter un modèle ajoute un onglet, pas un réglage système. Si ce
+        chiffre bouge, c'est une vraie dérive et non une répétition.
+        """
+        per_tab = self._per_tab(self.settled)
+        rest = {tab: labels for tab, labels in per_tab.items()
+                if tab not in set(self.generative)}
+        total = sum(len(labels) for labels in rest.values())
         self.assertLessEqual(
-            len(visible), 36,
-            "trop de blocs à déplier :\n" +
-            "\n".join(f"  - {a.label}" for a in visible))
+            total, 26,
+            "trop de replis hors génération :\n" +
+            "\n".join(f"  {tab} : {len(labels)}"
+                       for tab, labels in sorted(rest.items())))
 
     def test_no_accordion_lives_inside_another(self):
         """AUCUN accordéon imbriqué : le seuil est zéro, pas « raisonnable ».

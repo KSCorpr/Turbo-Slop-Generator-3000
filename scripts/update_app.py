@@ -315,7 +315,7 @@ def update(check_only: bool = False) -> int:
 
     commit = _latest_commit()
     if commit:
-        _say(f"{INFO}dernier commit : {commit['sha']} — {commit['title']}")
+        _say(f"{INFO}latest commit: {commit['sha']} — {commit['title']}")
 
     _say("Downloading the code from GitHub…")
     try:
@@ -405,7 +405,7 @@ def update(check_only: bool = False) -> int:
     _say("")
     _say(OK + f"update finished ({len(written)} file(s) written).")
     _say(INFO + "undo it with: update.bat --rollback")
-    _say(INFO + "relancez run.bat.")
+    _say(INFO + "start the app again with run.bat.")
     return 0
 
 
