@@ -99,6 +99,37 @@ def sizes_gb(model: catalog.TorchModel, files: dict) -> dict[str, float]:
             out[name] = path.stat().st_size / (1024 ** 3) if path else 0.0
         except OSError:
             out[name] = 0.0
+    out.update(_supplement_sizes(model))
+    return out
+
+
+def _supplement_sizes(model: catalog.TorchModel) -> dict[str, float]:
+    """Le poids des composants qui NE viennent pas du GGUF.
+
+    Sans eux le planificateur ne voyait que le transformer. Sur Krea 2 il
+    annonçait « 8,3 Go, tout tient sur 12 » pour un pipeline qui en pèse près
+    de 18 une fois l'encodeur compté — et promettait la résidence complète
+    juste avant de manquer de mémoire. Un plan qui ignore la moitié du modèle
+    n'est pas optimiste, il est faux.
+    """
+    if model.supplement is None:
+        return {}
+    root = model.supplement.local_dir
+    out: dict[str, float] = {}
+    for name in ("text_encoder", "vae"):
+        folder = root / name
+        if not folder.is_dir():
+            #  Absent = inconnu, pas vide. Zéro ferait croire que ça tient.
+            out[name] = 0.0
+            continue
+        total = 0
+        for f in folder.rglob("*"):
+            if f.is_file() and f.suffix in (".safetensors", ".bin", ".gguf"):
+                try:
+                    total += f.stat().st_size
+                except OSError:
+                    pass
+        out[name] = total / (1024 ** 3)
     return out
 
 
@@ -146,6 +177,24 @@ def _source(model: catalog.TorchModel) -> str | Path:
     """
     local = model.local_dir
     return local if (local / "model_index.json").is_file() else model.repo
+
+
+def token_advice(model: catalog.TorchModel) -> str:
+    """Le message quand un jeton manque — et où aller le mettre.
+
+    Surtout pas « huggingface-cli login ». Cette application tourne sur un
+    Python portable, sans console et sans PATH : la commande n'existe pas pour
+    celui qui lit le message, et l'envoyer dans un terminal qu'il n'a pas est
+    une impasse polie.
+
+    Fonction séparée pour être vérifiable : la consigne est le genre de détail
+    qu'on recopie d'une version à l'autre sans le relire.
+    """
+    return (f"[torch] “{model.id}” needs a Hugging Face token: "
+            f"{model.needs_token}."
+            "\n→ Accept the licence on that model's page, then paste a read "
+            "token in Settings → 🌍 Theme and accounts. "
+            "“🔍 Check what is still missing” confirms it.")
 
 
 def _resolve_mode(model: catalog.TorchModel, init_image, ref_image, mask_image,
@@ -296,11 +345,8 @@ def generate(
     if model.from_gguf:
         _log(log, "[torch] weights come from the files already installed for "
                   "stable-diffusion.cpp — nothing extra to download.")
-    reason = model.needs_token
-    if reason:
-        _log(log, f"[torch] “{model.id}” needs a Hugging Face token: {reason}. "
-                  "Accept the licence on the model page, then run "
-                  "`huggingface-cli login` once.")
+    if model.needs_token:
+        _log(log, token_advice(model))
 
     mode = _resolve_mode(model, init_image, ref_image, mask_image, log)
     cls = model.pipeline_for(mode)

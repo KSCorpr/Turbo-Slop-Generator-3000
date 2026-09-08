@@ -953,6 +953,67 @@ class Krea2AvailabilityTests(unittest.TestCase):
         with patch.object(registry, "_torch_engine_active", return_value=True):
             self.assertIs(registry._torch_repo_present("krea2-turbo"), False)
 
+    def test_the_planner_counts_the_supplement_too(self):
+        """Le bug que le journal d'un vrai lancement a montré.
+
+        Le planificateur ne mesurait que `parts`, c'est-à-dire le transformer.
+        Sur Krea 2 il annonçait « 8,3 Go, tout tient sur 12 » pour un pipeline
+        qui en pèse dix-sept une fois l'encodeur compté, et promettait la
+        résidence complète juste avant de manquer de mémoire. Un plan qui
+        ignore la moitié du modèle n'est pas optimiste, il est faux.
+        """
+        import os
+        import tempfile
+        from unittest.mock import patch
+        from atelier import settings
+        from atelier.torchengine import backend, placement
+        model = catalog.get("krea2-turbo")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            for sub, size in (("text_encoder", 8_875_715_136),
+                              ("vae", 507_591_892)):
+                folder = root / sub
+                folder.mkdir(parents=True)
+                weights = folder / "model.safetensors"
+                weights.write_bytes(b"")
+                os.truncate(weights, size)
+            with patch.object(settings, "model_repo_dir", return_value=root):
+                sizes = backend.sizes_gb(model, {})
+        self.assertIn("text_encoder", sizes)
+        self.assertGreater(sizes["text_encoder"], 8.0)
+        sizes["transformer"] = 8.3
+        plan = placement.plan_from_files(12.0, sizes, "ampere")
+        self.assertEqual(plan.mode, placement.MODEL_OFFLOAD,
+                         "17 GB cannot be resident on a 12 GB card")
+
+    def test_a_missing_supplement_is_unknown_and_not_empty(self):
+        """Zéro ferait croire que ça tient. On n'achète pas le chemin rapide
+        sur une pièce qu'on n'a pas encore vue."""
+        import tempfile
+        from unittest.mock import patch
+        from atelier import settings
+        from atelier.torchengine import backend, placement
+        model = catalog.get("krea2-turbo")
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(settings, "model_repo_dir",
+                              return_value=pathlib.Path(tmp)):
+                sizes = backend.sizes_gb(model, {})
+        sizes["transformer"] = 8.3
+        self.assertEqual(sizes["text_encoder"], 0.0)
+        self.assertEqual(
+            placement.plan_from_files(24.0, sizes, "ada").mode,
+            placement.MODEL_OFFLOAD)
+
+    def test_the_token_message_does_not_send_anyone_to_a_console(self):
+        """Cette application tourne sur un Python portable, sans console ni
+        PATH : `huggingface-cli` n'existe pas pour celui qui lit le message,
+        et l'envoyer dans un terminal qu'il n'a pas est une impasse polie."""
+        from atelier.torchengine import backend
+        advice = backend.token_advice(catalog.get("krea2-turbo"))
+        self.assertNotIn("huggingface-cli", advice)
+        self.assertIn("Settings", advice)
+        self.assertIn("licence", advice)
+
     def test_the_other_two_models_need_no_supplement(self):
         for model_id in ("z-image-turbo", "flux2-klein-9b"):
             self.assertFalse(catalog.get(model_id).needs_supplement, model_id)
