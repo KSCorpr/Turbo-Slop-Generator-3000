@@ -337,6 +337,12 @@ def generate(
     # les configurations d'architecture partent chercher un dépôt qui peut
     # être fermé, et un jeton collé dans les réglages doit agir sans redémarrer.
     settings.configure_hf_env()
+    #  AVANT tout import de diffusers : les deux variables sont lues une seule
+    #  fois, au chargement de son module de quantification. Les poser ensuite
+    #  n'aurait aucun effet, et l'utilisateur croirait avoir activé quelque
+    #  chose.
+    kernels_on = bool(prefs.get("torch_gguf_kernels"))
+    runtime.configure_kernels(kernels_on)
 
     gpu = _gpu(prefs)
     files = component_files(model, prefs) if model.from_gguf else {}
@@ -345,6 +351,7 @@ def generate(
     if model.from_gguf:
         _log(log, "[torch] weights come from the files already installed for "
                   "stable-diffusion.cpp — nothing extra to download.")
+        _log(log, runtime.dequant_report(kernels_on))
     if model.needs_token:
         _log(log, token_advice(model))
 

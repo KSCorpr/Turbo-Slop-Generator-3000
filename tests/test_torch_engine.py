@@ -853,6 +853,62 @@ class ConfigLocationTests(unittest.TestCase):
         self.assertIn("config", seen)
 
 
+class DequantSpeedTests(unittest.TestCase):
+    """Ce qui décide de la vitesse, et que personne ne devine.
+
+    Mesuré chez un utilisateur : 19 secondes par pas sur Krea 2. La cause
+    n'est ni la carte ni le placement — c'est que diffusers, par défaut,
+    réexpanse le tenseur de poids ENTIER en opérations torch ordinaires à
+    CHAQUE passe avant. Huit pas, huit réexpansions de huit gigaoctets.
+    """
+
+    def test_both_variables_are_set_together(self):
+        """Le piège : `kernels` installé et la variable de confiance absente
+        fait LEVER diffusers à l'import. On ne peut donc pas poser l'une sans
+        l'autre — ni laisser la première simplement absente."""
+        import os
+        from unittest.mock import patch
+        from atelier.torchengine import runtime
+        with patch.dict(os.environ, {}, clear=False):
+            runtime.configure_kernels(True)
+            self.assertEqual(os.environ[runtime.KERNEL_ENV_ENABLE], "true")
+            self.assertEqual(os.environ[runtime.KERNEL_ENV_TRUST], "true")
+            runtime.configure_kernels(False)
+            self.assertEqual(os.environ[runtime.KERNEL_ENV_ENABLE], "false",
+                             "must be explicitly false, not absent")
+
+    def test_the_default_does_not_run_third_party_code(self):
+        """Exécuter du code tiers téléchargé doit rester un choix explicite."""
+        from atelier import settings
+        self.assertFalse(settings.DEFAULT_PREFS["torch_gguf_kernels"])
+
+    def test_the_slow_path_says_it_is_slow_and_where_to_change_it(self):
+        """Sans cette ligne, rien n'explique la lenteur — et l'utilisateur
+        conclut que le moteur PyTorch est inutilisable."""
+        from atelier.torchengine import runtime
+        said = runtime.dequant_report(False)
+        self.assertIn("every step", said)
+        self.assertIn("Settings", said)
+
+    def test_asking_for_kernels_without_the_package_is_named(self):
+        from unittest.mock import patch
+        from atelier.torchengine import runtime
+        with patch.object(runtime, "kernels_available", return_value=False):
+            said = runtime.dequant_report(True)
+        self.assertIn("missing", said)
+        self.assertIn("setup-torch-engine", said)
+
+    def test_the_installer_ships_the_package_the_toggle_needs(self):
+        """La case ne peut rien activer si le paquet n'est pas là — et
+        l'installer ne le rend pas actif pour autant : c'est la variable
+        d'environnement qui décide."""
+        import sys
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
+                               / "scripts"))
+        import setup_torch_engine as ste
+        self.assertTrue(any(pkg.startswith("kernels") for pkg in ste.STACK))
+
+
 class Krea2GgufMappingTests(unittest.TestCase):
     """Le convertisseur écrit à la main — vérifié exhaustivement, hors ligne.
 

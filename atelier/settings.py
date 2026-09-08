@@ -100,6 +100,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     # catalogue GGUF sont ouverts, et c'est délibéré. Il ne sert qu'au moteur
     # PyTorch, pour les rares métadonnées publiées en dépôt fermé.
     "hf_token": "",
+    # Noyaux CUDA de déquantification GGUF pour le moteur PyTorch. DÉSACTIVÉ
+    # par défaut : les activer télécharge et exécute du code tiers depuis le
+    # Hub. Voir `torchengine.runtime.configure_kernels`.
+    "torch_gguf_kernels": False,
     # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",

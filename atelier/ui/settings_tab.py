@@ -347,6 +347,43 @@ def build_settings_tab():
             engine.change(_apply_engine, inputs=engine,
                           outputs=[headline, engine_said])
 
+            # ---------------------------------------------------------- #
+            #  Vitesse du moteur PyTorch
+            # ---------------------------------------------------------- #
+            gr.Markdown(t(
+                "**⚡ GGUF CUDA kernels** — this is what makes the PyTorch "
+                "engine slow or fast, and it is **off by default**.\n\n"
+                "diffusers can read GGUF two ways. Without this, it rebuilds "
+                "every weight tensor in plain torch **at every step** — on a "
+                "large model that is measurable in tens of seconds per step. "
+                "With it, a CUDA kernel does the same work on the "
+                "card.\n\nThe reason it is not simply on: that kernel is "
+                "**downloaded from the Hugging Face Hub and executed**. It is "
+                "third-party code (`Isotr0py/ggml`), not part of diffusers. "
+                "Slowness is an annoyance; running someone else's code "
+                "without saying so is not. Your call."))
+            kernels_cb = gr.Checkbox(
+                value=bool(prefs.get("torch_gguf_kernels")),
+                label=t("Use the GGUF CUDA kernels (downloads and runs "
+                        "third-party code)"))
+            kernels_said = gr.Markdown("", elem_classes="hint", visible=False)
+
+            def _apply_kernels(on: bool):
+                _save(torch_gguf_kernels=bool(on))
+                from ..torchengine import runtime as torch_runtime
+                note = ""
+                if on and not torch_runtime.kernels_available():
+                    note = (" — but the `kernels` package is missing: run "
+                            "`setup-torch-engine.bat` again.")
+                return gr.update(
+                    value=(t("⚡ Fast dequantization on the GPU.") if on
+                           else t("🐢 Dequantization in plain torch, at every "
+                                  "step — the safe, slow path.")) + note,
+                    visible=True)
+
+            kernels_cb.change(_apply_kernels, inputs=kernels_cb,
+                              outputs=[kernels_said])
+
             gr.Markdown(t("**Forced quantization** — “auto” = let the app "
                           "decide from the card."))
             with gr.Row():

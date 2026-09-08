@@ -81,9 +81,14 @@ DIFFUSERS = "diffusers==0.40.0"
 #                      et c'est une entrée du menu, donc un clic possible ;
 #   · sentencepiece -> tokeniseurs de la famille Qwen ;
 #   · safetensors   -> format des poids non quantifiés (les VAE).
-STACK = ("gguf>=0.10.0", "transformers>=4.51", "accelerate>=1.0",
-         "peft>=0.14", "bitsandbytes>=0.47", "scipy>=1.11", "sentencepiece",
-         "safetensors>=0.4", "protobuf")
+#   · kernels       -> le noyau CUDA de déquantification GGUF. Installé mais
+#                      INACTIF : diffusers ne s'en sert que si
+#                      `DIFFUSERS_GGUF_CUDA_KERNELS` est posée, ce que fait la
+#                      case des réglages. Sans lui, la case ne pourrait rien
+#                      activer ; avec lui et sans la case, rien ne change.
+STACK = ("gguf>=0.10.0", "kernels>=0.9", "transformers>=4.51",
+         "accelerate>=1.0", "peft>=0.14", "bitsandbytes>=0.47", "scipy>=1.11",
+         "sentencepiece", "safetensors>=0.4", "protobuf")
 
 
 def sh(cmd: list[str]) -> None:

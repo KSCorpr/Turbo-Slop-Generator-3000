@@ -52,6 +52,70 @@ def torch():
 
 _KREA_REGISTERED = False
 
+#  Ce qui décide de la VITESSE, et personne ne le devine.
+#
+#  diffusers sait déquantifier le GGUF de deux façons. Par défaut il prend la
+#  lente : `GGUFLinear.forward_native` réexpanse le tenseur de poids ENTIER, en
+#  opérations torch ordinaires, À CHAQUE PASSE AVANT. Sur un modèle de 8 Go et
+#  8 pas, c'est huit réexpansions complètes — mesuré chez un utilisateur à
+#  19 secondes par pas là où stable-diffusion.cpp calcule directement sur les
+#  poids quantifiés avec ses propres noyaux.
+#
+#  L'autre voie existe (`ops.ggml_dequantize`, un noyau CUDA) mais elle est
+#  fermée par DEUX verrous, et le premier est un défaut, pas un oubli :
+#    · `DIFFUSERS_GGUF_CUDA_KERNELS` vaut « false » si on ne la pose pas ;
+#    · `DIFFUSERS_TRUST_REMOTE_KERNELS` doit être posée aussi, parce que le
+#      noyau est TÉLÉCHARGÉ DEPUIS LE HUB et EXÉCUTÉ. C'est du code tiers.
+#
+#  D'où une préférence, éteinte par défaut : la lenteur est un désagrément,
+#  exécuter du code tiers sans le dire est autre chose. Et un piège à éviter —
+#  si le paquet `kernels` est installé et que la variable de confiance manque,
+#  diffusers LÈVE à l'import. On pose donc toujours les deux ensemble.
+KERNEL_ENV_ENABLE = "DIFFUSERS_GGUF_CUDA_KERNELS"
+KERNEL_ENV_TRUST = "DIFFUSERS_TRUST_REMOTE_KERNELS"
+KERNEL_REPO = "Isotr0py/ggml"
+
+
+def configure_kernels(enabled: bool) -> None:
+    """Pose les deux variables, dans le même sens, avant tout import.
+
+    Les poser après n'a aucun effet : diffusers les lit une fois, au chargement
+    du module de quantification.
+    """
+    import os
+    if enabled:
+        os.environ[KERNEL_ENV_ENABLE] = "true"
+        os.environ[KERNEL_ENV_TRUST] = "true"
+    else:
+        #  Explicitement « false » et pas « absent » : le paquet `kernels`
+        #  peut arriver comme dépendance d'autre chose, et diffusers lèverait
+        #  alors à l'import faute de variable de confiance.
+        os.environ[KERNEL_ENV_ENABLE] = "false"
+
+
+def kernels_available() -> bool:
+    from importlib.util import find_spec
+    try:
+        return find_spec("kernels") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def dequant_report(enabled: bool) -> str:
+    """Une ligne de journal qui dit pourquoi c'est rapide ou lent."""
+    if not enabled:
+        return ("[torch] GGUF weights are expanded in plain torch at every "
+                "step — the slow path, and the default. Settings → 🔧 Expert "
+                "→ “GGUF CUDA kernels” makes it several times faster, at the "
+                "cost of running a third-party kernel from the Hub.")
+    if not kernels_available():
+        return ("[torch] GGUF CUDA kernels asked for but the “kernels” "
+                "package is missing — run setup-torch-engine.bat again. "
+                "Falling back to the slow path.")
+    return (f"[torch] GGUF CUDA kernels active ({KERNEL_REPO}) — weights are "
+            "dequantized on the GPU instead of being rebuilt in torch at "
+            "every step.")
+
 
 def diffusers():
     """diffusers, avec le chargeur Krea 2 branché au premier appel.
