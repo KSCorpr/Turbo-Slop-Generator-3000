@@ -1,0 +1,97 @@
+# ============================================================================
+#  Turbo Slop Generator 3000 — Catalogue PYTORCH (branche Test7000)
+# ----------------------------------------------------------------------------
+#  Le catalogue principal (models.yaml) décrit des fichiers GGUF pour sd.cpp :
+#  un fichier par rôle, quantifié selon la VRAM. Rien de tout ça ne se
+#  transpose. Un modèle « diffusers » est un DÉPÔT ENTIER — un dossier par
+#  composant, un index qui les relie, une classe de pipeline qui sait les
+#  assembler — et la quantification n'est plus un fichier qu'on choisit mais
+#  une transformation faite au chargement.
+#
+#  D'où ce second fichier plutôt qu'un champ de plus dans le premier : les deux
+#  moteurs ne décrivent pas la même chose, et les mélanger aurait donné une
+#  entrée illisible où la moitié des champs ne sert jamais.
+#
+#  Les identifiants (`id`) sont ceux du catalogue principal : c'est ce qui
+#  permet de garder LA MÊME interface, les mêmes onglets et les mêmes réglages
+#  au-dessus d'un moteur entièrement différent.
+#
+#  Tout ce qui est écrit ici a été RELEVÉ, pas supposé :
+#    · `repo` et `gated`  -> API du Hub (`/api/models/<id>`) ;
+#    · `pipelines`        -> `model_index.json` du dépôt pour le mode principal,
+#                            et la liste des classes exportées par diffusers
+#                            0.40.0 pour les autres ;
+#    · les tailles        -> somme des blobs publiés par l'API du Hub.
+#
+#  Un mode ABSENT de `pipelines` n'existe pas chez diffusers pour ce modèle.
+#  C'est une information, pas un oubli : l'interface le grise au lieu de
+#  proposer un bouton qui échouera.
+# ============================================================================
+
+models:
+
+  # --------------------------------------------------------------------------
+  - id: z-image-turbo
+    repo: Tongyi-MAI/Z-Image-Turbo
+    min_diffusers: "0.36.0"
+    gated: false
+    license: apache-2.0
+    pipelines:
+      text_to_image: ZImagePipeline
+      image_to_image: ZImageImg2ImgPipeline
+      inpaint: ZImageInpaintPipeline
+    negative_prompt: true
+    # Poids du dépôt tels que publiés, mesurés via l'API du Hub. Le chiffre
+    # compte : en GGUF ce modèle pèse 6,6 Go tout compris. Le même modèle en
+    # diffusers en pèse 33 — c'est le prix d'entrée de cette branche, et il ne
+    # se négocie pas (le dépôt est publié en fp32).
+    download_gb: 32.9
+    # Taille RÉSIDENTE une fois chargé en bf16 : transformer ~12,3 Go +
+    # encodeur ~8 Go + VAE ~0,2 Go.
+    resident_bf16_gb: 20.5
+    # Le plus gros sous-modèle. C'est lui qui décide si la décharge par module
+    # peut fonctionner, donc lui qu'on compare au budget de la carte.
+    largest_module_bf16_gb: 12.3
+
+  # --------------------------------------------------------------------------
+  - id: krea2-turbo
+    repo: krea/Krea-2-Turbo
+    min_diffusers: "0.36.0"
+    # « gated: auto » sur le Hub : le dépôt est public mais réclame une
+    # acceptation de licence ET un jeton. C'est exactement la friction que le
+    # catalogue GGUF évitait en passant par des miroirs — ici il n'y en a pas.
+    gated: true
+    license: other
+    pipelines:
+      # diffusers 0.40.0 n'exporte QUE la classe texte→image pour Krea 2 :
+      # ni img2img, ni inpaint, ni édition. L'onglet « image de départ » est
+      # donc sans objet sur ce modèle tant que l'amont n'en publie pas.
+      text_to_image: Krea2Pipeline
+    negative_prompt: true
+    # Non renseignées VOLONTAIREMENT : le dépôt est fermé, donc l'API du Hub ne
+    # publie pas la taille des fichiers, et un chiffre inventé ici serait pris
+    # pour une mesure. L'application le dit et mesure au téléchargement.
+    download_gb: null
+    resident_bf16_gb: null
+    largest_module_bf16_gb: null
+
+  # --------------------------------------------------------------------------
+  - id: flux2-klein-9b
+    repo: black-forest-labs/FLUX.2-klein-9B
+    min_diffusers: "0.36.0"
+    gated: true
+    license: other
+    pipelines:
+      text_to_image: Flux2KleinPipeline
+      # MÊME classe : `Flux2KleinPipeline.__call__` prend `image=` (une image
+      # ou une liste), ce qui EST le mode édition multi-références de l'onglet.
+      # Pas de classe img2img séparée, et pas de `strength` — l'image n'est pas
+      # un point de départ bruité, c'est une référence conditionnante.
+      edit: Flux2KleinPipeline
+      inpaint: Flux2KleinInpaintPipeline
+    # `__call__` n'expose pas `negative_prompt` (seulement les embeddings) :
+    # le champ est donc sans effet, exactement comme côté sd.cpp à CFG 1.0.
+    negative_prompt: false
+    download_gb: null
+    resident_bf16_gb: null
+    largest_module_bf16_gb: null
