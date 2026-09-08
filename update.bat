@@ -5,9 +5,13 @@ REM
 REM  Ne touche jamais a vos donnees : models\, loras\, outputs\, userdata\,
 REM  tools_repo\, bin\, python\ sont laisses intacts.
 REM
-REM    update.bat              met a jour
-REM    update.bat --check      dit seulement ce qui changerait
-REM    update.bat --rollback   annule la derniere mise a jour
+REM    update.bat                   met a jour (meme branche que l'install)
+REM    update.bat --check           dit seulement ce qui changerait
+REM    update.bat --rollback        annule la derniere mise a jour
+REM    update.bat --branch main     change de branche VOLONTAIREMENT
+REM
+REM  La branche suivie est affichee AVANT tout telechargement. Sans --branch,
+REM  la mise a jour reste sur la branche d'ou vient cette installation.
 REM
 REM  FERMEZ l'application avant de lancer ce script (un fichier ouvert ne peut
 REM  pas etre remplace sous Windows).

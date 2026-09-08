@@ -48,9 +48,27 @@ except Exception:  # noqa: BLE001
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "KSCorpr/Turbo-Slop-Generator-3000"
-BRANCH = "main"
-ARCHIVE = f"https://codeload.github.com/{REPO}/zip/refs/heads/{BRANCH}"
-COMMITS = f"https://api.github.com/repos/{REPO}/commits/{BRANCH}"
+
+#  LA BRANCHE DE CETTE COPIE DU CODE, et pas « la branche principale ».
+#
+#  La distinction a coûté une mauvaise surprise : ce fichier disait `main` en
+#  dur, donc une installation faite depuis une autre branche se faisait écraser
+#  par `main` au premier `update.bat`. Silencieusement, et sans retour possible
+#  autre que le rollback.
+#
+#  La valeur ci-dessous voyage AVEC le code : chaque branche porte la sienne,
+#  donc une mise à jour reste sur la branche d'où elle vient. Un test refuse
+#  qu'elle diverge du dépôt git quand il y en a un — c'est ce qui attrape la
+#  fusion malencontreuse qui ramènerait « Test7000 » sur `main`.
+DEFAULT_BRANCH = "Test7000"
+
+
+def archive_url(branch: str) -> str:
+    return f"https://codeload.github.com/{REPO}/zip/refs/heads/{branch}"
+
+
+def commits_url(branch: str) -> str:
+    return f"https://api.github.com/repos/{REPO}/commits/{branch}"
 
 MANIFEST = ROOT / "userdata" / "app-update.json"
 BACKUP_DIR = ROOT / ".update-backup"
@@ -93,14 +111,15 @@ def _fetch(url: str, timeout: int = 180) -> bytes:
         return response.read()
 
 
-def _latest_commit() -> dict:
+def _latest_commit(branch: str = DEFAULT_BRANCH) -> dict:
     """Dernier commit de la branche : sha, date, titre. {} si indisponible.
 
     Purement informatif — la mise à jour ne dépend PAS de l'API GitHub, qui
     limite les requêtes anonymes. C'est le contenu de l'archive qui fait foi.
     """
     try:
-        data = json.loads(_fetch(COMMITS, timeout=30).decode("utf-8"))
+        data = json.loads(_fetch(commits_url(branch), timeout=30)
+                          .decode("utf-8"))
         return {
             "sha": data.get("sha", "")[:12],
             "date": (data.get("commit", {}).get("author", {}) or {}).get("date", ""),
@@ -262,12 +281,17 @@ def _load_manifest() -> dict:
         return {}
 
 
-def _save_manifest(files: dict[str, bytes], commit: dict) -> None:
+def _save_manifest(files: dict[str, bytes], commit: dict,
+                   branch: str = DEFAULT_BRANCH) -> None:
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps({
         "schema": 1,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "commit": commit,
+        #  La branche d'où vient CE contenu. C'est elle qui sera suivie la
+        #  prochaine fois, et c'est ce qui rend un changement de branche
+        #  visible au lieu d'être subi.
+        "branch": branch,
         "files": sorted(files),
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -308,35 +332,63 @@ def _rollback() -> int:
     return 0
 
 
-def update(check_only: bool = False) -> int:
+def resolve_branch(asked: str | None, manifest: dict) -> tuple[str, str]:
+    """(branche à suivre, avertissement éventuel).
+
+    Trois sources, dans cet ordre : ce que l'utilisateur demande, ce que la
+    dernière mise à jour a posé, ce que dit ce fichier. La deuxième est celle
+    qui compte : elle mémorise la branche RÉELLEMENT installée, et permet de
+    remarquer qu'une archive d'une autre branche a été dépliée par-dessus.
+    """
+    recorded = str(manifest.get("branch") or "")
+    if asked:
+        return asked, ""
+    if recorded and recorded != DEFAULT_BRANCH:
+        return recorded, (
+            f"this install was updated from “{recorded}” but the code here "
+            f"says “{DEFAULT_BRANCH}”. Following “{recorded}”; pass "
+            f"--branch {DEFAULT_BRANCH} to switch on purpose.")
+    return recorded or DEFAULT_BRANCH, ""
+
+
+def update(check_only: bool = False, branch: str | None = None) -> int:
     _say("=" * 60)
     _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
 
-    commit = _latest_commit()
+    manifest = _load_manifest()
+    branch, warning = resolve_branch(branch, manifest)
+    #  Annoncée AVANT tout téléchargement. Une mise à jour qui change de
+    #  branche sans le dire est la façon la plus rapide de perdre une
+    #  installation qu'on avait montée exprès.
+    _say(f"{INFO}branch: {branch}")
+    if warning:
+        _say(WARN + warning)
+
+    commit = _latest_commit(branch)
     if commit:
         _say(f"{INFO}latest commit: {commit['sha']} — {commit['title']}")
 
     _say("Downloading the code from GitHub…")
     try:
-        blob = _fetch(ARCHIVE)
+        blob = _fetch(archive_url(branch))
         files = _archive_files(blob)
     except Exception as exc:  # noqa: BLE001
         _say(ERR + f"download failed: {exc}")
         _say("    On a corporate network, set HTTPS_PROXY before running")
         _say("    update.bat, or fetch the archive by hand:")
-        _say(f"    https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip")
+        _say(f"    https://github.com/{REPO}/archive/refs/heads/{branch}.zip")
         return 1
     _say(OK + f"archive read: {len(files)} files, "
          f"fingerprint {_sha(blob)[:12]}.")
 
-    manifest = _load_manifest()
     added, updated, removed = _plan(files, manifest)
     absent = missing_files()
 
     if not (added or updated or removed):
         _say(OK + "already up to date — no file changes.")
-        _save_manifest(files, commit or manifest.get("commit") or {})
+        _save_manifest(files, commit or manifest.get("commit") or {},
+                       branch)
         return 0
 
     _say("")
@@ -396,7 +448,7 @@ def update(check_only: bool = False) -> int:
         return 1
     _say(OK + "all the code compiles.")
 
-    _save_manifest(files, commit or {})
+    _save_manifest(files, commit or {}, branch)
     # Une seule sauvegarde conservée : celle qui précède la mise à jour.
     for old in sorted(p for p in BACKUP_DIR.iterdir() if p.is_dir()):
         if old != stamp_dir:
@@ -415,10 +467,13 @@ def main() -> int:
                     help="show what would change, without writing anything")
     ap.add_argument("--rollback", action="store_true",
                     help="undo the last update")
+    ap.add_argument("--branch", default=None,
+                    help=f"branch to update from (default: {DEFAULT_BRANCH}, "
+                         "or whatever the last update used)")
     args = ap.parse_args()
     if args.rollback:
         return _rollback()
-    return update(check_only=args.check)
+    return update(check_only=args.check, branch=args.branch)
 
 
 if __name__ == "__main__":

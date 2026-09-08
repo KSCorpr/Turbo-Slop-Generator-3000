@@ -529,8 +529,10 @@ def build_manage_tab():
                           open=False):
             gr.Markdown(
                 "**`update.bat` updates the application itself.** It "
-                "downloads the current code\nfrom GitHub and applies it in "
-                "place: it writes only the files that actually\ndiffer, "
+                "downloads the current code\nof **the branch this install "
+                "came from** — printed before anything is fetched, and "
+                "changed\nonly with `update.bat --branch <name>` — and "
+                "applies it in place: it writes only the files that actually\ndiffer, "
                 "deletes what disappeared from the project (and only files it "
                 "installed\nitself), backs up everything it replaces "
                 "(`update.bat --rollback` undoes the\nupdate), and restores "
