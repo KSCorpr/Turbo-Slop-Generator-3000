@@ -54,12 +54,14 @@ def diffusers():
     return _import("diffusers")
 
 
-#  Le socle MINIMAL pour qu'un pipeline se charge. `transformers` et
-#  `accelerate` n'en sont pas des extras : les trois modèles ont un encodeur
-#  de texte Qwen (transformers) et aucun ne tient sur 11-12 Go sans décharge
-#  (accelerate). Sans eux, `available()` dirait « installé » et le premier clic
-#  rendrait un ImportError venu du fond de diffusers.
-REQUIRED = ("torch", "diffusers", "transformers", "accelerate")
+#  Le socle MINIMAL pour qu'un pipeline se charge. Aucun de ces quatre n'est un
+#  extra : les modèles ont un encodeur de texte Qwen (transformers), leurs
+#  poids arrivent en GGUF (gguf — sans lui `GGUFQuantizationConfig` refuse), et
+#  aucun ne tient sur 11-12 Go sans décharge (accelerate, que le quantiseur
+#  GGUF exige d'ailleurs explicitement). Sans eux, `available()` dirait
+#  « installé » et le premier clic rendrait un ImportError venu du fond de
+#  diffusers.
+REQUIRED = ("torch", "diffusers", "gguf", "transformers", "accelerate")
 
 
 def available() -> bool:
@@ -236,8 +238,124 @@ def _apply_placement(pipe, plan: Plan, device: str, log=None) -> None:
         log(f"[torch] placement applied: {plan.mode}.")
 
 
+def _pipeline_class(name: str):
+    d = diffusers()
+    cls = getattr(d, name, None)
+    if cls is None:
+        raise TorchEngineError(
+            f"The installed diffusers ({getattr(d, '__version__', '?')}) has "
+            f"no “{name}”. Run setup-torch-engine.bat again to update it.")
+    return cls
+
+
+def _model_class(name: str):
+    """La classe d'un composant, chez diffusers OU chez transformers.
+
+    Un pipeline mélange les deux — le transformer et le VAE viennent de
+    diffusers, l'encodeur de texte de transformers — et rien dans le nom ne le
+    dit. On regarde donc les deux plutôt que de coder la répartition, qui
+    changerait au premier modèle dont l'encodeur n'est pas un Qwen.
+    """
+    d = diffusers()
+    cls = getattr(d, name, None)
+    if cls is not None:
+        return cls
+    tr = _import("transformers")
+    cls = getattr(tr, name, None)
+    if cls is None:
+        raise TorchEngineError(
+            f"Neither diffusers nor transformers provides “{name}”. Run "
+            "setup-torch-engine.bat again to update them.")
+    return cls
+
+
+def build_from_files(model, pipeline_cls: str, dtype, files: dict,
+                     log: Callable | None = None):
+    """Monte le pipeline à partir des fichiers DÉJÀ INSTALLÉS.
+
+    C'est le chemin normal de cette branche, et c'est celui qui la justifie :
+    les poids sont ceux que l'application a téléchargés pour
+    stable-diffusion.cpp — mêmes fichiers, même échelle de quantification,
+    aucune place supplémentaire sur le disque.
+
+    Ce qui ne vient PAS du disque tient en quelques mégaoctets : la
+    configuration d'architecture, le tokeniseur et le scheduler, pris dans le
+    dépôt de référence du modèle. On aurait pu reconstruire le tokeniseur
+    depuis les métadonnées du GGUF — transformers sait le faire — mais un
+    tokeniseur reconstruit peut différer sur des détails qu'on ne verrait
+    qu'au rendu ; celui d'origine ne peut pas.
+    """
+    d = diffusers()
+    gguf_cfg = d.GGUFQuantizationConfig(compute_dtype=dtype)
+    components: dict[str, Any] = {}
+
+    for name, part in model.parts.items():
+        path = files.get(part.role)
+        if path is None:
+            raise TorchEngineError(
+                f"“{model.id}”: the {part.role} file is missing. Download the "
+                "model from the Model catalog tab.")
+        cls = _model_class(part.cls)
+        is_gguf = str(path).lower().endswith(".gguf")
+        if log:
+            log(f"[torch] {name}: {Path(path).name}"
+                + (" (GGUF, dequantized on the fly)" if is_gguf else ""))
+        if name == "text_encoder":
+            # transformers, pas diffusers : l'encodeur se charge depuis le
+            # DOSSIER du dépôt plus le nom du fichier, et transformers
+            # reconstruit la configuration à partir des métadonnées du GGUF
+            # (`general.architecture = qwen3`, le nombre de couches, la
+            # largeur…). C'est pour ça qu'aucun `config.json` n'est requis ici.
+            components[name] = _load_text_encoder(cls, path, dtype, log)
+        elif is_gguf:
+            components[name] = cls.from_single_file(
+                str(path), quantization_config=gguf_cfg, torch_dtype=dtype,
+                **_config_kwargs(model))
+        else:
+            components[name] = cls.from_single_file(
+                str(path), torch_dtype=dtype, **_config_kwargs(model))
+
+    meta = model.config_repo or model.repo
+    tr = _import("transformers")
+    components["tokenizer"] = tr.AutoTokenizer.from_pretrained(
+        meta, subfolder="tokenizer")
+    components["scheduler"] = _load_scheduler(meta, log)
+    return _pipeline_class(pipeline_cls)(**components)
+
+
+def _config_kwargs(model) -> dict:
+    """`config=` seulement quand le repli automatique de diffusers est faux.
+
+    Pour Z-Image, diffusers retrouve tout seul `Tongyi-MAI/Z-Image-Turbo`, qui
+    est le bon dépôt et il est ouvert. Pour Flux.2 Klein son repli pointe vers
+    `black-forest-labs/FLUX.2-dev` — un AUTRE modèle — donc il faut le nommer.
+    """
+    return {"config": model.config_repo} if model.config_repo else {}
+
+
+def _load_text_encoder(cls, path: Path, dtype, log=None):
+    from pathlib import Path as _P
+    p = _P(path)
+    if p.suffix.lower() != ".gguf":
+        return cls.from_pretrained(str(p.parent), torch_dtype=dtype)
+    return cls.from_pretrained(str(p.parent), gguf_file=p.name,
+                               torch_dtype=dtype)
+
+
+def _load_scheduler(meta: str, log=None):
+    d = diffusers()
+    try:
+        return d.FlowMatchEulerDiscreteScheduler.from_pretrained(
+            meta, subfolder="scheduler")
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"[torch] scheduler config unavailable ({exc}) — using the "
+                "library default, which may not carry this model's shift.")
+        return d.FlowMatchEulerDiscreteScheduler()
+
+
 def load_pipeline(key: LoadKey, plan: Plan, source: str | Path,
-                  log: Callable | None = None):
+                  log: Callable | None = None, model=None, files=None):
     """Charge (ou réutilise) le pipeline correspondant à cette clé.
 
     Appelé sous le verrou du module. Renvoie l'objet diffusers prêt à tourner.
@@ -246,21 +364,20 @@ def load_pipeline(key: LoadKey, plan: Plan, source: str | Path,
         return _RESIDENT.pipe
 
     _RESIDENT.release("switching model or placement", log)
-    d = diffusers()
-    cls = getattr(d, key.cls, None)
-    if cls is None:
-        raise TorchEngineError(
-            f"The installed diffusers ({getattr(d, '__version__', '?')}) has "
-            f"no “{key.cls}”. Run setup-torch-engine.bat again to update it.")
     t = torch()
     dtype = getattr(t, key.dtype)
-    kwargs: dict[str, Any] = {"torch_dtype": dtype}
-    quant = _quant_config(key.quant, dtype)
-    if quant is not None:
-        kwargs["quantization_config"] = quant
-    if log:
-        log(f"[torch] loading {key.cls} from {source} …")
-    pipe = cls.from_pretrained(str(source), **kwargs)
+
+    if model is not None and model.from_gguf:
+        pipe = build_from_files(model, key.cls, dtype, files or {}, log)
+    else:
+        cls = _pipeline_class(key.cls)
+        kwargs: dict[str, Any] = {"torch_dtype": dtype}
+        quant = _quant_config(key.quant, dtype)
+        if quant is not None:
+            kwargs["quantization_config"] = quant
+        if log:
+            log(f"[torch] loading {key.cls} from {source} …")
+        pipe = cls.from_pretrained(str(source), **kwargs)
 
     device = "cuda" if key.gpu_index is None else f"cuda:{key.gpu_index}"
     if not t.cuda.is_available():

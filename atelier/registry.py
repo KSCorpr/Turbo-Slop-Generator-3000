@@ -311,7 +311,12 @@ def model_is_ready(model: BaseModel) -> bool:
     au clic, ou un « à télécharger » sur des fichiers déjà là.
     """
     if _torch_engine_active():
-        return _torch_repo_present(model.id)
+        verdict = _torch_repo_present(model.id)
+        #  None = « ce modèle se monte depuis les fichiers du catalogue » :
+        #  la réponse est alors la même que pour le moteur natif, et la
+        #  dupliquer ici serait la faire diverger un jour.
+        if verdict is not None:
+            return verdict
     return all(resolve_component_path(c) is not None
                for c in model.components if not c.optional)
 
@@ -329,15 +334,29 @@ def _torch_engine_active() -> bool:
 
 
 def _torch_repo_present(model_id: str) -> bool:
+    """« Prêt » sur le moteur PyTorch — et le plus souvent, c'est le même mot.
+
+    Depuis que le chemin GGUF existe, un modèle monté à partir des fichiers du
+    catalogue principal est prêt exactement quand il l'est pour
+    stable-diffusion.cpp : ce sont LES MÊMES FICHIERS. Rien à vérifier de plus,
+    et surtout rien à retélécharger.
+
+    Le dépôt complet ne reste vrai que pour les modèles sans chargement
+    fichier-unique en amont. Là on vérifie `model_index.json` et non le
+    dossier : diffusers écrit d'abord l'arborescence puis les poids, donc un
+    dossier existant ne prouve rien — c'est même l'état exact d'un
+    téléchargement interrompu.
+    """
     try:
         from .torchengine import catalog as torch_catalog
     except ImportError:
         return False
     entry = torch_catalog.get(model_id)
-    #  `model_index.json` et non le dossier : diffusers écrit d'abord
-    #  l'arborescence, puis les poids. Un dossier existant ne prouve rien —
-    #  c'est même l'état exact d'un téléchargement interrompu.
-    return bool(entry and (entry.local_dir / "model_index.json").is_file())
+    if entry is None:
+        return False
+    if entry.from_gguf:
+        return None  # le sentinelle « demande au chemin natif »
+    return (entry.local_dir / "model_index.json").is_file()
 
 
 def missing_components(model: BaseModel) -> list[Component]:

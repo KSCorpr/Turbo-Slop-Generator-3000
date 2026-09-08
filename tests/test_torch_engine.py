@@ -97,8 +97,45 @@ class CatalogTests(unittest.TestCase):
         """Zéro serait commode et faux : il se propagerait dans le placement
         comme un modèle qui ne pèse rien, donc qui tient partout."""
         for model in catalog.load():
-            if model.gated:
-                self.assertIsNone(model.resident_bf16_gb, model.id)
+            if model.gated and not model.from_gguf:
+                self.assertIsNone(model.full_repo_gb, model.id)
+
+    def test_the_normal_path_reuses_the_files_already_installed(self):
+        """LE point de la correction. Passer par PyTorch ne doit rien coûter
+        de plus sur le disque : diffusers lit le GGUF, et lit celui que
+        l'application a déjà téléchargé pour stable-diffusion.cpp.
+
+        Le lien entre les deux catalogues est le RÔLE du composant. S'il ne
+        correspond plus, le montage échoue au chargement — après vingt
+        secondes — au lieu d'ici.
+        """
+        from atelier import registry
+        for model in catalog.load():
+            if not model.from_gguf:
+                continue
+            base = registry.get_base_model(model.id, {})
+            declared = {c.role for c in base.components}
+            for part in model.parts.values():
+                self.assertIn(part.role, declared,
+                              f"{model.id}: role “{part.role}” is not in "
+                              "models.yaml")
+
+    def test_only_a_model_without_single_file_support_needs_a_full_repo(self):
+        """Krea 2 est le seul, et c'est un fait d'amont : diffusers 0.40
+        n'enregistre pas `Krea2Transformer2DModel` pour le chargement
+        fichier-unique."""
+        full = [m.id for m in catalog.load() if not m.from_gguf]
+        self.assertEqual(full, ["krea2-turbo"])
+
+    def test_a_token_is_asked_for_the_right_reason(self):
+        """Quelques kilo-octets de configuration et trente gigaoctets de poids
+        ne se demandent pas de la même façon."""
+        z = catalog.get("z-image-turbo")
+        self.assertEqual(z.needs_token, "", "Z-Image needs nothing")
+        flux = catalog.get("flux2-klein-9b")
+        self.assertIn("config", flux.needs_token)
+        krea = catalog.get("krea2-turbo")
+        self.assertIn("weights", krea.needs_token)
 
     def test_the_requested_mode_is_computed_before_it_is_granted(self):
         krea = catalog.get("krea2-turbo")
@@ -108,29 +145,73 @@ class CatalogTests(unittest.TestCase):
             "the request must be readable even when the model cannot serve it")
 
 
-class PlacementTests(unittest.TestCase):
-    Z = (20.5, 12.3)   # Z-Image Turbo en bf16 : pipeline entier, plus gros bloc
+class PlacementFromFilesTests(unittest.TestCase):
+    """Le chemin normal : les poids arrivent quantifiés, du disque.
 
-    def test_the_two_cards_this_project_targets_get_a_working_plan(self):
-        """11 Go (2080 Ti) et 12 Go (3060) : ni l'un ni l'autre ne doit tomber
-        sur le streaming couche par couche, qui coûte un facteur dix."""
-        for vram, arch in ((11.0, "turing"), (12.0, "ampere")):
-            p = placement.plan(vram, *self.Z, arch)
-            self.assertEqual(p.mode, placement.MODEL_OFFLOAD, f"{vram} GB")
-            self.assertEqual(p.quant, "int8", f"{vram} GB")
+    Les tailles ci-dessous sont celles des vrais fichiers que l'application
+    installe pour Z-Image Turbo sur une carte de 12 Go — diffusion Q8_0,
+    encodeur Q4_K_M, VAE en safetensors. Ce sont des mesures, pas un calcul en
+    octets par paramètre : un GGUF « _K_M » mélange les précisions par couche,
+    donc l'estimation se trompe précisément là où elle compte.
+    """
+    Z = {"transformer": 6.58, "text_encoder": 2.50, "vae": 0.34}
+
+    def test_a_twelve_gigabyte_card_keeps_everything_resident(self):
+        p = placement.plan_from_files(12.0, self.Z, "ampere")
+        self.assertEqual(p.mode, placement.FULL)
+        self.assertEqual(p.quant, "gguf")
+
+    def test_eleven_gigabytes_falls_back_to_taking_turns_not_to_streaming(self):
+        """La 2080 Ti ne tient pas les 9,4 Go d'un bloc avec la réserve, mais
+        son plus gros morceau (6,6) passe largement. Le streaming couche par
+        couche coûterait un facteur dix pour rien."""
+        p = placement.plan_from_files(11.0, self.Z, "turing")
+        self.assertEqual(p.mode, placement.MODEL_OFFLOAD)
+
+    def test_a_small_card_says_which_knob_to_turn(self):
+        """Sur 8 Go rien ne passe. Dire « c'est lent » sans dire qu'un cran de
+        quantification en dessous existe, c'est laisser l'utilisateur dans le
+        pire réglage en croyant qu'il n'y en a pas d'autre."""
+        p = placement.plan_from_files(8.0, self.Z, "ampere")
+        self.assertEqual(p.mode, placement.SEQUENTIAL_OFFLOAD)
+        self.assertIn("quantization rung", p.reason)
+
+    def test_a_missing_file_never_buys_the_fast_path(self):
+        """Un composant pas encore téléchargé pèse 0 : calculer dessus ferait
+        tenir n'importe quoi n'importe où."""
+        holes = {**self.Z, "text_encoder": 0.0}
+        p = placement.plan_from_files(12.0, holes, "ampere")
+        self.assertEqual(p.mode, placement.MODEL_OFFLOAD)
+
+    def test_the_reason_names_the_parts_and_their_weight(self):
+        line = placement.describe(
+            placement.plan_from_files(11.0, self.Z, "turing"))
+        self.assertIn("transformer 6.6", line)
+        self.assertIn("GGUF", line)
+
+    def test_forcing_a_placement_is_visible_in_the_reason(self):
+        """Le banc d'essai contourne la réserve de calcul le temps d'une
+        mesure ; un rapport qui ne le dirait pas serait faux."""
+        chosen = placement.plan_from_files(11.0, self.Z, "turing")
+        forced = placement.forced(chosen, placement.FULL)
+        self.assertEqual(forced.mode, placement.FULL)
+        self.assertIn("forced", forced.reason)
+        self.assertIs(placement.forced(chosen, ""), chosen)
+
+
+class PlacementFromRepoTests(unittest.TestCase):
+    """L'ancien chemin, qui ne sert plus qu'à Krea 2."""
+    Z = (20.5, 12.3)
+
+    def test_precision_is_only_traded_to_escape_layer_streaming(self):
+        p = placement.plan(16.0, *self.Z, "ada")
+        self.assertEqual(p.quant, "none")
+        self.assertEqual(p.mode, placement.MODEL_OFFLOAD)
 
     def test_a_big_card_keeps_full_precision_and_stays_resident(self):
         p = placement.plan(24.0, *self.Z, "ada")
         self.assertEqual(p.mode, placement.FULL)
         self.assertEqual(p.quant, "none")
-
-    def test_precision_is_only_traded_to_escape_layer_streaming(self):
-        """16 Go tient en bf16 avec la décharge par module : descendre en int8
-        pour gagner de la vitesse serait un choix qu'on n'a pas à faire à la
-        place de l'utilisateur."""
-        p = placement.plan(16.0, *self.Z, "ada")
-        self.assertEqual(p.quant, "none")
-        self.assertEqual(p.mode, placement.MODEL_OFFLOAD)
 
     def test_an_unknown_size_never_buys_the_fast_path(self):
         p = placement.plan(24.0, None, None, "ada")
@@ -434,51 +515,65 @@ class BenchmarkTests(unittest.TestCase):
         from atelier import hardware
         return (hardware.Gpu(0, "RTX 3060", vram, arch, True),)
 
-    def _modes(self, vram=12.0, arch="ampere"):
+    def _modes(self, vram=12.0, arch="ampere", sizes=None):
         from unittest.mock import patch
         from atelier import benchmark, hardware
+        from atelier.torchengine import backend
         gpus = self._gpu(vram, arch)
-        with patch.object(hardware, "detect_gpus", return_value=gpus):
+        with patch.object(hardware, "detect_gpus", return_value=gpus), \
+             patch.object(backend, "component_files", return_value={}), \
+             patch.object(backend, "sizes_gb",
+                          return_value=sizes if sizes is not None else
+                          {"transformer": 6.58, "text_encoder": 2.50,
+                           "vae": 0.34}):
             return benchmark.placement_candidates(
                 {"gpu_index": 0, "engine_backend": "torch"}, gpus)
 
     def test_the_sdcpp_profiles_are_not_offered_on_the_torch_engine(self):
         """`params_backend`, `split_mode`, auto-fit : des options d'un binaire
-        qui ne tourne pas. Les proposer aurait donné trois tirs identiques et
-        un classement tiré au sort dans le bruit."""
+        qui ne tourne pas. Les proposer aurait donné des tirs identiques et un
+        classement tiré au sort dans le bruit."""
         keys = [m.key for m in self._modes()]
         self.assertTrue(all(k.startswith("torch-") for k in keys), keys)
 
+    def test_precision_is_no_longer_a_question_to_measure(self):
+        """Elle a été tranchée au TÉLÉCHARGEMENT, par l'échelle du catalogue
+        principal. La proposer ici mesurerait un réglage qui n'existe plus."""
+        for mode in self._modes():
+            self.assertNotIn("torch_allow_quant", mode.prefs_patch)
+
     def test_the_second_profile_exists_only_when_it_differs(self):
-        """Sur une carte assez grande pour tout tenir en bf16, le plan
-        quantifié et le plan brut sont le MÊME plan : deux tirs identiques ne
-        départagent rien, donc il n'y a qu'un profil."""
-        big = [m.key for m in self._modes(vram=48.0, arch="ada")]
-        self.assertEqual(big, ["torch-planned"])
-        small = [m.key for m in self._modes(vram=12.0)]
-        self.assertEqual(len(small), 2, small)
+        """Quand le plan tient déjà tout sur la carte, forcer « tout sur la
+        carte » est le MÊME tir, et deux tirs identiques ne départagent rien."""
+        resident = [m.key for m in self._modes(vram=24.0, arch="ada")]
+        self.assertEqual(resident, ["torch-planned"])
+        tight = [m.key for m in self._modes(vram=11.0, arch="turing")]
+        self.assertEqual(tight, ["torch-planned", "torch-all-on-card"])
 
     def test_the_measured_profile_actually_changes_the_plan(self):
         """Un profil qui n'influence pas l'exécution mesurerait deux fois la
-        même chose en affirmant le contraire."""
-        from atelier import hardware
-        from atelier.torchengine import backend, catalog
-        gpu = self._gpu()[0]
-        model = catalog.get("z-image-turbo")
-        quantized = backend.plan_for(model, gpu, {"torch_allow_quant": True})
-        plain = backend.plan_for(model, gpu, {"torch_allow_quant": False})
-        self.assertNotEqual((quantized.quant, quantized.mode),
-                            (plain.quant, plain.mode))
+        même chose en affirmant le contraire.
+
+        Ce qui reste ouvert sur ce moteur est la RÉSERVE DE CALCUL : 2,5 Gio
+        estimés pour le contexte CUDA, les tampons d'attention et les latents.
+        Elle décide seule entre « tout sur la carte » et « à tour de rôle », et
+        elle n'a aucune raison d'être juste sur toutes les machines.
+        """
+        from atelier.torchengine import placement
+        sizes = {"transformer": 6.58, "text_encoder": 2.50, "vae": 0.34}
+        chosen = placement.plan_from_files(11.0, sizes, "turing")
+        forced = placement.forced(chosen, placement.FULL)
+        self.assertNotEqual(chosen.mode, forced.mode)
 
     def test_the_benchmark_cleanup_does_not_erase_the_measured_setting(self):
         """`_benchmark_prefs` efface le cache, le budget VRAM et le moteur
         résident — c'est voulu. Effacer aussi ce qu'on mesure ne le serait
         pas, et rien dans le rapport ne le dirait."""
         from atelier import benchmark
-        for mode in self._modes():
+        for mode in self._modes(vram=11.0, arch="turing"):
             merged = benchmark._benchmark_prefs({"engine_backend": "torch"},
                                                 mode.prefs_patch)
-            self.assertIn("torch_allow_quant", merged)
+            self.assertIn("torch_force_placement", merged)
 
 
 class CancelTests(unittest.TestCase):
@@ -495,21 +590,31 @@ class CancelTests(unittest.TestCase):
 
 
 class ReadinessTests(unittest.TestCase):
-    def test_ready_means_what_the_active_engine_needs(self):
-        """Le pire résultat serait un bouton « Générer » actif qui échoue au
-        clic, ou un « à télécharger » sur des fichiers déjà là."""
+    def test_ready_means_the_same_thing_on_both_engines_for_a_gguf_model(self):
+        """La conséquence la plus visible de la correction : un modèle installé
+        l'est pour les deux moteurs. Répondre autrement donnerait un « à
+        télécharger » sur des fichiers déjà là — 6,6 Go retéléchargés pour
+        rien."""
         from unittest.mock import patch
         from atelier import registry
         model = next(m for m in registry.load_base_models({})
                      if m.id == "z-image-turbo")
         with patch.object(registry, "_torch_engine_active",
                           return_value=True), \
-             patch.object(registry, "_torch_repo_present", return_value=True):
+             patch.object(registry, "resolve_component_path",
+                          return_value=pathlib.Path("x")):
             self.assertTrue(registry.model_is_ready(model))
         with patch.object(registry, "_torch_engine_active",
                           return_value=True), \
-             patch.object(registry, "_torch_repo_present", return_value=False):
+             patch.object(registry, "resolve_component_path",
+                          return_value=None):
             self.assertFalse(registry.model_is_ready(model))
+
+    def test_a_model_without_single_file_support_still_wants_its_repo(self):
+        from atelier import registry
+        self.assertIsNone(registry._torch_repo_present("z-image-turbo"),
+                          "a GGUF model must defer to the native answer")
+        self.assertIs(registry._torch_repo_present("krea2-turbo"), False)
 
     def test_a_bare_folder_is_not_a_downloaded_model(self):
         """diffusers écrit l'arborescence d'abord et les poids ensuite : un
@@ -519,11 +624,10 @@ class ReadinessTests(unittest.TestCase):
         from atelier import registry, settings
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            (root / "Tongyi-MAI__Z-Image-Turbo").mkdir()
-            with patch.object(settings, "MODELS_DIR", root), \
-                 patch.object(settings, "model_repo_dir",
+            (root / "krea__Krea-2-Turbo").mkdir()
+            with patch.object(settings, "model_repo_dir",
                               side_effect=lambda r: root / r.replace("/", "__")):
-                self.assertFalse(registry._torch_repo_present("z-image-turbo"))
-                (root / "Tongyi-MAI__Z-Image-Turbo"
+                self.assertFalse(registry._torch_repo_present("krea2-turbo"))
+                (root / "krea__Krea-2-Turbo"
                  / "model_index.json").write_text("{}")
-                self.assertTrue(registry._torch_repo_present("z-image-turbo"))
+                self.assertTrue(registry._torch_repo_present("krea2-turbo"))

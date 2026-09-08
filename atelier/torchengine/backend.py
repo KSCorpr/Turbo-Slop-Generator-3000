@@ -65,28 +65,79 @@ def _gpu(prefs: dict | None = None) -> "hardware.Gpu | None":
         max(gpus, key=lambda g: g.vram_gb)
 
 
+def component_files(model: catalog.TorchModel, prefs: dict) -> dict:
+    """Les fichiers du catalogue PRINCIPAL, par rôle.
+
+    C'est le pont entre les deux moteurs, et il est plus court qu'on ne le
+    croyait : les mêmes fichiers servent aux deux. Le rôle (`diffusion`,
+    `text_encoder`, `vae`) est le nom du composant dans `models.yaml`, et la
+    quantification a déjà été choisie au téléchargement par l'échelle VRAM.
+    """
+    from ..engine import generate as gen
+    base = registry.get_base_model(model.id, prefs)
+    if base is None:
+        return {}
+    out = {}
+    for part in model.parts.values():
+        path = gen._component(base, part.role)
+        if path is not None:
+            out[part.role] = path
+    return out
+
+
+def sizes_gb(model: catalog.TorchModel, files: dict) -> dict[str, float]:
+    """Le poids réel de chaque composant, lu sur le disque.
+
+    Lu et non estimé : c'est le gain le plus net du chemin GGUF. Un calcul en
+    octets par paramètre se trompe d'un facteur deux dès qu'un modèle mélange
+    les précisions par couche — ce que fait précisément un GGUF « _K_M ».
+    """
+    out: dict[str, float] = {}
+    for name, part in model.parts.items():
+        path = files.get(part.role)
+        try:
+            out[name] = path.stat().st_size / (1024 ** 3) if path else 0.0
+        except OSError:
+            out[name] = 0.0
+    return out
+
+
 def plan_for(model: catalog.TorchModel, gpu: "hardware.Gpu | None",
-             prefs: dict | None = None) -> placement.Plan:
+             prefs: dict | None = None,
+             files: dict | None = None) -> placement.Plan:
     """Le placement retenu pour ce modèle sur cette carte.
 
-    `torch_allow_quant: False` désactive les crans int8/NF4. Ce n'est pas un
-    réglage de confort mais ce que le banc d'essai a besoin de pouvoir forcer
-    pour comparer le plan retenu à celui d'à côté — sans quoi il mesurerait
-    deux fois la même chose.
+    Deux chemins, parce qu'il y a deux façons d'arriver. Depuis le GGUF les
+    poids sont déjà quantifiés et leur taille se LIT ; il ne reste que le
+    placement. Depuis un dépôt complet (Krea 2, faute de chargement
+    fichier-unique en amont) l'ancienne échelle int8/NF4 s'applique.
+
+    `torch_allow_quant: False` désactive ces crans. Ce n'est pas un réglage de
+    confort mais ce que le banc d'essai a besoin de pouvoir forcer pour
+    comparer le plan retenu à celui d'à côté — sans quoi il mesurerait deux
+    fois la même chose.
     """
+    arch = gpu.arch if gpu else "unknown"
+    vram = gpu.vram_gb if gpu else None
+    if model.from_gguf:
+        chosen = placement.plan_from_files(vram, sizes_gb(model, files or {}),
+                                           arch)
+        return placement.forced(chosen,
+                                (prefs or {}).get("torch_force_placement"))
     allow = True
     if prefs is not None and "torch_allow_quant" in prefs:
         allow = bool(prefs.get("torch_allow_quant"))
     return placement.plan(
-        vram_gb=gpu.vram_gb if gpu else None,
-        resident_gb=model.resident_bf16_gb,
-        largest_module_gb=model.largest_module_bf16_gb,
-        arch=gpu.arch if gpu else "unknown",
-        allow_quant=allow)
+        vram_gb=vram,
+        resident_gb=model.full_repo_gb,
+        largest_module_gb=(model.full_repo_gb / 2 if model.full_repo_gb
+                           else None),
+        arch=arch, allow_quant=allow)
 
 
 def _source(model: catalog.TorchModel) -> str | Path:
-    """Le dossier local s'il est là, sinon l'identifiant du dépôt.
+    """Pour le repli dépôt complet : le dossier local s'il est là, sinon
+    l'identifiant du dépôt.
 
     Laisser passer l'identifiant permet à diffusers de télécharger lui-même au
     premier lancement — et c'est aussi ce qui produit, sur un dépôt fermé,
@@ -217,12 +268,17 @@ def generate(
                   "not inside the sampler — ignored here.")
 
     gpu = _gpu(prefs)
-    plan = plan_for(model, gpu, prefs)
+    files = component_files(model, prefs) if model.from_gguf else {}
+    plan = plan_for(model, gpu, prefs, files)
     _log(log, placement.describe(plan))
-    if model.gated:
-        _log(log, f"[torch] “{model.repo}” is a gated repository: it needs a "
-                  "Hugging Face account, the licence accepted on the model "
-                  "page, and a token (huggingface-cli login).")
+    if model.from_gguf:
+        _log(log, "[torch] weights come from the files already installed for "
+                  "stable-diffusion.cpp — nothing extra to download.")
+    reason = model.needs_token
+    if reason:
+        _log(log, f"[torch] “{model.id}” needs a Hugging Face token: {reason}. "
+                  "Accept the licence on the model page, then run "
+                  "`huggingface-cli login` once.")
 
     mode = _resolve_mode(model, init_image, ref_image, mask_image, log)
     cls = model.pipeline_for(mode)
@@ -238,7 +294,8 @@ def generate(
 
     out: list[Path] = []
     with runtime.lock():
-        pipe = runtime.load_pipeline(key, plan, _source(model), log)
+        pipe = runtime.load_pipeline(key, plan, _source(model), log,
+                                     model=model, files=files)
         runtime.set_loras(pipe, lora_files, log)
         pipe.scheduler = runtime.build_scheduler(pipe, choice, log)
 

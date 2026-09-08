@@ -1,19 +1,23 @@
-"""Faire tenir un modèle diffusers sur 11 ou 12 Go — la vraie difficulté.
+"""Faire tenir le modèle sur la carte — et par où il arrive.
 
-Côté sd.cpp le problème est résolu à l'achat : on télécharge le fichier GGUF
-quantifié qui tient dans la carte, et il tient. Rien de tel ici. Un dépôt
-diffusers est publié dans SA précision (souvent fp32), le pipeline se charge en
-entier, et il reste deux questions à trancher au chargement — dans quelle
-précision, et où mettre les poids.
+**Corrigé après coup, et la correction change tout.** La première version de ce
+module partait du principe qu'un modèle PyTorch arrive en pleine précision et
+qu'il faut le quantifier soi-même au chargement (bitsandbytes, int8 ou NF4).
+C'est vrai pour un dépôt diffusers complet. Ça ne l'est pas pour le chemin
+normal de cette branche : diffusers lit le GGUF, donc le fichier est DÉJÀ
+quantifié, par la même échelle que côté stable-diffusion.cpp, et il pèse ce
+qu'il pèse sur le disque.
 
-**La précision.** C'est l'équivalent exact de l'échelle GGUF, sauf que la
-conversion se fait chez nous au lieu d'être téléchargée toute faite. Trois
-crans, du meilleur au plus économe : bf16 (2 octets par paramètre), int8
-(1 octet), NF4 (~0,5). Le back-end est bitsandbytes — vérifié : c'est le seul
-des deux candidats à publier une roue `win_amd64`, torchao n'en publie pas.
+D'où deux plans possibles, et pas un :
 
-**Le placement.** PyTorch offre trois réponses, et une seule est la bonne selon
-la carte :
+* **depuis le GGUF** — la précision est déjà décidée, il ne reste que le
+  placement. Les tailles ne sont pas estimées mais LUES sur le disque, ce qui
+  est autrement plus fiable qu'un calcul en octets par paramètre ;
+* **depuis un dépôt complet** (Krea 2, faute de chargement fichier-unique en
+  amont) — là, et là seulement, l'ancienne échelle s'applique.
+
+Le placement lui-même a trois réponses, et une seule est la bonne selon la
+carte :
 
 1. **Tout sur le GPU** — la plus rapide, et la seule sans allers-retours. Elle
    demande de la place pour les poids ET pour le calcul.
@@ -22,17 +26,15 @@ la carte :
    à la fois : le pic est celui du plus gros, pas de la somme.
 3. **Décharge par COUCHE** (`enable_sequential_cpu_offload`) — les poids
    restent en RAM et traversent le PCIe couche par couche, à chaque pas. Ça
-   tient dans presque rien et c'est lent d'un ordre de grandeur.
+   tient dans presque rien et c'est lent d'un ordre de grandeur ; c'est le
+   filet, pas un mode de travail.
 
-La règle qui relie les deux : **on garde la meilleure précision qui évite la
-décharge par couche.** Le troisième mode est un filet, pas un mode de travail —
-descendre d'un cran de précision coûte un peu de qualité, y rester coûte un
-facteur dix sur le temps.
+Sur le chemin dépôt complet, une règle relie précision et placement : **on garde
+la meilleure précision qui évite la décharge par couche.**
 
-Tout est décidé ICI, en Python pur, à partir de chiffres mesurables. Aucun
-import de torch, donc le raisonnement se teste sur une machine sans GPU — ce
-qui est précisément le cas où une erreur de placement passerait inaperçue
-jusqu'à la première panne.
+Tout est décidé ICI, en Python pur. Aucun import de torch, donc le raisonnement
+se teste sur une machine sans GPU — ce qui est précisément le cas où une erreur
+de placement passerait inaperçue jusqu'à la première panne.
 """
 from __future__ import annotations
 
@@ -100,10 +102,61 @@ def dtype_for(arch: str) -> str:
         else "float16"
 
 
+def plan_from_files(vram_gb: float | None, sizes_gb: dict[str, float],
+                    arch: str = "unknown") -> Plan:
+    """Le placement quand les poids arrivent DÉJÀ quantifiés, depuis le disque.
+
+    `sizes_gb` est le poids réel de chaque composant du pipeline — pas une
+    estimation, la taille des fichiers. C'est le chemin normal de cette
+    branche, et le plus simple : il n'y a plus de précision à choisir, la
+    quantification a été décidée au téléchargement par l'échelle du catalogue
+    principal, exactement comme pour stable-diffusion.cpp.
+
+    Une pièce manquante (un composant pas encore téléchargé) rend un plan
+    prudent plutôt qu'un plan calculé sur des trous : on ne connaît pas la
+    taille, donc on ne parie pas sur la solution rapide.
+    """
+    if not vram_gb or vram_gb <= 0:
+        return Plan(SEQUENTIAL_OFFLOAD, "float32", "gguf", True, True,
+                    "No GPU detected — everything runs on the CPU.")
+    dtype = dtype_for(arch)
+    budget = vram_gb - COMPUTE_RESERVE_GB
+    known = [v for v in sizes_gb.values() if v and v > 0]
+    if not known or len(known) < len(sizes_gb):
+        return Plan(MODEL_OFFLOAD, dtype, "gguf", True, False,
+                    "Some weights are not on disk yet: using per-module "
+                    "offload, which works wherever keeping everything on the "
+                    "card would have.")
+    resident, largest = sum(known), max(known)
+    detail = " + ".join(f"{name} {size:.1f}"
+                        for name, size in sorted(sizes_gb.items(),
+                                                 key=lambda kv: -kv[1]))
+    if resident <= budget:
+        return Plan(FULL, dtype, "gguf", False, False,
+                    f"Already quantized on disk ({detail} = "
+                    f"{resident:.1f} GB): the whole pipeline fits in "
+                    f"{vram_gb:.0f} GB with room to compute.")
+    if largest <= budget:
+        return Plan(MODEL_OFFLOAD, dtype, "gguf", True, False,
+                    f"Already quantized on disk ({detail} = "
+                    f"{resident:.1f} GB): too much at once for "
+                    f"{vram_gb:.0f} GB, but the largest part "
+                    f"({largest:.1f} GB) fits, so modules take turns.")
+    return Plan(SEQUENTIAL_OFFLOAD, dtype, "gguf", True, True,
+                f"Even the largest part ({largest:.1f} GB) exceeds the "
+                f"{budget:.1f} GB budget: weights stream layer by layer — "
+                "slow, but it finishes. A lower quantization rung in Settings "
+                "would be the better answer.")
+
+
 def plan(vram_gb: float | None, resident_gb: float | None,
          largest_module_gb: float | None, arch: str = "unknown",
          allow_quant: bool = True) -> Plan:
-    """Précision et placement à demander pour ce modèle sur cette carte.
+    """Précision et placement pour un modèle chargé en PLEINE PRÉCISION.
+
+    Ce chemin ne sert plus qu'aux modèles sans chargement fichier-unique en
+    amont — aujourd'hui Krea 2, et lui seul. Partout ailleurs c'est
+    `plan_from_files` qui décide, sur des tailles lues et non estimées.
 
     `resident_gb` est le poids de TOUT le pipeline en bf16 ;
     `largest_module_gb` celui du plus gros sous-modèle, qui décide à lui seul
@@ -157,12 +210,34 @@ def _why(quant: str, tail: str) -> str:
     return f"{head}, {tail}."
 
 
+def forced(chosen: Plan, mode: str | None) -> Plan:
+    """Le même plan, avec le placement imposé — pour le banc d'essai.
+
+    La réserve de calcul est une ESTIMATION : 2,5 Gio pour le contexte CUDA,
+    les tampons d'attention, les latents et le bureau. Elle décide à elle seule
+    entre « tout sur la carte » et « les modules à tour de rôle », et elle n'a
+    aucune raison d'être juste sur toutes les machines. Ce point d'entrée
+    permet de la contourner LE TEMPS D'UNE MESURE, sans toucher au plan que
+    l'application prend d'elle-même.
+    """
+    if not mode or mode == chosen.mode:
+        return chosen
+    if mode not in (FULL, MODEL_OFFLOAD, SEQUENTIAL_OFFLOAD):
+        return chosen
+    return Plan(mode, chosen.dtype, chosen.quant,
+                mode != FULL, mode == SEQUENTIAL_OFFLOAD,
+                f"Placement forced to “{mode}” for a measurement (the "
+                f"planner had chosen “{chosen.mode}”).")
+
+
 def describe(p: Plan) -> str:
     """Une ligne pour le journal, dans la langue de l'interface."""
     label = {FULL: "everything on the card",
              MODEL_OFFLOAD: "modules take turns on the card",
              SEQUENTIAL_OFFLOAD: "weights streamed layer by layer"}[p.mode]
-    precision = p.dtype if p.quant == "none" else f"{p.quant} ({p.dtype} compute)"
+    precision = {"none": p.dtype,
+                 "gguf": f"GGUF ({p.dtype} compute)"}.get(
+                     p.quant, f"{p.quant} ({p.dtype} compute)")
     extras = [name for name, on in (("VAE tiling", p.vae_tiling),
                                     ("attention slicing", p.attention_slicing))
               if on]

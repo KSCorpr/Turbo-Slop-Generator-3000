@@ -112,40 +112,44 @@ def _torch_candidates(main: "hardware.Gpu") -> list[Placement]:
 
     Les profils sd.cpp ne se transposent pas : `params_backend`, `split_mode`,
     `offload_to_cpu` et auto-fit sont des options d'un binaire qui ne tourne
-    pas ici. Les proposer quand même aurait donné trois tirs RIGOUREUSEMENT
+    pas ici. Les proposer quand même aurait donné des tirs RIGOUREUSEMENT
     identiques, un classement tiré au sort dans le bruit, et un rapport qui
     recommande un réglage sans effet — le pire résultat possible pour un banc
     d'essai, parce qu'il a l'air d'avoir mesuré quelque chose.
 
-    Ce qu'il y a à mesurer ici est le couple (précision, placement) que le
-    planificateur choisit, contre les crans voisins. On compare donc le plan
-    RETENU à celui qu'on aurait eu sans quantification : c'est la seule
-    question ouverte, et elle se pose vraiment — un cran de précision contre
-    des allers-retours PCIe, l'arbitrage dépend de la carte.
+    La précision n'est pas non plus à mesurer : les poids arrivent du GGUF,
+    donc déjà quantifiés par l'échelle du catalogue principal. Ce qui reste
+    ouvert est la RÉSERVE DE CALCUL — les 2,5 Gio que le planificateur laisse
+    libres pour le contexte CUDA, les tampons d'attention et les latents. C'est
+    une estimation, et elle décide à elle seule entre « tout sur la carte » et
+    « les modules à tour de rôle ». Trop large, elle coûte des allers-retours
+    inutiles ; trop serrée, elle finit en OOM. Une carte peut trancher, un
+    principe non.
     """
-    from .torchengine import catalog as torch_catalog, placement
+    from .torchengine import backend, catalog, placement
     base = {"auto_optimize": False, "gpu_index": main.index,
             "engine_backend": "torch", "encoder_gpu_index": None,
             "params_backend": "", "auto_fit": False}
     out = [Placement("torch-planned",
                      f"{main.name} · placement chosen by the planner",
-                     {**base, "torch_allow_quant": True})]
-    # Le second profil n'existe que s'il DIFFÈRE du premier. Sur une carte
-    # assez grande pour tout tenir en bf16, les deux plans sont le même, et
-    # deux tirs identiques ne départagent rien.
-    sizes = [(m.resident_bf16_gb, m.largest_module_bf16_gb)
-             for m in torch_catalog.load() if m.resident_bf16_gb]
-    if sizes:
-        resident, largest = sizes[0]
-        planned = placement.plan(main.vram_gb, resident, largest, main.arch)
-        plain = placement.plan(main.vram_gb, resident, largest, main.arch,
-                               allow_quant=False)
-        if (planned.quant, planned.mode) != (plain.quant, plain.mode):
-            out.append(Placement(
-                "torch-full-precision",
-                f"{main.name} · {plain.dtype} without quantization "
-                f"({plain.mode.replace('_', ' ')})",
-                {**base, "torch_allow_quant": False}))
+                     {**base, "torch_force_placement": ""})]
+
+    # Le second profil n'existe que s'il DIFFÈRE du premier : quand le plan
+    # tient déjà tout sur la carte, forcer « tout sur la carte » est le même
+    # tir, et deux tirs identiques ne départagent rien.
+    model = next((m for m in catalog.load() if m.from_gguf), None)
+    if model is None:
+        return out
+    prefs = settings.load_prefs()
+    files = backend.component_files(model, prefs)
+    plan = placement.plan_from_files(main.vram_gb,
+                                     backend.sizes_gb(model, files),
+                                     main.arch)
+    if plan.mode != placement.FULL:
+        out.append(Placement(
+            "torch-all-on-card",
+            f"{main.name} · everything resident, compute reserve ignored",
+            {**base, "torch_force_placement": placement.FULL}))
     return out
 
 

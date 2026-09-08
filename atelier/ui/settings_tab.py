@@ -313,16 +313,21 @@ def build_settings_tab():
             # a donc sa place là où sont les options qu'on vient chercher
             # exprès.
             gr.Markdown(t(
-                "---\n**⚙️ Generation engine** — this branch carries two. "
-                "**stable-diffusion.cpp** is the native one: quantized GGUF "
-                "files, no Python dependency, a 6.6 GB model on disk. "
-                "**PyTorch** runs the same models through diffusers: the same "
-                "tabs and the same settings, but whole repositories (33 GB "
-                "for the same model), a several-gigabyte install, and "
-                "quantization done at load time instead of downloaded ready "
-                "made.\n\nChanging this changes what “downloaded” means: the "
-                "two engines do not read the same files, so the catalog will "
-                "show as missing what the other one has."))
+                "---\n**⚙️ Generation engine** — this branch carries two, and "
+                "they read **the same model files**. diffusers loads GGUF, so "
+                "switching costs nothing on disk and re-downloads nothing: "
+                "same weights, same quantization rung, chosen by the same "
+                "VRAM ladder.\n\nWhat does change is everything around them. "
+                "**stable-diffusion.cpp** is a native binary with no Python "
+                "dependency. **PyTorch** needs a several-gigabyte install "
+                "(`setup-torch-engine.bat`), starts more slowly, and does not "
+                "offer every mode on every model — Krea 2 is text-to-image "
+                "only there, and it is the one model whose weights it cannot "
+                "read from GGUF at all.\n\nOne model asks for a Hugging Face "
+                "token the first time: Flux.2 Klein, for a few kilobytes of "
+                "architecture config that Black Forest Labs publishes only in "
+                "a gated repository. Its weights stay the ones you already "
+                "have."))
             engine = gr.Radio(
                 [(t(backends.label(name)), name) for name in backends.ALL],
                 value=backends.active(prefs), show_label=False)

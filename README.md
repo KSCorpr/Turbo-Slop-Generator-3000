@@ -12,8 +12,9 @@
 > ### 🧪 Branch `Test7000`
 > This branch keeps every feature but routes them all through **PyTorch /
 > diffusers** instead of stable-diffusion.cpp — same tabs, same presets, same
-> model ids, another engine underneath. What it costs, measured rather than
-> assumed, is in **[README-TORCH.md](README-TORCH.md)**. Install it with
+> model ids, another engine underneath. It reads **the same GGUF files**, so
+> switching re-downloads nothing. What it costs, measured rather than assumed,
+> is in **[README-TORCH.md](README-TORCH.md)**. Install it with
 > `setup-torch-engine.bat`, switch in **Settings → 🔧 Expert**, and set
 > `TURBOSLOP_BACKEND=sdcpp` to get the native engine back at any time.
 

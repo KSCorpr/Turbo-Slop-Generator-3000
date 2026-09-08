@@ -64,17 +64,25 @@ TORCH_CU128 = ("torch==2.11.0", "torchvision==0.26.0")
 DIFFUSERS = "diffusers==0.40.0"
 
 #  Le reste du socle. Aucune de ces lignes n'est décorative :
-#   · transformers  -> les encodeurs de texte (Qwen3) des trois modèles ;
-#   · accelerate    -> `enable_model_cpu_offload` et la décharge séquentielle ;
+#   · gguf          -> LA pièce qui fait tout l'intérêt de cette branche :
+#                      sans elle, diffusers refuse `GGUFQuantizationConfig` et
+#                      il faudrait retélécharger chaque modèle en dépôt
+#                      complet. Le plancher 0.10.0 est celui que diffusers
+#                      exige (`is_gguf_version("<", "0.10.0")`) ;
+#   · transformers  -> les encodeurs de texte (Qwen3), y compris depuis un
+#                      GGUF : « qwen3 » figure dans sa table de conversion ;
+#   · accelerate    -> `enable_model_cpu_offload` et la décharge séquentielle,
+#                      et le quantiseur GGUF l'exige explicitement (>= 0.26) ;
 #   · peft          -> les LoRA (`load_lora_weights` en dépend) ;
-#   · bitsandbytes  -> les crans int8 et NF4 ; SEUL des deux candidats à
+#   · bitsandbytes  -> les crans int8 et NF4 du chemin dépôt complet, qui ne
+#                      sert plus qu'à Krea 2 ; SEUL des deux candidats à
 #                      publier une roue `win_amd64` (torchao n'en publie pas) ;
 #   · scipy         -> le scheduler « beta » lève un ImportError sans elle,
 #                      et c'est une entrée du menu, donc un clic possible ;
 #   · sentencepiece -> tokeniseurs de la famille Qwen ;
-#   · safetensors   -> format des poids.
-STACK = ("transformers>=4.51", "accelerate>=1.0", "peft>=0.14",
-         "bitsandbytes>=0.47", "scipy>=1.11", "sentencepiece",
+#   · safetensors   -> format des poids non quantifiés (les VAE).
+STACK = ("gguf>=0.10.0", "transformers>=4.51", "accelerate>=1.0",
+         "peft>=0.14", "bitsandbytes>=0.47", "scipy>=1.11", "sentencepiece",
          "safetensors>=0.4", "protobuf")
 
 
@@ -105,8 +113,8 @@ def torch_args() -> tuple[list[str], str]:
 def installed() -> dict[str, str]:
     from importlib.metadata import PackageNotFoundError, version
     out = {}
-    for pkg in ("torch", "diffusers", "transformers", "accelerate", "peft",
-                "bitsandbytes", "scipy", "safetensors"):
+    for pkg in ("torch", "diffusers", "gguf", "transformers", "accelerate",
+                "peft", "bitsandbytes", "scipy", "safetensors"):
         try:
             out[pkg] = version(pkg)
         except PackageNotFoundError:
@@ -144,7 +152,9 @@ def main() -> int:
 
     print("\nThis replaces the Toolkit's torch 2.4.1 / diffusers 0.33.1 with a "
           "\nnewer stack. That is deliberate — the models in the catalog need "
-          "diffusers >= 0.36,\nand no single version satisfies both.\n")
+          "diffusers >= 0.36,\nand no single version satisfies both.")
+    print("It does NOT re-download any model: diffusers reads the same GGUF "
+          "files\nstable-diffusion.cpp already uses.\n")
     py = [sys.executable, "-m", "pip", "install", "--upgrade"]
     sh([*py, *packages, "--index-url", index])
     sh([*py, DIFFUSERS, *STACK])

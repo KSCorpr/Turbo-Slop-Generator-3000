@@ -191,7 +191,12 @@ def download_model(model: BaseModel,
     """Télécharge tous les composants manquants d'un modèle. Yields des messages."""
     settings.ensure_dirs()
     from .engine import backends
-    if backends.active() == backends.TORCH:
+    if backends.active() == backends.TORCH and _needs_full_repo(model.id):
+        #  Seuls les modèles SANS chargement fichier-unique en amont passent
+        #  par le dépôt complet. Tous les autres se montent à partir des
+        #  fichiers ci-dessous — les mêmes que pour stable-diffusion.cpp — donc
+        #  le bouton « Télécharger » fait exactement la même chose sur les deux
+        #  moteurs, et un modèle déjà installé l'est pour les deux.
         yield from download_diffusers_repo(model, log)
         return
     yield f"Downloading “{model.name}”…"
@@ -204,6 +209,15 @@ def download_model(model: BaseModel,
             yield f"  ✗ {comp.role}: {exc}"
             return
     yield f"“{model.name}” is ready. ✅"
+
+
+def _needs_full_repo(model_id: str) -> bool:
+    try:
+        from .torchengine import catalog as torch_catalog
+    except ImportError:
+        return False
+    entry = torch_catalog.get(model_id)
+    return bool(entry and not entry.from_gguf)
 
 
 def download_diffusers_repo(

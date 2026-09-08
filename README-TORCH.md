@@ -5,8 +5,12 @@ tool look like if every feature went through PyTorch and diffusers instead of
 stable-diffusion.cpp?** Same tabs, same presets, same model ids, same output
 folder. Only the engine underneath changes.
 
-It is an experiment, and it is meant to be judged on measurements, not on
-principle. What follows is what it actually costs.
+> **This document was rewritten after a correction.** The first version claimed
+> the PyTorch path meant re-downloading every model as a full diffusers
+> repository — 33 GB for a model that weighs 6.6 on disk. That was wrong.
+> **diffusers reads GGUF**, and it reads exactly the files this app already
+> downloads for stable-diffusion.cpp. Everything below reflects that; the
+> figures were re-checked against the real files, not remembered.
 
 ---
 
@@ -14,20 +18,49 @@ principle. What follows is what it actually costs.
 
 | | stable-diffusion.cpp | PyTorch / diffusers |
 |---|---|---|
-| Z-Image Turbo on disk | **6.6 GB** (Q8_0 GGUF) | **32.9 GB** (repo is fp32) |
+| Model files | GGUF, quantized by VRAM | **the same files** |
+| Extra disk to switch | — | **none** |
 | Install to add | nothing — a binary ships with the app | **several GB** of Python packages |
-| Quantization | downloaded ready made | done at load time (bitsandbytes) |
-| On a 12 GB card | Q8_0, resident | int8, modules take turns |
-| Flux.2 Klein / Krea 2 | ungated GGUF mirrors | **gated** repos: licence + token |
+| Z-Image Turbo on a 12 GB card | Q8_0, resident | Q8_0, **resident** |
+| Z-Image Turbo on an 11 GB card | Q8_0, resident | Q8_0, modules take turns |
+| Hugging Face token | never | once, for Flux.2 Klein's **config** (a few KB) |
+| Krea 2 | full support | **text-to-image only**, and its weights need the gated repo |
 | Samplers | 21 | 14 map; 7 fall back to Euler |
 | ESRGAN GGUF upscalers | yes | no — use the modern upscalers |
 | Image → 3D (trellis) | yes | **not ported** |
 | Convert to GGUF | yes | meaningless here |
 
-Nothing above is an opinion. The sizes come from the Hugging Face API, the
-gating from `/api/models/<id>`, the pipeline classes from each repo's
-`model_index.json` and from what diffusers 0.40.0 exports, and the sampler
-count from constructing all 336 menu combinations against the real library.
+Everything above was read from a source. Sizes and gating from the Hugging Face
+API; pipeline classes from each repo's `model_index.json` and from what
+diffusers 0.40.0 exports; tensor names from the **headers of the actual GGUF
+files** the app installs; the sampler count from constructing all 336 menu
+combinations against the real library.
+
+---
+
+## Why the GGUF path works — the checks
+
+Four things had to be true, and each was verified rather than assumed:
+
+1. **`GGUFQuantizationConfig` exists in diffusers 0.40.0**, and its dequantizer
+   covers 23 GGML types including `Q2_K` → `Q8_0` — the whole ladder this app
+   uses.
+2. **`ZImageTransformer2DModel` and `Flux2Transformer2DModel` are registered**
+   in `SINGLE_FILE_LOADABLE_CLASSES`, each with its conversion function.
+   `Krea2Transformer2DModel` is not — that is the one gap.
+3. **The tensor names match.** Read straight out of the GGUF headers:
+   leejet's Z-Image file carries `context_refiner.0.attention.qkv.weight`,
+   `cap_embedder.1.weight`; unsloth's Flux.2 Klein carries `double_blocks.0.
+   img_attn.norm.query_norm.scale`, `final_layer.linear`. Those are exactly the
+   keys the two converters rename.
+4. **The text encoders load too.** `qwen3` is in transformers' GGUF table, and
+   the encoder GGUF's header carries `general.architecture = qwen3` with the
+   full architecture (36 blocks, width 2560, head counts) and the vocabulary.
+
+What does *not* come from the GGUF is a few megabytes of metadata — the
+architecture config, the tokenizer and the scheduler — taken from the model's
+reference repository. The tokenizer could have been rebuilt from the GGUF, but a
+rebuilt tokenizer can differ in ways you would only notice in the render.
 
 ---
 
@@ -37,10 +70,11 @@ count from constructing all 336 menu combinations against the real library.
 setup-torch-engine.bat
 ```
 
-Several gigabytes, once. Then **Settings → 🔧 Expert → Generation engine**, or
-`set TURBOSLOP_BACKEND=torch` before `run.bat` if you would rather not touch
-your preferences — the environment variable wins over everything, so you can
-run two copies of the app side by side, one per engine, and compare.
+Several gigabytes of **Python packages**, once. **No model is re-downloaded.**
+Then **Settings → 🔧 Expert → Generation engine**, or `set
+TURBOSLOP_BACKEND=torch` before `run.bat` if you would rather not touch your
+preferences — the environment variable wins over everything, so you can run two
+copies of the app side by side, one per engine, and compare on identical files.
 
 `setup-torch-engine.bat --check` prints what is installed and what would
 change, without installing anything.
@@ -49,13 +83,12 @@ change, without installing anything.
 
 This is the one real risk of the branch, and it is deliberate.
 
-The Toolkit add-ons run on `torch 2.4.1` and `diffusers 0.33.1`, and those two
-pins hold each other up: 2.4.1 was chosen to cover Pascal through Ada, and its
-`infer_schema` cannot read the `X | None` annotations that diffusers ≥ 0.35
-uses. The three models in the catalog need **diffusers ≥ 0.36** — it is written
-in each repo's `model_index.json`. No version satisfies both, so this branch
-moves the whole stack up. Moving torch also dissolves the constraint that
-justified the old pin, which is why it is possible at all.
+The Toolkit add-ons run on `torch 2.4.1` and `diffusers 0.33.1`, and those pins
+hold each other up: 2.4.1 was chosen to cover Pascal through Ada, and its
+`infer_schema` cannot read the `X | None` annotations diffusers ≥ 0.35 uses. The
+models need **diffusers ≥ 0.36** — it is written in each repo's
+`model_index.json`. No version satisfies both, so this branch moves the whole
+stack up; moving torch also dissolves the constraint that justified the old pin.
 
 **Pascal survives.** The `cu126` wheels still carry `5.0;6.0;7.0;…` (checked in
 pytorch's own `.ci/manywheel/build_cuda.sh` through 2.12) and an `sm_60` cubin
@@ -63,35 +96,47 @@ loads on an `sm_61` card, so a GTX 1080 Ti keeps working. **Blackwell moves to
 `cu128`**, which starts at `7.0`; the installer picks the index from the card it
 detects, exactly as `_torch_setup.py` already did.
 
+### The one token
+
+**Flux.2 Klein** needs a Hugging Face login once. Not for its weights — those
+come from Unsloth's open GGUF, already on your disk — but for a few kilobytes of
+`transformer/config.json` that only Black Forest Labs publishes, in a gated
+repository. Accept the licence on the model page, run `huggingface-cli login`,
+and it is cached from then on. diffusers' own fallback is no help here: it
+points at `black-forest-labs/FLUX.2-dev`, a different model, also gated.
+
+**Krea 2** is the harder case: with no single-file loader upstream, its weights
+have to come from the gated `krea/Krea-2-Turbo` repository in full. It is the
+only model on this branch that costs a real download.
+
 ---
 
 ## What runs, and how
 
-### Memory: the planner replaces the GGUF ladder
+### Memory: the ladder already decided
 
-There is no quantized file to download here. A diffusers repo is published in
-its own precision — often fp32 — and two things are decided at load time:
+There is nothing to quantize at load time on the normal path. The file on disk
+is already `Q5_K_M` or `Q8_0`, chosen by the same VRAM ladder as for
+stable-diffusion.cpp, and the sizes are **read** rather than estimated — which
+matters, because a `_K_M` file mixes precisions per layer and a bytes-per-
+parameter estimate is wrong precisely where it counts.
 
-**Precision.** Three rungs, best to leanest: bf16 (2 bytes per parameter), int8
-(1), NF4 (~0.5). The backend is bitsandbytes; it is the only one of the two
-candidates publishing a `win_amd64` wheel (torchao does not).
-
-**Placement.** Everything on the card; or modules taking turns
+What is left is placement: everything on the card; or modules taking turns
 (`enable_model_cpu_offload`, one sub-model resident at a time, so the peak is
 the largest rather than the sum); or weights streamed layer by layer
 (`enable_sequential_cpu_offload`, fits in almost nothing, an order of magnitude
-slower).
+slower — a safety net, not a working mode).
 
-One rule ties them together: **keep the best precision that avoids layer
-streaming.** That third mode is a safety net, not a working mode — dropping a
-precision rung costs a little quality, staying there costs a factor of ten.
+With Z-Image Turbo at Q8_0 (transformer 6.6 GB + encoder 2.5 + VAE 0.3 = 9.4):
 
-On the two cards this project targets, Z-Image Turbo lands on **int8 with
-modules taking turns**: 6.2 GB for the transformer inside a budget of 8.5 GB
-(11 GB card) or 9.5 GB (12 GB card). A 24 GB card keeps bf16 and stays
-resident. An unknown size — a gated repo, so not measurable — never buys the
-fast path: it takes per-module offload, which works wherever the fast path
-would have.
+* **12 GB (RTX 3060)** — everything resident. The fast path.
+* **11 GB (RTX 2080 Ti)** — 9.4 does not fit alongside the compute reserve, but
+  the largest part (6.6) does: modules take turns.
+* **8 GB** — nothing fits; it streams, and says that a lower quantization rung
+  in Settings would be the better answer.
+
+The full-precision ladder (bf16 → int8 → NF4 via bitsandbytes) still exists, but
+only serves the repo path — that is, Krea 2.
 
 ### Samplers: 14 of 21, and the other 7 say so
 
@@ -130,8 +175,8 @@ Klein takes `image=` on its main pipeline, which *is* the multi-reference edit
 mode, and exposes no `negative_prompt` at all.
 
 That table drives real behaviour: the outpaint tab asks the engine whether it
-can inpaint **with a mask for this model** instead of asking a binary whether
-it knows an option.
+can inpaint **with a mask for this model** instead of asking a binary whether it
+knows an option.
 
 ---
 
@@ -153,9 +198,9 @@ original `.pt`. Same names, same source repo, different file. Detection is a
 separate function from the redraw so "it found nothing" can be said, and each
 patch is blended back through a feathered mask.
 
-**GGUF upscalers refuse**, and name where to go. Those weights are read by
-sd.cpp alone, they are RRDBNet from 2018, and the modern upscalers already run
-on PyTorch through spandrel — which is why they were added in the first place.
+**GGUF upscalers refuse**, and name where to go. Those weights are RRDBNet from
+2018 with no diffusers loader, and the modern upscalers already run on PyTorch
+through spandrel — which is why they were added in the first place.
 
 **Image → 3D is not ported.** trellis.cpp is a second native engine with its own
 binary and its own weights; porting it means the PyTorch TRELLIS, which needs
@@ -168,6 +213,20 @@ meaning on this engine and still works if you switch back.
 
 ---
 
+## The benchmark measures the one open question
+
+Precision is settled at download time, so there is nothing to compare there. The
+sd.cpp profiles — params backend, split mode, auto-fit — are options of a binary
+that is not running; offering them would give identical runs and a ranking drawn
+from noise.
+
+What is genuinely open is the **compute reserve**: the 2.5 GiB the planner
+leaves free for the CUDA context, attention buffers, latents and the desktop.
+It is an estimate, it decides on its own between "everything resident" and
+"modules take turns", and it has no reason to be right on every machine. So the
+benchmark offers exactly two profiles — the planned placement, and the same
+model forced fully resident — and only when the two actually differ.
+
 ## Reading a result three days later
 
 Both engines write into the same output folder, so the `.txt` beside each image
@@ -176,5 +235,5 @@ comparison is impossible to make after the fact — which is the whole point of
 the branch.
 
 The system report (**System → Manage → Diagnose**) gains a `torch_engine`
-section: what is installed, what is missing by name, and which repositories are
+section: what is installed, what is missing by name, and which models are
 actually on disk.
