@@ -359,6 +359,10 @@ def _torch_repo_present(model_id: str) -> bool:
         #  une pièce que ce moteur ne sait pas charger. Répondre « prêt »
         #  donnerait un bouton « Générer » actif qui refuse au clic.
         return False
+    if entry.needs_supplement and not entry.supplement.present:
+        #  Le GGUF peut être là et le complément non : ce sont deux
+        #  téléchargements distincts, et seul le second est propre à ce moteur.
+        return False
     if entry.from_gguf:
         return None  # sentinelle : « la réponse est celle du moteur natif »
     return (entry.local_dir / "model_index.json").is_file()

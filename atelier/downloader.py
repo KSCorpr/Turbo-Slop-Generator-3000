@@ -191,7 +191,8 @@ def download_model(model: BaseModel,
     """Télécharge tous les composants manquants d'un modèle. Yields des messages."""
     settings.ensure_dirs()
     from .engine import backends
-    if backends.active() == backends.TORCH and _needs_full_repo(model.id):
+    torch_engine = backends.active() == backends.TORCH
+    if torch_engine and _needs_full_repo(model.id):
         #  Seuls les modèles SANS chargement fichier-unique en amont passent
         #  par le dépôt complet. Tous les autres se montent à partir des
         #  fichiers ci-dessous — les mêmes que pour stable-diffusion.cpp — donc
@@ -208,7 +209,54 @@ def download_model(model: BaseModel,
         except Exception as exc:  # noqa: BLE001
             yield f"  ✗ {comp.role}: {exc}"
             return
+    if torch_engine:
+        yield from download_supplement(model.id, log)
+        return
     yield f"“{model.name}” is ready. ✅"
+
+
+def download_supplement(model_id: str,
+                        log: Callable[[str], None] | None = None
+                        ) -> Iterator[str]:
+    """Le complément que le GGUF ne peut pas fournir — et RIEN d'autre.
+
+    Krea 2 est le seul concerné : son encodeur est un Qwen3-VL, que
+    transformers ne sait pas lire en GGUF, et son VAE n'a pas de chargeur
+    fichier-unique. Les deux doivent venir du dépôt.
+
+    Tout l'intérêt est dans `allow_patterns`. Le dépôt pèse 61,9 Go ; ce qui
+    manque en pèse 9,4. La différence, ce sont les 26,3 Go de poids de
+    transformer qu'on a déjà en GGUF et les 26,3 Go d'une copie
+    fichier-unique — les retélécharger « pour être sûr » serait exactement ce
+    que cette branche existe pour éviter.
+    """
+    try:
+        from .torchengine import catalog as torch_catalog
+    except ImportError:
+        return
+    entry = torch_catalog.get(model_id)
+    if entry is None or entry.supplement is None:
+        return
+    sup = entry.supplement
+    if sup.present:
+        yield "  ✓ text encoder and VAE already there."
+        return
+    saved = f", skipping {sup.skipped_gb:.0f} GB already covered by the GGUF" \
+        if sup.skipped_gb else ""
+    yield (f"Fetching what GGUF cannot provide from {sup.repo} "
+           f"(~{sup.download_gb:.0f} GB{saved})…")
+    if sup.gated:
+        yield ("  ℹ️ Gated repository: accept the licence on its page and "
+               "save a token in Settings first.")
+    settings.configure_hf_env()
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(repo_id=sup.repo, local_dir=str(sup.local_dir),
+                          allow_patterns=list(sup.patterns), max_workers=4)
+    except Exception as exc:  # noqa: BLE001
+        yield f"  ✗ {exc}"
+        return
+    yield "  ✓ text encoder, VAE, tokenizer and scheduler in place."
 
 
 def _needs_full_repo(model_id: str) -> bool:

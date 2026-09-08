@@ -57,6 +57,44 @@ class Part:
 
 
 @dataclass(frozen=True)
+class Supplement:
+    """Le complément de dépôt qu'un modèle réclame en plus de son GGUF.
+
+    Krea 2 est le seul du catalogue dans ce cas, et il vaut d'être décrit
+    plutôt que traité comme un cas particulier : son transformer vient du
+    fichier déjà installé, mais son encodeur (un Qwen3-VL, que transformers ne
+    sait pas lire en GGUF) et son VAE doivent venir d'ailleurs.
+
+    `patterns` est la partie qui compte. Sans elle, `snapshot_download` prend
+    tout : 26 Go de poids de transformer qu'on vient justement d'éviter, plus
+    26 Go d'une copie fichier-unique, plus les images du README.
+    """
+    repo: str
+    gated: bool
+    download_gb: float | None
+    skipped_gb: float | None
+    patterns: tuple
+
+    @property
+    def local_dir(self) -> Path:
+        return settings.model_repo_dir(self.repo)
+
+    @property
+    def present(self) -> bool:
+        """Le complément est-il RÉELLEMENT là ?
+
+        On vérifie `model_index.json` ET l'encodeur : le premier arrive en une
+        seconde, le second pèse neuf gigaoctets. Un téléchargement interrompu
+        laisse le premier sans le second, et ne regarder que lui ferait dire
+        « prêt » à un modèle qui ne l'est pas.
+        """
+        root = self.local_dir
+        encoder = root / "text_encoder"
+        return ((root / "model_index.json").is_file() and encoder.is_dir()
+                and any(encoder.glob("*.safetensors")))
+
+
+@dataclass(frozen=True)
 class Blocker:
     """Une pièce qui NE se charge pas, et la raison exacte.
 
@@ -87,6 +125,8 @@ class TorchModel:
     config_local: bool = False
     #  Ce qui empêche encore ce modèle de tourner sur ce moteur.
     blocked_by: tuple = ()
+    #  Le complément de dépôt, pour les modèles dont le GGUF ne suffit pas.
+    supplement: "Supplement | None" = None
     #  Repli dépôt complet.
     repo: str = ""
     gated: bool = False
@@ -96,6 +136,10 @@ class TorchModel:
     def from_gguf(self) -> bool:
         """Ce modèle se monte-t-il à partir des fichiers déjà installés ?"""
         return bool(self.parts)
+
+    @property
+    def needs_supplement(self) -> bool:
+        return self.supplement is not None
 
     @property
     def usable(self) -> bool:
@@ -132,12 +176,15 @@ class TorchModel:
         if self.config_gated and self.config_repo:
             return ("its architecture config (a few KB, once) comes from a "
                     f"gated repository: {self.config_repo}")
-        if not self.usable and self.gated and self.repo:
-            #  Le transformer vient du GGUF ; ce qui reste fermé, ce sont les
-            #  réglages du pipeline. Dire « les poids » enverrait
-            #  retélécharger treize gigaoctets déjà présents.
-            return ("its pipeline settings come from a gated repository: "
-                    f"{self.repo}")
+        if self.supplement is not None and self.supplement.gated:
+            #  Le transformer vient du GGUF ; ce qui reste fermé, c'est le
+            #  complément. Dire « les poids » enverrait retélécharger
+            #  vingt-six gigaoctets déjà présents sous une autre forme.
+            gb = self.supplement.download_gb
+            size = f" (~{gb:.0f} GB)" if gb else ""
+            return ("its text encoder and VAE, which cannot come from GGUF, "
+                    f"live in a gated repository{size}: "
+                    f"{self.supplement.repo}")
         if self.from_gguf:
             return ""
         return (f"its weights come from a gated repository: {self.repo}"
@@ -172,12 +219,25 @@ def _parse(path: str, mtime: float) -> tuple[TorchModel, ...]:
             config_local=bool(sf.get("config_local")),
             blocked_by=tuple(Blocker(str(b["part"]), str(b["why"]))
                              for b in (e.get("blocked_by") or [])),
+            supplement=_supplement(e.get("from_repo")),
             repo=str(e.get("repo") or ""),
             gated=bool(e.get("gated")),
             full_repo_gb=(None if e.get("full_repo_gb") is None
                           else float(e["full_repo_gb"])),
         ))
     return tuple(out)
+
+
+def _supplement(raw) -> "Supplement | None":
+    if not raw:
+        return None
+    def _num(key):
+        v = raw.get(key)
+        return None if v is None else float(v)
+    return Supplement(
+        repo=str(raw["repo"]), gated=bool(raw.get("gated")),
+        download_gb=_num("download_gb"), skipped_gb=_num("skipped_gb"),
+        patterns=tuple(str(x) for x in (raw.get("patterns") or [])))
 
 
 def load(path: Path | None = None) -> list[TorchModel]:

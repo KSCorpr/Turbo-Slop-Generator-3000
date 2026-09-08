@@ -148,14 +148,15 @@ def gated_repos() -> list[tuple[str, str, str, str]]:
                         "transformer/config.json",
                         "its architecture config — a few kilobytes. The "
                         "weights come from the GGUF you already have."))
-        elif not model.usable and model.gated and model.repo:
+        elif model.supplement is not None and model.supplement.gated:
             #  On ne dit PLUS « the whole model ». Ce qui manque à Krea 2 est
-            #  nommé pièce par pièce dans le catalogue, et son transformer —
-            #  l'essentiel du poids — se charge depuis le GGUF déjà installé.
-            out.append((model.id, model.repo, "model_index.json",
-                        "its pipeline settings, which only this gated "
-                        "repository publishes. Its transformer already loads "
-                        "from the GGUF you have."))
+            #  nommé — l'encodeur et le VAE — et son transformer, l'essentiel
+            #  du poids, se charge depuis le GGUF déjà installé.
+            gb = model.supplement.download_gb
+            out.append((model.id, model.supplement.repo, "model_index.json",
+                        f"its text encoder and VAE (~{gb:.0f} GB), which "
+                        "cannot be read from GGUF. Its transformer already "
+                        "loads from the GGUF you have."))
         elif not model.from_gguf and model.gated and model.repo:
             out.append((model.id, model.repo, "model_index.json",
                         "the whole model: no single-file loader exists for "

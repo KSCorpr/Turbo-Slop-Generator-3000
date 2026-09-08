@@ -290,6 +290,42 @@ def _model_class(name: str):
     return cls
 
 
+def build_hybrid(model, pipeline_cls: str, dtype, files: dict,
+                 log: Callable | None = None):
+    """Transformer depuis le GGUF, le reste depuis le complément téléchargé.
+
+    Le cas de Krea 2, et le seul. `from_pretrained` sait qu'un composant passé
+    en argument ne doit pas être relu du disque : c'est ce qui permet de ne
+    JAMAIS télécharger `transformer/` (26,3 Go) tout en gardant son
+    `config.json` (588 octets), que le chargeur fichier-unique réclame pour
+    savoir quelle forme donner aux poids.
+    """
+    d = diffusers()
+    local = model.supplement.local_dir
+    if not model.supplement.present:
+        raise TorchEngineError(
+            f"“{model.id}” also needs its text encoder and VAE, which cannot "
+            "come from GGUF. Download it from the Model catalog tab "
+            f"(~{model.supplement.download_gb:.0f} GB — the transformer is "
+            "skipped, it is already on your disk).")
+
+    part = model.parts["transformer"]
+    path = files.get(part.role)
+    if path is None:
+        raise TorchEngineError(
+            f"“{model.id}”: the {part.role} file is missing. Download the "
+            "model from the Model catalog tab.")
+    if log:
+        log(f"[torch] transformer: {Path(path).name} (GGUF) · everything else "
+            f"from {local.name}")
+    transformer = _model_class(part.cls).from_single_file(
+        str(path), quantization_config=d.GGUFQuantizationConfig(
+            compute_dtype=dtype),
+        torch_dtype=dtype, config=str(local))
+    return _pipeline_class(pipeline_cls).from_pretrained(
+        str(local), transformer=transformer, torch_dtype=dtype)
+
+
 def build_from_files(model, pipeline_cls: str, dtype, files: dict,
                      log: Callable | None = None):
     """Monte le pipeline à partir des fichiers DÉJÀ INSTALLÉS.
@@ -412,7 +448,9 @@ def load_pipeline(key: LoadKey, plan: Plan, source: str | Path,
     t = torch()
     dtype = getattr(t, key.dtype)
 
-    if model is not None and model.from_gguf:
+    if model is not None and model.needs_supplement:
+        pipe = build_hybrid(model, key.cls, dtype, files or {}, log)
+    elif model is not None and model.from_gguf:
         pipe = build_from_files(model, key.cls, dtype, files or {}, log)
     else:
         cls = _pipeline_class(key.cls)

@@ -100,39 +100,49 @@ models:
       # ni img2img, ni inpaint, ni édition.
       text_to_image: Krea2Pipeline
     single_file:
-      # Le transformer SE CHARGE depuis le GGUF déjà installé — c'est
-      # l'essentiel du poids (≈ 13 Go en Q5_K_M). diffusers n'a pas de
-      # convertisseur pour Krea 2, mais la correspondance des noms est exacte
-      # et vérifiée (430 tenseurs ↔ 430 clés) : voir
+      # Le transformer se charge depuis le GGUF déjà installé. diffusers n'a
+      # pas de convertisseur pour Krea 2, mais la correspondance des noms est
+      # exacte et vérifiée (430 tenseurs ↔ 430 clés) :
       # `atelier/torchengine/krea2_gguf.py`.
+      #
+      # Ce que ça économise n'est pas une abstraction : le même transformer
+      # pèse 26,3 Go en safetensors dans le dépôt (trois fragments) contre
+      # ~13 Go en Q5_K_M sur le disque. C'est la plus grosse pièce du modèle,
+      # et c'est celle qu'on ne retélécharge pas.
       transformer: {class: Krea2Transformer2DModel, role: diffusion}
-      # Configuration d'architecture : les valeurs par défaut de la classe
-      # diffusers SONT celles de Krea 2 Turbo — démontré par la concordance de
-      # toutes les formes avec le fichier réel. Rien à aller chercher.
-      config_local: true
-    # CE QUI MANQUE ENCORE, nommé pièce par pièce. « Télécharger le modèle
-    # entier » était faux et inutilisable : ce qui bloque n'est pas le
-    # transformer, c'est ce qu'il y a autour.
-    blocked_by:
-      - part: text_encoder
-        why: >
-          Krea 2 reads its prompt with Qwen3-VL-4B, a VISION-language model.
-          transformers converts GGUF for "qwen2", "qwen3" and "qwen3_moe" but
-          not "qwen3vl", which is the architecture the installed file
-          declares. The encoder would have to come as safetensors from
-          Qwen/Qwen3-VL-4B-Instruct (~8 GB, an OPEN repository).
-      - part: vae
-        why: >
-          The pipeline expects an AutoencoderKLQwenImage, and that class has
-          no entry in SINGLE_FILE_LOADABLE_CLASSES - only AutoencoderKLWan
-          does. The wan_2.1_vae.safetensors already installed cannot be loaded
-          as it is.
-      - part: pipeline_config
-        why: >
-          The scheduler and the pipeline settings (which encoder layers are
-          tapped, whether the model is distilled) are published only by
-          krea/Krea-2-Turbo, which is gated. Reconstructing them from memory
-          would replace the model's own constants with ours, silently.
+    # Krea 2 est le seul modèle du catalogue à avoir besoin d'un COMPLÉMENT.
+    # Deux pièces ne peuvent pas venir du GGUF, et ce n'est pas faute d'avoir
+    # cherché :
+    #   · l'encodeur est un Qwen3-VL (vision-langage) et transformers ne sait
+    #     convertir que « qwen2 », « qwen3 » et « qwen3_moe » — pas
+    #     « qwen3vl », qui est ce que déclare l'en-tête du fichier installé ;
+    #   · le VAE attendu est un AutoencoderKLQwenImage, classe sans entrée
+    #     dans SINGLE_FILE_LOADABLE_CLASSES.
+    # S'y ajoutent le scheduler et les réglages du pipeline, dont les valeurs
+    # ne sont PAS celles par défaut (`use_dynamic_shifting: true`,
+    # `max_image_seq_len: 6400`) : les deviner aurait changé le rendu en
+    # silence.
+    from_repo:
+      repo: krea/Krea-2-Turbo
+      gated: true
+      download_gb: 9.4
+      # Ce qu'on prend — et surtout ce qu'on NE prend PAS. Sans cette liste,
+      # `snapshot_download` rapatrie les 26 Go de `transformer/`, les 26 Go de
+      # `turbo.safetensors` et 30 Mo d'images d'illustration : 61 Go pour 9
+      # utiles.
+      patterns:
+        - "model_index.json"
+        - "scheduler/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "text_encoder/*"
+        # La configuration du transformer SEULE (588 octets), pas ses poids.
+        # Ses 17 valeurs se trouvent être exactement les défauts de la classe
+        # diffusers — vérifié une à une — mais on prend le fichier plutôt que
+        # de s'appuyer là-dessus : une valeur par défaut peut changer en amont
+        # sans prévenir, et le rendu bougerait sans qu'aucune erreur ne sorte.
+        - "transformer/config.json"
+      skipped_gb: 52.6
     repo: krea/Krea-2-Turbo
     gated: true
-    full_repo_gb: null
+    full_repo_gb: 61.9

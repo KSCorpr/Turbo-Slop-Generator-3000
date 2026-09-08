@@ -24,7 +24,7 @@ folder. Only the engine underneath changes.
 | Z-Image Turbo on a 12 GB card | Q8_0, resident | Q8_0, **resident** |
 | Z-Image Turbo on an 11 GB card | Q8_0, resident | Q8_0, modules take turns |
 | Hugging Face token | never | once, for Flux.2 Klein's **config** (a few KB) |
-| Krea 2 | full support | **does not run yet** — its transformer loads, the rest does not |
+| Krea 2 | full support | text-to-image only, **+9.4 GB** (encoder and VAE cannot come from GGUF) |
 | Samplers | 21 | 14 map; 7 fall back to Euler |
 | ESRGAN GGUF upscalers | yes | no — use the modern upscalers |
 | Image → 3D (trellis) | yes | **not ported** |
@@ -108,11 +108,10 @@ open GGUF, already on your disk; what is gated is `transformer/config.json`,
 which only Black Forest Labs publishes. diffusers' own fallback is no help: it
 points at `black-forest-labs/FLUX.2-dev`, a different model, also gated.
 
-**Krea 2** needs it for its **pipeline settings** — the scheduler, which
-encoder layers are tapped, whether the model is distilled — which only
-`krea/Krea-2-Turbo` publishes. Not for its weights: those load from the GGUF
-you already have. It does not run on this engine yet for other reasons; see
-the section below.
+**Krea 2** needs it for its **text encoder and VAE**, which cannot be read from
+GGUF — about 9.4 GB from the gated `krea/Krea-2-Turbo`. Not for its transformer:
+that is 26.3 GB in the repository and loads instead from the ~13 GB GGUF you
+already have. See the section below.
 
 There is **no command line to run**. This app ships a portable Python with no
 console and no PATH, so `huggingface-cli login` is not a thing its user has.
@@ -236,7 +235,7 @@ meaning on this engine and still works if you switch back.
 
 ---
 
-## Krea 2: the converter that was missing, and the three walls after it
+## Krea 2: the converter that was missing, and the 52 GB it saves
 
 I first wrote that Krea 2 meant "download the whole model". That was wrong, and
 worth unpicking because the correction is instructive.
@@ -260,27 +259,34 @@ in every quantization, that neither engine reads. The converter drops them **by
 name** and raises on anything else it does not recognise: a key that vanishes
 silently is how a model ends up loading cleanly and rendering subtly wrong.
 
-So the transformer — the bulk of the weight — is settled. Three things around
-it are not, and the app names them one by one instead of saying "download the
-model":
+### What still cannot come from GGUF
+
+Two pieces, and neither is a matter of effort:
 
 * **the text encoder.** Krea 2 reads its prompt with Qwen3-VL-4B, a *vision*-
   language model. transformers converts GGUF for `qwen2`, `qwen3` and
   `qwen3_moe`, but not `qwen3vl` — which is what the installed file's header
-  declares. The encoder would have to come as safetensors from
-  `Qwen/Qwen3-VL-4B-Instruct` (~8 GB, and **open**).
+  declares.
 * **the VAE.** The pipeline wants an `AutoencoderKLQwenImage`, and that class
-  has no single-file entry — only `AutoencoderKLWan` does. The
-  `wan_2.1_vae.safetensors` already on disk is not loadable as it stands.
-* **the pipeline settings.** Scheduler, tapped encoder layers, distilled or
-  not: published only by the gated `krea/Krea-2-Turbo`. Reconstructing them
-  from memory would replace the model's own constants with mine, silently —
-  the same mistake as building a scheduler from class defaults.
+  has no single-file entry — only `AutoencoderKLWan` does.
 
-Krea 2 therefore refuses **before loading anything**, listing those three. On
-this engine it is a text-to-image model on paper and unavailable in practice;
-on stable-diffusion.cpp it works as it always has, which is one switch away in
-Settings.
+So Krea 2 takes a **supplement**: encoder, VAE, tokenizer, scheduler and the
+transformer's 588-byte `config.json`, fetched with `allow_patterns` from
+`krea/Krea-2-Turbo`. That is **9.4 GB of the repository's 61.9** — the skipped
+52.6 GB being the transformer weights we already hold as GGUF, plus a
+single-file copy of the same model, plus the README's illustrations. Without
+that pattern list, "download the model" means 62 GB for 9 useful ones.
+
+Two details worth keeping. The transformer's `config.json` is taken rather than
+assumed: its seventeen values do happen to equal the diffusers class defaults —
+checked one by one against the real file — but a default can change upstream
+without warning and the render would move with nothing raising. And the
+scheduler config is genuinely not the class default (`use_dynamic_shifting:
+true`, `max_image_seq_len: 6400`), which is exactly why guessing it would have
+been wrong.
+
+Krea 2 therefore refuses **before loading anything** when the supplement is
+absent, and names the real size — 9 GB, not 62.
 
 ## The benchmark measures the one open question
 

@@ -135,10 +135,10 @@ class CatalogTests(unittest.TestCase):
         flux = catalog.get("flux2-klein-9b")
         self.assertIn("config", flux.needs_token)
         krea = catalog.get("krea2-turbo")
-        self.assertIn("pipeline settings", krea.needs_token)
+        self.assertIn("text encoder and VAE", krea.needs_token)
         self.assertNotIn("weights", krea.needs_token,
                          "saying “weights” would send someone to re-download "
-                         "13 GB they already have")
+                         "26 GB they already have in another form")
 
     def test_the_requested_mode_is_computed_before_it_is_granted(self):
         krea = catalog.get("krea2-turbo")
@@ -716,6 +716,7 @@ class HuggingFaceAccessTests(unittest.TestCase):
         entries = {m: why for m, _r, _p, why in hfaccess.gated_repos()}
         self.assertIn("already have", entries["flux2-klein-9b"])
         self.assertIn("transformer already loads", entries["krea2-turbo"])
+        self.assertNotIn("weights", entries["krea2-turbo"])
 
     def test_the_settings_field_wins_over_a_stale_environment(self):
         """Coller un nouveau jeton doit agir tout de suite. Avec `setdefault`,
@@ -856,27 +857,88 @@ class _Fake:
 
 
 class Krea2AvailabilityTests(unittest.TestCase):
-    def test_the_blocker_is_named_per_part_not_per_model(self):
-        """« Télécharge le modèle entier » envoyait chercher treize
-        gigaoctets déjà présents. Ce qui bloque est ailleurs, et pèse
-        autrement moins."""
-        krea = catalog.get("krea2-turbo")
-        self.assertTrue(krea.from_gguf, "its transformer does load from GGUF")
-        self.assertFalse(krea.usable)
-        parts = {b.part for b in krea.blocked_by}
-        self.assertEqual(parts, {"text_encoder", "vae", "pipeline_config"})
+    """Krea 2 : ce qui vient du GGUF, et ce qui doit venir d'ailleurs."""
 
-    def test_generation_refuses_before_loading_anything(self):
-        """Vingt secondes de chargement pour une pile d'appels, ce n'est pas
-        un message d'erreur."""
+    def test_the_transformer_comes_from_the_file_already_installed(self):
+        """26,3 Go de poids dans le dépôt, ~13 en Q5_K_M sur le disque. C'est
+        la plus grosse pièce, et c'est celle qu'on ne retélécharge pas."""
+        krea = catalog.get("krea2-turbo")
+        self.assertTrue(krea.from_gguf)
+        self.assertIn("transformer", krea.parts)
+        self.assertEqual(krea.parts["transformer"].role, "diffusion")
+
+    def test_what_gguf_cannot_provide_is_named_and_sized(self):
+        """L'encodeur est un Qwen3-VL (transformers ne convertit pas
+        « qwen3vl ») et le VAE n'a pas de chargeur fichier-unique. Les deux
+        doivent venir du dépôt — mais eux SEULS."""
+        krea = catalog.get("krea2-turbo")
+        self.assertTrue(krea.needs_supplement)
+        self.assertAlmostEqual(krea.supplement.download_gb, 9.4, places=1)
+
+    def test_the_download_skips_what_the_gguf_already_covers(self):
+        """Sans `allow_patterns`, `snapshot_download` prend les 26 Go de
+        poids de transformer qu'on vient d'éviter, plus 26 Go d'une copie
+        fichier-unique. 62 Go pour 9 utiles."""
+        patterns = catalog.get("krea2-turbo").supplement.patterns
+        self.assertIn("text_encoder/*", patterns)
+        self.assertIn("vae/*", patterns)
+        self.assertNotIn("transformer/*", patterns)
+        self.assertNotIn("turbo.safetensors", patterns)
+        self.assertNotIn("images/*", patterns)
+
+    def test_the_transformer_config_is_taken_and_not_assumed(self):
+        """Ses dix-sept valeurs se trouvent être les défauts de la classe —
+        vérifié une à une contre le fichier réel. On prend quand même le
+        fichier : un défaut peut changer en amont sans prévenir, et le rendu
+        bougerait sans qu'aucune erreur ne sorte. 588 octets."""
+        patterns = catalog.get("krea2-turbo").supplement.patterns
+        self.assertIn("transformer/config.json", patterns)
+
+    def test_a_half_downloaded_supplement_is_not_ready(self):
+        """`model_index.json` arrive en une seconde, l'encodeur pèse neuf
+        gigaoctets. Ne regarder que le premier ferait dire « prêt » à un
+        modèle qui ne l'est pas."""
+        import tempfile
+        from unittest.mock import patch
+        from atelier import settings
+        sup = catalog.get("krea2-turbo").supplement
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "krea__Krea-2-Turbo"
+            root.mkdir(parents=True)
+            with patch.object(settings, "model_repo_dir", return_value=root):
+                self.assertFalse(sup.present)
+                (root / "model_index.json").write_text("{}")
+                self.assertFalse(sup.present, "index alone is not the model")
+                (root / "text_encoder").mkdir()
+                self.assertFalse(sup.present, "an empty folder is not weights")
+                (root / "text_encoder" / "model.safetensors").write_text("x")
+                self.assertTrue(sup.present)
+
+    def test_generation_refuses_before_loading_and_gives_the_real_size(self):
+        """« Modèle introuvable » serait faux : le gros du modèle est là."""
         from atelier.torchengine import backend
         with self.assertRaises(Exception) as caught:
             backend.generate("krea2-turbo", "p", "", 8, 1.0, 1024, 1024, 1, 1,
                              prefs_override={})
         text = str(caught.exception)
-        self.assertIn("text_encoder", text)
-        self.assertIn("qwen3vl", text)
+        self.assertIn("9 GB", text)
+        self.assertIn("62 GB", text)
 
-    def test_the_other_two_models_stay_usable(self):
+    def test_the_token_message_no_longer_says_weights(self):
+        """Dire « les poids » enverrait retélécharger vingt-six gigaoctets
+        déjà présents sous une autre forme."""
+        krea = catalog.get("krea2-turbo")
+        self.assertIn("text encoder and VAE", krea.needs_token)
+        self.assertNotIn("weights", krea.needs_token)
+
+    def test_readiness_needs_both_downloads(self):
+        """Le GGUF et le complément sont deux téléchargements distincts, et
+        seul le second est propre à ce moteur."""
+        from unittest.mock import patch
+        from atelier import registry
+        with patch.object(registry, "_torch_engine_active", return_value=True):
+            self.assertIs(registry._torch_repo_present("krea2-turbo"), False)
+
+    def test_the_other_two_models_need_no_supplement(self):
         for model_id in ("z-image-turbo", "flux2-klein-9b"):
-            self.assertTrue(catalog.get(model_id).usable, model_id)
+            self.assertFalse(catalog.get(model_id).needs_supplement, model_id)

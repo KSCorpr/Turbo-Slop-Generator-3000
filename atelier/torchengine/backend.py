@@ -273,6 +273,16 @@ def generate(
             "transformer loads fine from the GGUF you already have; what is "
             "missing is around it:\n" + model.blocked_summary
             + "\n→ Switch to stable-diffusion.cpp in Settings for this model.")
+    if model.needs_supplement and not model.supplement.present:
+        #  Dit AVANT le chargement, et en nommant ce qui manque. « Modèle
+        #  introuvable » serait faux : le gros du modèle est là, en GGUF.
+        raise runtime.TorchEngineError(
+            f"“{model_id}” needs its text encoder and VAE in addition to the "
+            "GGUF you already have — neither can be read from GGUF on this "
+            "engine.\n→ Model catalog tab, Download: about "
+            f"{model.supplement.download_gb:.0f} GB, not the "
+            f"{model.supplement.download_gb + (model.supplement.skipped_gb or 0):.0f} "
+            "GB of the full repository.")
 
     # Le jeton et le point d'accès sont posés AVANT toute requête au Hub :
     # les configurations d'architecture partent chercher un dépôt qui peut
