@@ -57,6 +57,18 @@ class Part:
 
 
 @dataclass(frozen=True)
+class Blocker:
+    """Une pièce qui NE se charge pas, et la raison exacte.
+
+    Nommer la pièce plutôt que le modèle est tout l'intérêt : « télécharge le
+    modèle entier » envoie chercher treize gigaoctets qu'on a déjà, alors que
+    ce qui manque est ailleurs et pèse autrement moins.
+    """
+    part: str
+    why: str
+
+
+@dataclass(frozen=True)
 class TorchModel:
     id: str
     pipeline: str
@@ -69,6 +81,12 @@ class TorchModel:
     parts: dict = field(default_factory=dict)
     config_repo: str = ""
     config_gated: bool = False
+    #  La configuration d'architecture est-elle celle des valeurs par défaut de
+    #  la classe diffusers ? (Démontré, pour Krea 2, par la concordance de
+    #  toutes les formes avec le fichier réel.) Alors rien à télécharger.
+    config_local: bool = False
+    #  Ce qui empêche encore ce modèle de tourner sur ce moteur.
+    blocked_by: tuple = ()
     #  Repli dépôt complet.
     repo: str = ""
     gated: bool = False
@@ -78,6 +96,17 @@ class TorchModel:
     def from_gguf(self) -> bool:
         """Ce modèle se monte-t-il à partir des fichiers déjà installés ?"""
         return bool(self.parts)
+
+    @property
+    def usable(self) -> bool:
+        """Peut-on réellement générer avec, sur ce moteur, aujourd'hui ?
+
+        Séparé de `from_gguf` volontairement : un modèle dont le transformer se
+        charge mais dont l'encodeur ne se charge pas n'est pas « à moitié
+        disponible », il est indisponible — et le dire avant le clic vaut mieux
+        qu'une pile d'appels vingt secondes plus tard.
+        """
+        return not self.blocked_by
 
     @property
     def local_dir(self) -> Path:
@@ -100,12 +129,25 @@ class TorchModel:
         réclame pas. La distinction compte : quelques kilo-octets de
         configuration et trente gigaoctets de poids ne se demandent pas de la
         même façon."""
-        if self.from_gguf:
+        if self.config_gated and self.config_repo:
             return ("its architecture config (a few KB, once) comes from a "
-                    f"gated repository: {self.config_repo}"
-                    if self.config_gated else "")
+                    f"gated repository: {self.config_repo}")
+        if not self.usable and self.gated and self.repo:
+            #  Le transformer vient du GGUF ; ce qui reste fermé, ce sont les
+            #  réglages du pipeline. Dire « les poids » enverrait
+            #  retélécharger treize gigaoctets déjà présents.
+            return ("its pipeline settings come from a gated repository: "
+                    f"{self.repo}")
+        if self.from_gguf:
+            return ""
         return (f"its weights come from a gated repository: {self.repo}"
                 if self.gated else "")
+
+    @property
+    def blocked_summary(self) -> str:
+        """Une phrase par pièce manquante, pour le journal et l'interface."""
+        return "\n".join(f"· {b.part}: {' '.join(b.why.split())}"
+                          for b in self.blocked_by)
 
 
 @lru_cache(maxsize=4)
@@ -127,6 +169,9 @@ def _parse(path: str, mtime: float) -> tuple[TorchModel, ...]:
             parts=parts,
             config_repo=str(sf.get("config_repo") or ""),
             config_gated=bool(sf.get("config_gated")),
+            config_local=bool(sf.get("config_local")),
+            blocked_by=tuple(Blocker(str(b["part"]), str(b["why"]))
+                             for b in (e.get("blocked_by") or [])),
             repo=str(e.get("repo") or ""),
             gated=bool(e.get("gated")),
             full_repo_gb=(None if e.get("full_repo_gb") is None

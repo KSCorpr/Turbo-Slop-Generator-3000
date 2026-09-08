@@ -99,10 +99,40 @@ models:
       # diffusers 0.40.0 n'exporte QUE la classe texte→image pour Krea 2 :
       # ni img2img, ni inpaint, ni édition.
       text_to_image: Krea2Pipeline
-    # Pas de `single_file` : `Krea2Transformer2DModel` n'est pas enregistré
-    # dans `SINGLE_FILE_LOADABLE_CLASSES`, donc son GGUF n'est pas lisible ici.
-    # C'est le SEUL modèle du catalogue qui oblige au dépôt complet — et il est
-    # fermé, ce qui en fait le seul à demander un jeton pour ses poids.
+    single_file:
+      # Le transformer SE CHARGE depuis le GGUF déjà installé — c'est
+      # l'essentiel du poids (≈ 13 Go en Q5_K_M). diffusers n'a pas de
+      # convertisseur pour Krea 2, mais la correspondance des noms est exacte
+      # et vérifiée (430 tenseurs ↔ 430 clés) : voir
+      # `atelier/torchengine/krea2_gguf.py`.
+      transformer: {class: Krea2Transformer2DModel, role: diffusion}
+      # Configuration d'architecture : les valeurs par défaut de la classe
+      # diffusers SONT celles de Krea 2 Turbo — démontré par la concordance de
+      # toutes les formes avec le fichier réel. Rien à aller chercher.
+      config_local: true
+    # CE QUI MANQUE ENCORE, nommé pièce par pièce. « Télécharger le modèle
+    # entier » était faux et inutilisable : ce qui bloque n'est pas le
+    # transformer, c'est ce qu'il y a autour.
+    blocked_by:
+      - part: text_encoder
+        why: >
+          Krea 2 reads its prompt with Qwen3-VL-4B, a VISION-language model.
+          transformers converts GGUF for "qwen2", "qwen3" and "qwen3_moe" but
+          not "qwen3vl", which is the architecture the installed file
+          declares. The encoder would have to come as safetensors from
+          Qwen/Qwen3-VL-4B-Instruct (~8 GB, an OPEN repository).
+      - part: vae
+        why: >
+          The pipeline expects an AutoencoderKLQwenImage, and that class has
+          no entry in SINGLE_FILE_LOADABLE_CLASSES - only AutoencoderKLWan
+          does. The wan_2.1_vae.safetensors already installed cannot be loaded
+          as it is.
+      - part: pipeline_config
+        why: >
+          The scheduler and the pipeline settings (which encoder layers are
+          tapped, whether the model is distilled) are published only by
+          krea/Krea-2-Turbo, which is gated. Reconstructing them from memory
+          would replace the model's own constants with ours, silently.
     repo: krea/Krea-2-Turbo
     gated: true
     full_repo_gb: null

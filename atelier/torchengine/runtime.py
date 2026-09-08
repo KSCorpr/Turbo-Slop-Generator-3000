@@ -50,8 +50,29 @@ def torch():
     return _import("torch")
 
 
+_KREA_REGISTERED = False
+
+
 def diffusers():
-    return _import("diffusers")
+    """diffusers, avec le chargeur Krea 2 branché au premier appel.
+
+    Le branchement est fait ICI et pas à l'import du module : il touche une
+    table interne de diffusers, donc il ne doit exister que dans les sessions
+    qui se servent réellement du moteur. Il s'efface tout seul le jour où
+    l'amont publie son propre chargeur — voir `krea2_gguf.register`.
+    """
+    global _KREA_REGISTERED
+    module = _import("diffusers")
+    if not _KREA_REGISTERED:
+        _KREA_REGISTERED = True
+        try:
+            from . import krea2_gguf
+            krea2_gguf.register(module)
+        except Exception:  # noqa: BLE001
+            # Un échec de branchement ne doit pas empêcher les deux autres
+            # modèles de tourner : ils n'en dépendent pas.
+            pass
+    return module
 
 
 #  Le socle MINIMAL pour qu'un pipeline se charge. Aucun de ces quatre n'est un

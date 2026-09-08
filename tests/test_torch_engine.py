@@ -120,12 +120,12 @@ class CatalogTests(unittest.TestCase):
                               f"{model.id}: role “{part.role}” is not in "
                               "models.yaml")
 
-    def test_only_a_model_without_single_file_support_needs_a_full_repo(self):
-        """Krea 2 est le seul, et c'est un fait d'amont : diffusers 0.40
-        n'enregistre pas `Krea2Transformer2DModel` pour le chargement
-        fichier-unique."""
-        full = [m.id for m in catalog.load() if not m.from_gguf]
-        self.assertEqual(full, ["krea2-turbo"])
+    def test_every_transformer_now_comes_from_a_file_on_disk(self):
+        """Y COMPRIS Krea 2, dont diffusers n'enregistre pas le chargeur : la
+        correspondance de noms s'écrit, et elle est exacte. Ce qui bloque
+        encore ce modèle est ailleurs, et nommé pièce par pièce."""
+        self.assertEqual([m.id for m in catalog.load() if not m.from_gguf],
+                         [])
 
     def test_a_token_is_asked_for_the_right_reason(self):
         """Quelques kilo-octets de configuration et trente gigaoctets de poids
@@ -135,7 +135,10 @@ class CatalogTests(unittest.TestCase):
         flux = catalog.get("flux2-klein-9b")
         self.assertIn("config", flux.needs_token)
         krea = catalog.get("krea2-turbo")
-        self.assertIn("weights", krea.needs_token)
+        self.assertIn("pipeline settings", krea.needs_token)
+        self.assertNotIn("weights", krea.needs_token,
+                         "saying “weights” would send someone to re-download "
+                         "13 GB they already have")
 
     def test_the_requested_mode_is_computed_before_it_is_granted(self):
         krea = catalog.get("krea2-turbo")
@@ -610,27 +613,17 @@ class ReadinessTests(unittest.TestCase):
                           return_value=None):
             self.assertFalse(registry.model_is_ready(model))
 
-    def test_a_model_without_single_file_support_still_wants_its_repo(self):
+    def test_a_gguf_model_defers_to_the_native_answer(self):
         from atelier import registry
         self.assertIsNone(registry._torch_repo_present("z-image-turbo"),
                           "a GGUF model must defer to the native answer")
-        self.assertIs(registry._torch_repo_present("krea2-turbo"), False)
 
-    def test_a_bare_folder_is_not_a_downloaded_model(self):
-        """diffusers écrit l'arborescence d'abord et les poids ensuite : un
-        dossier existant est l'état exact d'un téléchargement interrompu."""
-        import tempfile
-        from unittest.mock import patch
-        from atelier import registry, settings
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            (root / "krea__Krea-2-Turbo").mkdir()
-            with patch.object(settings, "model_repo_dir",
-                              side_effect=lambda r: root / r.replace("/", "__")):
-                self.assertFalse(registry._torch_repo_present("krea2-turbo"))
-                (root / "krea__Krea-2-Turbo"
-                 / "model_index.json").write_text("{}")
-                self.assertTrue(registry._torch_repo_present("krea2-turbo"))
+    def test_a_blocked_model_is_never_reported_ready(self):
+        """Des fichiers présents ne font pas un modèle utilisable. Répondre
+        « prêt » donnerait un bouton « Générer » actif qui refuse au clic —
+        exactement ce qu'on reproche à une interface."""
+        from atelier import registry
+        self.assertIs(registry._torch_repo_present("krea2-turbo"), False)
 
 
 class HuggingFaceAccessTests(unittest.TestCase):
@@ -699,7 +692,7 @@ class HuggingFaceAccessTests(unittest.TestCase):
         from atelier import hfaccess
         entries = {m: why for m, _r, _p, why in hfaccess.gated_repos()}
         self.assertIn("already have", entries["flux2-klein-9b"])
-        self.assertIn("weights cannot come from", entries["krea2-turbo"])
+        self.assertIn("transformer already loads", entries["krea2-turbo"])
 
     def test_the_settings_field_wins_over_a_stale_environment(self):
         """Coller un nouveau jeton doit agir tout de suite. Avec `setdefault`,
@@ -729,3 +722,138 @@ def patch_token(value: str):
     from unittest.mock import patch
     from atelier import hfaccess
     return patch.object(hfaccess, "token", return_value=value)
+
+
+class Krea2GgufMappingTests(unittest.TestCase):
+    """Le convertisseur écrit à la main — vérifié exhaustivement, hors ligne.
+
+    C'est le seul endroit de cette branche où l'on écrit une correspondance de
+    poids soi-même, et c'est aussi le seul type d'erreur qui ne se voit pas :
+    un tenseur mal placé ne lève rien, il dégrade l'image. La seule parade est
+    de tout vérifier — que chaque clé attendue reçoit exactement un tenseur, de
+    la bonne taille, et qu'aucun tenseur ne disparaît en silence.
+
+    Le relevé (`tests/fixtures/krea2_tensor_names.json`) vient du VRAI fichier :
+    en-tête GGUF de `krea2_turbo-Q5_K_M.gguf` lu par requête partielle, et
+    `state_dict` de la classe diffusers. Le conserver rend le test reproductible
+    sans réseau et sans les treize gigaoctets.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        path = (pathlib.Path(__file__).parent / "fixtures"
+                / "krea2_tensor_names.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        cls.gguf = data["gguf_tensors"]
+        cls.want = data["diffusers_keys"]
+
+    def _mapping(self):
+        from atelier.torchengine import krea2_gguf as K
+        mapped, dropped, unmapped = {}, [], []
+        for name, dims in self.gguf:
+            target = K.convert_key(name)
+            if target is None:
+                (dropped if name in K.EASTER_EGG else unmapped).append(name)
+                continue
+            # Les dimensions GGUF sont dans l'ordre inverse de torch.
+            mapped.setdefault(target, []).append((name, list(reversed(dims))))
+        return mapped, dropped, unmapped
+
+    def test_every_expected_key_is_produced_exactly_once(self):
+        mapped, _dropped, unmapped = self._mapping()
+        self.assertEqual(unmapped, [], "tensors the converter does not know")
+        self.assertEqual(sorted(k for k in self.want if k not in mapped), [],
+                         "keys diffusers wants and the converter never makes")
+        self.assertEqual(sorted(k for k in mapped if k not in self.want), [],
+                         "keys the converter invents")
+        self.assertEqual([k for k, v in mapped.items() if len(v) > 1], [],
+                         "two tensors landing on the same key")
+
+    def test_every_shape_matches(self):
+        """Une correspondance de NOMS peut être juste et le contenu faux. Les
+        formes sont la seule vérification disponible sans les poids."""
+        import math
+        mapped, _d, _u = self._mapping()
+        wrong = [(v[0][0], v[0][1], k, self.want[k])
+                 for k, v in mapped.items()
+                 if math.prod(v[0][1]) != math.prod(self.want[k])]
+        self.assertEqual(wrong, [])
+
+    def test_the_two_orphans_are_dropped_on_purpose_and_named(self):
+        """`last.up` / `last.down` : deux matrices 6144×6144 qu'aucun des deux
+        moteurs ne contient — ni `Krea2FinalLayer` chez diffusers, ni
+        `KreaLastLayer` chez stable-diffusion.cpp. Les métadonnées du fichier
+        (`egg_w`, `egg_h`, `egg_c`, `egg_format`) disent ce que c'est : une
+        image cachée par celui qui a empaqueté le GGUF."""
+        from atelier.torchengine import krea2_gguf as K
+        _m, dropped, _u = self._mapping()
+        self.assertEqual(sorted(dropped), sorted(K.EASTER_EGG))
+
+    def test_an_unknown_tensor_raises_instead_of_vanishing(self):
+        """Le seul défaut qu'on ne verrait jamais : un modèle qui charge sans
+        erreur et rend des images subtilement fausses."""
+        from atelier.torchengine import krea2_gguf as K
+        with self.assertRaises(ValueError) as caught:
+            K.convert_state_dict({"blocks.0.attn.wq.weight": _Fake(),
+                                  "something.unexpected": _Fake()})
+        self.assertIn("unexpected", str(caught.exception))
+
+    def test_the_flat_modulation_table_is_reshaped(self):
+        """Le GGUF la stocke à plat (36864), diffusers l'attend en 6 × 6144."""
+        from atelier.torchengine import krea2_gguf as K
+        out = K.convert_state_dict({"blocks.0.mod.lin": _Fake((36864,))})
+        table = out["transformer_blocks.0.scale_shift_table"]
+        self.assertEqual(table.shape, (6, 6144))
+
+    def test_registration_never_overwrites_an_upstream_loader(self):
+        """Le jour où diffusers publie le sien, le nôtre doit s'effacer : deux
+        correspondances pour un même modèle finiraient par diverger, et c'est
+        la nôtre qui aurait tort."""
+        _diffusers_or_skip()
+        from unittest.mock import patch
+        import diffusers
+        from atelier.torchengine import krea2_gguf as K
+        from diffusers.loaders import single_file_model as sfm
+        with patch.dict(sfm.SINGLE_FILE_LOADABLE_CLASSES,
+                        {"Krea2Transformer2DModel": {"checkpoint_mapping_fn":
+                                                     lambda c, **k: c}}):
+            self.assertFalse(K.register(diffusers))
+
+
+class _Fake:
+    """Un tenseur juste assez réel pour la conversion de noms."""
+
+    def __init__(self, shape=(1,)):
+        self.shape = shape
+        self.ndim = len(shape)
+
+    def reshape(self, *dims):
+        return _Fake(tuple(dims))
+
+
+class Krea2AvailabilityTests(unittest.TestCase):
+    def test_the_blocker_is_named_per_part_not_per_model(self):
+        """« Télécharge le modèle entier » envoyait chercher treize
+        gigaoctets déjà présents. Ce qui bloque est ailleurs, et pèse
+        autrement moins."""
+        krea = catalog.get("krea2-turbo")
+        self.assertTrue(krea.from_gguf, "its transformer does load from GGUF")
+        self.assertFalse(krea.usable)
+        parts = {b.part for b in krea.blocked_by}
+        self.assertEqual(parts, {"text_encoder", "vae", "pipeline_config"})
+
+    def test_generation_refuses_before_loading_anything(self):
+        """Vingt secondes de chargement pour une pile d'appels, ce n'est pas
+        un message d'erreur."""
+        from atelier.torchengine import backend
+        with self.assertRaises(Exception) as caught:
+            backend.generate("krea2-turbo", "p", "", 8, 1.0, 1024, 1024, 1, 1,
+                             prefs_override={})
+        text = str(caught.exception)
+        self.assertIn("text_encoder", text)
+        self.assertIn("qwen3vl", text)
+
+    def test_the_other_two_models_stay_usable(self):
+        for model_id in ("z-image-turbo", "flux2-klein-9b"):
+            self.assertTrue(catalog.get(model_id).usable, model_id)

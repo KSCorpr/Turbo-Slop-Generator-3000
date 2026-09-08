@@ -24,7 +24,7 @@ folder. Only the engine underneath changes.
 | Z-Image Turbo on a 12 GB card | Q8_0, resident | Q8_0, **resident** |
 | Z-Image Turbo on an 11 GB card | Q8_0, resident | Q8_0, modules take turns |
 | Hugging Face token | never | once, for Flux.2 Klein's **config** (a few KB) |
-| Krea 2 | full support | **text-to-image only**, and its weights need the gated repo |
+| Krea 2 | full support | **does not run yet** — its transformer loads, the rest does not |
 | Samplers | 21 | 14 map; 7 fall back to Euler |
 | ESRGAN GGUF upscalers | yes | no — use the modern upscalers |
 | Image → 3D (trellis) | yes | **not ported** |
@@ -47,7 +47,8 @@ Four things had to be true, and each was verified rather than assumed:
    uses.
 2. **`ZImageTransformer2DModel` and `Flux2Transformer2DModel` are registered**
    in `SINGLE_FILE_LOADABLE_CLASSES`, each with its conversion function.
-   `Krea2Transformer2DModel` is not — that is the one gap.
+   `Krea2Transformer2DModel` is not — so this branch writes that converter
+   itself (see below).
 3. **The tensor names match.** Read straight out of the GGUF headers:
    leejet's Z-Image file carries `context_refiner.0.attention.qkv.weight`,
    `cap_embedder.1.weight`; unsloth's Flux.2 Klein carries `double_blocks.0.
@@ -107,9 +108,11 @@ open GGUF, already on your disk; what is gated is `transformer/config.json`,
 which only Black Forest Labs publishes. diffusers' own fallback is no help: it
 points at `black-forest-labs/FLUX.2-dev`, a different model, also gated.
 
-**Krea 2** is the real one: with no single-file loader upstream, its weights
-have to come from the gated `krea/Krea-2-Turbo` repository in full. It is the
-only model on this branch that costs a genuine download.
+**Krea 2** needs it for its **pipeline settings** — the scheduler, which
+encoder layers are tapped, whether the model is distilled — which only
+`krea/Krea-2-Turbo` publishes. Not for its weights: those load from the GGUF
+you already have. It does not run on this engine yet for other reasons; see
+the section below.
 
 There is **no command line to run**. This app ships a portable Python with no
 console and no PATH, so `huggingface-cli login` is not a thing its user has.
@@ -232,6 +235,52 @@ at the first click.
 meaning on this engine and still works if you switch back.
 
 ---
+
+## Krea 2: the converter that was missing, and the three walls after it
+
+I first wrote that Krea 2 meant "download the whole model". That was wrong, and
+worth unpicking because the correction is instructive.
+
+diffusers does not register `Krea2Transformer2DModel` for single-file loading.
+But an absent converter does not mean an unreadable file — only that nobody
+wrote the mapping. So it was written, and **checked exhaustively**: 432 tensors
+in the real `krea2_turbo-Q5_K_M.gguf`, 430 keys in the diffusers class, a
+one-to-one mapping with every shape matching, nothing unmapped, nothing
+invented, nothing landing twice. The check replays offline from a recorded
+header in `tests/fixtures/`, so CI runs it without the 13 GB.
+
+The two leftover tensors are the interesting part. `last.up.weight` and
+`last.down.weight`, both 6144×6144, appear in **neither engine's** final layer —
+diffusers' `Krea2FinalLayer` and sd.cpp's `KreaLastLayer` both hold exactly a
+modulation table, a norm and a projection. The file's own metadata says what
+they are: `egg_w: 6144`, `egg_h: 6144`, `egg_c: 1`,
+`egg_format: chw_m1p1_flat` — a 6144×6144 single-channel image, flattened, that
+whoever packaged the GGUF hid inside it. Roughly fifty megabytes of easter egg
+in every quantization, that neither engine reads. The converter drops them **by
+name** and raises on anything else it does not recognise: a key that vanishes
+silently is how a model ends up loading cleanly and rendering subtly wrong.
+
+So the transformer — the bulk of the weight — is settled. Three things around
+it are not, and the app names them one by one instead of saying "download the
+model":
+
+* **the text encoder.** Krea 2 reads its prompt with Qwen3-VL-4B, a *vision*-
+  language model. transformers converts GGUF for `qwen2`, `qwen3` and
+  `qwen3_moe`, but not `qwen3vl` — which is what the installed file's header
+  declares. The encoder would have to come as safetensors from
+  `Qwen/Qwen3-VL-4B-Instruct` (~8 GB, and **open**).
+* **the VAE.** The pipeline wants an `AutoencoderKLQwenImage`, and that class
+  has no single-file entry — only `AutoencoderKLWan` does. The
+  `wan_2.1_vae.safetensors` already on disk is not loadable as it stands.
+* **the pipeline settings.** Scheduler, tapped encoder layers, distilled or
+  not: published only by the gated `krea/Krea-2-Turbo`. Reconstructing them
+  from memory would replace the model's own constants with mine, silently —
+  the same mistake as building a scheduler from class defaults.
+
+Krea 2 therefore refuses **before loading anything**, listing those three. On
+this engine it is a text-to-image model on paper and unavailable in practice;
+on stable-diffusion.cpp it works as it always has, which is one switch away in
+Settings.
 
 ## The benchmark measures the one open question
 

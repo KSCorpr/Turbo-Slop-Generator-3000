@@ -267,6 +267,13 @@ def generate(
         _log(log, "[torch] the HD pass is run by the toolkit on this engine, "
                   "not inside the sampler — ignored here.")
 
+    if not model.usable:
+        raise runtime.TorchEngineError(
+            f"“{model_id}” does not run on the PyTorch engine yet. Its "
+            "transformer loads fine from the GGUF you already have; what is "
+            "missing is around it:\n" + model.blocked_summary
+            + "\n→ Switch to stable-diffusion.cpp in Settings for this model.")
+
     # Le jeton et le point d'accès sont posés AVANT toute requête au Hub :
     # les configurations d'architecture partent chercher un dépôt qui peut
     # être fermé, et un jeton collé dans les réglages doit agir sans redémarrer.

@@ -354,8 +354,13 @@ def _torch_repo_present(model_id: str) -> bool:
     entry = torch_catalog.get(model_id)
     if entry is None:
         return False
+    if not entry.usable:
+        #  Des fichiers présents ne font pas un modèle utilisable : il manque
+        #  une pièce que ce moteur ne sait pas charger. Répondre « prêt »
+        #  donnerait un bouton « Générer » actif qui refuse au clic.
+        return False
     if entry.from_gguf:
-        return None  # le sentinelle « demande au chemin natif »
+        return None  # sentinelle : « la réponse est celle du moteur natif »
     return (entry.local_dir / "model_index.json").is_file()
 
 
