@@ -98,16 +98,36 @@ detects, exactly as `_torch_setup.py` already did.
 
 ### The one token
 
-**Flux.2 Klein** needs a Hugging Face login once. Not for its weights — those
-come from Unsloth's open GGUF, already on your disk — but for a few kilobytes of
-`transformer/config.json` that only Black Forest Labs publishes, in a gated
-repository. Accept the licence on the model page, run `huggingface-cli login`,
-and it is cached from then on. diffusers' own fallback is no help here: it
+Two models want a Hugging Face account, and they want it for very different
+reasons. Nothing on the native engine ever does: every repository in the GGUF
+catalog is open, deliberately.
+
+**Flux.2 Klein** needs it for a few kilobytes. Its weights come from Unsloth's
+open GGUF, already on your disk; what is gated is `transformer/config.json`,
+which only Black Forest Labs publishes. diffusers' own fallback is no help: it
 points at `black-forest-labs/FLUX.2-dev`, a different model, also gated.
 
-**Krea 2** is the harder case: with no single-file loader upstream, its weights
+**Krea 2** is the real one: with no single-file loader upstream, its weights
 have to come from the gated `krea/Krea-2-Turbo` repository in full. It is the
-only model on this branch that costs a real download.
+only model on this branch that costs a genuine download.
+
+There is **no command line to run**. This app ships a portable Python with no
+console and no PATH, so `huggingface-cli login` is not a thing its user has.
+Instead:
+
+1. Create a **read** token at
+   [huggingface.co → Settings → Access Tokens](https://huggingface.co/settings/tokens).
+2. Paste it into **Settings → 🌍 Theme and accounts → Hugging Face token**. It
+   applies immediately — no restart.
+3. Open each model's page and accept its licence:
+   [FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B),
+   [Krea-2-Turbo](https://huggingface.co/krea/Krea-2-Turbo).
+4. Press **🔍 Check what is still missing**. It reports, per model, whether the
+   token is valid, whether the licence is accepted, and which page to open —
+   because those three failures are all a bare `401` otherwise.
+
+The token is never written into a report: the diagnostic export lists only the
+preference keys that affect execution, and this is not one of them.
 
 ---
 

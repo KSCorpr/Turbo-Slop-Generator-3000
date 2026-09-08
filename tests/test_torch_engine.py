@@ -631,3 +631,101 @@ class ReadinessTests(unittest.TestCase):
                 (root / "krea__Krea-2-Turbo"
                  / "model_index.json").write_text("{}")
                 self.assertTrue(registry._torch_repo_present("krea2-turbo"))
+
+
+class HuggingFaceAccessTests(unittest.TestCase):
+    """« Qu'est-ce qu'il me manque exactement ? » — trois réponses, pas une.
+
+    Un dépôt fermé échoue de trois façons qui se ressemblent à l'écran et
+    n'appellent pas du tout la même action : pas de jeton, jeton valide mais
+    licence non acceptée, ou tout va bien. Le message brut de `huggingface_hub`
+    est un 401 dans les deux premiers cas.
+    """
+
+    def _probe(self, responses):
+        """Remplace la couche HTTP par une table code-par-URL."""
+        from unittest.mock import patch
+        from atelier import hfaccess
+
+        def fake(url, tok):
+            for fragment, code in responses.items():
+                if fragment in url:
+                    return code, b"{}"
+            return 404, b""
+        return patch.object(hfaccess, "_get", side_effect=fake)
+
+    def test_the_model_api_is_not_the_right_question(self):
+        """Le piège qui a fait passer la première version du test.
+
+        Sur un dépôt fermé, `/api/models/<id>` répond **200 sans jeton** — les
+        métadonnées publiques sortent toujours. Seul `/raw/main/<fichier>`
+        répond 401. Sonder l'API rendait donc « accès accordé » à quelqu'un qui
+        n'a aucun compte, ce qui est le pire diagnostic possible : il envoie
+        chercher la panne ailleurs.
+        """
+        from atelier import hfaccess
+        with self._probe({"/api/models/": 200, "/raw/main/": 401}), \
+             patch_token(""):
+            access = hfaccess.check("acme/closed", "transformer/config.json")
+        self.assertFalse(access.ok)
+        self.assertEqual(access.state, "needs_token")
+
+    def test_a_valid_token_without_the_licence_is_named_as_such(self):
+        """C'est le cas où aucune manipulation locale n'aidera : il faut aller
+        cliquer sur la page du modèle."""
+        from atelier import hfaccess
+        with self._probe({"/raw/main/": 401}), patch_token("hf_xxx"):
+            access = hfaccess.check("acme/closed")
+        self.assertEqual(access.state, "needs_licence")
+        self.assertIn("licence", access.detail)
+
+    def test_an_open_repository_says_there_is_nothing_to_do(self):
+        from atelier import hfaccess
+        with self._probe({"/raw/main/": 200}), patch_token(""):
+            access = hfaccess.check("acme/open")
+        self.assertTrue(access.ok)
+        self.assertEqual(access.state, "open")
+
+    def test_the_report_names_the_page_to_click(self):
+        from atelier import hfaccess
+        with self._probe({"/api/whoami-v2": 401, "/raw/main/": 401}), \
+             patch_token(""):
+            text = hfaccess.report()
+        self.assertIn("huggingface.co/black-forest-labs/FLUX.2-klein-9B", text)
+        self.assertIn("read", text)
+
+    def test_it_says_the_weights_are_not_what_is_missing(self):
+        """La distinction qui évite un retéléchargement de 6,6 Go par erreur."""
+        from atelier import hfaccess
+        entries = {m: why for m, _r, _p, why in hfaccess.gated_repos()}
+        self.assertIn("already have", entries["flux2-klein-9b"])
+        self.assertIn("weights cannot come from", entries["krea2-turbo"])
+
+    def test_the_settings_field_wins_over_a_stale_environment(self):
+        """Coller un nouveau jeton doit agir tout de suite. Avec `setdefault`,
+        une valeur laissée par la session précédente l'aurait emporté et le
+        bouton de vérification aurait démenti ce qu'on venait de saisir."""
+        import os
+        from unittest.mock import patch
+        from atelier import settings
+        with patch.dict(os.environ, {"HF_TOKEN": "old"}), \
+             patch.object(settings, "load_prefs",
+                          return_value={"hf_token": "new"}):
+            settings.configure_hf_env()
+            self.assertEqual(os.environ["HF_TOKEN"], "new")
+
+    def test_an_empty_field_leaves_an_external_token_alone(self):
+        """Quelqu'un qui exporte HF_TOKEN lui-même garde la main."""
+        import os
+        from unittest.mock import patch
+        from atelier import settings
+        with patch.dict(os.environ, {"HF_TOKEN": "mine"}), \
+             patch.object(settings, "load_prefs", return_value={"hf_token": ""}):
+            settings.configure_hf_env()
+            self.assertEqual(os.environ["HF_TOKEN"], "mine")
+
+
+def patch_token(value: str):
+    from unittest.mock import patch
+    from atelier import hfaccess
+    return patch.object(hfaccess, "token", return_value=value)

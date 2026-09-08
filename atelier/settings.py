@@ -96,6 +96,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     "conv_direct_vae": False,
     "hf_endpoint": "https://huggingface.co",
     "civitai_token": "",        # jeton Civitai (optionnel, pour les LoRA protégés)
+    # Jeton Hugging Face. Optionnel sur le moteur natif — tous les dépôts du
+    # catalogue GGUF sont ouverts, et c'est délibéré. Il ne sert qu'au moteur
+    # PyTorch, pour les rares métadonnées publiées en dépôt fermé.
+    "hf_token": "",
     # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
@@ -216,3 +220,13 @@ def configure_hf_env() -> None:
     prefs = load_prefs()
     os.environ.setdefault("HF_ENDPOINT",
                           prefs.get("hf_endpoint", "https://huggingface.co"))
+    # Le jeton, lui, est posé SANS `setdefault` : le champ des réglages doit
+    # gagner sur une valeur laissée dans l'environnement par une session
+    # précédente, sinon coller un nouveau jeton ne changerait rien tant que
+    # l'application n'a pas redémarré. Un champ vide, en revanche, ne touche à
+    # rien : quelqu'un qui exporte HF_TOKEN lui-même garde la main.
+    token = (prefs.get("hf_token") or "").strip()
+    if token:
+        os.environ["HF_TOKEN"] = token
+        # `huggingface_hub` lit encore l'ancien nom dans certaines versions.
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = token

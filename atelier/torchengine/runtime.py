@@ -317,10 +317,34 @@ def build_from_files(model, pipeline_cls: str, dtype, files: dict,
 
     meta = model.config_repo or model.repo
     tr = _import("transformers")
-    components["tokenizer"] = tr.AutoTokenizer.from_pretrained(
-        meta, subfolder="tokenizer")
+    try:
+        components["tokenizer"] = tr.AutoTokenizer.from_pretrained(
+            meta, subfolder="tokenizer")
+    except Exception as exc:  # noqa: BLE001
+        raise _metadata_error(model, meta, exc) from exc
     components["scheduler"] = _load_scheduler(meta, log)
     return _pipeline_class(pipeline_cls)(**components)
+
+
+def _metadata_error(model, repo: str, exc: Exception) -> TorchEngineError:
+    """Traduire un refus du Hub en quelque chose d'actionnable.
+
+    L'erreur brute est un 401 sur une URL, ce qui laisse croire que le modèle
+    est absent. Il ne l'est pas : ses POIDS sont là, sur le disque. Ce qui
+    manque tient en quelques kilo-octets, et il y a deux raisons possibles —
+    pas de jeton, ou licence non acceptée — qui n'appellent pas la même action.
+    """
+    text = str(exc)
+    if not any(m in text for m in ("401", "403", "gated", "Unauthorized",
+                                   "restricted")):
+        return TorchEngineError(
+            f"Could not read the metadata of “{model.id}” from {repo}: {exc}")
+    return TorchEngineError(
+        f"“{model.id}”: its weights are on your disk, but its architecture "
+        f"metadata lives in a gated repository ({repo}).\n"
+        "→ Settings → Theme and accounts: paste a Hugging Face **read** "
+        "token, accept the licence on that model's page, then use "
+        "“🔍 Check what is still missing” to confirm.")
 
 
 def _config_kwargs(model) -> dict:

@@ -463,6 +463,22 @@ def build_settings_tab():
                 value=prefs.get("civitai_token", ""),
                 label="Civitai token (optional — gated LoRAs)",
                 type="password")
+            # Le jeton Hugging Face n'a JAMAIS servi sur le moteur natif : tous
+            # les dépôts du catalogue GGUF sont ouverts, et c'est un choix.
+            # Le moteur PyTorch, lui, a besoin de deux fichiers publiés en
+            # dépôt fermé. Un champ ici plutôt qu'un `huggingface-cli login` :
+            # cette application tourne sur un Python portable, sans console et
+            # sans PATH — la commande n'existe pas pour celui qui l'utilise.
+            hf_tok = gr.Textbox(
+                value=prefs.get("hf_token", ""),
+                label="Hugging Face token (read) — only for the PyTorch engine",
+                type="password",
+                info=t("Created at huggingface.co → Settings → Access Tokens. "
+                       "A “read” token is enough. Nothing on the native "
+                       "engine needs one."))
+            hf_check = gr.Button(t("🔍 Check what is still missing"),
+                                 size="sm")
+            hf_report = gr.Markdown("", elem_classes="hint", visible=False)
             account_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
         # ================================================================== #
@@ -569,10 +585,27 @@ def build_settings_tab():
             _save(civitai_token=(v or "").strip())
             return _said(_OK + t("Civitai token saved."))
 
+        def _apply_hf_token(v):
+            _save(hf_token=(v or "").strip())
+            # Poser tout de suite la variable d'environnement : sans ça le
+            # jeton n'agirait qu'au prochain démarrage, et le bouton de
+            # vérification juste en dessous dirait « aucun jeton » deux
+            # secondes après qu'on vient de le coller.
+            settings.configure_hf_env()
+            return _said(_OK + t("Hugging Face token saved."))
+
+        def _check_hf():
+            from .. import hfaccess
+            settings.configure_hf_env()
+            return gr.update(value=hfaccess.report(), visible=True)
+
         theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status])
         hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[account_status])
         civitai_tok.change(_apply_token, inputs=[civitai_tok],
                            outputs=[account_status])
+        hf_tok.change(_apply_hf_token, inputs=[hf_tok],
+                      outputs=[account_status])
+        hf_check.click(_check_hf, outputs=[hf_report])
 
         # ---- Mesure -------------------------------------------------------- #
         _bench_stop = threading.Event()
