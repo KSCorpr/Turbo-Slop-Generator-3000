@@ -65,6 +65,27 @@ def engine_report() -> dict[str, Any]:
     return report
 
 
+def torch_engine_report() -> dict[str, Any]:
+    """Ce que le moteur PyTorch a sous les pieds, sans le charger.
+
+    Les versions viennent des métadonnées d'installation et non d'un import :
+    un rapport de diagnostic ne doit pas coûter les secondes et les centaines
+    de mégaoctets qu'un `import torch` réclame — surtout quand on l'ouvre
+    précisément parce que quelque chose ne va pas.
+    """
+    from .engine import backends
+    from .torchengine import catalog as torch_catalog, runtime
+    return {
+        "active": backends.active() == backends.TORCH,
+        "installed": runtime.available(),
+        "versions": runtime.versions(),
+        "models": {m.id: {"repo": m.repo, "gated": m.gated,
+                          "present": (m.local_dir / "model_index.json"
+                                      ).is_file()}
+                   for m in torch_catalog.load()},
+    }
+
+
 def system_report() -> dict[str, Any]:
     prefs = settings.load_prefs()
     # Seulement les choix qui influencent l'exécution. Ne jamais exporter les
@@ -75,6 +96,10 @@ def system_report() -> dict[str, Any]:
         "enc_quant", "flags", "cache_mode", "cache_option",
         "cache_by_model", "max_vram", "stream_layers",
         "conv_direct_diffusion", "conv_direct_vae",
+        # Sur la branche Test7000 c'est LA première chose à connaître d'un
+        # rapport : deux moteurs écrivent dans le même dossier de sortie, et
+        # sans cette ligne rien ne dit lequel a produit ce qu'on regarde.
+        "engine_backend",
     )
     gpus = []
     free = {g.index: hardware.free_vram_gb(g.index)
@@ -96,6 +121,7 @@ def system_report() -> dict[str, Any]:
         "ram_gb": hardware.detect_ram_gb(),
         "gpus": gpus,
         "engine": engine_report(),
+        "torch_engine": torch_engine_report(),
         "preferences": {k: prefs.get(k) for k in safe_pref_keys},
     }
 

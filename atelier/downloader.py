@@ -190,6 +190,10 @@ def download_model(model: BaseModel,
                    log: Callable[[str], None] | None = None) -> Iterator[str]:
     """Télécharge tous les composants manquants d'un modèle. Yields des messages."""
     settings.ensure_dirs()
+    from .engine import backends
+    if backends.active() == backends.TORCH:
+        yield from download_diffusers_repo(model, log)
+        return
     yield f"Downloading “{model.name}”…"
     repo_files: dict[str, list[str]] = {}
     for comp in model.components:
@@ -199,6 +203,46 @@ def download_model(model: BaseModel,
         except Exception as exc:  # noqa: BLE001
             yield f"  ✗ {comp.role}: {exc}"
             return
+    yield f"“{model.name}” is ready. ✅"
+
+
+def download_diffusers_repo(
+        model: BaseModel,
+        log: Callable[[str], None] | None = None) -> Iterator[str]:
+    """Le même bouton, l'autre forme de modèle.
+
+    Un modèle sd.cpp est une poignée de fichiers choisis un par un selon la
+    VRAM ; un modèle diffusers est un DÉPÔT qu'on prend en entier. D'où
+    `snapshot_download` et non trois appels à `hf_hub_download` : les fichiers
+    se référencent entre eux par un index, et en prendre une partie ne donne
+    pas un modèle qui marche à moitié — ça ne donne rien du tout.
+
+    Le prix est annoncé AVANT de commencer. Z-Image Turbo pèse 6,6 Go en GGUF
+    et 33 Go ici (le dépôt est publié en fp32) : quelqu'un qui clique en
+    pensant retélécharger la même chose mérite de l'apprendre avant, pas au
+    milieu.
+    """
+    from .torchengine import catalog as torch_catalog
+    entry = torch_catalog.get(model.id)
+    if entry is None:
+        yield (f"✗ “{model.name}” has no PyTorch entry — nothing to download "
+               "on this engine.")
+        return
+    size = (f" (~{entry.download_gb:.0f} GB)" if entry.download_gb
+            else " (size unknown — the repository is gated)")
+    yield f"Downloading “{model.name}” from {entry.repo}{size}…"
+    if entry.gated:
+        yield ("  ℹ️ Gated repository: accept the licence on its Hugging Face "
+               "page and log in (huggingface-cli login) first.")
+    settings.configure_hf_env()
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(repo_id=entry.repo,
+                          local_dir=str(entry.local_dir),
+                          max_workers=4)
+    except Exception as exc:  # noqa: BLE001
+        yield f"  ✗ {exc}"
+        return
     yield f"“{model.name}” is ready. ✅"
 
 

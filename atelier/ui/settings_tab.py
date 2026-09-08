@@ -36,7 +36,7 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
-from ..engine import engine_build_source, resident_engine
+from ..engine import backends, engine_build_source, resident_engine
 from ..i18n import t
 from . import widgets
 
@@ -302,6 +302,45 @@ def build_settings_tab():
                 "are set by measuring, not by guessing — and the slider above "
                 "already covers the usual cases. Touching this section "
                 "**turns off automatic tuning**."))
+
+            # ---------------------------------------------------------- #
+            #  Le moteur (branche Test7000)
+            # ---------------------------------------------------------- #
+            # Sous le repli, et pas au-dessus : la page pose UNE question,
+            # celle du curseur qualité/mémoire. Le moteur en est une seconde,
+            # et elle n'est pas de même nature — on n'en change pas pour
+            # ajuster un rendu, on en change pour comparer deux mondes. Elle
+            # a donc sa place là où sont les options qu'on vient chercher
+            # exprès.
+            gr.Markdown(t(
+                "---\n**⚙️ Generation engine** — this branch carries two. "
+                "**stable-diffusion.cpp** is the native one: quantized GGUF "
+                "files, no Python dependency, a 6.6 GB model on disk. "
+                "**PyTorch** runs the same models through diffusers: the same "
+                "tabs and the same settings, but whole repositories (33 GB "
+                "for the same model), a several-gigabyte install, and "
+                "quantization done at load time instead of downloaded ready "
+                "made.\n\nChanging this changes what “downloaded” means: the "
+                "two engines do not read the same files, so the catalog will "
+                "show as missing what the other one has."))
+            engine = gr.Radio(
+                [(t(backends.label(name)), name) for name in backends.ALL],
+                value=backends.active(prefs), show_label=False)
+            engine_said = gr.Markdown("", elem_classes="hint")
+
+            def _apply_engine(choice):
+                p = _save(engine_backend=choice)
+                extra = ""
+                if choice == backends.TORCH:
+                    from ..torchengine import runtime as torch_runtime
+                    if not torch_runtime.available():
+                        extra = (" — but it is **not installed yet**: run "
+                                 "`setup-torch-engine.bat`.")
+                return _headline(p), _said(
+                    _OK + t("Engine: ") + backends.label(choice) + extra)
+
+            engine.change(_apply_engine, inputs=engine,
+                          outputs=[headline, engine_said])
 
             gr.Markdown(t("**Forced quantization** — “auto” = let the app "
                           "decide from the card."))

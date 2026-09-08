@@ -54,8 +54,16 @@ def diffusers():
     return _import("diffusers")
 
 
+#  Le socle MINIMAL pour qu'un pipeline se charge. `transformers` et
+#  `accelerate` n'en sont pas des extras : les trois modèles ont un encodeur
+#  de texte Qwen (transformers) et aucun ne tient sur 11-12 Go sans décharge
+#  (accelerate). Sans eux, `available()` dirait « installé » et le premier clic
+#  rendrait un ImportError venu du fond de diffusers.
+REQUIRED = ("torch", "diffusers", "transformers", "accelerate")
+
+
 def available() -> bool:
-    """torch ET diffusers importables — sans les importer pour de bon.
+    """Le socle est-il installé — sans l'importer pour de bon ?
 
     `find_spec` regarde les métadonnées d'installation ; c'est ce qui permet à
     l'interface de griser un bouton sans embarquer une seconde de chargement à
@@ -63,9 +71,22 @@ def available() -> bool:
     """
     from importlib.util import find_spec
     try:
-        return bool(find_spec("torch") and find_spec("diffusers"))
+        return all(find_spec(name) for name in REQUIRED)
     except (ImportError, ValueError):
         return False
+
+
+def missing() -> list[str]:
+    """Ce qui manque, nommé. « Ça ne marche pas » n'est pas un message."""
+    from importlib.util import find_spec
+    out = []
+    for name in REQUIRED:
+        try:
+            if find_spec(name) is None:
+                out.append(name)
+        except (ImportError, ValueError):
+            out.append(name)
+    return out
 
 
 def versions() -> dict[str, str]:

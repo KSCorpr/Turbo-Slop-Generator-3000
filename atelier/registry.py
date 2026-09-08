@@ -302,8 +302,42 @@ def resolve_component_path(comp: Component) -> Path | None:
 
 
 def model_is_ready(model: BaseModel) -> bool:
+    """Ce modèle peut-il générer MAINTENANT, sur le moteur actif ?
+
+    La question dépend du moteur, et ce n'est pas un détail d'implémentation :
+    « prêt » veut dire un jeu de fichiers GGUF pour stable-diffusion.cpp, et un
+    dépôt diffusers complet pour PyTorch. Répondre avec l'inventaire de l'autre
+    moteur donnerait le pire des cas — un bouton « Générer » actif qui échoue
+    au clic, ou un « à télécharger » sur des fichiers déjà là.
+    """
+    if _torch_engine_active():
+        return _torch_repo_present(model.id)
     return all(resolve_component_path(c) is not None
                for c in model.components if not c.optional)
+
+
+def _torch_engine_active() -> bool:
+    #  Import tardif et défensif : `registry` est importé très tôt et par des
+    #  outils qui n'ont rien à voir avec la génération. Une branche où le
+    #  module n'existe pas (une version antérieure dépliée par-dessus) doit
+    #  retomber sur le comportement historique, pas empêcher le démarrage.
+    try:
+        from .engine import backends
+    except ImportError:
+        return False
+    return backends.active() == backends.TORCH
+
+
+def _torch_repo_present(model_id: str) -> bool:
+    try:
+        from .torchengine import catalog as torch_catalog
+    except ImportError:
+        return False
+    entry = torch_catalog.get(model_id)
+    #  `model_index.json` et non le dossier : diffusers écrit d'abord
+    #  l'arborescence, puis les poids. Un dossier existant ne prouve rien —
+    #  c'est même l'état exact d'un téléchargement interrompu.
+    return bool(entry and (entry.local_dir / "model_index.json").is_file())
 
 
 def missing_components(model: BaseModel) -> list[Component]:
