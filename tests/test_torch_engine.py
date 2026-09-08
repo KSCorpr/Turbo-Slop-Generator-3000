@@ -332,3 +332,95 @@ class ModeFallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoutingTests(unittest.TestCase):
+    """Les fonctions qui NE passaient PAS par `generate()`.
+
+    L'outpaint n'est pas testé ici parce qu'il n'a rien à router : il appelle
+    déjà `generate()` avec une image de départ et un masque, donc il a changé
+    de moteur en même temps que l'aiguille. C'est exactement ce que vaut un
+    point de passage unique, et c'est ce qui rendait les trois autres visibles.
+    """
+
+    def test_the_mask_question_is_asked_of_the_engine_not_the_binary(self):
+        """L'outpaint demandait à `sd-cli` s'il connaissait l'option masque.
+
+        Sur ce moteur il n'y a pas de binaire, et la réponse dépend du MODÈLE :
+        diffusers publie une classe d'inpainting pour Z-Image et Flux.2, aucune
+        pour Krea 2. Sans cette aiguille l'outpaint retombait en img2img
+        partout, y compris là où il pouvait faire mieux.
+        """
+        from atelier.engine import generate as gen
+        self.assertTrue(gen.mask_supported("z-image-turbo"))
+        self.assertTrue(gen.mask_supported("flux2-klein-9b"))
+        self.assertFalse(gen.mask_supported("krea2-turbo"))
+
+    def test_a_gguf_upscaler_refuses_and_names_the_alternative(self):
+        """Refuser est correct — les poids sont GGUF, illisibles hors sd.cpp.
+        Refuser sans dire vers quoi aller ne l'est pas."""
+        from atelier.engine import generate as gen
+        with self.assertRaises(Exception) as caught:
+            gen.upscale_image("a.png", "RealESRGAN_x4plus.gguf")
+        self.assertIn("modern upscaler", str(caught.exception))
+
+    def test_the_hd_pass_refuses_on_a_model_without_img2img(self):
+        """Krea 2 n'a pas de classe img2img : la passe HD ne peut pas exister
+        pour lui, et le dire vaut mieux qu'une image inchangée."""
+        from atelier.torchengine import ops
+        with self.assertRaises(RuntimeError) as caught:
+            ops.hd_upscale("krea2-turbo", "a.png")
+        self.assertIn("image-to-image", str(caught.exception))
+
+    def test_the_detector_changes_extension_but_not_name(self):
+        """Les deux moteurs ne peuvent pas partager le fichier : sd.cpp exige
+        un safetensors converti (il refuse d'exécuter un pickle), Ultralytics
+        ne lit que le .pt. Mêmes noms, pour que l'interface ne bouge pas."""
+        from atelier.torchengine import ops
+        self.assertEqual(ops.detector_for("face_yolov8n.safetensors").name,
+                         "face_yolov8n.pt")
+
+    def test_a_missing_detector_package_is_named_not_hidden(self):
+        from atelier.torchengine import ops
+        reason = ops.adetailer_reason()
+        self.assertTrue(reason == "" or "ultralytics" in reason
+                        or "detector" in reason, reason)
+
+
+class InstallerTests(unittest.TestCase):
+    """Le script d'installation : ses choix se vérifient sans rien installer."""
+
+    def test_blackwell_and_the_rest_do_not_share_an_index(self):
+        """cu128 commence à sm_70 : les RTX 50xx en ont besoin et les cartes
+        antérieures y disparaissent. cu126 garde 5.0;6.0;7.0 — c'est ce qui
+        laisse la GTX 1080 Ti (sm_61, servie par un cubin sm_60) au travail."""
+        import sys
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
+                               / "scripts"))
+        import setup_torch_engine as ste
+        from unittest.mock import patch
+        with patch.object(ste, "_gpu_arch", return_value="blackwell"):
+            _pkgs, index = ste.torch_args()
+            self.assertTrue(index.endswith("cu128"))
+        for arch in ("turing", "ampere", "ada", "pascal", "unknown"):
+            with patch.object(ste, "_gpu_arch", return_value=arch):
+                _pkgs, index = ste.torch_args()
+                self.assertTrue(index.endswith("cu126"), arch)
+
+    def test_torch_and_torchvision_are_pinned_together(self):
+        """Les mélanger donne un ImportError sur une extension C, pas un
+        message lisible."""
+        import setup_torch_engine as ste
+        for pair in (ste.TORCH_CU126, ste.TORCH_CU128):
+            self.assertEqual(len(pair), 2)
+            self.assertTrue(all("==" in p for p in pair), pair)
+
+    def test_the_stack_carries_what_the_engine_actually_calls(self):
+        """Chaque ligne répond à un appel précis du moteur : peft pour les
+        LoRA, bitsandbytes pour les crans int8/NF4, scipy pour le scheduler
+        « beta » — qui est une entrée du menu, donc un clic possible."""
+        import setup_torch_engine as ste
+        joined = " ".join(ste.STACK)
+        for pkg in ("transformers", "accelerate", "peft", "bitsandbytes",
+                    "scipy"):
+            self.assertIn(pkg, joined)

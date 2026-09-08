@@ -611,7 +611,7 @@ def generate_sdcpp(
 
 def upscale_image(image, model_name: str, repeats: int = 1,
                   log: Callable[[str], None] | None = None) -> Path:
-    """Agrandissement SIMPLE via un upscaler ESRGAN GGUF (sd.cpp --mode upscale).
+    """Aiguille, puis agrandissement ESRGAN GGUF (sd.cpp --mode upscale).
 
     Déterministe, 100% GPU, aucun prompt. `repeats` ré-applique le modèle (un
     modèle ×2 appliqué 2 fois = ×4).
@@ -621,6 +621,9 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     passe pas en VRAM, on relance une fois au défaut plutôt que de rendre une
     erreur — l'image sortira comme avant, pas mieux, mais elle sortira.
     """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.upscale_image(image, model_name, repeats, log)
     from PIL import Image
     prefs = settings.load_prefs()
     sd_cli = settings.find_sd_cli()
@@ -814,6 +817,11 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     débruitage à la taille finale. `denoise` règle ce second passage : c'est le
     seul réglage qui compte vraiment ici.
     """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.hd_upscale(model_id, image, scale, upscaler, denoise,
+                              prompt, negative, steps, hd_steps, seed,
+                              preview_path, log)
     from PIL import Image
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
@@ -979,6 +987,21 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             if log:
                 log(f"[hd] not enough VRAM at ×{last:.2f} → retrying at "
                     f"×{scale:.2f}.")
+
+
+def mask_supported(model_id: str) -> bool:
+    """L'inpainting AVEC masque est-il possible ici, pour ce modèle ?
+
+    L'outpaint posait la question au binaire (`sdcpp.mask_flag`). Sur le moteur
+    PyTorch il n'y a pas de binaire, et la réponse dépend du MODÈLE : diffusers
+    publie une classe d'inpainting pour Z-Image et Flux.2 Klein, aucune pour
+    Krea 2. Sans cette aiguille l'outpaint retombait en img2img partout, y
+    compris là où il pouvait faire mieux.
+    """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.supports_mask(model_id)
+    return bool(sdcpp.mask_flag(settings.find_sd_cli()))
 
 
 _publish_signature()

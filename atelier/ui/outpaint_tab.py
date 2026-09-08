@@ -29,10 +29,10 @@ from ..i18n import t
 from . import widgets
 
 PRESETS = [
-    ("← Gauche", ["left"]),
-    ("→ Droite", ["right"]),
-    ("↑ Haut", ["top"]),
-    ("↓ Bas", ["bottom"]),
+    ("← Left", ["left"]),
+    ("→ Right", ["right"]),
+    ("↑ Top", ["top"]),
+    ("↓ Bottom", ["bottom"]),
     ("↔ Horizontal", ["left", "right"]),
     ("↕ Vertical", ["top", "bottom"]),
     ("⤢ All around", ["left", "right", "top", "bottom"]),
@@ -240,8 +240,12 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             mask_path = None
             mf = None
             if not d["edit"]:
-                # Masque : seulement si CE binaire sd-cli connaît l'option.
-                mf = sdcpp.mask_flag(settings.find_sd_cli())
+                # Masque : seulement si le MOTEUR ACTIF sait inpeindre avec un
+                # masque pour ce modèle. La question était posée au binaire
+                # sd-cli ; sur le moteur PyTorch il n'y en a pas, et la réponse
+                # dépend du modèle — diffusers publie une classe d'inpainting
+                # pour Z-Image et Flux.2, aucune pour Krea 2.
+                mf = gen_engine.mask_supported(model_id)
                 if mf:
                     mask_path = settings.TMP_DIR / "outpaint_mask.png"
                     op.build_mask(p, feather=int(feather_v)).save(mask_path)

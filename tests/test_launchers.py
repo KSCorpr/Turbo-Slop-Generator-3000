@@ -82,10 +82,22 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
                 "setup_adetailer.py",  # idem, onglet « Détails »
                 "_torch_setup.py", "convert_gguf.py"}
 
+    @staticmethod
+    def _basename(call: str) -> str:
+        """Le nom du fichier, quel que soit le séparateur écrit dans le .bat.
+
+        `Path("scripts\\x.py").name` rend la chaîne ENTIÈRE sous Linux : la
+        barre inverse n'y est pas un séparateur. Le test ne passait donc que
+        parce qu'un autre lanceur mentionnait par hasard le même script avec
+        une barre normale — et il aurait rendu un verdict différent sous
+        Windows, c'est-à-dire sur la seule machine qui exécute ces .bat.
+        """
+        return call.replace("\\", "/").rsplit("/", 1)[-1]
+
     def test_user_facing_scripts_have_a_launcher(self):
         launched = set()
         for path in _launchers(".bat") + _launchers(".sh"):
-            launched |= {Path(c).name
+            launched |= {self._basename(c)
                          for c in _CALLS.findall(
                              path.read_text(encoding="utf-8",
                                             errors="replace"))}
