@@ -663,14 +663,37 @@ class HuggingFaceAccessTests(unittest.TestCase):
         self.assertFalse(access.ok)
         self.assertEqual(access.state, "needs_token")
 
-    def test_a_valid_token_without_the_licence_is_named_as_such(self):
-        """C'est le cas où aucune manipulation locale n'aidera : il faut aller
-        cliquer sur la page du modèle."""
+    def test_401_and_403_are_not_the_same_answer(self):
+        """La distinction la plus utile du module, et celle que je n'avais pas
+        faite. 401 : le Hub ne sait pas qui vous êtes. 403 : il le sait très
+        bien et refuse quand même. Traiter les deux pareil envoie accepter une
+        licence déjà acceptée — une heure perdue à chercher au mauvais
+        endroit.
+        """
         from atelier import hfaccess
         with self._probe({"/raw/main/": 401}), patch_token("hf_xxx"):
-            access = hfaccess.check("acme/closed")
-        self.assertEqual(access.state, "needs_licence")
-        self.assertIn("licence", access.detail)
+            self.assertEqual(hfaccess.check("acme/closed").state,
+                             "needs_token")
+        with self._probe({"/raw/main/": 403}), patch_token("hf_xxx"):
+            self.assertEqual(hfaccess.check("acme/closed").state, "forbidden")
+
+    def test_a_forbidden_answer_names_the_token_scope_too(self):
+        """Le piège des jetons « fine-grained » : ils s'authentifient
+        parfaitement — `whoami` répond — et il leur manque une case à cocher
+        que rien sur la page du modèle ne concerne."""
+        from atelier import hfaccess
+        with self._probe({"/raw/main/": 403}), patch_token("hf_xxx"):
+            detail = hfaccess.check("acme/closed").detail
+        self.assertIn("licence", detail)
+        self.assertIn("fine-grained", detail)
+
+    def test_the_report_orders_the_two_causes(self):
+        from atelier import hfaccess
+        with self._probe({"/api/whoami-v2": 200, "/raw/main/": 403}), \
+             patch_token("hf_xxx"):
+            text = hfaccess.report()
+        self.assertIn("token's scope", text)
+        self.assertLess(text.index("1. the licence"), text.index("2. the"))
 
     def test_an_open_repository_says_there_is_nothing_to_do(self):
         from atelier import hfaccess
