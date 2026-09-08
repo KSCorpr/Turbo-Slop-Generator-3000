@@ -14,11 +14,9 @@ l'installation est saine.
     aucun add-on du code actuel) et les MODÈLES orphelins de models/ (plus
     référencés par le catalogue) ;
   • purge les __pycache__ (.pyc d'anciens modules) et le dossier tmp/ ;
-  • vérifie que tout compile, que LES DEUX catalogues YAML sont valides et
-    d'accord sur les identifiants de modèles, que les dépendances et le
-    binaire sd-cli sont présents, que le moteur PyTorch est entier ou absent
-    mais jamais à moitié, et qu'aucun fichier de l'application n'a disparu
-    depuis la dernière mise à jour.
+  • vérifie que tout compile, que le catalogue YAML est valide, que les
+    dépendances et le binaire sd-cli sont présents, et qu'aucun fichier de
+    l'application n'a disparu depuis la dernière mise à jour.
 
 Par défaut il ne supprime AUCUNE donnée : il affiche l'espace récupérable et la
 commande pour le libérer.
@@ -313,15 +311,8 @@ def clean_tmp() -> None:
 
 
 def _expected_model_dirs() -> set[str]:
-    """Noms de dossiers (owner__repo) attendus d'après les catalogues courants.
-
-    LES DEUX catalogues, et c'est le point. Le moteur PyTorch télécharge des
-    dépôts que `models.yaml` ne mentionne nulle part : le complément de Krea 2
-    (encodeur et VAE, ~9,4 Go) et les dépôts de configuration. Les oublier ici
-    ne donnerait pas un avertissement bénin — `--purge` les supprimerait comme
-    orphelins, et l'utilisateur retéléchargerait neuf gigaoctets pour avoir
-    lancé un script de nettoyage.
-    """
+    """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
+    tous les composants des modèles + upscalers."""
     from atelier import registry, settings
     prefs = settings.load_prefs()
     repos: set[str] = set()
@@ -330,33 +321,7 @@ def _expected_model_dirs() -> set[str]:
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)
-    repos.update(_torch_repos())
     return {settings.model_repo_dir(r).name for r in repos if r}
-
-
-def _torch_repos() -> set[str]:
-    """Dépôts que le moteur PyTorch installe, en plus des fichiers GGUF.
-
-    Silencieux si le catalogue est absent : le nettoyage ne doit pas dépendre
-    d'une fonctionnalité optionnelle. En revanche, s'il est là, ce qu'il
-    déclare compte autant que `models.yaml`.
-    """
-    try:
-        from atelier.torchengine import catalog as torch_catalog
-    except Exception:  # noqa: BLE001
-        return set()
-    out: set[str] = set()
-    for entry in torch_catalog.load():
-        if entry.supplement is not None:
-            out.add(entry.supplement.repo)
-        if entry.config_repo:
-            out.add(entry.config_repo)
-        #  Le dépôt complet n'est utilisé que par les modèles sans chargement
-        #  fichier-unique, mais s'il a été téléchargé un jour il ne doit pas
-        #  être pris pour un orphelin.
-        if entry.repo:
-            out.add(entry.repo)
-    return out
 
 
 def report_orphan_models(prune: bool) -> int:
@@ -415,44 +380,14 @@ def compile_check() -> None:
 
 def check_catalog() -> None:
     print("• Model catalog (config/models.yaml)…")
-    ids: list[str] = []
     try:
         import yaml
         cat = yaml.safe_load((ROOT / "config" / "models.yaml")
                              .read_text(encoding="utf-8")) or {}
-        ids = [m.get("id") for m in cat.get("base_models", [])]
-        print(OK + f"valid YAML — models: {', '.join(ids) or '(none)'}.")
+        models = [m.get("id") for m in cat.get("base_models", [])]
+        print(OK + f"valid YAML — models: {', '.join(models) or '(none)'}.")
     except Exception as exc:  # noqa: BLE001
         _warn(f"models.yaml is unreadable: {exc}")
-        return
-    _check_torch_catalog(set(ids))
-
-
-def _check_torch_catalog(known: set) -> None:
-    """Le second catalogue, et le pont entre les deux.
-
-    Les identifiants sont ce qui permet à l'interface de ne pas savoir sur quel
-    moteur elle tourne. Un id présent d'un seul côté est donc un onglet qui ne
-    générera jamais — et ça ne se voit qu'au clic, sur ce moteur-là seulement.
-    """
-    path = ROOT / "config" / "models_torch.yaml"
-    if not path.is_file():
-        return
-    print("• PyTorch catalog (config/models_torch.yaml)…")
-    try:
-        import yaml
-        cat = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        entries = cat.get("models") or []
-    except Exception as exc:  # noqa: BLE001
-        _warn(f"models_torch.yaml is unreadable: {exc}")
-        return
-    strays = [e.get("id") for e in entries if e.get("id") not in known]
-    if strays:
-        _warn(f"ids absent from models.yaml: {', '.join(map(str, strays))} — "
-              "those tabs would never generate.")
-    else:
-        print(OK + f"valid YAML — {len(entries)} model(s), all matching "
-              "the main catalog.")
 
 
 def check_deps() -> None:
@@ -470,7 +405,6 @@ def check_deps() -> None:
         print(OK + "present.")
     check_gradio_major()
     check_diffusers()
-    check_torch_engine()
 
 
 # Version de Gradio sous laquelle l'application est écrite. Une 5.x installée
@@ -507,53 +441,6 @@ def check_gradio_major() -> None:
         print(OK + f"gradio {version}.")
 
 
-def torch_engine_installed() -> bool:
-    """Le moteur PyTorch est-il en place ? Sans importer torch.
-
-    La question décide de la suivante : quelles versions sont ATTENDUES. Les
-    add-ons du Toolkit et le moteur ne demandent pas la même pile, et il n'y en
-    a qu'une sur la machine.
-    """
-    try:
-        from atelier.torchengine import runtime
-    except Exception:  # noqa: BLE001
-        return False
-    return runtime.available()
-
-
-def check_torch_engine() -> None:
-    """L'état du moteur PyTorch — installé, à moitié, ou absent.
-
-    « À moitié » est le cas qui mérite ce contrôle : `torch` peut être là parce
-    qu'un add-on du Toolkit l'a installé, sans `diffusers`, sans `gguf`, sans
-    `accelerate`. L'application dirait alors « moteur disponible » et le
-    premier clic rendrait un ImportError venu du fond d'une bibliothèque.
-    """
-    try:
-        from atelier.torchengine import runtime
-        from atelier.engine import backends
-    except Exception:  # noqa: BLE001
-        return
-    print("• PyTorch generation engine…")
-    missing = runtime.missing()
-    active = backends.active() == backends.TORCH
-    where = " (and it is the ACTIVE engine)" if active else ""
-    if not missing:
-        versions = runtime.versions()
-        print(OK + f"installed{where} — torch {versions.get('torch') or '?'}, "
-              f"diffusers {versions.get('diffusers') or '?'}.")
-        return
-    if len(missing) == len(runtime.REQUIRED):
-        print(OK + "not installed — the native engine needs nothing.")
-        if active:
-            _warn("  …but it is selected in Settings. Run "
-                  "setup-torch-engine.bat, or switch back to "
-                  "stable-diffusion.cpp.")
-        return
-    _warn(f"half installed: {', '.join(missing)} missing.")
-    _warn("  Fix: setup-torch-engine.bat (it installs the whole stack).")
-
-
 def check_diffusers() -> None:
     """Cohérence des paquets PARTAGÉS par les add-ons PyTorch.
 
@@ -561,12 +448,6 @@ def check_diffusers() -> None:
     plus large écrase la version dont un autre a besoin, et la casse ne se voit
     qu'au premier usage de l'autre — sous forme d'une erreur illisible à
     l'import. On vérifie donc chaque paquet épinglé par l'installeur.
-
-    Une réserve, et elle est délibérée : le MOTEUR PyTorch monte volontairement
-    cette pile (torch ≥ 2.6, diffusers ≥ 0.36) parce que les modèles du
-    catalogue l'exigent. Quand il est installé, les épingles du Toolkit ne sont
-    plus la référence — les signaler comme des erreurs ferait crier ce contrôle
-    à chaque lancement, sur une situation voulue.
     """
     print("• Packages shared by the PyTorch add-ons…")
     try:
@@ -574,12 +455,6 @@ def check_diffusers() -> None:
         from setup_tools import _PINS
     except Exception:  # noqa: BLE001
         print(OK + "cannot be checked (the installer is missing).")
-        return
-    if torch_engine_installed():
-        print(OK + "the PyTorch engine is installed: it raises this stack on "
-              "purpose, so the Toolkit pins no longer apply.")
-        _warn("  If a Toolkit add-on misbehaves, that is the trade-off — "
-              "reinstall it, or remove the engine.")
         return
 
     import importlib.metadata as md
@@ -681,16 +556,6 @@ def check_engine(update: bool) -> bool:
             return not _run_get_sdcpp()
         _warn("sd-cli binary not found → maintenance.bat --update-engine (or "
               "install.bat)")
-        #  On ne se tait PAS pour autant quand PyTorch tourne : le binaire sert
-        #  encore aux upscalers GGUF, à la conversion et à trellis. Mais dire
-        #  que la génération est cassée serait faux, et enverrait réinstaller
-        #  un moteur dont on n'a pas besoin ce jour-là.
-        if torch_engine_installed():
-            from atelier.engine import backends
-            if backends.active() == backends.TORCH:
-                print(INFO + "  the PyTorch engine is active, so generation "
-                      "works without it — but GGUF upscalers, GGUF conversion "
-                      "and Image → 3D still need it.")
         return True
     print(OK + f"found: {sd}")
 

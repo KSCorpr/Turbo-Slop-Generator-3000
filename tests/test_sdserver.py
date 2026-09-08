@@ -16,19 +16,6 @@ from PIL import Image
 
 from atelier.engine import generate, sdcpp, sdserver
 
-
-def _on_sdcpp(prefs: dict) -> dict:
-    """Les mêmes préférences, en exigeant le moteur natif.
-
-    Sur la branche Test7000 le moteur par défaut est PyTorch. Ces tests-ci
-    portent sur la construction de la ligne de commande sd.cpp : sans cette
-    mention ils mesureraient l'autre moteur — et passeraient, en ne vérifiant
-    plus rien. Le dire explicitement rend aussi l'aiguillage lui-même testé au
-    passage.
-    """
-    return {**prefs, "engine_backend": "sdcpp"}
-
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -304,7 +291,7 @@ class FallbackTests(unittest.TestCase):
                  patch.object(sdcpp, "run", side_effect=cli_run), \
                  patch.object(sdcpp, "collect_outputs", return_value=[]):
                 generate.generate("krea2-turbo", "p", "", 4, 1.0, 512, 512,
-                                  42, 1, prefs_override=_on_sdcpp(prefs),
+                                  42, 1, prefs_override=prefs,
                                   save_prompt=False)
         return used
 

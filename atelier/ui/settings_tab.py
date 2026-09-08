@@ -36,7 +36,7 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
-from ..engine import backends, engine_build_source, resident_engine
+from ..engine import engine_build_source, resident_engine
 from ..i18n import t
 from . import widgets
 
@@ -303,87 +303,6 @@ def build_settings_tab():
                 "already covers the usual cases. Touching this section "
                 "**turns off automatic tuning**."))
 
-            # ---------------------------------------------------------- #
-            #  Le moteur (branche Test7000)
-            # ---------------------------------------------------------- #
-            # Sous le repli, et pas au-dessus : la page pose UNE question,
-            # celle du curseur qualité/mémoire. Le moteur en est une seconde,
-            # et elle n'est pas de même nature — on n'en change pas pour
-            # ajuster un rendu, on en change pour comparer deux mondes. Elle
-            # a donc sa place là où sont les options qu'on vient chercher
-            # exprès.
-            gr.Markdown(t(
-                "---\n**⚙️ Generation engine** — this branch carries two, and "
-                "they read **the same model files**. diffusers loads GGUF, so "
-                "switching costs nothing on disk and re-downloads nothing: "
-                "same weights, same quantization rung, chosen by the same "
-                "VRAM ladder.\n\nWhat does change is everything around them. "
-                "**stable-diffusion.cpp** is a native binary with no Python "
-                "dependency. **PyTorch** needs a several-gigabyte install "
-                "(`setup-torch-engine.bat`), starts more slowly, and does not "
-                "offer every mode on every model — Krea 2 is text-to-image "
-                "only there, and it is the one model whose weights it cannot "
-                "read from GGUF at all.\n\nOne model asks for a Hugging Face "
-                "token the first time: Flux.2 Klein, for a few kilobytes of "
-                "architecture config that Black Forest Labs publishes only in "
-                "a gated repository. Its weights stay the ones you already "
-                "have."))
-            engine = gr.Radio(
-                [(t(backends.label(name)), name) for name in backends.ALL],
-                value=backends.active(prefs), show_label=False)
-            engine_said = gr.Markdown("", elem_classes="hint")
-
-            def _apply_engine(choice):
-                p = _save(engine_backend=choice)
-                extra = ""
-                if choice == backends.TORCH:
-                    from ..torchengine import runtime as torch_runtime
-                    if not torch_runtime.available():
-                        extra = (" — but it is **not installed yet**: run "
-                                 "`setup-torch-engine.bat`.")
-                return _headline(p), _said(
-                    _OK + t("Engine: ") + backends.label(choice) + extra)
-
-            engine.change(_apply_engine, inputs=engine,
-                          outputs=[headline, engine_said])
-
-            # ---------------------------------------------------------- #
-            #  Vitesse du moteur PyTorch
-            # ---------------------------------------------------------- #
-            gr.Markdown(t(
-                "**⚡ GGUF CUDA kernels** — this is what makes the PyTorch "
-                "engine slow or fast, and it is **off by default**.\n\n"
-                "diffusers can read GGUF two ways. Without this, it rebuilds "
-                "every weight tensor in plain torch **at every step** — on a "
-                "large model that is measurable in tens of seconds per step. "
-                "With it, a CUDA kernel does the same work on the "
-                "card.\n\nThe reason it is not simply on: that kernel is "
-                "**downloaded from the Hugging Face Hub and executed**. It is "
-                "third-party code (`Isotr0py/ggml`), not part of diffusers. "
-                "Slowness is an annoyance; running someone else's code "
-                "without saying so is not. Your call."))
-            kernels_cb = gr.Checkbox(
-                value=bool(prefs.get("torch_gguf_kernels")),
-                label=t("Use the GGUF CUDA kernels (downloads and runs "
-                        "third-party code)"))
-            kernels_said = gr.Markdown("", elem_classes="hint", visible=False)
-
-            def _apply_kernels(on: bool):
-                _save(torch_gguf_kernels=bool(on))
-                from ..torchengine import runtime as torch_runtime
-                note = ""
-                if on and not torch_runtime.kernels_available():
-                    note = (" — but the `kernels` package is missing: run "
-                            "`setup-torch-engine.bat` again.")
-                return gr.update(
-                    value=(t("⚡ Fast dequantization on the GPU.") if on
-                           else t("🐢 Dequantization in plain torch, at every "
-                                  "step — the safe, slow path.")) + note,
-                    visible=True)
-
-            kernels_cb.change(_apply_kernels, inputs=kernels_cb,
-                              outputs=[kernels_said])
-
             gr.Markdown(t("**Forced quantization** — “auto” = let the app "
                           "decide from the card."))
             with gr.Row():
@@ -500,22 +419,6 @@ def build_settings_tab():
                 value=prefs.get("civitai_token", ""),
                 label="Civitai token (optional — gated LoRAs)",
                 type="password")
-            # Le jeton Hugging Face n'a JAMAIS servi sur le moteur natif : tous
-            # les dépôts du catalogue GGUF sont ouverts, et c'est un choix.
-            # Le moteur PyTorch, lui, a besoin de deux fichiers publiés en
-            # dépôt fermé. Un champ ici plutôt qu'un `huggingface-cli login` :
-            # cette application tourne sur un Python portable, sans console et
-            # sans PATH — la commande n'existe pas pour celui qui l'utilise.
-            hf_tok = gr.Textbox(
-                value=prefs.get("hf_token", ""),
-                label="Hugging Face token (read) — only for the PyTorch engine",
-                type="password",
-                info=t("Created at huggingface.co → Settings → Access Tokens. "
-                       "A “read” token is enough. Nothing on the native "
-                       "engine needs one."))
-            hf_check = gr.Button(t("🔍 Check what is still missing"),
-                                 size="sm")
-            hf_report = gr.Markdown("", elem_classes="hint", visible=False)
             account_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
         # ================================================================== #
@@ -622,27 +525,10 @@ def build_settings_tab():
             _save(civitai_token=(v or "").strip())
             return _said(_OK + t("Civitai token saved."))
 
-        def _apply_hf_token(v):
-            _save(hf_token=(v or "").strip())
-            # Poser tout de suite la variable d'environnement : sans ça le
-            # jeton n'agirait qu'au prochain démarrage, et le bouton de
-            # vérification juste en dessous dirait « aucun jeton » deux
-            # secondes après qu'on vient de le coller.
-            settings.configure_hf_env()
-            return _said(_OK + t("Hugging Face token saved."))
-
-        def _check_hf():
-            from .. import hfaccess
-            settings.configure_hf_env()
-            return gr.update(value=hfaccess.report(), visible=True)
-
         theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status])
         hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[account_status])
         civitai_tok.change(_apply_token, inputs=[civitai_tok],
                            outputs=[account_status])
-        hf_tok.change(_apply_hf_token, inputs=[hf_tok],
-                      outputs=[account_status])
-        hf_check.click(_check_hf, outputs=[hf_report])
 
         # ---- Mesure -------------------------------------------------------- #
         _bench_stop = threading.Event()

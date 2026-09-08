@@ -9,16 +9,6 @@
 > moves to a second card). Weight placement itself — including letting sd.cpp
 > plan it — is **measured** by the benchmark rather than asked as a question.
 
-> ### 🧪 Second engine: PyTorch / diffusers
-> The app carries **two generation engines**. The default is
-> stable-diffusion.cpp and stays that way — it ships with the app and needs
-> nothing. The other routes every feature through **PyTorch / diffusers**:
-> same tabs, same presets, same model ids, and **the same GGUF files**, so
-> switching re-downloads nothing. What it costs, measured rather than assumed,
-> is in **[README-TORCH.md](README-TORCH.md)**. Install with
-> `setup-torch-engine.bat`, switch in **Settings → 🔧 Expert**, and set
-> `TURBOSLOP_BACKEND=sdcpp` to force the native engine at any time.
-
 > **The interface is in English**, and only in English. It used to be written in
 > French and translated through a dictionary; that layer is gone and the source
 > strings are English. See [Interface language & theme](#interface-language--theme).

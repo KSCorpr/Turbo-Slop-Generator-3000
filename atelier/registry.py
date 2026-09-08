@@ -302,70 +302,8 @@ def resolve_component_path(comp: Component) -> Path | None:
 
 
 def model_is_ready(model: BaseModel) -> bool:
-    """Ce modèle peut-il générer MAINTENANT, sur le moteur actif ?
-
-    La question dépend du moteur, et ce n'est pas un détail d'implémentation :
-    « prêt » veut dire un jeu de fichiers GGUF pour stable-diffusion.cpp, et un
-    dépôt diffusers complet pour PyTorch. Répondre avec l'inventaire de l'autre
-    moteur donnerait le pire des cas — un bouton « Générer » actif qui échoue
-    au clic, ou un « à télécharger » sur des fichiers déjà là.
-    """
-    if _torch_engine_active():
-        verdict = _torch_repo_present(model.id)
-        #  None = « ce modèle se monte depuis les fichiers du catalogue » :
-        #  la réponse est alors la même que pour le moteur natif, et la
-        #  dupliquer ici serait la faire diverger un jour.
-        if verdict is not None:
-            return verdict
     return all(resolve_component_path(c) is not None
                for c in model.components if not c.optional)
-
-
-def _torch_engine_active() -> bool:
-    #  Import tardif et défensif : `registry` est importé très tôt et par des
-    #  outils qui n'ont rien à voir avec la génération. Une branche où le
-    #  module n'existe pas (une version antérieure dépliée par-dessus) doit
-    #  retomber sur le comportement historique, pas empêcher le démarrage.
-    try:
-        from .engine import backends
-    except ImportError:
-        return False
-    return backends.active() == backends.TORCH
-
-
-def _torch_repo_present(model_id: str) -> bool:
-    """« Prêt » sur le moteur PyTorch — et le plus souvent, c'est le même mot.
-
-    Depuis que le chemin GGUF existe, un modèle monté à partir des fichiers du
-    catalogue principal est prêt exactement quand il l'est pour
-    stable-diffusion.cpp : ce sont LES MÊMES FICHIERS. Rien à vérifier de plus,
-    et surtout rien à retélécharger.
-
-    Le dépôt complet ne reste vrai que pour les modèles sans chargement
-    fichier-unique en amont. Là on vérifie `model_index.json` et non le
-    dossier : diffusers écrit d'abord l'arborescence puis les poids, donc un
-    dossier existant ne prouve rien — c'est même l'état exact d'un
-    téléchargement interrompu.
-    """
-    try:
-        from .torchengine import catalog as torch_catalog
-    except ImportError:
-        return False
-    entry = torch_catalog.get(model_id)
-    if entry is None:
-        return False
-    if not entry.usable:
-        #  Des fichiers présents ne font pas un modèle utilisable : il manque
-        #  une pièce que ce moteur ne sait pas charger. Répondre « prêt »
-        #  donnerait un bouton « Générer » actif qui refuse au clic.
-        return False
-    if entry.needs_supplement and not entry.supplement.present:
-        #  Le GGUF peut être là et le complément non : ce sont deux
-        #  téléchargements distincts, et seul le second est propre à ce moteur.
-        return False
-    if entry.from_gguf:
-        return None  # sentinelle : « la réponse est celle du moteur natif »
-    return (entry.local_dir / "model_index.json").is_file()
 
 
 def missing_components(model: BaseModel) -> list[Component]:
