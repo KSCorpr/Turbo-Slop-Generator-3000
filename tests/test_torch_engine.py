@@ -42,13 +42,20 @@ class SignatureTests(unittest.TestCase):
 
 
 class BackendChoiceTests(unittest.TestCase):
-    def test_this_branch_defaults_to_pytorch(self):
-        self.assertEqual(backends.DEFAULT, backends.TORCH)
-        self.assertEqual(backends.active({}), backends.TORCH)
+    def test_the_shipped_default_is_the_engine_that_needs_no_install(self):
+        """Après la fusion de Test7000, le défaut reste le moteur natif.
+
+        Ce n'est pas de la timidité : PyTorch réclame plusieurs gigaoctets de
+        paquets Python, et basculer le défaut aurait cassé chaque installation
+        existante à la mise à jour suivante, pour une fonctionnalité que
+        personne n'a demandée.
+        """
+        self.assertEqual(backends.DEFAULT, backends.SDCPP)
+        self.assertEqual(backends.active({}), backends.SDCPP)
 
     def test_a_saved_preference_wins_over_the_default(self):
-        self.assertEqual(backends.active({"engine_backend": "sdcpp"}),
-                         backends.SDCPP)
+        self.assertEqual(backends.active({"engine_backend": "torch"}),
+                         backends.TORCH)
 
     def test_an_unknown_value_falls_back_instead_of_raising(self):
         """Un fichier de préférences hérité d'une autre branche ne doit pas
@@ -435,17 +442,24 @@ class RoutingTests(unittest.TestCase):
         pour Krea 2. Sans cette aiguille l'outpaint retombait en img2img
         partout, y compris là où il pouvait faire mieux.
         """
-        from atelier.engine import generate as gen
-        self.assertTrue(gen.mask_supported("z-image-turbo"))
-        self.assertTrue(gen.mask_supported("flux2-klein-9b"))
-        self.assertFalse(gen.mask_supported("krea2-turbo"))
+        from unittest.mock import patch
+        from atelier.engine import backends, generate as gen
+        #  Le moteur est nommé EXPLICITEMENT : le défaut de `main` est le
+        #  moteur natif, et sans ça ce test interrogerait le binaire — donc il
+        #  passerait en ne vérifiant plus rien.
+        with patch.object(backends, "active", return_value=backends.TORCH):
+            self.assertTrue(gen.mask_supported("z-image-turbo"))
+            self.assertTrue(gen.mask_supported("flux2-klein-9b"))
+            self.assertFalse(gen.mask_supported("krea2-turbo"))
 
     def test_a_gguf_upscaler_refuses_and_names_the_alternative(self):
         """Refuser est correct — les poids sont GGUF, illisibles hors sd.cpp.
         Refuser sans dire vers quoi aller ne l'est pas."""
-        from atelier.engine import generate as gen
-        with self.assertRaises(Exception) as caught:
-            gen.upscale_image("a.png", "RealESRGAN_x4plus.gguf")
+        from unittest.mock import patch
+        from atelier.engine import backends, generate as gen
+        with patch.object(backends, "active", return_value=backends.TORCH):
+            with self.assertRaises(Exception) as caught:
+                gen.upscale_image("a.png", "RealESRGAN_x4plus.gguf")
         self.assertIn("modern upscaler", str(caught.exception))
 
     def test_the_hd_pass_refuses_on_a_model_without_img2img(self):
@@ -942,3 +956,75 @@ class Krea2AvailabilityTests(unittest.TestCase):
     def test_the_other_two_models_need_no_supplement(self):
         for model_id in ("z-image-turbo", "flux2-klein-9b"):
             self.assertFalse(catalog.get(model_id).needs_supplement, model_id)
+
+
+class MaintenanceTests(unittest.TestCase):
+    """Ce que le script de nettoyage doit savoir du second moteur.
+
+    Le risque ici n'est pas un avertissement de trop : `maintenance.bat
+    --purge` SUPPRIME ce qu'il prend pour un orphelin. Un dépôt téléchargé par
+    le moteur PyTorch et absent de `models.yaml` serait effacé sans un mot, et
+    l'utilisateur retéléchargerait des gigaoctets pour avoir lancé un script de
+    nettoyage.
+    """
+
+    @staticmethod
+    def _module():
+        import sys
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]
+                               / "scripts"))
+        import maintenance
+        return maintenance
+
+    def test_the_supplement_folder_is_never_taken_for_an_orphan(self):
+        """Krea 2 télécharge ~9,4 Go que `models.yaml` ne mentionne nulle
+        part : c'est le moteur PyTorch qui les demande."""
+        from atelier import settings
+        m = self._module()
+        expected = m._expected_model_dirs()
+        krea = catalog.get("krea2-turbo")
+        self.assertIn(settings.model_repo_dir(krea.supplement.repo).name,
+                      expected)
+
+    def test_config_repositories_are_protected_too(self):
+        """Quelques kilo-octets, mais derrière une acceptation de licence et
+        un jeton : les refaire n'est pas gratuit non plus."""
+        from atelier import settings
+        m = self._module()
+        expected = m._expected_model_dirs()
+        for model in catalog.load():
+            if model.config_repo:
+                self.assertIn(settings.model_repo_dir(model.config_repo).name,
+                              expected, model.id)
+
+    def test_it_still_works_without_the_torch_catalogue(self):
+        """Le nettoyage ne doit pas dépendre d'une fonctionnalité
+        optionnelle : un dépliage partiel ne doit pas le casser."""
+        from unittest.mock import patch
+        m = self._module()
+        with patch.dict("sys.modules", {"atelier.torchengine.catalog": None}):
+            self.assertIsInstance(m._torch_repos(), set)
+
+    def test_the_two_catalogues_agree_on_their_ids(self):
+        """L'identifiant est le pont entre les moteurs. Un id d'un seul côté
+        est un onglet qui ne générera jamais — et ça ne se voit qu'au clic."""
+        from atelier import registry
+        known = {mo.id for mo in registry.load_base_models({})}
+        self.assertEqual([m.id for m in catalog.load() if m.id not in known],
+                         [])
+
+    def test_a_half_installed_engine_is_reported_as_such(self):
+        """torch peut être là parce qu'un add-on du Toolkit l'a installé, sans
+        diffusers ni gguf. L'application dirait « disponible » et le premier
+        clic rendrait un ImportError venu du fond d'une bibliothèque."""
+        from unittest.mock import patch
+        from atelier.torchengine import runtime
+        m = self._module()
+        with patch.object(runtime, "missing",
+                          return_value=["diffusers", "gguf"]), \
+             patch.object(runtime, "available", return_value=False):
+            said = []
+            with patch.object(m, "_warn", said.append), \
+                 patch("builtins.print", lambda *a, **k: None):
+                m.check_torch_engine()
+        self.assertTrue(any("half installed" in s for s in said), said)

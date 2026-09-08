@@ -58,9 +58,9 @@ REPO = "KSCorpr/Turbo-Slop-Generator-3000"
 #
 #  La valeur ci-dessous voyage AVEC le code : chaque branche porte la sienne,
 #  donc une mise à jour reste sur la branche d'où elle vient. Un test refuse
-#  qu'elle diverge du dépôt git quand il y en a un — c'est ce qui attrape la
-#  fusion malencontreuse qui ramènerait « Test7000 » sur `main`.
-DEFAULT_BRANCH = "Test7000"
+#  qu'elle diverge du dépôt git quand il y en a un — c'est ce qui a attrapé la
+#  fusion de Test7000, qui l'aurait ramenée ici.
+DEFAULT_BRANCH = "main"
 
 
 def archive_url(branch: str) -> str:

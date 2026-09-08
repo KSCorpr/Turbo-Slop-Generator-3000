@@ -14,8 +14,13 @@ Le choix se lit dans les préférences, avec deux échappatoires utiles :
 * `prefs_override`, dont se sert le banc d'essai pour mesurer un moteur sans
   toucher au fichier de l'utilisateur.
 
-Le défaut de la branche est PYTORCH. C'est sa raison d'être ; un défaut sd.cpp
-aurait fait une branche où il faut penser à activer ce qu'on est venu essayer.
+Le défaut est STABLE-DIFFUSION.CPP, et il le reste après la fusion de Test7000.
+Ce n'est pas de la timidité : le moteur natif est livré avec l'application et
+n'exige rien, là où PyTorch réclame plusieurs gigaoctets de paquets Python.
+Basculer le défaut aurait cassé chaque installation existante à la mise à jour
+suivante, pour une fonctionnalité que personne n'a demandée. Le moteur PyTorch
+s'active dans les Réglages, sous « 🔧 Expert », ou par la variable
+d'environnement.
 """
 from __future__ import annotations
 
@@ -25,8 +30,10 @@ SDCPP = "sdcpp"
 TORCH = "torch"
 ALL = (SDCPP, TORCH)
 
-#  Le défaut de CETTE branche. Sur `main`, la valeur est SDCPP.
-DEFAULT = TORCH
+#  Le moteur livré et utilisé sans rien faire. La branche Test7000 met TORCH
+#  ici : c'était sa raison d'être, et une branche où il faut penser à activer
+#  ce qu'on vient essayer n'aurait servi à rien.
+DEFAULT = SDCPP
 
 ENV_VAR = "TURBOSLOP_BACKEND"
 

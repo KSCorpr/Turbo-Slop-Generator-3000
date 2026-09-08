@@ -5,6 +5,12 @@ tool look like if every feature went through PyTorch and diffusers instead of
 stable-diffusion.cpp?** Same tabs, same presets, same model ids, same output
 folder. Only the engine underneath changes.
 
+> **Merged into `main`.** The engine ships with the app now, but
+> stable-diffusion.cpp stays the default: PyTorch needs several gigabytes of
+> Python packages, and flipping the default would have broken every existing
+> install at the next update for a feature nobody asked for. Turn it on in
+> **Settings → 🔧 Expert**, or with `TURBOSLOP_BACKEND=torch`.
+
 > **This document was rewritten after a correction.** The first version claimed
 > the PyTorch path meant re-downloading every model as a full diffusers
 > repository — 33 GB for a model that weighs 6.6 on disk. That was wrong.

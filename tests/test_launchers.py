@@ -158,14 +158,14 @@ class UpdateBranchTests(unittest.TestCase):
         """Une archive d'une autre branche dépliée par-dessus ne doit pas
         faire basculer l'installation en silence."""
         u = self._module()
-        branch, warning = u.resolve_branch(None, {"branch": "main"})
-        self.assertEqual(branch, "main")
+        branch, warning = u.resolve_branch(None, {"branch": "Test7000"})
+        self.assertEqual(branch, "Test7000")
         self.assertIn("--branch", warning)
 
     def test_an_explicit_request_wins_and_says_nothing(self):
         u = self._module()
-        self.assertEqual(u.resolve_branch("main", {"branch": "Test7000"}),
-                         ("main", ""))
+        self.assertEqual(u.resolve_branch("Test7000", {"branch": "main"}),
+                         ("Test7000", ""))
 
     def test_a_fresh_install_follows_the_code_it_came_with(self):
         u = self._module()
