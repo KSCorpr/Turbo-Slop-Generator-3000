@@ -37,7 +37,7 @@ DIRECTIONS = ["left", "right", "top", "bottom"]
 FILLS = [
     ("Neutral grey (editing models)", "neutral"),
     ("Blurred stretch", "edge"),
-    ("Miroir (motifs, textures)", "mirror"),
+    ("Mirror (patterns, textures)", "mirror"),
 ]
 
 

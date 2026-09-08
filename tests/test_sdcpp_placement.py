@@ -7,6 +7,19 @@ from atelier import benchmark, hardware, registry
 from atelier.engine import generate, sdcpp
 
 
+def _on_sdcpp(prefs: dict) -> dict:
+    """Les mêmes préférences, en exigeant le moteur natif.
+
+    Sur la branche Test7000 le moteur par défaut est PyTorch. Ces tests-ci
+    portent sur la construction de la ligne de commande sd.cpp : sans cette
+    mention ils mesureraient l'autre moteur — et passeraient, en ne vérifiant
+    plus rien. Le dire explicitement rend aussi l'aiguillage lui-même testé au
+    passage.
+    """
+    return {**prefs, "engine_backend": "sdcpp"}
+
+
+
 class ParamsBackendTests(unittest.TestCase):
     def _cmd(self, req, options):
         with patch.object(sdcpp, "_require", lambda *a, **k: None), \
@@ -62,7 +75,8 @@ class BenchmarkPlanTests(unittest.TestCase):
                 "vae_tiling": True, "clip_on_cpu": False,
                 "vae_on_cpu": False,
             }
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         self.assertEqual([m.key for m in modes],
                          ["single-staged", "single-autofit",
                           "dual-resident", "dual-staged"])
@@ -83,7 +97,8 @@ class BenchmarkPlanTests(unittest.TestCase):
                              "turing", True),)
         with patch.object(hardware, "auto_profile") as auto:
             auto.return_value.flags.return_value = {}
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         self.assertEqual(modes[0].key, "single-staged")
         self.assertFalse(modes[0].prefs_patch["auto_fit"])
 
@@ -101,7 +116,8 @@ class BenchmarkPlanTests(unittest.TestCase):
             auto.return_value.flags.return_value = {
                 "offload_to_cpu": True, "clip_on_cpu": True,
                 "vae_on_cpu": True, "diffusion_fa": True}
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         patch_ = next(m.prefs_patch for m in modes if m.key == "single-autofit")
         self.assertTrue(patch_["auto_fit"])
         self.assertEqual(patch_["params_backend"], "")
@@ -154,7 +170,8 @@ class Int8PlacementTests(unittest.TestCase):
                  patch.object(sdcpp, "collect_outputs", return_value=[]):
                 generate.generate(
                     "krea2-turbo-int8", "prompt", "", 4, 1.0, 512, 512,
-                    42, 1, prefs_override=prefs, save_prompt=False)
+                    42, 1, prefs_override=_on_sdcpp(prefs),
+                    save_prompt=False)
         return captured["request"]
 
     def test_int8_streaming_disables_conflicting_auto_fit(self):

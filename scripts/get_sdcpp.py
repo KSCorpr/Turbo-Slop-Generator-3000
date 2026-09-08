@@ -286,11 +286,12 @@ def _download(url: str) -> bytes:
     try:
         return _resumable(url, tmp, retries=10, resume=True)
     except Exception as exc:  # noqa: BLE001
-        print(f"   Direct indisponible ({exc}). Essai via miroirs…", flush=True)
+        print(f"   Direct download unavailable ({exc}). Trying mirrors…",
+              flush=True)
 
     for m in _MIRRORS:
         try:
-            print(f"   Miroir : {m.split('/')[2]}", flush=True)
+            print(f"   Mirror: {m.split('/')[2]}", flush=True)
             if tmp.exists():
                 tmp.unlink()
             return _resumable(m + url, tmp, retries=3, resume=True)

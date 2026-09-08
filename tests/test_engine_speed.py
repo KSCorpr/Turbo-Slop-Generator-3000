@@ -14,6 +14,19 @@ from atelier import hardware
 from atelier.engine import generate, sdcpp
 
 
+def _on_sdcpp(prefs: dict) -> dict:
+    """Les mêmes préférences, en exigeant le moteur natif.
+
+    Sur la branche Test7000 le moteur par défaut est PyTorch. Ces tests-ci
+    portent sur la construction de la ligne de commande sd.cpp : sans cette
+    mention ils mesureraient l'autre moteur — et passeraient, en ne vérifiant
+    plus rien. Le dire explicitement rend aussi l'aiguillage lui-même testé au
+    passage.
+    """
+    return {**prefs, "engine_backend": "sdcpp"}
+
+
+
 def _gpu(index, name, arch, tensor_cores, vram=12.0):
     return hardware.Gpu(index=index, name=name, vram_gb=vram, arch=arch,
                         tensor_cores=tensor_cores)
@@ -144,7 +157,7 @@ class EncoderResidencyTests(unittest.TestCase):
                  patch.object(sdcpp, "run"), \
                  patch.object(sdcpp, "collect_outputs", return_value=[]):
                 generate.generate("krea2-turbo", "p", "", 4, 1.0, 512, 512,
-                                  42, 1, prefs_override=prefs,
+                                  42, 1, prefs_override=_on_sdcpp(prefs),
                                   save_prompt=False)
         return captured["request"]
 
@@ -222,10 +235,11 @@ class VramRetryTests(unittest.TestCase):
                  patch.object(sdcpp, "collect_outputs", return_value=[]):
                 generate.generate("krea2-turbo", "p", "", 4, 1.0, 512, 512,
                                   42, 1, save_prompt=False,
-                                  prefs_override={"auto_optimize": False,
-                                                  "gpu_index": 0,
-                                                  "flags": {},
-                                                  **extra_prefs})
+                                  prefs_override=_on_sdcpp(
+                                      {"auto_optimize": False,
+                                       "gpu_index": 0,
+                                       "flags": {},
+                                       **extra_prefs}))
         return calls
 
     def test_an_oom_is_retried_once_with_the_encoder_in_ram(self):

@@ -477,7 +477,20 @@ def adetailer_repair(image, model_id: str, detector: str,
     style du modèle qui a fait l'image.
     """
     from .. import registry
+    from . import backends
     from . import generate as gen_engine
+
+    if backends.active() == backends.TORCH:
+        # Sur le moteur PyTorch la détection change de format : Ultralytics ne
+        # lit que le `.pt` d'origine, là où sd.cpp exige un `.safetensors`
+        # converti (il refuse d'exécuter un pickle). Mêmes noms de détecteurs,
+        # même dépôt source — c'est la conversion qui n'a plus lieu d'être.
+        from ..torchengine import ops
+        return ops.adetailer(model_id, image, detector, prompt=prompt,
+                             negative=negative, denoise=denoise, steps=steps,
+                             confidence=confidence, padding=padding,
+                             mask_blur=mask_blur, only_largest=only_largest,
+                             seed=seed, log=log)
 
     reason = adetailer_reason()
     if reason:

@@ -1,0 +1,275 @@
+"""Ce que chaque modèle du catalogue devient une fois passé chez diffusers.
+
+Le point important, et il a été corrigé après coup : **diffusers lit le
+GGUF**. La première version de ce fichier supposait le contraire et décrivait
+des dépôts complets à retélécharger — 33 Go pour un modèle qui en pèse 6,6 sur
+le disque. C'était faux, et c'est ce qui rendait cette branche absurde.
+
+`single_file` décrit donc le montage réel : chaque composant du pipeline est
+chargé depuis LE FICHIER QUE L'APPLICATION A DÉJÀ, celui du catalogue principal,
+choisi par la même échelle de quantification. `role` est le nom du composant
+là-bas ; c'est le seul lien à maintenir entre les deux catalogues.
+
+Il reste deux choses qui ne viennent pas du GGUF, et elles sont petites :
+
+* **les configurations d'architecture** — quelques kilo-octets de JSON qui
+  disent combien de couches et de quelle largeur. `config_repo` dit d'où. Pour
+  Z-Image ce dépôt est ouvert ; pour Flux.2 Klein il est fermé, et c'est le
+  seul jeton que cette branche demande (une fois, puis mis en cache) ;
+* **Krea 2**, qui n'a pas de chargement fichier-unique en amont du tout et
+  reste donc sur son dépôt complet.
+
+Un mode (texte→image, image→image, édition, inpaint) n'existe que si diffusers
+publie une classe pour ce modèle. Ce n'est pas une option qu'on active, c'est un
+fait qu'on constate — et il diffère d'un modèle à l'autre, là où sd.cpp offrait
+les quatre partout.
+"""
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
+
+from .. import settings
+
+CATALOG_FILE = settings.CONFIG_DIR / "models_torch.yaml"
+
+TEXT_TO_IMAGE = "text_to_image"
+IMAGE_TO_IMAGE = "image_to_image"
+EDIT = "edit"
+INPAINT = "inpaint"
+
+#  Composants du pipeline montés depuis un fichier unique, dans l'ordre où on
+#  les charge. Le VAE en dernier : c'est le plus petit, et le seul dont une
+#  panne se rattrape (on peut décoder sur le CPU).
+SINGLE_FILE_PARTS = ("transformer", "text_encoder", "vae")
+
+
+@dataclass(frozen=True)
+class Part:
+    """Un composant chargé depuis un fichier unique."""
+    name: str
+    cls: str
+    role: str
+
+
+@dataclass(frozen=True)
+class Supplement:
+    """Le complément de dépôt qu'un modèle réclame en plus de son GGUF.
+
+    Krea 2 est le seul du catalogue dans ce cas, et il vaut d'être décrit
+    plutôt que traité comme un cas particulier : son transformer vient du
+    fichier déjà installé, mais son encodeur (un Qwen3-VL, que transformers ne
+    sait pas lire en GGUF) et son VAE doivent venir d'ailleurs.
+
+    `patterns` est la partie qui compte. Sans elle, `snapshot_download` prend
+    tout : 26 Go de poids de transformer qu'on vient justement d'éviter, plus
+    26 Go d'une copie fichier-unique, plus les images du README.
+    """
+    repo: str
+    gated: bool
+    download_gb: float | None
+    skipped_gb: float | None
+    patterns: tuple
+
+    @property
+    def local_dir(self) -> Path:
+        return settings.model_repo_dir(self.repo)
+
+    @property
+    def present(self) -> bool:
+        """Le complément est-il RÉELLEMENT là ?
+
+        On vérifie `model_index.json` ET l'encodeur : le premier arrive en une
+        seconde, le second pèse neuf gigaoctets. Un téléchargement interrompu
+        laisse le premier sans le second, et ne regarder que lui ferait dire
+        « prêt » à un modèle qui ne l'est pas.
+        """
+        root = self.local_dir
+        encoder = root / "text_encoder"
+        return ((root / "model_index.json").is_file() and encoder.is_dir()
+                and any(encoder.glob("*.safetensors")))
+
+
+@dataclass(frozen=True)
+class Blocker:
+    """Une pièce qui NE se charge pas, et la raison exacte.
+
+    Nommer la pièce plutôt que le modèle est tout l'intérêt : « télécharge le
+    modèle entier » envoie chercher treize gigaoctets qu'on a déjà, alors que
+    ce qui manque est ailleurs et pèse autrement moins.
+    """
+    part: str
+    why: str
+
+
+@dataclass(frozen=True)
+class TorchModel:
+    id: str
+    pipeline: str
+    min_diffusers: str
+    license: str
+    negative_prompt: bool
+    #  mode -> classe diffusers. Absent = le mode n'existe pas pour ce modèle.
+    pipelines: dict = field(default_factory=dict)
+    #  composant -> Part. Vide = pas de chargement fichier-unique possible.
+    parts: dict = field(default_factory=dict)
+    config_repo: str = ""
+    config_gated: bool = False
+    #  La configuration d'architecture est-elle celle des valeurs par défaut de
+    #  la classe diffusers ? (Démontré, pour Krea 2, par la concordance de
+    #  toutes les formes avec le fichier réel.) Alors rien à télécharger.
+    config_local: bool = False
+    #  Ce qui empêche encore ce modèle de tourner sur ce moteur.
+    blocked_by: tuple = ()
+    #  Le complément de dépôt, pour les modèles dont le GGUF ne suffit pas.
+    supplement: "Supplement | None" = None
+    #  Repli dépôt complet.
+    repo: str = ""
+    gated: bool = False
+    full_repo_gb: float | None = None
+
+    @property
+    def from_gguf(self) -> bool:
+        """Ce modèle se monte-t-il à partir des fichiers déjà installés ?"""
+        return bool(self.parts)
+
+    @property
+    def needs_supplement(self) -> bool:
+        return self.supplement is not None
+
+    @property
+    def usable(self) -> bool:
+        """Peut-on réellement générer avec, sur ce moteur, aujourd'hui ?
+
+        Séparé de `from_gguf` volontairement : un modèle dont le transformer se
+        charge mais dont l'encodeur ne se charge pas n'est pas « à moitié
+        disponible », il est indisponible — et le dire avant le clic vaut mieux
+        qu'une pile d'appels vingt secondes plus tard.
+        """
+        return not self.blocked_by
+
+    @property
+    def local_dir(self) -> Path:
+        return settings.model_repo_dir(self.repo) if self.repo else Path()
+
+    def can(self, mode: str) -> bool:
+        return bool(self.pipelines.get(mode))
+
+    def pipeline_for(self, mode: str) -> str | None:
+        return self.pipelines.get(mode)
+
+    @property
+    def modes(self) -> list[str]:
+        return [m for m in (TEXT_TO_IMAGE, IMAGE_TO_IMAGE, EDIT, INPAINT)
+                if self.can(m)]
+
+    @property
+    def needs_token(self) -> str:
+        """Pourquoi ce modèle réclame un jeton Hugging Face — ou "" s'il n'en
+        réclame pas. La distinction compte : quelques kilo-octets de
+        configuration et trente gigaoctets de poids ne se demandent pas de la
+        même façon."""
+        if self.config_gated and self.config_repo:
+            return ("its architecture config (a few KB, once) comes from a "
+                    f"gated repository: {self.config_repo}")
+        if self.supplement is not None and self.supplement.gated:
+            #  Le transformer vient du GGUF ; ce qui reste fermé, c'est le
+            #  complément. Dire « les poids » enverrait retélécharger
+            #  vingt-six gigaoctets déjà présents sous une autre forme.
+            gb = self.supplement.download_gb
+            size = f" (~{gb:.0f} GB)" if gb else ""
+            return ("its text encoder and VAE, which cannot come from GGUF, "
+                    f"live in a gated repository{size}: "
+                    f"{self.supplement.repo}")
+        if self.from_gguf:
+            return ""
+        return (f"its weights come from a gated repository: {self.repo}"
+                if self.gated else "")
+
+    @property
+    def blocked_summary(self) -> str:
+        """Une phrase par pièce manquante, pour le journal et l'interface."""
+        return "\n".join(f"· {b.part}: {' '.join(b.why.split())}"
+                          for b in self.blocked_by)
+
+
+@lru_cache(maxsize=4)
+def _parse(path: str, mtime: float) -> tuple[TorchModel, ...]:
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    out = []
+    for e in raw.get("models") or []:
+        sf = dict(e.get("single_file") or {})
+        parts = {name: Part(name, str(spec["class"]), str(spec["role"]))
+                 for name in SINGLE_FILE_PARTS
+                 for spec in [sf.get(name)] if spec}
+        out.append(TorchModel(
+            id=str(e["id"]),
+            pipeline=str(e["pipeline"]),
+            min_diffusers=str(e.get("min_diffusers") or "0"),
+            license=str(e.get("license") or "unknown"),
+            negative_prompt=bool(e.get("negative_prompt")),
+            pipelines=dict(e.get("pipelines") or {}),
+            parts=parts,
+            config_repo=str(sf.get("config_repo") or ""),
+            config_gated=bool(sf.get("config_gated")),
+            config_local=bool(sf.get("config_local")),
+            blocked_by=tuple(Blocker(str(b["part"]), str(b["why"]))
+                             for b in (e.get("blocked_by") or [])),
+            supplement=_supplement(e.get("from_repo")),
+            repo=str(e.get("repo") or ""),
+            gated=bool(e.get("gated")),
+            full_repo_gb=(None if e.get("full_repo_gb") is None
+                          else float(e["full_repo_gb"])),
+        ))
+    return tuple(out)
+
+
+def _supplement(raw) -> "Supplement | None":
+    if not raw:
+        return None
+    def _num(key):
+        v = raw.get(key)
+        return None if v is None else float(v)
+    return Supplement(
+        repo=str(raw["repo"]), gated=bool(raw.get("gated")),
+        download_gb=_num("download_gb"), skipped_gb=_num("skipped_gb"),
+        patterns=tuple(str(x) for x in (raw.get("patterns") or [])))
+
+
+def load(path: Path | None = None) -> list[TorchModel]:
+    """Le catalogue, relu dès que le fichier change sur le disque."""
+    p = Path(path or CATALOG_FILE)
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return []
+    # Copie profonde : les entrées sont gelées mais `pipelines` et `parts` sont
+    # des dicts bien vivants, et le cache les rendrait partagés.
+    return [copy.deepcopy(m) for m in _parse(str(p), mtime)]
+
+
+def get(model_id: str, path: Path | None = None) -> TorchModel | None:
+    return next((m for m in load(path) if m.id == model_id), None)
+
+
+def mode_for(model: TorchModel, *, init_image=None, ref_image=None,
+             mask_image=None) -> str:
+    """Le mode que ces entrées demandent — indépendamment de sa disponibilité.
+
+    L'appelant compare ensuite avec `model.can(...)`. Séparer les deux est
+    volontaire : « ce que l'utilisateur a demandé » et « ce que le modèle sait
+    faire » doivent pouvoir diverger pour qu'on puisse l'EXPLIQUER, au lieu de
+    retomber en silence sur du texte→image en laissant croire que l'image de
+    départ a servi.
+    """
+    if mask_image is not None:
+        return INPAINT
+    if ref_image:
+        return EDIT if model.can(EDIT) else IMAGE_TO_IMAGE
+    if init_image is not None:
+        return IMAGE_TO_IMAGE
+    return TEXT_TO_IMAGE

@@ -82,10 +82,22 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
                 "setup_adetailer.py",  # idem, onglet « Détails »
                 "_torch_setup.py", "convert_gguf.py"}
 
+    @staticmethod
+    def _basename(call: str) -> str:
+        """Le nom du fichier, quel que soit le séparateur écrit dans le .bat.
+
+        `Path("scripts\\x.py").name` rend la chaîne ENTIÈRE sous Linux : la
+        barre inverse n'y est pas un séparateur. Le test ne passait donc que
+        parce qu'un autre lanceur mentionnait par hasard le même script avec
+        une barre normale — et il aurait rendu un verdict différent sous
+        Windows, c'est-à-dire sur la seule machine qui exécute ces .bat.
+        """
+        return call.replace("\\", "/").rsplit("/", 1)[-1]
+
     def test_user_facing_scripts_have_a_launcher(self):
         launched = set()
         for path in _launchers(".bat") + _launchers(".sh"):
-            launched |= {Path(c).name
+            launched |= {self._basename(c)
                          for c in _CALLS.findall(
                              path.read_text(encoding="utf-8",
                                             errors="replace"))}
@@ -98,3 +110,70 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpdateBranchTests(unittest.TestCase):
+    """`update.bat` doit ramener LA branche installée, pas « la principale ».
+
+    Le piège était réel et destructeur : `BRANCH = "main"` en dur signifiait
+    qu'une installation faite depuis une autre branche se faisait écraser au
+    premier `update.bat`, sans un mot, et sans autre retour que le rollback.
+    """
+
+    @staticmethod
+    def _module():
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import update_app
+        return update_app
+
+    def test_the_default_branch_is_the_one_this_code_lives_on(self):
+        """LE test qui compte, et il ne sert qu'aux développeurs.
+
+        La valeur voyage avec le code : chaque branche porte la sienne. Ce qui
+        peut mal tourner, c'est une fusion — ramener « Test7000 » sur `main`
+        enverrait tous les utilisateurs de `main` sur une branche
+        expérimentale. Ce test l'attrape là où il faut : dans le dépôt git.
+
+        Ignoré quand il n'y a pas de dépôt (une installation utilisateur est un
+        zip déplié) ou en HEAD détachée, où la question n'a pas de réponse.
+        """
+        import subprocess
+        if not (ROOT / ".git").exists():
+            raise unittest.SkipTest("not a git checkout")
+        try:
+            branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ROOT,
+                capture_output=True, text=True, timeout=15).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            raise unittest.SkipTest("git unavailable")
+        if not branch or branch == "HEAD":
+            raise unittest.SkipTest("detached HEAD")
+        self.assertEqual(
+            self._module().DEFAULT_BRANCH, branch,
+            "update.bat would send this install to another branch than the "
+            "one this code is on")
+
+    def test_the_recorded_branch_wins_over_the_shipped_default(self):
+        """Une archive d'une autre branche dépliée par-dessus ne doit pas
+        faire basculer l'installation en silence."""
+        u = self._module()
+        branch, warning = u.resolve_branch(None, {"branch": "main"})
+        self.assertEqual(branch, "main")
+        self.assertIn("--branch", warning)
+
+    def test_an_explicit_request_wins_and_says_nothing(self):
+        u = self._module()
+        self.assertEqual(u.resolve_branch("main", {"branch": "Test7000"}),
+                         ("main", ""))
+
+    def test_a_fresh_install_follows_the_code_it_came_with(self):
+        u = self._module()
+        self.assertEqual(u.resolve_branch(None, {}),
+                         (u.DEFAULT_BRANCH, ""))
+
+    def test_the_launcher_forwards_its_arguments(self):
+        """Sans `%*`, `--branch` et `--rollback` n'arriveraient jamais."""
+        text = (ROOT / "update.bat").read_text(encoding="utf-8",
+                                               errors="replace")
+        self.assertIn("%*", text)

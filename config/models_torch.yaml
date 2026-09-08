@@ -1,0 +1,148 @@
+# ============================================================================
+#  Turbo Slop Generator 3000 — Catalogue PYTORCH (branche Test7000)
+# ----------------------------------------------------------------------------
+#  CE FICHIER A ÉTÉ REFAIT. La première version partait d'une erreur : que
+#  passer par PyTorch obligeait à retélécharger chaque modèle en dépôt
+#  diffusers complet (33 Go pour Z-Image, contre 6,6 en GGUF). C'est faux.
+#  diffusers LIT LE GGUF, et il lit exactement les fichiers que l'application
+#  télécharge déjà pour stable-diffusion.cpp.
+#
+#  Vérifié, fichier par fichier, pas de mémoire :
+#    · `GGUFQuantizationConfig` existe en diffusers 0.40.0, et son
+#      déquantiseur couvre 23 types GGML — dont Q2_K → Q8_0, c'est-à-dire
+#      toute l'échelle de quantification de l'application ;
+#    · `ZImageTransformer2DModel` et `Flux2Transformer2DModel` sont enregistrés
+#      dans `SINGLE_FILE_LOADABLE_CLASSES` avec leur convertisseur ;
+#    · les noms de tenseurs de ces convertisseurs correspondent EXACTEMENT à
+#      ceux lus dans l'en-tête des GGUF que l'app installe (`.attention.qkv.
+#      weight`, `context_refiner.*` pour Z-Image ; `double_blocks.*`,
+#      `img_attn.norm.query_norm` pour Flux.2 Klein) ;
+#    · `qwen3` figure dans la table GGUF de transformers, et l'en-tête du GGUF
+#      d'encodeur porte bien `general.architecture = qwen3` avec toute la
+#      configuration (36 couches, 2560 de large…) et le vocabulaire.
+#
+#  Conséquence : sur cette branche, un modèle « installé » l'est pour LES DEUX
+#  moteurs. Rien à retélécharger, la même échelle de quantification, la même
+#  place sur le disque.
+#
+#  `single_file` décrit ce montage. `repo` reste le repli pour ce qui n'a pas
+#  de chargement fichier-unique en amont — aujourd'hui Krea 2, et lui seul.
+# ============================================================================
+
+models:
+
+  # --------------------------------------------------------------------------
+  - id: z-image-turbo
+    pipeline: ZImagePipeline
+    min_diffusers: "0.36.0"
+    license: apache-2.0
+    negative_prompt: true
+    pipelines:
+      text_to_image: ZImagePipeline
+      image_to_image: ZImageImg2ImgPipeline
+      inpaint: ZImageInpaintPipeline
+    single_file:
+      # `role` renvoie au composant du catalogue PRINCIPAL (models.yaml) :
+      # c'est le même fichier sur le disque, choisi par la même échelle.
+      transformer: {class: ZImageTransformer2DModel, role: diffusion}
+      text_encoder: {class: Qwen3Model, role: text_encoder}
+      vae: {class: AutoencoderKL, role: vae}
+      # D'où viennent les CONFIGURATIONS (quelques kilo-octets d'architecture,
+      # pas des poids). Ce dépôt est ouvert — vérifié : `transformer/
+      # config.json` répond 200 sans jeton. diffusers l'aurait trouvé tout
+      # seul, on l'écrit quand même pour que ce soit lisible.
+      config_repo: Tongyi-MAI/Z-Image-Turbo
+    # Dépôt complet, seulement si quelqu'un le veut : ce n'est plus le
+    # chemin normal.
+    repo: Tongyi-MAI/Z-Image-Turbo
+    gated: false
+    full_repo_gb: 32.9
+
+  # --------------------------------------------------------------------------
+  - id: flux2-klein-9b
+    pipeline: Flux2KleinPipeline
+    min_diffusers: "0.36.0"
+    license: other
+    # `__call__` n'expose pas `negative_prompt` (seulement les embeddings) :
+    # le champ est sans effet, exactement comme côté sd.cpp à CFG 1.0.
+    negative_prompt: false
+    pipelines:
+      text_to_image: Flux2KleinPipeline
+      # MÊME classe : `Flux2KleinPipeline.__call__` prend `image=` (une image
+      # ou une liste), ce qui EST le mode édition multi-références de l'onglet.
+      edit: Flux2KleinPipeline
+      inpaint: Flux2KleinInpaintPipeline
+    single_file:
+      transformer: {class: Flux2Transformer2DModel, role: diffusion}
+      text_encoder: {class: Qwen3Model, role: text_encoder}
+      vae: {class: AutoencoderKL, role: vae}
+      # LE point de friction de ce modèle, et il faut le dire : les POIDS
+      # viennent du GGUF ouvert d'Unsloth, mais l'architecture n'est publiée
+      # que par Black Forest Labs, dont le dépôt est fermé (401 sans jeton).
+      # Il s'agit de quelques kilo-octets de JSON, demandés UNE fois puis mis
+      # en cache — mais il faut accepter la licence et se connecter.
+      # Le repli automatique de diffusers ne sert à rien ici : il pointe vers
+      # `black-forest-labs/FLUX.2-dev`, qui est un autre modèle ET fermé.
+      config_repo: black-forest-labs/FLUX.2-klein-9B
+      config_gated: true
+    repo: black-forest-labs/FLUX.2-klein-9B
+    gated: true
+    full_repo_gb: null
+
+  # --------------------------------------------------------------------------
+  - id: krea2-turbo
+    pipeline: Krea2Pipeline
+    min_diffusers: "0.36.0"
+    license: other
+    negative_prompt: true
+    pipelines:
+      # diffusers 0.40.0 n'exporte QUE la classe texte→image pour Krea 2 :
+      # ni img2img, ni inpaint, ni édition.
+      text_to_image: Krea2Pipeline
+    single_file:
+      # Le transformer se charge depuis le GGUF déjà installé. diffusers n'a
+      # pas de convertisseur pour Krea 2, mais la correspondance des noms est
+      # exacte et vérifiée (430 tenseurs ↔ 430 clés) :
+      # `atelier/torchengine/krea2_gguf.py`.
+      #
+      # Ce que ça économise n'est pas une abstraction : le même transformer
+      # pèse 26,3 Go en safetensors dans le dépôt (trois fragments) contre
+      # ~13 Go en Q5_K_M sur le disque. C'est la plus grosse pièce du modèle,
+      # et c'est celle qu'on ne retélécharge pas.
+      transformer: {class: Krea2Transformer2DModel, role: diffusion}
+    # Krea 2 est le seul modèle du catalogue à avoir besoin d'un COMPLÉMENT.
+    # Deux pièces ne peuvent pas venir du GGUF, et ce n'est pas faute d'avoir
+    # cherché :
+    #   · l'encodeur est un Qwen3-VL (vision-langage) et transformers ne sait
+    #     convertir que « qwen2 », « qwen3 » et « qwen3_moe » — pas
+    #     « qwen3vl », qui est ce que déclare l'en-tête du fichier installé ;
+    #   · le VAE attendu est un AutoencoderKLQwenImage, classe sans entrée
+    #     dans SINGLE_FILE_LOADABLE_CLASSES.
+    # S'y ajoutent le scheduler et les réglages du pipeline, dont les valeurs
+    # ne sont PAS celles par défaut (`use_dynamic_shifting: true`,
+    # `max_image_seq_len: 6400`) : les deviner aurait changé le rendu en
+    # silence.
+    from_repo:
+      repo: krea/Krea-2-Turbo
+      gated: true
+      download_gb: 9.4
+      # Ce qu'on prend — et surtout ce qu'on NE prend PAS. Sans cette liste,
+      # `snapshot_download` rapatrie les 26 Go de `transformer/`, les 26 Go de
+      # `turbo.safetensors` et 30 Mo d'images d'illustration : 61 Go pour 9
+      # utiles.
+      patterns:
+        - "model_index.json"
+        - "scheduler/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "text_encoder/*"
+        # La configuration du transformer SEULE (588 octets), pas ses poids.
+        # Ses 17 valeurs se trouvent être exactement les défauts de la classe
+        # diffusers — vérifié une à une — mais on prend le fichier plutôt que
+        # de s'appuyer là-dessus : une valeur par défaut peut changer en amont
+        # sans prévenir, et le rendu bougerait sans qu'aucune erreur ne sorte.
+        - "transformer/config.json"
+      skipped_gb: 52.6
+    repo: krea/Krea-2-Turbo
+    gated: true
+    full_repo_gb: 61.9

@@ -40,7 +40,8 @@ supprimez enregistrer annuler termine echec alors quand comme aussi tres
 bien mieux pire trop beaucoup encore deja jamais toujours rien
 quelque quelques autres meme memes seule seulement octets
 lignes boutons onglet onglets reglage reglages defaut
-dernier derniere derniers relancez relancer relance
+dernier derniere derniers relancez relancer relance miroir
+gauche droite haut bas bord bords toile
 cartes disque disques memoire vitesse lecture ecriture gestion aide
 outils apercu reglage etape etapes couleur couleurs profondeur
 moteur moteurs catalogue detourage restauration amelioration parametres

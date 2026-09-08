@@ -1,5 +1,10 @@
 """Pipeline de génération : assemble un GenRequest depuis la bibliothèque, les
 préférences matérielles et les LoRA, puis lance stable-diffusion.cpp.
+
+Sur la branche Test7000 ce module garde tout son contenu mais n'est plus seul :
+`generate()` est devenue une AIGUILLE vers le moteur actif, et le pipeline
+sd.cpp ci-dessous s'appelle désormais `generate_sdcpp()`. Voir `backends.py`
+pour le choix, et `atelier/torchengine/` pour l'autre implémentation.
 """
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
-from . import resident_engine, sdcpp
+from . import backends, resident_engine, sdcpp
 from .sdcpp import GenRequest
 
 
@@ -15,14 +20,28 @@ def cancel() -> str:
     """Annule la génération en cours, quel que soit le moteur qui la porte.
 
     Le moteur résident survit à l'annulation : on annule la TÂCHE, pas le
-    processus — sinon on rechargerait le modèle pour rien.
+    processus — sinon on rechargerait le modèle pour rien. C'est la même règle
+    des deux côtés : sur le moteur PyTorch on lève entre deux pas, ce qui rend
+    la main sans corrompre le pipeline chargé.
+
+    Les DEUX sont annulés, sans regarder lequel est actif. Le bouton « Stop »
+    est appuyé pendant qu'une génération tourne : demander alors quel moteur
+    est censé tourner ferait dépendre l'arrêt d'une préférence qu'on vient
+    peut-être de changer, et le vrai travail en cours continuerait.
     """
+    messages = []
+    try:
+        from ..torchengine import backend as torch_backend
+        messages.append(torch_backend.cancel())
+    except ImportError:
+        pass
     server = resident_engine()
     if server is not None:
         stopped = server.cancel_active()
         if stopped:
             return stopped
-    return sdcpp.cancel_active()
+    native = sdcpp.cancel_active()
+    return native or (messages[0] if messages else "")
 
 
 def _resident_server(prefs: dict, req: "GenRequest",
@@ -332,7 +351,38 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     return cmd
 
 
-def generate(
+def generate(*args, **kwargs) -> list[Path]:
+    """Aiguille vers le moteur actif, sans rien changer au contrat.
+
+    Tout ce qui produit une image dans l'application passe ici : les trois
+    onglets de génération, Xanax, la passe HD, l'outpaint, ADetailer et le banc
+    d'essai. C'est le seul point où les deux moteurs se rencontrent, et c'est
+    volontaire — une seconde aiguille ailleurs, et les deux se contrediraient
+    un jour sur un seul appelant sans que personne le voie.
+
+    Les arguments sont transmis TELS QUELS. Les deux implémentations partagent
+    la signature exacte (un test le vérifie) : les recopier ici aurait créé un
+    troisième endroit à tenir à jour.
+    """
+    prefs = kwargs.get("prefs_override")
+    if backends.active(prefs) == backends.TORCH:
+        from ..torchengine import backend as torch_backend
+        return torch_backend.generate(*args, **kwargs)
+    return generate_sdcpp(*args, **kwargs)
+
+
+#  `*args, **kwargs` est commode pour transmettre, et illisible pour qui
+#  interroge la fonction — or l'application le fait : la passe HD vérifie
+#  qu'un paramètre existe avant de s'en servir, et un test vérifie que les
+#  deux moteurs ont bien la même signature. On lui rend donc la VRAIE, qui
+#  est celle qu'elle accepte réellement, sans écraser sa docstring comme le
+#  ferait `functools.wraps`.
+def _publish_signature() -> None:
+    import inspect
+    generate.__signature__ = inspect.signature(generate_sdcpp)
+
+
+def generate_sdcpp(
     model_id: str,
     prompt: str,
     negative: str,
@@ -575,7 +625,7 @@ def generate(
 
 def upscale_image(image, model_name: str, repeats: int = 1,
                   log: Callable[[str], None] | None = None) -> Path:
-    """Agrandissement SIMPLE via un upscaler ESRGAN GGUF (sd.cpp --mode upscale).
+    """Aiguille, puis agrandissement ESRGAN GGUF (sd.cpp --mode upscale).
 
     Déterministe, 100% GPU, aucun prompt. `repeats` ré-applique le modèle (un
     modèle ×2 appliqué 2 fois = ×4).
@@ -585,6 +635,9 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     passe pas en VRAM, on relance une fois au défaut plutôt que de rendre une
     erreur — l'image sortira comme avant, pas mieux, mais elle sortira.
     """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.upscale_image(image, model_name, repeats, log)
     from PIL import Image
     prefs = settings.load_prefs()
     sd_cli = settings.find_sd_cli()
@@ -778,6 +831,11 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     débruitage à la taille finale. `denoise` règle ce second passage : c'est le
     seul réglage qui compte vraiment ici.
     """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.hd_upscale(model_id, image, scale, upscaler, denoise,
+                              prompt, negative, steps, hd_steps, seed,
+                              preview_path, log)
     from PIL import Image
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
@@ -943,3 +1001,21 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             if log:
                 log(f"[hd] not enough VRAM at ×{last:.2f} → retrying at "
                     f"×{scale:.2f}.")
+
+
+def mask_supported(model_id: str) -> bool:
+    """L'inpainting AVEC masque est-il possible ici, pour ce modèle ?
+
+    L'outpaint posait la question au binaire (`sdcpp.mask_flag`). Sur le moteur
+    PyTorch il n'y a pas de binaire, et la réponse dépend du MODÈLE : diffusers
+    publie une classe d'inpainting pour Z-Image et Flux.2 Klein, aucune pour
+    Krea 2. Sans cette aiguille l'outpaint retombait en img2img partout, y
+    compris là où il pouvait faire mieux.
+    """
+    if backends.active() == backends.TORCH:
+        from ..torchengine import ops
+        return ops.supports_mask(model_id)
+    return bool(sdcpp.mask_flag(settings.find_sd_cli()))
+
+
+_publish_signature()

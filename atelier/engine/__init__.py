@@ -27,10 +27,24 @@ def resident_engine():
 
 def release_resident_engine(reason: str = "",
                             log: Callable[[str], None] | None = None) -> None:
-    """Rend la VRAM tenue par le moteur résident, s'il y en a un qui tourne."""
+    """Rend la VRAM tenue par le moteur résident, s'il y en a un qui tourne.
+
+    « Le » moteur résident, il y en a maintenant deux : le serveur sd.cpp et
+    le pipeline PyTorch gardé chaud. Les deux tiennent des gigaoctets de VRAM
+    entre deux images, et les deux doivent la lâcher quand un outil vient
+    prendre la carte. Ne libérer que celui du moteur actif serait plus court
+    et faux : on peut avoir généré avec l'un, changé de moteur, et laissé
+    l'autre chargé derrière soi.
+    """
     server = resident_engine()
     if server is not None and server.is_running():
         server.stop(reason, log)
+    try:
+        from ..torchengine import runtime as torch_runtime
+    except ImportError:
+        return
+    if torch_runtime.is_loaded():
+        torch_runtime.release(reason, log)
 
 
 def engine_build_source() -> str:
