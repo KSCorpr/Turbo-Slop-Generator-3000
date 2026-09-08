@@ -762,6 +762,97 @@ def patch_token(value: str):
     return patch.object(hfaccess, "token", return_value=value)
 
 
+class ConfigLocationTests(unittest.TestCase):
+    """Où chaque composant va lire sa configuration — dépôt ET sous-dossier.
+
+    Le bug qui a produit, sur une vraie machine :
+    « no file named config.json found in directory …/krea__Krea-2-Turbo ».
+
+    `from_single_file` ne consulte son `default_subfolder` que lorsqu'on ne lui
+    donne AUCUN `config`. Dès qu'on nomme un dépôt — ce qu'il faut faire pour
+    Flux.2 Klein, dont le repli automatique pointe vers un autre modèle — il
+    cherche `config.json` à la racine. Le message ne parle pas de sous-dossier,
+    donc il envoie chercher un téléchargement incomplet.
+    """
+
+    def test_the_two_keys_travel_together_or_not_at_all(self):
+        from atelier.torchengine.runtime import _config_kwargs
+        where = _config_kwargs("acme/model", "transformer")
+        self.assertEqual(where, {"config": "acme/model",
+                                 "subfolder": "transformer"})
+        self.assertEqual(_config_kwargs("", "transformer"), {})
+
+    def test_every_component_is_told_its_own_subfolder(self):
+        """Le test au point d'appel, pas sur l'aide : c'est là qu'était le
+        bug. Un dépôt diffusers range ses pièces dans `transformer/`, `vae/`,
+        `text_encoder/` — le nom du composant EST le sous-dossier."""
+        from unittest.mock import MagicMock, patch
+        from atelier.torchengine import runtime
+        seen = {}
+
+        def fake_model_class(name):
+            cls = MagicMock()
+
+            def from_single_file(path, **kwargs):
+                seen[name] = kwargs
+                return MagicMock()
+            cls.from_single_file = from_single_file
+            return cls
+
+        model = catalog.get("z-image-turbo")
+        files = {p.role: pathlib.Path(f"/tmp/{p.role}.gguf")
+                 for p in model.parts.values()}
+        with patch.object(runtime, "_model_class", fake_model_class), \
+             patch.object(runtime, "_load_text_encoder",
+                          return_value=MagicMock()), \
+             patch.object(runtime, "_load_scheduler",
+                          return_value=MagicMock()), \
+             patch.object(runtime, "_pipeline_class",
+                          return_value=lambda **kw: kw), \
+             patch.object(runtime, "_import", return_value=MagicMock()):
+            runtime.build_from_files(model, "ZImagePipeline", "bf16", files)
+
+        self.assertIn("ZImageTransformer2DModel", seen)
+        for cls_name, kwargs in seen.items():
+            if "config" in kwargs:
+                self.assertIn("subfolder", kwargs,
+                              f"{cls_name}: config without subfolder — "
+                              "diffusers will look at the repository root")
+        self.assertEqual(seen["ZImageTransformer2DModel"]["subfolder"],
+                         "transformer")
+        self.assertEqual(seen["AutoencoderKL"]["subfolder"], "vae")
+
+    def test_the_hybrid_path_names_its_subfolder_too(self):
+        """C'est CELUI-CI qui a échoué chez l'utilisateur : Krea 2 passe son
+        dossier local en `config`, donc il doit aussi dire `transformer`."""
+        from unittest.mock import MagicMock, patch
+        from atelier.torchengine import runtime
+        seen = {}
+
+        def fake_model_class(name):
+            cls = MagicMock()
+
+            def from_single_file(path, **kwargs):
+                seen.update(kwargs)
+                return MagicMock()
+            cls.from_single_file = from_single_file
+            return cls
+
+        model = catalog.get("krea2-turbo")
+        files = {"diffusion": pathlib.Path("/tmp/krea2_turbo-Q5_K_M.gguf")}
+        pipe_cls = MagicMock()
+        with patch.object(runtime, "_model_class", fake_model_class), \
+             patch.object(runtime, "_pipeline_class", return_value=pipe_cls), \
+             patch.object(type(model.supplement), "present",
+                          property(lambda self: True)):
+            runtime.build_hybrid(model, "Krea2Pipeline", "bf16", files)
+
+        self.assertEqual(seen.get("subfolder"), "transformer",
+                         "without it diffusers looks for config.json at the "
+                         "root of the local folder — the exact error seen")
+        self.assertIn("config", seen)
+
+
 class Krea2GgufMappingTests(unittest.TestCase):
     """Le convertisseur écrit à la main — vérifié exhaustivement, hors ligne.
 

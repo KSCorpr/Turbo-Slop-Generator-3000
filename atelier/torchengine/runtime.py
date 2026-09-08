@@ -321,7 +321,7 @@ def build_hybrid(model, pipeline_cls: str, dtype, files: dict,
     transformer = _model_class(part.cls).from_single_file(
         str(path), quantization_config=d.GGUFQuantizationConfig(
             compute_dtype=dtype),
-        torch_dtype=dtype, config=str(local))
+        torch_dtype=dtype, **_config_kwargs(str(local), "transformer"))
     return _pipeline_class(pipeline_cls).from_pretrained(
         str(local), transformer=transformer, torch_dtype=dtype)
 
@@ -364,13 +364,15 @@ def build_from_files(model, pipeline_cls: str, dtype, files: dict,
             # (`general.architecture = qwen3`, le nombre de couches, la
             # largeur…). C'est pour ça qu'aucun `config.json` n'est requis ici.
             components[name] = _load_text_encoder(cls, path, dtype, log)
-        elif is_gguf:
+            continue
+        where = _config_kwargs(model.config_repo, name)
+        if is_gguf:
             components[name] = cls.from_single_file(
                 str(path), quantization_config=gguf_cfg, torch_dtype=dtype,
-                **_config_kwargs(model))
+                **where)
         else:
             components[name] = cls.from_single_file(
-                str(path), torch_dtype=dtype, **_config_kwargs(model))
+                str(path), torch_dtype=dtype, **where)
 
     meta = model.config_repo or model.repo
     tr = _import("transformers")
@@ -404,14 +406,20 @@ def _metadata_error(model, repo: str, exc: Exception) -> TorchEngineError:
         "“🔍 Check what is still missing” to confirm.")
 
 
-def _config_kwargs(model) -> dict:
-    """`config=` seulement quand le repli automatique de diffusers est faux.
+def _config_kwargs(repo: str, part: str) -> dict:
+    """Où lire la configuration d'un composant : le dépôt ET le sous-dossier.
 
-    Pour Z-Image, diffusers retrouve tout seul `Tongyi-MAI/Z-Image-Turbo`, qui
-    est le bon dépôt et il est ouvert. Pour Flux.2 Klein son repli pointe vers
-    `black-forest-labs/FLUX.2-dev` — un AUTRE modèle — donc il faut le nommer.
+    LES DEUX, et c'est tout le piège. `from_single_file` ne déduit son
+    `default_subfolder` que lorsqu'on ne lui donne AUCUN `config` ; dès qu'on
+    nomme un dépôt, il cherche `config.json` à sa racine et ne trouve rien.
+    L'erreur ne parle pas de sous-dossier, elle dit juste « no file named
+    config.json found in directory … », ce qui envoie chercher un
+    téléchargement incomplet.
+
+    Le nom du composant EST le sous-dossier : un dépôt diffusers range ses
+    pièces dans `transformer/`, `vae/`, `text_encoder/`.
     """
-    return {"config": model.config_repo} if model.config_repo else {}
+    return {"config": repo, "subfolder": part} if repo else {}
 
 
 def _load_text_encoder(cls, path: Path, dtype, log=None):
