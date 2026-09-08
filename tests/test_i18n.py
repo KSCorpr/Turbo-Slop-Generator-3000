@@ -56,16 +56,19 @@ _LOANWORDS = ("café", "cafés", "fête", "fêtes", "naïve", "résumé", "clich
 # The one place French is CORRECT, and it is not a slip.
 #
 # The Xanax enhancer's system prompt is written in English and addressed to a
-# model, not to the user. It quotes French diary lines as EXAMPLES of the input
-# it must handle, because that is what a French user types into that box, and
-# because the whole job of that prompt is teaching the model to turn a French
-# chain name into what the thing physically looks like. Translating the
-# examples would remove the very demonstration they exist for.
+# model, not to the user. Its "TRANSLATE THINGS, NOT NAMES" section quotes
+# French diary lines as EXAMPLES of the input it must handle, because that is
+# what a French user types into that box, and because the point of that section
+# is teaching the model to turn a French chain name into what the thing
+# physically looks like. Translating the examples would remove the very
+# demonstration they exist for.
 #
-# Listed as an exception, deliberately narrow: the detector stays strict for
-# everything else rather than being loosened to accommodate this one string.
+# The anchor is that section's heading rather than the prompt's first line: the
+# opening sentence is generic enough to appear elsewhere one day, and an
+# exception that silently starts covering a second string would be a hole
+# rather than an exception.
 _INTENTIONAL_FRENCH = (
-    "The user writes ONE sentence about a moment of their ordinary life",
+    "TRANSLATE THINGS, NOT NAMES",
 )
 
 _FRENCH = re.compile(

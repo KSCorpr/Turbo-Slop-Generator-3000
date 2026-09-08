@@ -81,6 +81,52 @@ class EnhancerStyleTests(unittest.TestCase):
         self.assertIn("Flunch", sysmsg)
         self.assertIn("cafeteria", sysmsg)
 
+    def test_the_authors_specification_is_reproduced_verbatim(self):
+        """La consigne fournie par l'auteur du projet est la SPÉCIFICATION.
+
+        Ce test existe pour qu'on ne la réécrive pas en passant. Tout ce que la
+        machinerie ajoute est dans une section séparée et annotée ; ces
+        lignes-ci, elles, doivent rester mot pour mot.
+        """
+        sysmsg = self.consts["SYSTEM_XANAX"]
+        for line in (
+            "You are an expert in prompt engineering and image generation.",
+            "1. Translate and adapt my input into an English generation "
+            "prompt.",
+            "3. NEVER generate a collage, diptych, triptych, split image",
+            "## Visual style (fixed and non-negotiable)",
+            "- **Weather**: always overcast",
+            "- **Processing**: no grain, no filter, no post-processing",
+            "- **Aspect ratio**: 4:3",
+        ):
+            self.assertIn(line, sysmsg, f"missing from the author's spec: "
+                                        f"{line[:40]}…")
+
+    def test_what_the_pipeline_adds_is_kept_separate(self):
+        """Ce que la machinerie exige ne doit pas se confondre avec la
+        consigne : quatre ajouts, groupés et annoncés, pas fondus dedans."""
+        sysmsg = self.consts["SYSTEM_XANAX"]
+        self.assertIn("## PIPELINE", sysmsg)
+        self.assertLess(sysmsg.index("## Visual style"),
+                        sysmsg.index("## PIPELINE"),
+                        "the spec must come first, the plumbing after")
+
+    def test_the_text_stage_is_told_it_writes_and_never_draws(self):
+        """La consigne dit « Generate an image » — vrai pour l'outil complet,
+        faux pour CE maillon, qui est un modèle de texte. Sans la levée
+        d'ambiguïté, il peut répondre « je ne sais pas générer d'images » au
+        lieu d'écrire le prompt."""
+        sysmsg = self.consts["SYSTEM_XANAX"]
+        self.assertIn("You never draw anything yourself", sysmsg)
+        self.assertIn("PRODUCE THE PROMPT", sysmsg)
+
+    def test_the_style_is_not_asked_for_twice(self):
+        """`build_prompt` colle déjà XANAX_STYLE devant le sujet. Si
+        l'améliorateur le réécrit aussi, il compte double et écrase le
+        sujet."""
+        self.assertIn("DO NOT RESTATE THE STYLE",
+                      self.consts["SYSTEM_XANAX"])
+
     def test_the_other_styles_are_untouched(self):
         """Le style Xanax ne devait rien changer aux onglets normaux."""
         for name in ("generic", "krea2"):
