@@ -78,9 +78,16 @@ SAMPLERS: dict[str, Mapping] = {
                          "single-step solver with stochastic noise — the "
                          "closest thing to an ancestral second-order method."),
     "dpm2": Mapping(_DPM, {**_FLOW, "solver_order": 2,
-                           "algorithm_type": "dpmsolver"}, APPROX,
-                    "sd.cpp's DPM2 is a Karras-style second-order method; "
-                    "this is the DPM-Solver of the same order."),
+                           "algorithm_type": "dpmsolver",
+                           # `dpmsolver` (sans ++) REFUSE `final_sigmas_type`
+                           # à zéro : la construction lève une ValueError, et
+                           # ce n'est pas un détail de signature qu'un filtre
+                           # rattrape. Vérifié en instanciant les 336
+                           # combinaisons du menu.
+                           "final_sigmas_type": "sigma_min"}, APPROX,
+                    "sd.cpp's DPM2 is a Karras-style second-order method; this "
+                    "is the DPM-Solver of the same order — and upstream has "
+                    "deprecated that variant, so it may disappear."),
     "ipndm": Mapping("IPNDMScheduler", {}, APPROX,
                      "no flow-matching variant: the sigmas are the diffusion "
                      "ones, which suits these models poorly."),
@@ -112,11 +119,14 @@ SCHEDULES: dict[str, tuple[dict, str, str]] = {
     "discrete": ({}, EXACT, ""),
     "karras": ({"use_karras_sigmas": True}, EXACT, ""),
     "exponential": ({"use_exponential_sigmas": True}, EXACT, ""),
+    # `use_beta_sigmas` lève un ImportError si scipy manque — d'où scipy
+    # dans les dépendances du moteur, plutôt qu'un menu qui plante au clic.
     "beta": ({"use_beta_sigmas": True}, EXACT, ""),
     "simple": ({}, MISSING, ""),
     "sgm_uniform": ({"timestep_spacing": "trailing"}, APPROX,
-                    "SGM uniform is trailing timestep spacing; it only applies "
-                    "to the diffusion schedulers."),
+                    "SGM uniform is trailing timestep spacing, which only "
+                    "exists on the diffusion schedulers: on a flow-matching "
+                    "sampler it is dropped."),
     "ays": ({}, MISSING, ""),
     "gits": ({}, MISSING, ""),
     "kl_optimal": ({}, MISSING, ""),
@@ -139,6 +149,29 @@ class Choice:
     @property
     def is_default(self) -> bool:
         return self.cls == _FLOW_EULER and not self.kwargs
+
+
+def accepted(kwargs: dict, allowed: set[str] | None) -> tuple[dict, list[str]]:
+    """Retire les options que CETTE classe n'accepte pas, et dit lesquelles.
+
+    Le menu est celui de sd.cpp ; les classes diffusers, elles, n'ont pas
+    toutes les mêmes réglages, et la liste bouge d'une version à l'autre.
+    Coder les exceptions à la main revenait à réécrire ce tableau à chaque
+    montée de version — et à découvrir les oublis en panne, puisqu'un argument
+    inconnu lève un TypeError au premier chargement seulement.
+
+    Mesuré sur les 336 combinaisons du menu : 110 échouaient à la
+    construction. Presque toutes pour cette raison — `FlowMatchHeun` n'accepte
+    ni Karras ni Exponential, `FlowMatchEuler` ignore `timestep_spacing`.
+
+    `allowed` à None (signature illisible) ne filtre rien : mieux vaut laisser
+    passer et échouer bruyamment que retirer en silence ce qui marchait.
+    """
+    if allowed is None:
+        return dict(kwargs), []
+    kept = {k: v for k, v in kwargs.items() if k in allowed}
+    dropped = sorted(k for k in kwargs if k not in allowed)
+    return kept, dropped
 
 
 def resolve(sampler: str | None, schedule: str | None,

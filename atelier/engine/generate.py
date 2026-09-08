@@ -1,5 +1,10 @@
 """Pipeline de génération : assemble un GenRequest depuis la bibliothèque, les
 préférences matérielles et les LoRA, puis lance stable-diffusion.cpp.
+
+Sur la branche Test7000 ce module garde tout son contenu mais n'est plus seul :
+`generate()` est devenue une AIGUILLE vers le moteur actif, et le pipeline
+sd.cpp ci-dessous s'appelle désormais `generate_sdcpp()`. Voir `backends.py`
+pour le choix, et `atelier/torchengine/` pour l'autre implémentation.
 """
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
-from . import resident_engine, sdcpp
+from . import backends, resident_engine, sdcpp
 from .sdcpp import GenRequest
 
 
@@ -332,7 +337,38 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     return cmd
 
 
-def generate(
+def generate(*args, **kwargs) -> list[Path]:
+    """Aiguille vers le moteur actif, sans rien changer au contrat.
+
+    Tout ce qui produit une image dans l'application passe ici : les trois
+    onglets de génération, Xanax, la passe HD, l'outpaint, ADetailer et le banc
+    d'essai. C'est le seul point où les deux moteurs se rencontrent, et c'est
+    volontaire — une seconde aiguille ailleurs, et les deux se contrediraient
+    un jour sur un seul appelant sans que personne le voie.
+
+    Les arguments sont transmis TELS QUELS. Les deux implémentations partagent
+    la signature exacte (un test le vérifie) : les recopier ici aurait créé un
+    troisième endroit à tenir à jour.
+    """
+    prefs = kwargs.get("prefs_override")
+    if backends.active(prefs) == backends.TORCH:
+        from ..torchengine import backend as torch_backend
+        return torch_backend.generate(*args, **kwargs)
+    return generate_sdcpp(*args, **kwargs)
+
+
+#  `*args, **kwargs` est commode pour transmettre, et illisible pour qui
+#  interroge la fonction — or l'application le fait : la passe HD vérifie
+#  qu'un paramètre existe avant de s'en servir, et un test vérifie que les
+#  deux moteurs ont bien la même signature. On lui rend donc la VRAIE, qui
+#  est celle qu'elle accepte réellement, sans écraser sa docstring comme le
+#  ferait `functools.wraps`.
+def _publish_signature() -> None:
+    import inspect
+    generate.__signature__ = inspect.signature(generate_sdcpp)
+
+
+def generate_sdcpp(
     model_id: str,
     prompt: str,
     negative: str,
@@ -943,3 +979,6 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
             if log:
                 log(f"[hd] not enough VRAM at ×{last:.2f} → retrying at "
                     f"×{scale:.2f}.")
+
+
+_publish_signature()
