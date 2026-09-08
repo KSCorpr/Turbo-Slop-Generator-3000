@@ -20,14 +20,28 @@ def cancel() -> str:
     """Annule la génération en cours, quel que soit le moteur qui la porte.
 
     Le moteur résident survit à l'annulation : on annule la TÂCHE, pas le
-    processus — sinon on rechargerait le modèle pour rien.
+    processus — sinon on rechargerait le modèle pour rien. C'est la même règle
+    des deux côtés : sur le moteur PyTorch on lève entre deux pas, ce qui rend
+    la main sans corrompre le pipeline chargé.
+
+    Les DEUX sont annulés, sans regarder lequel est actif. Le bouton « Stop »
+    est appuyé pendant qu'une génération tourne : demander alors quel moteur
+    est censé tourner ferait dépendre l'arrêt d'une préférence qu'on vient
+    peut-être de changer, et le vrai travail en cours continuerait.
     """
+    messages = []
+    try:
+        from ..torchengine import backend as torch_backend
+        messages.append(torch_backend.cancel())
+    except ImportError:
+        pass
     server = resident_engine()
     if server is not None:
         stopped = server.cancel_active()
         if stopped:
             return stopped
-    return sdcpp.cancel_active()
+    native = sdcpp.cancel_active()
+    return native or (messages[0] if messages else "")
 
 
 def _resident_server(prefs: dict, req: "GenRequest",

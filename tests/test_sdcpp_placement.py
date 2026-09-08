@@ -75,7 +75,8 @@ class BenchmarkPlanTests(unittest.TestCase):
                 "vae_tiling": True, "clip_on_cpu": False,
                 "vae_on_cpu": False,
             }
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         self.assertEqual([m.key for m in modes],
                          ["single-staged", "single-autofit",
                           "dual-resident", "dual-staged"])
@@ -96,7 +97,8 @@ class BenchmarkPlanTests(unittest.TestCase):
                              "turing", True),)
         with patch.object(hardware, "auto_profile") as auto:
             auto.return_value.flags.return_value = {}
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         self.assertEqual(modes[0].key, "single-staged")
         self.assertFalse(modes[0].prefs_patch["auto_fit"])
 
@@ -114,7 +116,8 @@ class BenchmarkPlanTests(unittest.TestCase):
             auto.return_value.flags.return_value = {
                 "offload_to_cpu": True, "clip_on_cpu": True,
                 "vae_on_cpu": True, "diffusion_fa": True}
-            modes = benchmark.placement_candidates({"gpu_index": 0}, gpus)
+            modes = benchmark.placement_candidates(
+                _on_sdcpp({"gpu_index": 0}), gpus)
         patch_ = next(m.prefs_patch for m in modes if m.key == "single-autofit")
         self.assertTrue(patch_["auto_fit"])
         self.assertEqual(patch_["params_backend"], "")

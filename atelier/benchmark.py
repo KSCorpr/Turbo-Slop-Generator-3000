@@ -51,6 +51,9 @@ def placement_candidates(prefs: dict | None = None,
     main = _selected_gpu(prefs, gpus)
     if main is None:
         return []
+    from .engine import backends
+    if backends.active(prefs) == backends.TORCH:
+        return _torch_candidates(main)
     base_flags = hardware.auto_profile(main.index).flags()
     base_flags["vae_tiling"] = True
     staged = {**base_flags, "offload_to_cpu": True,
@@ -101,6 +104,48 @@ def placement_candidates(prefs: dict | None = None,
                  "encoder_placement_forced": True,
                  "params_backend": "*=cpu", "flags": staged}),
         ])
+    return out
+
+
+def _torch_candidates(main: "hardware.Gpu") -> list[Placement]:
+    """Les profils qui ont un sens sur le moteur PyTorch — et eux seuls.
+
+    Les profils sd.cpp ne se transposent pas : `params_backend`, `split_mode`,
+    `offload_to_cpu` et auto-fit sont des options d'un binaire qui ne tourne
+    pas ici. Les proposer quand même aurait donné trois tirs RIGOUREUSEMENT
+    identiques, un classement tiré au sort dans le bruit, et un rapport qui
+    recommande un réglage sans effet — le pire résultat possible pour un banc
+    d'essai, parce qu'il a l'air d'avoir mesuré quelque chose.
+
+    Ce qu'il y a à mesurer ici est le couple (précision, placement) que le
+    planificateur choisit, contre les crans voisins. On compare donc le plan
+    RETENU à celui qu'on aurait eu sans quantification : c'est la seule
+    question ouverte, et elle se pose vraiment — un cran de précision contre
+    des allers-retours PCIe, l'arbitrage dépend de la carte.
+    """
+    from .torchengine import catalog as torch_catalog, placement
+    base = {"auto_optimize": False, "gpu_index": main.index,
+            "engine_backend": "torch", "encoder_gpu_index": None,
+            "params_backend": "", "auto_fit": False}
+    out = [Placement("torch-planned",
+                     f"{main.name} · placement chosen by the planner",
+                     {**base, "torch_allow_quant": True})]
+    # Le second profil n'existe que s'il DIFFÈRE du premier. Sur une carte
+    # assez grande pour tout tenir en bf16, les deux plans sont le même, et
+    # deux tirs identiques ne départagent rien.
+    sizes = [(m.resident_bf16_gb, m.largest_module_bf16_gb)
+             for m in torch_catalog.load() if m.resident_bf16_gb]
+    if sizes:
+        resident, largest = sizes[0]
+        planned = placement.plan(main.vram_gb, resident, largest, main.arch)
+        plain = placement.plan(main.vram_gb, resident, largest, main.arch,
+                               allow_quant=False)
+        if (planned.quant, planned.mode) != (plain.quant, plain.mode):
+            out.append(Placement(
+                "torch-full-precision",
+                f"{main.name} · {plain.dtype} without quantization "
+                f"({plain.mode.replace('_', ' ')})",
+                {**base, "torch_allow_quant": False}))
     return out
 
 

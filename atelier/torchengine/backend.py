@@ -49,8 +49,14 @@ def _log(log: Callable | None, msg: str) -> None:
         log(msg)
 
 
-def _gpu() -> "hardware.Gpu | None":
-    prefs = settings.load_prefs()
+def _gpu(prefs: dict | None = None) -> "hardware.Gpu | None":
+    """La carte de génération — en respectant `prefs_override`.
+
+    Lire `settings.load_prefs()` ici serait plus court et faux : le banc
+    d'essai passe ses préférences en mémoire précisément pour ne pas toucher
+    au fichier de l'utilisateur, et il choisit la carte qu'il veut mesurer.
+    """
+    prefs = settings.load_prefs() if prefs is None else prefs
     gpus = hardware.detect_gpus()
     if not gpus:
         return None
@@ -59,14 +65,24 @@ def _gpu() -> "hardware.Gpu | None":
         max(gpus, key=lambda g: g.vram_gb)
 
 
-def plan_for(model: catalog.TorchModel,
-             gpu: "hardware.Gpu | None") -> placement.Plan:
-    """Le placement retenu pour ce modèle sur cette carte."""
+def plan_for(model: catalog.TorchModel, gpu: "hardware.Gpu | None",
+             prefs: dict | None = None) -> placement.Plan:
+    """Le placement retenu pour ce modèle sur cette carte.
+
+    `torch_allow_quant: False` désactive les crans int8/NF4. Ce n'est pas un
+    réglage de confort mais ce que le banc d'essai a besoin de pouvoir forcer
+    pour comparer le plan retenu à celui d'à côté — sans quoi il mesurerait
+    deux fois la même chose.
+    """
+    allow = True
+    if prefs is not None and "torch_allow_quant" in prefs:
+        allow = bool(prefs.get("torch_allow_quant"))
     return placement.plan(
         vram_gb=gpu.vram_gb if gpu else None,
         resident_gb=model.resident_bf16_gb,
         largest_module_gb=model.largest_module_bf16_gb,
-        arch=gpu.arch if gpu else "unknown")
+        arch=gpu.arch if gpu else "unknown",
+        allow_quant=allow)
 
 
 def _source(model: catalog.TorchModel) -> str | Path:
@@ -184,8 +200,9 @@ def generate(
     if model is None:
         raise runtime.TorchEngineError(
             f"“{model_id}” has no PyTorch entry. See config/models_torch.yaml.")
-    base = registry.get_base_model(model_id, prefs_override
-                                   or settings.load_prefs())
+    prefs = (prefs_override if prefs_override is not None
+             else settings.load_prefs())
+    base = registry.get_base_model(model_id, prefs)
 
     for name, value in (("--max-vram", max_vram),
                         ("layer streaming", stream_layers),
@@ -199,8 +216,8 @@ def generate(
         _log(log, "[torch] the HD pass is run by the toolkit on this engine, "
                   "not inside the sampler — ignored here.")
 
-    gpu = _gpu()
-    plan = plan_for(model, gpu)
+    gpu = _gpu(prefs)
+    plan = plan_for(model, gpu, prefs)
     _log(log, placement.describe(plan))
     if model.gated:
         _log(log, f"[torch] “{model.repo}” is a gated repository: it needs a "

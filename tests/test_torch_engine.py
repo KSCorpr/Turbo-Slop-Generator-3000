@@ -424,3 +424,106 @@ class InstallerTests(unittest.TestCase):
         for pkg in ("transformers", "accelerate", "peft", "bitsandbytes",
                     "scipy"):
             self.assertIn(pkg, joined)
+
+
+class BenchmarkTests(unittest.TestCase):
+    """Le banc d'essai est le seul endroit où « ne rien mesurer » est pire que
+    « ne rien proposer » : un rapport a l'air d'avoir mesuré quelque chose."""
+
+    def _gpu(self, vram=12.0, arch="ampere"):
+        from atelier import hardware
+        return (hardware.Gpu(0, "RTX 3060", vram, arch, True),)
+
+    def _modes(self, vram=12.0, arch="ampere"):
+        from unittest.mock import patch
+        from atelier import benchmark, hardware
+        gpus = self._gpu(vram, arch)
+        with patch.object(hardware, "detect_gpus", return_value=gpus):
+            return benchmark.placement_candidates(
+                {"gpu_index": 0, "engine_backend": "torch"}, gpus)
+
+    def test_the_sdcpp_profiles_are_not_offered_on_the_torch_engine(self):
+        """`params_backend`, `split_mode`, auto-fit : des options d'un binaire
+        qui ne tourne pas. Les proposer aurait donné trois tirs identiques et
+        un classement tiré au sort dans le bruit."""
+        keys = [m.key for m in self._modes()]
+        self.assertTrue(all(k.startswith("torch-") for k in keys), keys)
+
+    def test_the_second_profile_exists_only_when_it_differs(self):
+        """Sur une carte assez grande pour tout tenir en bf16, le plan
+        quantifié et le plan brut sont le MÊME plan : deux tirs identiques ne
+        départagent rien, donc il n'y a qu'un profil."""
+        big = [m.key for m in self._modes(vram=48.0, arch="ada")]
+        self.assertEqual(big, ["torch-planned"])
+        small = [m.key for m in self._modes(vram=12.0)]
+        self.assertEqual(len(small), 2, small)
+
+    def test_the_measured_profile_actually_changes_the_plan(self):
+        """Un profil qui n'influence pas l'exécution mesurerait deux fois la
+        même chose en affirmant le contraire."""
+        from atelier import hardware
+        from atelier.torchengine import backend, catalog
+        gpu = self._gpu()[0]
+        model = catalog.get("z-image-turbo")
+        quantized = backend.plan_for(model, gpu, {"torch_allow_quant": True})
+        plain = backend.plan_for(model, gpu, {"torch_allow_quant": False})
+        self.assertNotEqual((quantized.quant, quantized.mode),
+                            (plain.quant, plain.mode))
+
+    def test_the_benchmark_cleanup_does_not_erase_the_measured_setting(self):
+        """`_benchmark_prefs` efface le cache, le budget VRAM et le moteur
+        résident — c'est voulu. Effacer aussi ce qu'on mesure ne le serait
+        pas, et rien dans le rapport ne le dirait."""
+        from atelier import benchmark
+        for mode in self._modes():
+            merged = benchmark._benchmark_prefs({"engine_backend": "torch"},
+                                                mode.prefs_patch)
+            self.assertIn("torch_allow_quant", merged)
+
+
+class CancelTests(unittest.TestCase):
+    def test_stop_reaches_both_engines(self):
+        """Le bouton est appuyé PENDANT une génération. Demander alors quel
+        moteur est censé tourner ferait dépendre l'arrêt d'une préférence
+        qu'on vient peut-être de changer, et le vrai travail continuerait."""
+        from atelier.engine import generate as gen
+        from atelier.torchengine import backend as torch_backend
+        torch_backend._CANCEL.clear()
+        gen.cancel()
+        self.assertTrue(torch_backend._CANCEL.is_set())
+        torch_backend._CANCEL.clear()
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_ready_means_what_the_active_engine_needs(self):
+        """Le pire résultat serait un bouton « Générer » actif qui échoue au
+        clic, ou un « à télécharger » sur des fichiers déjà là."""
+        from unittest.mock import patch
+        from atelier import registry
+        model = next(m for m in registry.load_base_models({})
+                     if m.id == "z-image-turbo")
+        with patch.object(registry, "_torch_engine_active",
+                          return_value=True), \
+             patch.object(registry, "_torch_repo_present", return_value=True):
+            self.assertTrue(registry.model_is_ready(model))
+        with patch.object(registry, "_torch_engine_active",
+                          return_value=True), \
+             patch.object(registry, "_torch_repo_present", return_value=False):
+            self.assertFalse(registry.model_is_ready(model))
+
+    def test_a_bare_folder_is_not_a_downloaded_model(self):
+        """diffusers écrit l'arborescence d'abord et les poids ensuite : un
+        dossier existant est l'état exact d'un téléchargement interrompu."""
+        import tempfile
+        from unittest.mock import patch
+        from atelier import registry, settings
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "Tongyi-MAI__Z-Image-Turbo").mkdir()
+            with patch.object(settings, "MODELS_DIR", root), \
+                 patch.object(settings, "model_repo_dir",
+                              side_effect=lambda r: root / r.replace("/", "__")):
+                self.assertFalse(registry._torch_repo_present("z-image-turbo"))
+                (root / "Tongyi-MAI__Z-Image-Turbo"
+                 / "model_index.json").write_text("{}")
+                self.assertTrue(registry._torch_repo_present("z-image-turbo"))
