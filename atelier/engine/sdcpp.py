@@ -65,11 +65,11 @@ class HiresParams:
     aucune couture possible, et le modèle voit la scène entière au lieu d'un
     carré de 1024 px. C'est la différence de fond avec l'upscale créatif SDXL.
 
-    `upscaler` : « Latent », « Lanczos », « Nearest » (intégrés à sd.cpp) ou le
+    `upscaler` : « Lanczos », « Nearest » (intégrés à sd.cpp) ou le
     NOM DE FICHIER d'un ESRGAN présent dans `upscalers_dir`.
     """
     scale: float = 2.0
-    upscaler: str = "Latent"
+    upscaler: str = "Lanczos"
     upscalers_dir: Path | None = None
     denoise: float = 0.4
     steps: int = 0             # 0 = réutiliser --steps
@@ -342,9 +342,13 @@ def _ref_list(ref) -> list[Path]:
 # Agrandisseurs intégrés à sd.cpp pour la passe HD (pas de fichier à installer).
 # Le reste des valeurs acceptées par --hires-upscaler est un NOM DE FICHIER
 # d'ESRGAN cherché dans --hires-upscalers-dir.
-HIRES_BUILTIN = ("Latent", "Latent (antialiased)", "Latent (bicubic)",
-                 "Latent (bicubic antialiased)", "Latent (nearest)",
-                 "Latent (nearest-exact)", "Lanczos", "Nearest")
+#  « Latent » et ses variantes ont été RETIRÉES. sd.cpp les accepte encore,
+#  mais agrandir dans l'espace latent revient à interpoler des nombres qui ne
+#  sont pas des pixels : le second débruitage part d'une base molle et invente
+#  pour la combler. C'est exactement l'effet peinture qu'on passe son temps à
+#  fuir. Lanczos donne une base honnête, un agrandisseur moderne une base
+#  nette — dans les deux cas le modèle précise au lieu de deviner.
+HIRES_BUILTIN = ("Lanczos", "Nearest")
 
 
 def hires_supported(sd_cli: Path | None) -> bool:

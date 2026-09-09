@@ -514,15 +514,17 @@ def build_manage_tab():
                 "are possible.\n- **High resolution** — Flux.2 re-renders the "
                 "image at its native resolution,\n  using it as both "
                 "reference and starting latent. Best-looking, least "
-                "faithful.\n- **Restore (SeedVR2)** — one-step diffusion "
-                "restoration, 3B or 7B.\n- **Faces** — GFPGAN, "
+                "faithful.\n- **Faces** — GFPGAN, "
                 "RestoreFormer++ or CodeFormer on the detected faces only.\n  "
                 "Run it last.\n- **Details (ADetailer)** — the only tool "
                 "that repairs HANDS: a YOLOv8 detector finds the region and "
                 "your own generation model redraws it, natively in sd.cpp. On "
                 "a face prefer *Faces*, which restores instead of "
                 "redrawing.\n- **Creative upscale (SDXL)** — tiled img2img "
-                "that openly invents detail.\n\nEach tool installs in one "
+                "that openly invents detail. Its *pre-upscale* menu takes either "
+                "family: a GGUF ESRGAN or a **modern** model (DAT, SPAN, "
+                "PLKSR…), which hands SDXL a cleaner base to refine."
+                "\n\nEach tool installs in one "
                 "click (PyTorch on demand — *Details* needs none).")
 
         with gr.Accordion("🔄 Update the app",

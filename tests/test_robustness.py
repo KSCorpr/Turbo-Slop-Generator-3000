@@ -160,11 +160,23 @@ class HumanSizeTests(unittest.TestCase):
                 self.assertNotIn("To", text, text)
                 self.assertNotIn("Mo", text, text)
 
-    def test_both_modules_agree(self):
-        """Deux copies de la même échelle : elles doivent dire pareil."""
+    def test_all_three_modules_agree(self):
+        """TROIS copies de la même échelle : elles doivent dire pareil.
+
+        La troisième — celle du script de maintenance — était restée en
+        français (« 4.7 Go ») longtemps après les deux autres, et le détecteur
+        ne pouvait pas la voir : il lit les littéraux du code, or l'unité y est
+        assemblée à l'exécution. C'est exactement pour ça que la comparaison
+        vaut mieux qu'une relecture.
+        """
+        import sys
+        from pathlib import Path as _P
+        sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "scripts"))
         from atelier.inventory import human
         from atelier.storage import _human
+        from maintenance import _human as _maint
         # 0 diffère volontairement : « — » dans un tableau,
         # « 0 B » dans une phrase. On compare le reste.
-        for size in (1, 999, 4096, 7 * 1024 ** 3):
-            self.assertEqual(human(size), _human(size))
+        for size in (1, 999, 4096, 7 * 1024 ** 3, 2 * 1024 ** 4):
+            self.assertEqual(human(size), _human(size), size)
+            self.assertEqual(human(size), _maint(size), size)

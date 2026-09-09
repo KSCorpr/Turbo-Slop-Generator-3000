@@ -29,9 +29,6 @@ DESCRIBE_MODEL_DIR = TOOLS_DIR / "describe" / "model"
 FACE_MODEL_DIR = TOOLS_DIR / "face" / "model"
 UPSCALE_DIR = TOOLS_DIR / "upscale"
 UPSCALE_CKPT_DIR = UPSCALE_DIR / "checkpoints"   # checkpoints SDXL perso (.safetensors)
-SEEDVR2_DIR = TOOLS_DIR / "seedvr2"
-SEEDVR2_SOURCE_DIR = SEEDVR2_DIR / "source"
-SEEDVR2_MODEL_DIR = SEEDVR2_DIR / "models"
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -150,80 +147,6 @@ def upscale_cn_is_installed() -> bool:
     return cn.is_dir() and any(cn.glob("*.safetensors"))
 
 
-def _seedvr2_python() -> Path:
-    return SEEDVR2_DIR / ("venv/Scripts/python.exe" if sys.platform == "win32"
-                          else "venv/bin/python")
-
-
-def seedvr2_is_installed() -> bool:
-    return (_seedvr2_python().is_file()
-            and (SEEDVR2_SOURCE_DIR / "inference_cli.py").is_file())
-
-
-# Poids SeedVR2 : (libellé, fichier). Le CLI amont les télécharge lui-même et
-# vérifie leur SHA-256 (dépôt AInVFX/SeedVR2_comfyUI) — cette liste est donc à
-# la fois le menu de l'interface et l'unique liste blanche du sous-process.
-SEEDVR2_MODELS: tuple[tuple[str, str], ...] = (
-    ("3B Q8 — safe default, fastest", "seedvr2_ema_3b-Q8_0.gguf"),
-    ("3B Q4 — fallback when memory runs short", "seedvr2_ema_3b-Q4_K_M.gguf"),
-    ("7B Q4 — more detail, about 2× slower",
-     "seedvr2_ema_7b-Q4_K_M.gguf"),
-    ("7B Q4 “sharp” — sharpest (can harden grain)",
-     "seedvr2_ema_7b_sharp-Q4_K_M.gguf"),
-)
-SEEDVR2_MODEL_FILES = frozenset(f for _, f in SEEDVR2_MODELS)
-
-
-def _seedvr2_max_blocks(model: str) -> int:
-    """Le 7B a 36 blocs de transformeur, le 3B en a 32."""
-    return 36 if "_7b" in model else 32
-
-
-def _seedvr2_site_packages() -> Path | None:
-    lib = SEEDVR2_DIR / ("venv/Lib/site-packages" if sys.platform == "win32"
-                         else "venv/lib")
-    if sys.platform == "win32":
-        return lib if lib.is_dir() else None
-    if not lib.is_dir():
-        return None
-    for child in sorted(lib.glob("python3.*/site-packages")):
-        return child
-    return None
-
-
-def seedvr2_attention_mode() -> str:
-    """Meilleur noyau d'attention réellement installable ici.
-
-    ``sdpa`` (PyTorch) marche partout. ``flash_attn_2`` / ``sageattn_2``
-    exigent Ampère ou mieux (RTX 3060 oui, RTX 2080 Ti et GTX 1080 Ti non) ET
-    le paquet correspondant dans le venv isolé de SeedVR2. On ne demande le
-    noyau rapide que si les deux conditions sont vraies : le CLI amont saurait
-    retomber sur ``sdpa``, mais autant ne pas polluer le journal d'un
-    avertissement à chaque lancement.
-    """
-    site = _seedvr2_site_packages()
-    if site is None:
-        return "sdpa"
-    index = _gen_gpu_index()
-    gpus = {g.index: g for g in hardware.detect_gpus()}
-    gpu = gpus.get(index) if index is not None else None
-    cc = (gpu.compute_cap if gpu else "") or ""
-    try:
-        ampere_or_newer = float(cc) >= 8.0
-    except ValueError:
-        # Pilote trop ancien pour rapporter la capacité : l'architecture déduite
-        # du nom reste un indice suffisant pour ne PAS tenter le noyau rapide.
-        ampere_or_newer = bool(gpu) and gpu.arch in {
-            "ampere", "ada", "hopper", "blackwell"}
-    if not ampere_or_newer:
-        return "sdpa"
-    if (site / "flash_attn").is_dir():
-        return "flash_attn_2"
-    if (site / "sageattention").is_dir():
-        return "sageattn_2"
-    return "sdpa"
-
-
 def list_upscale_checkpoints() -> list[tuple[str, str]]:
     """Checkpoints SDXL disponibles pour l'upscale créatif : (libellé, chemin).
     Le modèle de base + tout .safetensors déposé dans tools_repo/upscale/checkpoints/."""
@@ -312,11 +235,6 @@ def _setup_script_stream(script: str, label: str):
     buf += ["", f"✅ {label} installation complete." if code == 0
             else f"❌ {label} failed (code {code}). See the log."]
     yield "\n".join(buf[-500:])
-
-
-def install_seedvr2_stream():
-    """Installe SeedVR2 dans son Python 3.12 isolé."""
-    yield from _setup_script_stream("setup_seedvr2.py", "SeedVR2")
 
 
 def install_adetailer_stream():
@@ -872,7 +790,14 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     Pré-agrandit puis raffine tuile par tuile à faible débruitage. Options :
     `base_model` (checkpoint SDXL ; défaut = base 1.0), `integrated_vae` (utiliser
     la VAE du checkpoint au lieu de la fp16-fix externe), `esrgan_model` (pré-
-    agrandir avec un ESRGAN GGUF plutôt qu'en Lanczos), `use_controlnet`."""
+    agrandir avec un MODÈLE plutôt qu'en Lanczos), `use_controlnet`.
+
+    `esrgan_model` garde son nom pour ne pas casser les appelants, mais il
+    accepte les deux familles du catalogue : les ESRGAN GGUF lus par sd.cpp ET
+    les agrandisseurs modernes (DAT, SPAN, PLKSR…) lus par spandrel. C'est le
+    FICHIER qui décide du moteur, jamais l'appelant — la même règle que dans
+    l'onglet « 🔼 Enlarge », et pour la même raison : l'utilisateur choisit un
+    modèle, pas une implémentation."""
     if not upscale_is_installed():
         raise ToolError("The creative SDXL upscale is not installed "
                         "(“Install” button in Toolkit → Upscale).")
@@ -906,10 +831,13 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
         from .. import registry
         from . import generate as gen_engine
         factor = registry.upscaler_factor(esrgan_model)
+        engine = registry.upscaler_engine(esrgan_model)
         try:
             if log:
-                log(f"ESRGAN pre-enlargement “{esrgan_model}” (×{factor}, "
-                    "one pass)…")
+                kind = ("modern (spandrel)" if engine == "spandrel"
+                        else "ESRGAN (sd.cpp)")
+                log(f"Pre-enlargement “{esrgan_model}” — {kind}, ×{factor}, "
+                    "one pass…")
                 if factor > float(scale):
                     log(f"[usdu] ×{factor} for a ×{scale:g} target: the "
                         "downscale that follows acts as supersampling "
@@ -923,11 +851,19 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
                         "from the start, pick a ×"
                         f"{int(-(-float(scale) // 1))} model "
                         "or aim for a lower factor.")
-            inp = gen_engine.upscale_image(src, esrgan_model, repeats=1,
-                                           log=log)
+            if engine == "spandrel":
+                #  Les modernes ignorent `repeats` par construction : leur
+                #  facteur vient du modèle, et enchaîner un réseau sur sa
+                #  propre sortie est précisément ce qui fabrique les escaliers
+                #  qu'on veut éviter. Une passe, toujours.
+                inp = modern_upscale(src, esrgan_model, log=log)
+            else:
+                inp = gen_engine.upscale_image(src, esrgan_model, repeats=1,
+                                               log=log)
         except Exception as exc:  # noqa: BLE001
             if log:
-                log(f"[usdu] ESRGAN failed ({exc}) → repli Lanczos.")
+                log(f"[usdu] pre-enlargement failed ({exc}) → Lanczos "
+                    "fallback.")
             inp = src
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -964,186 +900,3 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     return _collect(out_dir, "usdu", stamp)
 
 
-def seedvr2_upscale(image, resolution: int = 2048,
-                    model: str = "seedvr2_ema_3b-Q8_0.gguf",
-                    blocks_to_swap: int = 16, tile: int = 1024,
-                    overlap: int = 128, offload: str = "secondary",
-                    color_correction: str = "wavelet",
-                    log: Callable[[str], None] | None = None) -> Path:
-    """Restauration/upscale SeedVR2 pour image unique.
-
-    Le calcul reste sur le GPU principal. Avec ``secondary``, CUDA remappe les
-    cartes en ``[principal, secondaire]`` : SeedVR2 calcule sur cuda:0 et stocke
-    ses blocs/VAE sur cuda:1, sans lancer son mode multi-GPU vidéo.
-    """
-    if not seedvr2_is_installed():
-        raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
-    if model not in SEEDVR2_MODEL_FILES:
-        raise ToolError(f"SeedVR2 model not allowed: {model}")
-    if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
-        color_correction = "wavelet"
-
-    src = _to_src(image, "seedvr2")
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    output = settings.OUTPUT_DIR / f"seedvr2-{stamp}.png"
-    py = _seedvr2_python()
-    cli = SEEDVR2_SOURCE_DIR / "inference_cli.py"
-    SEEDVR2_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-    prefs = settings.load_prefs()
-    main_gpu = _gen_gpu_index()
-    secondary = prefs.get("encoder_gpu_index")
-    if secondary is None or secondary == main_gpu:
-        candidate = prefs.get("text_gpu_index")
-        secondary = candidate if candidate != main_gpu else None
-
-    run_env = settings.child_env()
-    offload_device = "cpu"
-    if offload == "secondary" and main_gpu is not None and secondary is not None:
-        # cuda:0 = GPU principal, cuda:1 = GPU secondaire dans le sous-process.
-        run_env["CUDA_VISIBLE_DEVICES"] = f"{main_gpu},{secondary}"
-        run_env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-        offload_device = "1"
-        if log:
-            log(f"SeedVR2 : calcul GPU #{main_gpu}, offload GPU #{secondary}.")
-    elif main_gpu is not None:
-        run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
-        offload_device = "none" if offload == "none" else "cpu"
-    blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
-    if offload_device == "none":
-        blocks = 0
-    attention = seedvr2_attention_mode()
-    if log and attention != "sdpa":
-        log(f"SeedVR2: accelerated attention ({attention}).")
-
-    cmd = [
-        str(py), str(cli), str(src), "--output", str(output),
-        "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
-        "--dit_model", model, "--resolution", str(max(512, int(resolution))),
-        "--max_resolution", str(max(512, int(resolution))), "--batch_size", "1",
-        "--color_correction", color_correction,
-        "--dit_offload_device", offload_device,
-        "--vae_offload_device", offload_device,
-        "--tensor_offload_device", offload_device,
-        "--blocks_to_swap", str(blocks),
-        "--vae_encode_tiled", "--vae_decode_tiled",
-        "--vae_encode_tile_size", str(max(512, int(tile))),
-        "--vae_decode_tile_size", str(max(512, int(tile))),
-        "--vae_encode_tile_overlap", str(max(64, int(overlap))),
-        "--vae_decode_tile_overlap", str(max(64, int(overlap))),
-        "--attention_mode", attention, "--debug",
-    ]
-    if blocks:
-        cmd.append("--swap_io_components")
-    _run_tool(cmd, log, "SeedVR2 failed (see the log).",
-              cwd=SEEDVR2_SOURCE_DIR, env=run_env)
-    if not output.is_file() or output.stat().st_size == 0:
-        raise ToolError("SeedVR2 produced no image.")
-    return output
-
-
-def seedvr2_batch(images, resolution: int = 2048,
-                  model: str = "seedvr2_ema_3b-Q8_0.gguf",
-                  blocks_to_swap: int = 16, tile: int = 1024,
-                  overlap: int = 128, offload: str = "secondary",
-                  color_correction: str = "wavelet",
-                  log: Callable[[str], None] | None = None) -> list[Path]:
-    """Restaure plusieurs images dans UNE invocation SeedVR2.
-
-    Le CLI amont sait traiter un dossier avec `--cache_dit --cache_vae` : le
-    modèle est chargé une fois puis réutilisé, au lieu de payer son chargement
-    pour chaque image. Les originaux ne sont jamais modifiés.
-    """
-    if not seedvr2_is_installed():
-        raise ToolError("SeedVR2 is not installed (Install button in the Toolkit).")
-    if model not in SEEDVR2_MODEL_FILES:
-        raise ToolError(f"SeedVR2 model not allowed: {model}")
-    if color_correction not in {"wavelet", "lab", "wavelet_adaptive", "none"}:
-        color_correction = "wavelet"
-
-    raw = list(images or [])
-    sources: list[Path] = []
-    for item in raw:
-        # pathlib.Path possède lui aussi un attribut ``name`` (le basename) :
-        # ne pas le confondre avec le chemin temporaire porté par UploadedFile.
-        p = item if isinstance(item, Path) else Path(getattr(item, "name", item))
-        if p.is_file() and p.suffix.lower() in {
-                ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}:
-            sources.append(p)
-    if not sources:
-        raise ToolError("No usable image in the batch.")
-
-    settings.ensure_dirs()
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    batch_root = settings.TMP_DIR / f"seedvr2-batch-{stamp}-{int(time.time()*1000)%1000:03d}"
-    input_dir = batch_root / "input"
-    output_dir = settings.OUTPUT_DIR / f"seedvr2-batch-{stamp}"
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    import shutil
-    for index, src in enumerate(sources, 1):
-        # Préfixe stable : deux dossiers peuvent contenir le même nom de fichier.
-        shutil.copy2(src, input_dir / f"{index:04d}-{src.name}")
-
-    py = _seedvr2_python()
-    cli = SEEDVR2_SOURCE_DIR / "inference_cli.py"
-    SEEDVR2_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    prefs = settings.load_prefs()
-    main_gpu = _gen_gpu_index()
-    secondary = prefs.get("encoder_gpu_index")
-    if secondary is None or secondary == main_gpu:
-        candidate = prefs.get("text_gpu_index")
-        secondary = candidate if candidate != main_gpu else None
-
-    run_env = settings.child_env()
-    offload_device = "cpu"
-    if offload == "secondary" and main_gpu is not None and secondary is not None:
-        run_env["CUDA_VISIBLE_DEVICES"] = f"{main_gpu},{secondary}"
-        run_env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-        offload_device = "1"
-        if log:
-            log(f"SeedVR2 lot : calcul GPU #{main_gpu}, spare GPU #{secondary}.")
-    elif main_gpu is not None:
-        run_env["CUDA_VISIBLE_DEVICES"] = str(main_gpu)
-        offload_device = "none" if offload == "none" else "cpu"
-    # Les caches de modèle du mode dossier exigent un backend d'offload.
-    if offload_device == "none":
-        offload_device = "cpu"
-        if log:
-            log("SeedVR2 batch: RAM offload enabled so the model stays cached.")
-
-    blocks = max(0, min(_seedvr2_max_blocks(model), int(blocks_to_swap)))
-    attention = seedvr2_attention_mode()
-    if log and attention != "sdpa":
-        log(f"SeedVR2: accelerated attention ({attention}).")
-    cmd = [
-        str(py), str(cli), str(input_dir), "--output", str(output_dir),
-        "--output_format", "png", "--model_dir", str(SEEDVR2_MODEL_DIR),
-        "--dit_model", model, "--resolution", str(max(512, int(resolution))),
-        "--max_resolution", str(max(512, int(resolution))), "--batch_size", "1",
-        "--color_correction", color_correction,
-        "--dit_offload_device", offload_device,
-        "--vae_offload_device", offload_device,
-        "--tensor_offload_device", offload_device,
-        "--blocks_to_swap", str(blocks), "--cache_dit", "--cache_vae",
-        "--vae_encode_tiled", "--vae_decode_tiled",
-        "--vae_encode_tile_size", str(max(512, int(tile))),
-        "--vae_decode_tile_size", str(max(512, int(tile))),
-        "--vae_encode_tile_overlap", str(max(64, int(overlap))),
-        "--vae_decode_tile_overlap", str(max(64, int(overlap))),
-        "--attention_mode", attention, "--debug",
-    ]
-    if blocks:
-        cmd.append("--swap_io_components")
-    try:
-        if log:
-            log(f"SeedVR2 : {len(sources)} image(s), a single model load.")
-        _run_tool(cmd, log, "The SeedVR2 batch failed (see the log).",
-                  cwd=SEEDVR2_SOURCE_DIR, env=run_env)
-    finally:
-        shutil.rmtree(batch_root, ignore_errors=True)
-    outputs = sorted(p for p in output_dir.rglob("*")
-                     if p.is_file() and p.suffix.lower() == ".png")
-    if not outputs:
-        raise ToolError("SeedVR2 produced no image for this batch.")
-    return outputs

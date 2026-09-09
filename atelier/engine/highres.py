@@ -22,7 +22,8 @@ aucun n'est évident :
 CE QUE ÇA N'EST PAS : une restauration. À 0,8 de débruitage le modèle
 REDESSINE l'essentiel de l'image ; ce qui est préservé, c'est la plausibilité,
 pas la fidélité. Pour rester fidèle à l'original (une vraie photo, un visage
-qu'on doit reconnaître), SeedVR2 reste l'outil. Ici on refabrique une image
+qu'on doit reconnaître), un agrandisseur moderne reste l'outil. Ici on
+refabrique une image
 convaincante à partir de la vôtre.
 
 La dérive de couleur qui va avec est traitée à la fin, et pas au prompt :

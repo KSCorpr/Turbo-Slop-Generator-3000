@@ -439,29 +439,6 @@ def generate(
 
     stream_layers = (bool(prefs.get("stream_layers")) if stream_layers is None
                      else bool(stream_layers))
-    if model.defaults.get("memory_preset") == "int8_stream":
-        # Le checkpoint INT8 ConvRot fait ~13 Go : sur une 3060 12 Go, tenter
-        # de le rendre entièrement résident est un OOM certain. Les poids de
-        # diffusion restent en RAM et sd.cpp charge chaque couche pour la
-        # calculer sur Ampere. VAE et encodeur restent sur leurs cartes quand
-        # le split mesuré est disponible.
-        if "--params-backend" not in sdcpp.supported_options(sd_cli):
-            raise sdcpp.EngineError(
-                "Krea 2 INT8 ConvRot needs a recent sd.cpp engine "
-                "(--params-backend). Run update-engine.bat.")
-        # Le streaming INT8 impose déjà sa résidence. Ne jamais lui ajouter
-        # --auto-fit, qui tenterait de décider une seconde fois où vont les
-        # mêmes paramètres.
-        auto_fit = False
-        split_gpu = enc_gpu is not None and enc_gpu != gpu_index
-        all_gpus = split_gpu
-        g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
-        te = f"cuda{enc_gpu}" if split_gpu else "cpu"
-        params_backend = f"diffusion=cpu,vae=cuda{g},te={te}"
-        flags = {**flags, "offload_to_cpu": False,
-                 "clip_on_cpu": False, "vae_on_cpu": False}
-        stream_layers = True
-
     cache_mode = prefs.get("cache_mode") or ""
     cache_option = prefs.get("cache_option") or ""
     targeted = (prefs.get("cache_by_model") or {}).get(model_id) or {}
@@ -762,7 +739,7 @@ def hd_pixel_budget(model: registry.BaseModel, vram_gb: float | None,
 
 
 def hd_upscale(model_id: str, image, scale: float = 2.0,
-               upscaler: str = "Latent", denoise: float = 0.4,
+               upscaler: str = "Lanczos", denoise: float = 0.4,
                prompt: str = "", negative: str = "", steps: int = 0,
                hd_steps: int = 0, seed: int = -1,
                preview_path: Path | None = None,
@@ -858,7 +835,7 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     def _attempt(sc: float, stream: bool = False) -> list[Path]:
         tw, th = _align_up(bw * sc), _align_up(bh * sc)
         hires = sdcpp.HiresParams(
-            scale=sc, upscaler=upscaler or "Latent",
+            scale=sc, upscaler=upscaler or "Lanczos",
             upscalers_dir=registry.upscalers_dir(),
             denoise=float(denoise), steps=int(hd_steps or 0),
             target_width=tw, target_height=th,

@@ -92,6 +92,27 @@ REMOVED_FEATURES = [
      "files": ["scripts/try_minimax.py", "try-minimax.bat", "try-minimax.sh",
                "tests/test_try_minimax.py"],
      "dirs": []},
+    # SeedVR2 : retiré. Ses DONNÉES pèsent lourd — un Python isolé complet
+    # plus les poids 3B/7B — d'où le dossier déclaré ici plutôt que supprimé
+    # d'office : plusieurs gigaoctets ne s'effacent pas sans prévenir.
+    {"name": "SeedVR2 restoration",
+     "files": ["scripts/setup_seedvr2.py", "tests/test_seedvr2.py"],
+     "dirs": ["tools_repo/seedvr2"]},
+    # Krea 2 INT8 ConvRot : la variante expérimentale et son banc A/B. Le
+    # checkpoint de 13 Go vivait dans models/, sous le nom du dépôt Comfy-Org
+    # — que le catalogue ne référence plus, donc le contrôle des modèles
+    # orphelins le signalera de lui-même. Rien à déclarer ici pour lui.
+    {"name": "Krea 2 INT8 ConvRot (experimental variant)",
+     "files": [], "dirs": []},
+    # Le moteur PyTorch de la branche Test7000, retiré à son tour. Aucune
+    # DONNÉE propre : il lisait les mêmes fichiers GGUF que le moteur natif.
+    {"name": "PyTorch generation engine",
+     "files": ["scripts/setup_torch_engine.py", "setup-torch-engine.bat",
+               "README-TORCH.md", "config/models_torch.yaml",
+               "atelier/hfaccess.py", "atelier/engine/backends.py",
+               "tests/test_torch_engine.py",
+               "tests/fixtures/krea2_tensor_names.json"],
+     "dirs": ["atelier/torchengine", "tests/fixtures"]},
 ]
 
 # Dossiers de données à NE JAMAIS toucher.
@@ -119,11 +140,18 @@ def _dir_size(p: Path) -> int:
 
 
 def _human(n: float) -> str:
-    for unit in ("o", "Ko", "Mo", "Go"):
+    """Une taille lisible — en anglais, comme le reste de l'interface.
+
+    Les unités étaient restées françaises (« 4.7 Go »), et le détecteur de
+    français ne pouvait pas les voir : il lit les littéraux du code, or celles-
+    ci sont assemblées à l'exécution. Troisième copie de la même échelle après
+    `inventory` et `storage`, et la troisième à avoir eu le même oubli.
+    """
+    for unit in ("B", "KB", "MB", "GB"):
         if n < 1024:
-            return f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}"
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
-    return f"{n:.1f} To"
+    return f"{n:.1f} TB"
 
 
 def _still_in_service(rel: str) -> bool:
@@ -734,8 +762,8 @@ def check_orphan_modules() -> None:
 
 USAGE = """Maintenance — Turbo Slop Generator 3000
 
-  maintenance.bat                   check and clean up the CODE (no data is
-                                    deleted; reclaimable space is measured)
+  maintenance.bat                   asks: 1 update, 2 clean, 3 both,
+                                    0 just check (the safe default)
   maintenance.bat --update-engine   + bring the sd-cli engine in line with the code
   maintenance.bat --purge           + delete the data of removed features,
                                     and the orphans
@@ -779,6 +807,60 @@ def check_install_complete() -> None:
           "Run update.bat: it will put them back.")
 
 
+MENU = """What do you want to do?
+
+  1  Update   — bring the sd-cli engine in line with the code
+  2  Clean    — delete what removed features and orphans left behind
+  3  Both
+  0  Just check — the default: measures, deletes nothing
+
+Your choice [0]: """
+
+
+def ask_choice(read=input) -> tuple[bool, bool]:
+    """(nettoyer, mettre à jour le moteur), demandé plutôt que deviné.
+
+    Le menu n'existe que sans argument : les options en ligne de commande
+    restent la référence, et un script qui appelle celui-ci ne doit jamais se
+    retrouver bloqué sur une question.
+
+    Tout ce qui n'est pas reconnu vaut « juste vérifier ». C'est le choix sûr,
+    et c'est celui qu'on veut par défaut quand quelqu'un tape au hasard ou
+    ferme la fenêtre.
+    """
+    print(MENU, end="", flush=True)
+    try:
+        answer = (read() or "").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False, False
+    return {"1": (False, True), "2": (True, False),
+            "3": (True, True)}.get(answer, (False, False))
+
+
+def confirm_purge(total: int, read=input) -> bool:
+    """Le garde-fou du choix 2 : on MONTRE avant de supprimer.
+
+    Le script mesure d'abord, annonce le total, et ne supprime qu'ensuite.
+    C'est toute la différence entre un nettoyage et une perte : plusieurs
+    gigaoctets peuvent partir ici, et certains ne se retéléchargent qu'à
+    travers une acceptation de licence.
+    """
+    if total <= 0:
+        print(OK + "nothing to reclaim — nothing was deleted.")
+        return False
+    print("-" * 60)
+    print(f"💾 {_human(total)} can be freed. This DELETES the files listed "
+          "above.")
+    print("   models/custom/, loras/, outputs/, userdata/ are never touched.")
+    try:
+        answer = (read("   Delete them? [y/N]: ") or "").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in ("y", "yes", "o", "oui")
+
+
 def main() -> int:
     # « --purge » supprime TOUT ce qui reste des fonctions retirées : dossiers
     # d'add-ons, modèles orphelins, données laissées derrière. « --prune-models »
@@ -790,6 +872,21 @@ def main() -> int:
     purge = everything or "--purge" in sys.argv
     update_engine = everything or "--update-engine" in sys.argv
     prune_models = purge or "--prune-models" in sys.argv
+    #  Menu SEULEMENT sans argument et devant un vrai terminal. Un appel
+    #  automatisé — ou une sortie redirigée — ne doit jamais rester bloqué
+    #  sur une question que personne ne lira.
+    asked = False
+    if len(sys.argv) == 1 and sys.stdin is not None and sys.stdin.isatty():
+        purge, update_engine = ask_choice()
+        prune_models = purge
+        asked = True
+    #  Quand le choix vient du menu, la suppression se fait en DEUX temps :
+    #  la première passe mesure et montre, la confirmation décide, la seconde
+    #  supprime. En ligne de commande `--purge` reste direct : celui qui l'a
+    #  tapée a déjà décidé.
+    deferred_purge = purge and asked
+    if deferred_purge:
+        purge = prune_models = False
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
     modes = []
@@ -808,6 +905,17 @@ def main() -> int:
     recoverable += report_orphan_models(prune_models)
     check_orphan_modules()
     check_install_complete()
+
+    if deferred_purge:
+        if confirm_purge(recoverable):
+            print("-" * 60)
+            freed = clean_removed_features(True)
+            freed += report_orphan_addons(True)
+            freed += report_orphan_models(True)
+            recoverable = 0
+        else:
+            print(INFO + "nothing deleted.")
+
     compile_check()
     check_deps()
     engine_stale = check_engine(update_engine)

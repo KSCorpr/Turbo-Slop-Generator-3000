@@ -1,30 +1,29 @@
 @echo off
+REM ===========================================================================
+REM  Maintenance : verifie l'installation et nettoie ce qui traine.
+REM
+REM  Sans argument, le script POSE LA QUESTION :
+REM      1  Update   aligne le moteur sd-cli sur le code
+REM      2  Clean    efface ce que les fonctions retirees ont laisse
+REM      3  Both
+REM      0  Verifier seulement (defaut : ne supprime rien)
+REM
+REM  Le choix 2 MESURE d'abord, affiche le total, et demande confirmation
+REM  avant de supprimer quoi que ce soit.
+REM
+REM  En ligne de commande, les options directes restent disponibles :
+REM      maintenance.bat --update-engine
+REM      maintenance.bat --purge
+REM      maintenance.bat --all
+REM
+REM  Ne touche JAMAIS a models\custom\, loras\, outputs\, userdata\, python\.
+REM  Pour mettre a jour l'APPLICATION : update.bat (ce script ne telecharge
+REM  rien).
+REM ===========================================================================
 cd /d "%~dp0"
 set "PY=%~dp0python\python.exe"
 if not exist "%PY%" set "PY=python"
 
-if not "%~1"=="" goto run
-
-echo ============================================================
-echo   Maintenance - Turbo Slop Generator 3000
-echo ------------------------------------------------------------
-echo   Nettoie ce qu'une mise a jour par copier-coller laisse
-echo   derriere : code des fonctions retirees, modules orphelins,
-echo   caches Python, fichiers temporaires. Verifie ensuite que
-echo   tout compile ET que le moteur sd-cli sait faire ce que le
-echo   code lui demande.
-echo.
-echo   Les DONNEES (poids, add-ons d'anciennes versions) sont
-echo   seulement CHIFFREES ici, pas supprimees.
-echo.
-echo   Options :
-echo       maintenance.bat --update-engine   aligne le moteur
-echo       maintenance.bat --purge           efface les restes
-echo       maintenance.bat --all             les deux
-echo ============================================================
-echo.
-
-:run
 "%PY%" scripts\maintenance.py %*
 echo.
 pause

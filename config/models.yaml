@@ -131,52 +131,6 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
-  - id: krea2-turbo-int8
-    name: "Krea 2 Turbo INT8 ConvRot (expérimental)"
-    family: krea2
-    tags: [expérimental, int8, ampere, benchmark]
-    description: >
-      Variante native **INT8 ConvRot** publiée par Comfy-Org, à comparer au
-      GGUF sur RTX 30xx. Le fichier est plus gros que la VRAM d'une RTX 3060 :
-      l'application garde donc la diffusion en RAM et charge ses couches à la
-      demande avec `--stream-layers`, tout en calculant sur la RTX 3060. Ne
-      remplace pas le GGUF par défaut : utilisez le test A/B des Réglages et
-      gardez celui dont vous préférez réellement les images. Moteur sd.cpp
-      récent requis (support INT8 natif + `--params-backend`). Licence Krea 2.
-    sources:
-      diffusion:
-        repo: Comfy-Org/Krea-2
-        match: "diffusion_models/krea2_turbo_int8_convrot.safetensors"
-      text_encoder:
-        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
-        quantizable: true
-      text_encoder_vision:
-        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
-        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
-        optional: true
-      vae:
-        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
-        match: "*wan_2.1_vae.safetensors"
-    defaults:
-      steps: 8
-      cfg_scale: 1.0
-      sampler: euler
-      scheduler: auto
-      width: 1024
-      height: 1024
-      supports_negative: false
-      edit: optional
-      edit_lora: ostris/krea2_turbo_style_reference
-      memory_preset: int8_stream
-    presets:
-      - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
-      - {name: "Test A/B (4 pas)",    sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
-      - {name: "Qualité (12 pas)",    sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
-    vram_min_gb: 12
-
-
-  # --------------------------------------------------------------------------
   #  Z-Image Turbo — le plus léger du catalogue, et le seul en Apache-2.0
   #  de bout en bout (modèle + encodeur + VAE). 6B distillé, 8 pas, CFG 1.0.
   # --------------------------------------------------------------------------

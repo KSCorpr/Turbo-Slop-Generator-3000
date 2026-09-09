@@ -78,7 +78,6 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
 
     # Scripts internes, appelés par le code et jamais à la main.
     INTERNAL = {"get_sdcpp.py", "get_trellis.py", "setup_tools.py",
-                "setup_seedvr2.py",    # lancé par le bouton « Installer »
                 "setup_adetailer.py",  # idem, onglet « Détails »
                 "_torch_setup.py", "convert_gguf.py"}
 

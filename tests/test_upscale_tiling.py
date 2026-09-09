@@ -80,8 +80,11 @@ class HiresArgsTests(unittest.TestCase):
     """Passe HD native (`--hires`) : ce qu'on envoie réellement à sd-cli."""
 
     def test_builtin_upscaler_needs_no_directory(self):
+        # « Lanczos » et non « Latent » : les agrandissements dans l'espace
+        # latent ont été retirés — ils partent d'une base molle que le second
+        # débruitage comble en inventant, ce qui EST l'effet peinture.
         args = sdcpp.hires_args(sdcpp.HiresParams(
-            upscaler="Latent", upscalers_dir=Path("/ups"), tile_size=832))
+            upscaler="Lanczos", upscalers_dir=Path("/ups"), tile_size=832))
         self.assertIn("--hires", args)
         self.assertNotIn("--hires-upscalers-dir", args)
         # La tuile ne concerne que les agrandisseurs à MODÈLE.
@@ -267,3 +270,60 @@ class HdAlignTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreUpscaleRoutingTests(unittest.TestCase):
+    """Le pré-agrandissement du SDXL Ultimate Upscale accepte les DEUX familles.
+
+    Le paramètre s'appelle encore `esrgan_model` pour ne pas casser les
+    appelants, mais c'est le FICHIER qui décide du moteur : un `.gguf` part
+    chez stable-diffusion.cpp, tout le reste chez spandrel. Avant cette règle,
+    choisir un agrandisseur moderne dans ce menu envoyait un `.pth` à sd.cpp,
+    qui ne sait pas le lire — l'erreur arrivait après le pré-agrandissement,
+    donc après l'attente.
+    """
+
+    def _route(self, name):
+        from unittest.mock import patch
+        from atelier import registry
+        from atelier.engine import tools
+        called = {}
+
+        def modern(src, model, log=None):
+            called["engine"] = "spandrel"
+            return Path("/tmp/modern.png")
+
+        def esrgan(src, model, repeats=1, log=None):
+            called["engine"] = "sdcpp"
+            return Path("/tmp/esrgan.png")
+
+        with patch.object(tools, "upscale_is_installed", return_value=True), \
+             patch.object(tools, "modern_upscale", side_effect=modern), \
+             patch.object(registry, "upscaler_factor", return_value=4.0), \
+             patch("atelier.engine.generate.upscale_image", side_effect=esrgan), \
+             patch.object(tools, "_to_src", return_value=Path("/tmp/in.png")), \
+             patch("PIL.Image.open") as _open, \
+             patch.object(tools, "_run_tool", side_effect=RuntimeError("stop")):
+            _open.return_value.__enter__.return_value.size = (512, 512)
+            with self.assertRaises(Exception):
+                tools.ultimate_upscale("/tmp/in.png", esrgan_model=name,
+                                       base_model=__file__)
+        return called.get("engine")
+
+    def test_a_gguf_goes_to_the_native_engine(self):
+        self.assertEqual(self._route("4x_anime.gguf"), "sdcpp")
+
+    def test_a_modern_model_goes_to_spandrel(self):
+        self.assertEqual(self._route("4xNomos8kDAT.pth"), "spandrel")
+
+    def test_the_menu_offers_both_families_labelled(self):
+        """`upscaler_choices` marque « · modern » : sans ça les deux familles
+        se ressemblent, et le choix se fait au hasard du nom de fichier."""
+        from unittest.mock import patch
+        from atelier import registry
+        with patch.object(registry, "list_upscalers",
+                          return_value=["4x_anime.gguf", "4xNomos8kDAT.pth"]), \
+             patch.object(registry, "is_drawing_upscaler", return_value=False):
+            labels = dict((v, k) for k, v in registry.upscaler_choices())
+        self.assertNotIn("modern", labels["4x_anime.gguf"])
+        self.assertIn("modern", labels["4xNomos8kDAT.pth"])

@@ -48,7 +48,7 @@ per model; adding a model adds a tab, never a setting.)
 | 🟢 **Z-Image Turbo** | the lightest of the three (6B, 8 steps) · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for any of the three engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · SeedVR2 · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
 The exact tab tree, since two of the six are containers:
@@ -84,7 +84,6 @@ The exact tab tree, since two of the six are containers:
 - [Upscaling](#upscaling)
   - [🔼 Simple (ESRGAN)](#-simple-esrgan-native-sdcpp)
   - [🚀 HD (native highres fix)](#-hd-native-sdcpp-highres-fix)
-  - [🌱 Restore (SeedVR2)](#-restore-seedvr2-3b--7b)
   - [🔍 High resolution (Flux.2)](#-high-resolution-flux2-as-its-own-upscaler)
   - [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer)
   - [🖐️ Details — hands and faces](#-details--hands-faces-and-anything-a-detector-finds)
@@ -542,7 +541,7 @@ ambiguous.
 **When the answer needs measuring, the app measures.** The multi-GPU placement
 depends on the second card's PCIe link as much as on its memory, so instead of
 asking you to bet there is a button that runs the comparison (see
-[Measured hardware profile](#measured-hardware-profile-and-krea-int8-probe)).
+[Measured hardware profile](#measured-hardware-profile)).
 
 Everything sd.cpp exposes and nobody needs to touch lives under a single folded
 **🔧 Expert** section, which says in its first line that nothing in it is
@@ -590,7 +589,7 @@ single mutually-exclusive strategy:
   Two things follow. It is **on by default** when the flag is omitted, so the
   app sends `off` explicitly when you have not asked for it. And an explicit
   `--backend` or `--params-backend` **disables it regardless of argument
-  order** — so the encoder-split and INT8-streaming placements, which set one,
+  order** — so the encoder-split placement, which sets one,
   silently win over it. That is why the app never sends both.
   It remains memory-aware, not topology-aware: on a mismatched pair or a PCIe
   x4 secondary slot, benchmark it instead of assuming that more aggregate VRAM
@@ -696,7 +695,7 @@ diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-st
 distilled models the gain is small and artifacts are possible, hence **off by
 default**. Requires a recent engine (`update-engine.bat`).
 
-### Measured hardware profile and Krea INT8 probe
+### Measured hardware profile
 **Settings → 🧪 Measure this machine** runs a fixed 512×512 / 4-step / seed
 424242 generation through every sensible placement: main GPU with RAM staging,
 **placement left to sd.cpp** (`--auto-fit on`), and — with a second card —
@@ -719,13 +718,6 @@ inside the noise, the report keeps the **simpler** one rather than pretending to
 split them. The log streams while the test runs and **⏹️ Stop** ends it cleanly
 after the run in progress. Running the test never alters your preferences —
 applying the profile is a separate, explicit click.
-
-The same block compares the normal **Krea 2 Turbo GGUF** with the optional
-**INT8 ConvRot** checkpoint from `Comfy-Org/Krea-2` (sd.cpp gained INT8 ConvRot
-support in build 817, August 2026). The RTX 3060 executes the INT8 kernels while
-the oversized checkpoint is streamed from RAM. GGUF remains the default because
-the two outputs still require a visual quality decision — and because none of
-this is measured on your machine until you press the button.
 
 ### Direct convolution (memory)
 
@@ -929,7 +921,8 @@ from the app.
 ## Upscaling
 
 Four complementary tools live under **Toolkit**, in increasing order of
-invention: ESRGAN enlarges, **HD** re-denoises with your own model, SeedVR2
+invention: an upscaler enlarges, **HD** re-denoises with your own model, the
+creative pass
 restores, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
@@ -982,9 +975,16 @@ The one that has no seams, because it never cuts the image up.
 
 sd.cpp gained a native highres fix, and `sd_img_gen_params_t` carries both an
 init image and the hires block — so a single `sd-cli` command does the whole
-job: a very light img2img at the source size, then the enlargement (latent,
-Lanczos or one of your ESRGAN models), then a **second denoise pass over the
-entire image** at the final size. No PyTorch, no SDXL, **no tiles**.
+job: a very light img2img at the source size, then the enlargement (Lanczos or
+one of your upscaler models), then a **second denoise pass over the entire
+image** at the final size. No PyTorch, no SDXL, **no tiles**.
+
+> **Latent enlargement was removed.** sd.cpp still accepts it, but enlarging in
+> latent space means interpolating numbers that are not pixels: the second
+> denoise starts from a mush and invents to fill it in — which is exactly the
+> painted look this project spends its time avoiding. Lanczos gives an honest
+> base, a modern upscaler a crisp one; in both cases the model sharpens rather
+> than guesses.
 
 Two things follow from that, and they are the reason this tab exists:
 
@@ -1080,41 +1080,6 @@ old bare "sd-cli exited with code 1".
 Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
 and points at `update-engine.bat` instead of silently producing a plain image.
 
-### 🌱 Restore (SeedVR2 3B / 7B)
-Diffusion restoration/upscale using the standalone
-[`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
-engine, pinned to a known commit and installed in an isolated Python 3.12
-environment. It restores natural detail more convincingly than ESRGAN while
-staying closer to the source than the creative SDXL mode. GGUF weights download
-automatically on first use and are SHA-256 verified by the upstream CLI.
-
-Four weights are offered: **3B Q8** (the default), **3B Q4** (memory fallback),
-**7B Q4** and **7B Q4 “sharp”**. A 7B is 4.76 GB of weights — it fits an 11–12
-GB card with block swapping — keeps fine textures better and takes roughly twice
-as long. The 3B has 32 transformer blocks, the 7B has 36; the swap slider is
-clamped to whichever model is selected.
-
-The dedicated **RTX 3060 12 GB + GTX 1080 Ti** preset keeps computation on the
-RTX 3060 and uses the GTX 1080 Ti as an offload device. This is deliberate on a
-PCIe x4 secondary slot: it avoids continuously splitting matrix operations
-between mismatched GPUs. Start with **Q8, 2048 px, 16 swapped blocks, 1024 px
-VAE tiles**. If memory runs out, try 24 then 36 blocks, or switch to Q4.
-
-**Attention kernel.** The upstream CLI accepts `sdpa`, `flash_attn_2/3` and
-`sageattn_2/3`. The app probes SeedVR2's own venv and asks for the fast kernel
-only when the package is actually installed **and** the compute GPU is Ampere or
-newer — Turing (RTX 2080 Ti) and Pascal (GTX 1080 Ti) cannot run FlashAttention 2
-at all, so they stay on `sdpa`. Nothing to tick: `sdpa` is the default and works
-everywhere. Note that neither FlashAttention nor SageAttention currently ships a
-Windows wheel built against **torch 2.7.1 + cu126**, which is what this venv
-uses; the published Windows wheels are cu128, and PyTorch's cu128 builds dropped
-Pascal (`sm_61`), which would cost the GTX 1080 Ti as an offload device. That
-trade is not worth it here, so the venv stays on cu126.
-
-For a folder of images, use **Batch folder** in the same Restore tab. The app
-passes the directory to SeedVR2 once, keeps its DiT and VAE caches warm across
-the whole queue, and writes new PNGs without touching the originals. This avoids
-paying model startup cost again for every image.
 
 ### 🔍 High resolution (Flux.2 as its own upscaler)
 Runs the image back through **Flux.2 at its native resolution**, using it as
@@ -1137,7 +1102,7 @@ only 3 effective steps — too short to rebuild anything.
 
 **This is not restoration.** At that denoise the model *redraws*: what survives
 is plausibility, not fidelity. For a face that must stay the same person, use
-**🌱 Restore** (SeedVR2). The two tools answer different questions.
+the **creative SDXL upscale**. The two tools answer different questions.
 
 Output is bounded on both ends: never below **1 MP** (Flux.2's own regime —
 below it the model is out of its element anyway) and never past **3.7 MP**,
@@ -1155,7 +1120,7 @@ step and the memory ladder are ours.
 
 ### 🙂 Faces (GFPGAN · RestoreFormer++ · CodeFormer)
 Rebuilds **faces only** — the rest of the image is untouched. This is the step
-that ESRGAN and SeedVR2 cannot do: once a face is small or blurry, neither can
+that no upscaler can do: once a face is small or blurry, nothing can
 put clean eyes and a clean mouth back. Run it **last**, after the upscale; the
 Upscale and Restore tabs both carry a **→ 🙂 Fix the faces** button that hands
 the result straight over, so there is no file to find and re-upload.
@@ -1291,7 +1256,8 @@ Controls:
 - **Steps / tile**, **CFG**, **tile size** (640–1280).
 - On < 12 GB VRAM, the model is automatically CPU-offloaded to avoid OOM.
 
-> Use the right tool: **ESRGAN** is fast and deterministic; **SeedVR2** restores
+> Use the right tool: an **upscaler model** is fast and deterministic; the
+> **creative SDXL upscale** reinvents
 > plausible detail with limited drift; **High resolution** re-renders through
 > Flux.2 (best-looking, least faithful); **SDXL creative** is slower and
 > explicitly invents detail; **Faces** fixes what all of them leave broken, and
@@ -1484,7 +1450,6 @@ subprocesses so torch DLLs never lock the UI process):
 | **🔼 Upscale** | ESRGAN, deterministic ([Upscaling](#-simple-esrgan-native-sdcpp)) | GGUF upscaler pack, ~1 GB |
 | **🚀 HD** | native sd.cpp highres fix, no tiles ([Upscaling](#-hd-native-sdcpp-highres-fix)) | none — uses your model |
 | **🔍 High resolution** | Flux.2 as its own upscaler ([Upscaling](#-high-resolution-flux2-as-its-own-upscaler)) | none — uses your model |
-| **🌱 Restore** | SeedVR2 3B/7B ([Upscaling](#-restore-seedvr2-3b--7b)) | isolated venv + GGUF |
 | **🙂 Faces** | GFPGAN · RestoreFormer++ · CodeFormer ([Upscaling](#-faces-gfpgan--restoreformer--codeformer)) | ~1.5 GB, five weights |
 | **🖐️ Details** | redraws hands / faces found by a detector ([below](#-details--hands-faces-and-anything-a-detector-finds)) | ~12 MB, native engine |
 | **✨ SDXL upscale** | creative, tile-by-tile ([Upscaling](#-creative-sdxl-ultimate-sd-upscale)) | ~9.5 GB with ControlNet |
@@ -1846,7 +1811,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 > or larger file at Q5.
 
 
-**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), [`numz/ComfyUI-SeedVR2_VideoUpscaler`](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) (SeedVR2), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative), [`sczhou/CodeFormer`](https://github.com/sczhou/CodeFormer) + [`xinntao/facexlib`](https://github.com/xinntao/facexlib) (faces).
+**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative), [`sczhou/CodeFormer`](https://github.com/sczhou/CodeFormer) + [`xinntao/facexlib`](https://github.com/xinntao/facexlib) (faces).
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
 (encoders/VAEs used by another model) are preserved.
@@ -1884,7 +1849,7 @@ atelier/
     highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
     outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
     trellis.py               # trellis.cpp server: image → GLB, transient or resident
-    tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces, SeedVR2…)
+    tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces…)
     masks.py                 # mask cleanup and layer naming — pure numpy
     psd.py                   # PSD writer — pure Python, no compiled dependency
     vocab.py                 # CLIP scene vocabulary as DATA, for layer labelling
@@ -1902,7 +1867,6 @@ scripts/
   maintenance.py             # purge, orphan detection, engine capability check
   _torch_setup.py            # shared PyTorch-CUDA install helpers
   setup_tools.py             # installs the PyTorch add-ons
-  setup_seedvr2.py           # installs SeedVR2 in its own Python 3.12 venv
   tools/_device.py           # CUDA / Metal-MPS / CPU picker shared by the runners
   tools/run_*.py             # inference runners (depth, rembg, sam, layers, describe,
                              #   enhance, face, ultimate_upscale)
@@ -1921,7 +1885,7 @@ into four categories:
 |---|---|
 | **Engines** | `sd-cli` (stable-diffusion.cpp) and the trellis.cpp 3D binary |
 | **Models** | each catalog model separately, the ESRGAN upscaler pack, the ~10 GB trellis 3D set |
-| **Toolkit add-ons** | depth, background removal, SAM, CLIP labelling, image → prompt, prompt enhancer, face restoration, SeedVR2, creative SDXL upscale |
+| **Toolkit add-ons** | depth, background removal, SAM, CLIP labelling, image → prompt, prompt enhancer, face restoration, creative SDXL upscale |
 | **Your data** ⚠️ | LoRAs, custom models, generated images/3D, temp files |
 
 Tick what you want to remove, tick **“I confirm”**, then delete. Sizes refresh
@@ -2192,9 +2156,6 @@ authors. Please read and respect each model's own license on its page.
   **Real-ESRGAN** (Xintao Wang et al., Tencent ARC) and community models
   (UltraSharp, foolhardy Remacri, Nomos, LSDIR, NickelbackFS, StarSample…). Credit
   to each upstream author; see the repo for individual sources/licenses.
-- **SeedVR2 3B / 7B** standalone integration by
-  [numz](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler), using the
-  upstream Q8/Q4 GGUF models and low-VRAM block swapping.
 - **Face restoration:** **CodeFormer** by
   [Shangchen Zhou et al. (S-Lab, NTU)](https://github.com/sczhou/CodeFormer),
   non-commercial S-Lab License 1.0; detection, alignment and face parsing by

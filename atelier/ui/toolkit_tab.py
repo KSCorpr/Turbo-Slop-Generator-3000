@@ -851,16 +851,13 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                  "the model frankly reinvents the material.")
                         _hd_ups = registry.list_upscalers()
                         hd_upscaler = gr.Dropdown(
-                            choices=[("Latent (default — the gentlest)", "Latent"),
-                                     ("Latent antialiased", "Latent (antialiased)"),
-                                     ("Lanczos (image, neutral)", "Lanczos")]
-                                    + [(f"ESRGAN — {u}", u) for u in _hd_ups],
-                            value="Latent",
+                            choices=[("Lanczos (default — neutral)", "Lanczos")]
+                                    + [(f"{u}", u) for u in _hd_ups],
+                            value="Lanczos",
                             label="Intermediate enlargement",
                             info="What enlarges BEFORE the second denoise. "
-                                 "“Latent” works in the model's own space and "
-                                 "lets the denoise rebuild everything; an "
-                                 "ESRGAN gives an already-crisp base (useful "
+                                 "Lanczos is neutral and honest; an upscaler "
+                                 "model gives an already-crisp base (useful "
                                  "on line art), at the risk of freezing its "
                                  "own flaws.")
                         hd_prompt = gr.Textbox(
@@ -941,8 +938,9 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "**starting latent** (the structure).\n\n⚠️ **This is not "
                     "a restoration.** At a high denoise the model REDRAWS: "
                     "what is preserved is plausibility, not fidelity. To keep "
-                    "a face the same person, go through **🌱 Restore** "
-                    "(SeedVR2) instead.")
+                    "a face the same person, use a **modern upscaler** "
+                    "(🔼 Enlarge) followed by **🙂 Faces** instead — neither "
+                    "redraws what it does not need to.")
 
                 _hr_models = highres.edit_models()
                 if not _hr_models:
@@ -1026,191 +1024,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 widgets.stop_into_log(hr_stop, gen_engine.cancel, hr_log,
                                       [hr_evt])
 
-            # ---------- Restauration SeedVR2 (diffusion 1 étape) ------------
-            with gr.Tab("🌱 Restore", id="seedvr2"):
-                gr.Markdown(
-                    "**SeedVR2** diffusion restoration: recovers more natural "
-                    "detail than ESRGAN while staying more faithful than the "
-                    "creative SDXL upscale. Compute stays on the RTX 3060; "
-                    "the GTX 1080 Ti can hold the weights. The 3B is enough "
-                    "most of the time; the 7B keeps fine textures (faces, "
-                    "fabric) better but takes twice as long.")
-                _installer_block(
-                    "SeedVR2",
-                    "An isolated install (Python 3.12 + PyTorch CUDA): it "
-                    "does not touch the application's own dependencies. The "
-                    "Q8/Q4 weights are downloaded on the first upscale.",
-                    tools.install_seedvr2_stream, tools.seedvr2_is_installed())
-
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        seed_image = gr.Image(
-                            label="Image to restore", type="pil",
-                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        seed_model = gr.Radio(
-                            [(t(label), value)
-                             for label, value in tools.SEEDVR2_MODELS],
-                            value=tools.SEEDVR2_MODELS[0][1], label="Model",
-                            info="Weights download themselves on first use "
-                                 "(4.8 GB for a 7B).")
-                        seed_res = gr.Slider(
-                            1024, 4096, value=2048, step=64,
-                            label="Target resolution (short side)",
-                            info="Start at 2048 px; 4K takes considerably longer.")
-                        seed_offload = gr.Radio(
-                            [("GTX 1080 Ti (recommended for this PC)", "secondary"),
-                             ("System RAM (more compatible)", "cpu"),
-                             ("No offload (fastest, risk of OOM)", "none")],
-                            value=("secondary" if hardware.rtx3060_1080ti_combo()
-                                   else "cpu"), label="Where the weights live")
-                        seed_blocks = gr.Slider(
-                            0, 36, value=16, step=1, label="Blocks to offload",
-                            info="16 is right with 12 GB; try 24 then 36 if you hit OOM.")
-                        with gr.Row():
-                            seed_tile = gr.Slider(512, 1280, value=1024, step=64,
-                                                  label="Tuile VAE")
-                            seed_overlap = gr.Slider(64, 256, value=128, step=32,
-                                                     label="Recouvrement")
-                        seed_color = gr.Dropdown(
-                            [("Wavelet — natural (recommended)", "wavelet"),
-                             ("LAB — very faithful colours", "lab"),
-                             ("Wavelet adaptatif", "wavelet_adaptive"),
-                             ("No correction", "none")],
-                            value="wavelet", label="Colour correction")
-                        with gr.Row():
-                            seed_run = gr.Button("🌱 Restore", variant="primary",
-                                                 size="lg", scale=2)
-                            seed_stop = gr.Button("⏹️ Cancel", variant="stop",
-                                                  size="sm")
-                    with gr.Column(scale=4):
-                        seed_result = gr.Image(
-                            label="SeedVR2 result", height=520, format="png",
-                            buttons=widgets.IMAGE_BUTTONS)
-                        seed_to_face = gr.Button("→ 🙂 Fix the faces",
-                                                 size="sm")
-                        seed_log = gr.Textbox(label="Log", lines=14,
-                                              autoscroll=True,
-                                              elem_classes="log-box")
-
-                def do_seedvr2(img, resolution, model, blocks, tile, overlap,
-                               offload, color, progress=gr.Progress()):
-                    if img is None:
-                        raise gr.Error(t("Provide an image."))
-                    if not tools.seedvr2_is_installed():
-                        raise gr.Error(t("Install SeedVR2 first."))
-                    q: "queue.Queue[str | None]" = queue.Queue()
-                    state: dict = {}
-
-                    def worker():
-                        try:
-                            state["out"] = tools.seedvr2_upscale(
-                                img, resolution=int(resolution), model=model,
-                                blocks_to_swap=int(blocks), tile=int(tile),
-                                overlap=int(overlap), offload=offload,
-                                color_correction=color, log=q.put)
-                        except Exception as exc:  # noqa: BLE001
-                            state["err"] = str(exc)
-                        finally:
-                            q.put(None)
-
-                    threading.Thread(target=worker, daemon=True).start()
-                    logs: list[str] = []
-                    progress(0.05, desc="Loading SeedVR2…")
-                    while True:
-                        line = q.get()
-                        if line is None:
-                            break
-                        logs.append(line)
-                        yield gr.update(), "\n".join(logs[-500:])
-                    if "err" in state:
-                        logs.append(f"\n[ERROR] {state['err']}")
-                        yield gr.update(), "\n".join(logs[-500:])
-                        return
-                    progress(1.0, desc="Done")
-                    out = state.get("out")
-                    logs.append(f"\n✅ Image restored: {out}")
-                    yield str(out), "\n".join(logs[-500:])
-
-                seed_evt = seed_run.click(
-                    do_seedvr2,
-                    inputs=[seed_image, seed_res, seed_model, seed_blocks,
-                            seed_tile, seed_overlap, seed_offload, seed_color],
-                    outputs=[seed_result, seed_log])
-                widgets.stop_into_log(seed_stop, tools.cancel, seed_log,
-                                      [seed_evt])
-
-                with gr.Accordion("📁 Restore a whole folder at once", open=False):
-                    gr.Markdown(
-                        "Pick a folder of images. SeedVR2 loads the model "
-                        "**once**, keeps it cached and processes every file "
-                        "without touching the originals. Results go to a "
-                        "timestamped subfolder of `outputs/`.")
-                    seed_batch_files = gr.File(
-                        label="Image folder", file_count="directory",
-                        file_types=["image"], type="filepath")
-                    with gr.Row():
-                        seed_batch_run = gr.Button(
-                            "🌱 Restore the whole folder", variant="primary")
-                        seed_batch_stop = gr.Button("⏹️ Cancel", variant="stop")
-                    seed_batch_gallery = gr.Gallery(
-                        label="Batch results", columns=4, height=420,
-                        buttons=widgets.GALLERY_BUTTONS)
-                    seed_batch_log = gr.Textbox(
-                        label="Batch log", lines=12, autoscroll=True,
-                        elem_classes="log-box")
-
-                    def do_seedvr2_batch(files, resolution, model, blocks,
-                                         tile, overlap, offload, color):
-                        if not files:
-                            raise gr.Error(t("Pick a folder of images."))
-                        if not tools.seedvr2_is_installed():
-                            raise gr.Error(t("Install SeedVR2 first."))
-                        q: "queue.Queue[str | None]" = queue.Queue()
-                        state: dict = {}
-
-                        def worker():
-                            try:
-                                state["outs"] = tools.seedvr2_batch(
-                                    files, resolution=int(resolution), model=model,
-                                    blocks_to_swap=int(blocks), tile=int(tile),
-                                    overlap=int(overlap), offload=offload,
-                                    color_correction=color, log=q.put)
-                            except Exception as exc:  # noqa: BLE001
-                                state["err"] = str(exc)
-                            finally:
-                                q.put(None)
-
-                        threading.Thread(target=worker, daemon=True).start()
-                        logs: list[str] = []
-                        while True:
-                            line = q.get()
-                            if line is None:
-                                break
-                            logs.append(line)
-                            yield gr.update(), "\n".join(logs[-500:])
-                        if "err" in state:
-                            logs.append(f"\n[ERROR] {state['err']}")
-                            yield gr.update(), "\n".join(logs[-500:])
-                            return
-                        outs = [str(p) for p in state.get("outs", [])]
-                        logs.append(f"\n✅ {len(outs)} image(s) restored.")
-                        yield outs, "\n".join(logs[-500:])
-
-                    seed_batch_evt = seed_batch_run.click(
-                        do_seedvr2_batch,
-                        inputs=[seed_batch_files, seed_res, seed_model,
-                                seed_blocks, seed_tile, seed_overlap,
-                                seed_offload, seed_color],
-                        outputs=[seed_batch_gallery, seed_batch_log])
-                    widgets.stop_into_log(seed_batch_stop, tools.cancel,
-                                          seed_batch_log, [seed_batch_evt])
-
-            # ---------- Restauration des visages (CodeFormer) ----------------
             with gr.Tab("🙂 Faces", id="face"):
                 gr.Markdown(
                     "Rebuilds **faces only**; the rest of the image is left "
                     "alone. It is the step missing after an enlargement: "
-                    "neither ESRGAN nor SeedVR2 can rebuild clean eyes and a "
+                    "no upscaler can rebuild clean eyes and a "
                     "clean mouth on a face that has gone small or blurry. "
                     "**Run it last**, after the upscale.  \nThree models to "
                     "choose from — they do not win on the same images, so "
@@ -1299,7 +1117,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 button.click(_go, inputs=[source], outputs=[f_image, sub_tabs])
 
             _hand_over_to_faces(u_to_face, u_result)
-            _hand_over_to_faces(seed_to_face, seed_result)
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("🖐️ Details", id="adetailer"):
@@ -1468,15 +1285,17 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             [(t("VAE fp16-fix (external, recommended)"), False),
                              (t("Model's built-in VAE"), True)],
                             value=False, label="VAE")
-                        _ups = registry.list_upscalers()
                         c_esrgan = gr.Dropdown(
                             choices=[(t("Lanczos (default)"), "")]
-                                    + [(u, u) for u in _ups],
+                                    + registry.upscaler_choices(),
                             value="", label="Pre-upscale (base before SDXL)",
-                            info="A single pass, always. A model whose factor "
-                                 "EXCEEDS the enlargement you asked for (a ×4 "
-                                 "for a ×2) is the best choice: the downscale "
-                                 "that follows acts as anti-aliasing.")
+                            info="A single pass, always. **Modern** models "
+                                 "(DAT, SPAN, PLKSR…) give a cleaner base "
+                                 "than the 2018 ESRGANs — they are marked as "
+                                 "such. A model whose factor EXCEEDS the "
+                                 "enlargement you asked for (a ×4 for a ×2) "
+                                 "is the best choice: the downscale that "
+                                 "follows acts as anti-aliasing.")
                         c_refresh = gr.Button("↻ Refresh models", size="sm")
                         c_preset = gr.Dropdown(
                             choices=[(t(p["name"]), p["name"])
@@ -1607,11 +1426,10 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 def _refresh_models():
                     ck = tools.list_upscale_checkpoints()
-                    ups = registry.list_upscalers()
                     return (gr.update(choices=ck,
                                       value=(ck[0][1] if ck else None)),
                             gr.update(choices=[(t("Lanczos (default)"), "")]
-                                              + [(u, u) for u in ups]))
+                                              + registry.upscaler_choices()))
 
                 c_refresh.click(_refresh_models, outputs=[c_model, c_esrgan])
 
@@ -1728,7 +1546,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:
-            _keys = ["depth", "bg", "sam", "esrgan", "seedvr2", "creative"]
+            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
 
             def _consume(pend):
                 # +2 sorties fixes : le groupe parent et le sélecteur d'outil.
@@ -1746,5 +1564,5 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
             _outs = [parent_tabs if parent_tabs is not None else sub_tabs,
                      sub_tabs, d_image, b_image, s_image, u_image,
-                     seed_image, c_image, pending_toolkit]
+                     c_image, pending_toolkit]
             tabs.select(_consume, inputs=[pending_toolkit], outputs=_outs)

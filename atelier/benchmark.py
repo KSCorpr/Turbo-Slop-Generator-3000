@@ -299,26 +299,6 @@ def run_hardware_benchmark(model_id: str | None = None,
     return _write_report("hardware-benchmark", payload)
 
 
-def compare_krea_variants(log: Callable[[str], None] | None = None,
-                          cancel: Callable[[], bool] | None = None) -> Path:
-    base = settings.load_prefs()
-    results = []
-    for model_id, label in (("krea2-turbo", "Krea 2 Turbo GGUF"),
-                            ("krea2-turbo-int8", "Krea 2 Turbo INT8 ConvRot")):
-        results.append({"model_id": model_id,
-                        **_run_case(model_id, base, label, log, cancel)})
-    fastest = _winner(results)
-    payload = {
-        "schema": 2, "kind": "krea-quant-comparison", "seed": BENCHMARK_SEED,
-        "system": diagnostics.system_report(),
-        "warmup_runs": WARMUP_RUNS, "measured_runs": MEASURED_RUNS,
-        "results": results,
-        "fastest_model": fastest.get("model_id") if fastest else None,
-        "quality_review_required": True,
-    }
-    return _write_report("krea-gguf-vs-int8", payload)
-
-
 def apply_recommendation(report_path: str | Path) -> str:
     data = json.loads(Path(report_path).read_text(encoding="utf-8"))
     patch = data.get("recommended_prefs_patch")

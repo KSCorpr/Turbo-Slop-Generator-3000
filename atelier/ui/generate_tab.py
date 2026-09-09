@@ -80,9 +80,8 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
-    # startswith et non == : toute variante Krea (INT8 ConvRot aujourd'hui,
-    # une autre demain) partage l'architecture du Turbo, donc ses résolutions
-    # natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
+    # startswith et non == : toute variante Krea à venir partagera
+    # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
     if family.startswith("z_image"):
         return RATIOS_ZIMAGE
@@ -140,28 +139,11 @@ def build_generative_tab(model_id: str, title: str,
         gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
             title=title, mode=_mode, status=status))
 
-        # Variante de moteur, pas un nouvel onglet : le workflow et tous les
-        # réglages Krea restent identiques. GGUF demeure le défaut tant que le
-        # test A/B local n'a pas démontré que l'INT8 vaut mieux sur cette carte.
-        #
-        # Le sélecteur n'apparaît QUE si la variante est réellement installée.
-        # Proposer un choix dont une branche n'existe pas, c'est un piège :
-        # l'utilisateur clique, la génération échoue. Et sur l'onglet le plus
-        # utilisé de l'application, un réglage expérimental n'a rien à faire
-        # au-dessus du prompt tant qu'il ne concerne personne.
-        _variant = registry.get_base_model("krea2-turbo-int8",
-                                           settings.load_prefs())
-        _variant_ready = (model_id == "krea2-turbo" and _variant is not None
-                          and registry.model_is_ready(_variant))
-        if _variant_ready:
-            variant_model = gr.Radio(
-                [(t("GGUF — recommended and proven"), "krea2-turbo"),
-                 (t("INT8 ConvRot — experimental, RTX 30xx"),
-                  "krea2-turbo-int8")],
-                value="krea2-turbo", label="Diffusion model format",
-                info="Compare the two with the A/B test in Settings.")
-        else:
-            variant_model = gr.State(model_id)
+        # `variant_model` a existé pour proposer une seconde forme du même
+        # modèle (l'INT8 ConvRot de Krea 2, retiré). L'état reste : c'est ce
+        # que l'événement de génération lit, et le rendre constant coûte moins
+        # qu'un renommage à travers toute la chaîne d'entrées.
+        variant_model = gr.State(model_id)
 
         with gr.Row():
             # ----- Entrées -----

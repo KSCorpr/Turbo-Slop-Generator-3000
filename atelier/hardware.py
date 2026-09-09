@@ -574,7 +574,7 @@ def rtx3060_1080ti_prefs() -> dict:
 
     Ampere exécute diffusion, encodeur et VAE (tensor cores, Flash Attention).
     Pascal garde le LLM d'amélioration de prompt et sert de réserve de poids à
-    SeedVR2. Pas d'auto-fit/row split : la seconde carte est souvent sur un
+    les add-ons. Pas d'auto-fit/row split : la seconde carte est souvent sur un
     port PCIe x4, donc les échanges à chaque matmul peuvent coûter plus qu'ils
     ne rapportent.
 

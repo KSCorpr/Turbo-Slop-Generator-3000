@@ -160,8 +160,6 @@ def items(prefs: dict | None = None) -> list[Item]:
              note="Reinstallable in one click (~12 MB)."),
         Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Toolkit add-ons",
              [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
-        Item("tool_seedvr2", "Toolkit — SeedVR2 restoration", "Toolkit add-ons",
-             [tools.SEEDVR2_DIR], note="An isolated Python + the Q8/Q4 models."),
     ]
 
     # --- Données utilisateur (prudence) -----------------------------------
