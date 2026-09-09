@@ -704,15 +704,41 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
         raise _failure_error(code, cmd, tail)
 
 
+#  Manquer de VRAM ne se dit PAS d'une seule façon, et c'est le piège.
+#
+#  Les cinq premiers marqueurs sont l'OOM classique : une allocation refuse,
+#  bruyamment. Les suivants viennent de l'exécution SEGMENTÉE, qui échoue tout
+#  autrement — elle ne demande pas un bloc trop gros, elle constate qu'un
+#  segment ne tiendra pas et s'arrête proprement, sans jamais écrire « out of
+#  memory ». Sans eux, la panne remontait comme une erreur générique : pas de
+#  message utile, et surtout AUCUNE reprise automatique, alors que c'est
+#  exactement le cas qu'elle sait rattraper.
+#
+#  Les phases retenues sont celles de `fail_segment` qui concernent la
+#  mémoire (`ggml_runner.cpp`). « input binding », « execution » ou « output
+#  readback » en sont volontairement absentes : elles échouent pour d'autres
+#  raisons, et les traiter en OOM ferait relancer une génération qui ne peut
+#  pas mieux marcher.
 _OOM_MARKERS = ("cudaMalloc failed: out of memory",
                 "failed to allocate the compute buffer",
                 "alloc compute buffer failed",
                 "ggml_gallocr_reserve_n_impl: failed to allocate",
-                "out of memory")
+                "out of memory",
+                "cannot make enough memory available",
+                "failed during workspace preparation",
+                "failed during workspace capacity check",
+                "failed during workspace allocation",
+                "failed during weight preparation",
+                "failed during allocated capacity check")
 
 # « allocating 4731.82 MiB on device 0 » → on récupère la taille demandée pour
 # pouvoir la citer : c'est le chiffre qui rend le message actionnable.
 _OOM_SIZE = re.compile(r"allocating\s+([\d.]+)\s*MiB")
+
+# L'exécution segmentée, elle, annonce le besoin ET le disponible :
+#   « need 1048.80 MB device / … available 622.52 MB device / … »
+_SEGMENT_SHORT = re.compile(
+    r"need\s+([\d.]+)\s*MB device.*?available\s+([\d.]+)\s*MB device")
 
 
 def _failure_error(code: int, cmd: list[str],
@@ -731,6 +757,16 @@ def _failure_error(code: int, cmd: list[str],
                 want = (f" It was short by a block of "
                         f"{float(m.group(1)) / 1024:.1f} GB.")
                 break
+            m = _SEGMENT_SHORT.search(ln)
+            if m:
+                #  L'exécution segmentée dit les DEUX chiffres : ce qu'il
+                #  fallait et ce qu'il restait. Les citer vaut mieux qu'un
+                #  « pas assez de mémoire » — l'écart dit s'il s'en fallait
+                #  d'un cheveu ou d'un gigaoctet.
+                need, have = float(m.group(1)), float(m.group(2))
+                want = (f" It needed {need / 1024:.1f} GB of workspace with "
+                        f"{have / 1024:.1f} GB free on the card.")
+                break
         return VramError(
             "❌ Not enough GPU memory." + want + "\n"
             + ("The HD pass re-denoises the WHOLE image: its cost climbs with "
@@ -739,9 +775,30 @@ def _failure_error(code: int, cmd: list[str],
                "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
                "works in tiles and fits in far less VRAM."
                if "--hires" in cmd else
-               "→ Lower the resolution, or pick a lighter quantization in "
-               "Settings (the model will take up less VRAM)."))
+               _no_budget_advice(cmd)))
     return EngineError(_diagnose_failure(code, cmd, tail))
+
+
+def _no_budget_advice(cmd: list[str]) -> str:
+    """Le conseil dépend de si un BUDGET a été donné au moteur.
+
+    Sans `--max-vram`, le planificateur n'a pas de cible : il découpe le graphe
+    au jugé et découvre au troisième segment qu'il ne tient pas. C'est le cas
+    du journal type — un budget affiché à 17592186044416 MB, autrement dit
+    aucun. Lui en donner un est le levier le plus direct, et le seul qui ne
+    demande pas de renoncer à quelque chose.
+
+    Avec un budget déjà posé, il a fait ce qu'il a pu : là seulement il faut
+    baisser la résolution ou la quantification.
+    """
+    if "--max-vram" in cmd:
+        return ("→ Lower the resolution, or pick a lighter quantization in "
+                "Settings (the model will take up less VRAM).")
+    return ("→ The engine was given no compute budget, so it could not plan "
+            "around what was left. Settings → 🔧 Expert → “Memory budget "
+            "for the computation” set to **auto** lets it cut its graph to "
+            "fit. Failing that, "
+            "lower the resolution or the quantization.")
 
 
 def _diagnose_failure(code: int, cmd: list[str], tail: "deque[str]") -> str:

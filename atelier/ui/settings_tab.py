@@ -361,7 +361,13 @@ def build_settings_tab():
                 "---\n**Splitting the computation** — lets the engine cut its "
                 "graph to fit a budget instead of failing. **It is slower**: "
                 "keep it for resolutions that will not fit otherwise. The 🚀 "
-                "HD tab already uses it on its own."))
+                "HD tab already uses it on its own.\n\nWithout a budget the "
+                "engine has no target: it cuts blind and finds out part-way "
+                "through that a segment will not fit — the *“cannot make "
+                "enough memory available … workspace capacity check”* "
+                "failure. Generation retries once with **auto** by itself "
+                "when that happens; setting it here avoids the failed first "
+                "attempt."))
             with gr.Row():
                 max_vram = gr.Dropdown(
                     [(t("Disabled (recommended)"), ""),

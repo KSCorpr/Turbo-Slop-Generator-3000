@@ -241,6 +241,24 @@ class VramRetryTests(unittest.TestCase):
         with self.assertRaises(sdcpp.VramError):
             self._generate(failures=2)
 
+    def test_the_retry_gives_the_engine_a_budget_when_it_had_none(self):
+        """L'autre moitié du problème, et souvent la seule qui compte.
+
+        Sortir l'encodeur n'aide pas quand c'est la DIFFUSION qui manque de
+        place : l'encodeur a fini de travailler depuis longtemps. Sans
+        `--max-vram`, le moteur découpe son graphe sans cible et découvre au
+        troisième segment qu'il ne tient pas.
+        """
+        calls = self._generate(failures=1)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("--max-vram", calls[0])
+        self.assertIn("--max-vram", calls[1])
+
+    def test_a_budget_the_user_chose_is_not_overwritten(self):
+        """Un budget posé à la main est une décision, pas un défaut."""
+        calls = self._generate(failures=1, max_vram="6")
+        self.assertEqual(calls[1][calls[1].index("--max-vram") + 1], "6")
+
     def test_under_auto_fit_the_retry_changes_the_budget_not_the_encoder(self):
         """Le cas où la reprise ne reprenait rien du tout.
 
@@ -284,3 +302,76 @@ class PresetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SegmentedOomTests(unittest.TestCase):
+    """Manquer de VRAM ne se dit pas d'une seule façon.
+
+    L'exécution segmentée n'écrit JAMAIS « out of memory ». Elle constate
+    qu'un segment ne tiendra pas et s'arrête proprement :
+
+        model manager cannot make enough memory available on CUDA0:
+          need 1048.80 MB device / …, available 622.52 MB device / …
+        flux segment 3/34 (flux.double_blocks.1) failed during workspace
+          capacity check
+
+    Sans reconnaître ces phrases, la panne remontait en erreur générique — pas
+    de message utile, et surtout aucune reprise automatique, alors que c'est
+    précisément le cas qu'elle sait rattraper.
+    """
+
+    LOG = [
+        "[WARN   ] model_manager.cpp:1699 - model manager cannot make enough "
+        "memory available on CUDA0: need 1048.80 MB device / 1120.81 MB "
+        "budget, available 622.52 MB device / 17592186044416.00 MB budget",
+        "[ERROR  ] ggml_runner.cpp:848 - flux segment 3/34 "
+        "(flux.double_blocks.1) failed during workspace capacity check",
+        "[ERROR  ] stable-diffusion.cpp:2819 - diffusion model compute failed",
+    ]
+
+    def _error(self, cmd, tail=None):
+        from collections import deque
+        return sdcpp._failure_error(1, cmd, deque(tail or self.LOG))
+
+    def test_a_segmented_failure_is_a_vram_error(self):
+        self.assertIsInstance(self._error(["sd-cli"]), sdcpp.VramError)
+
+    def test_all_the_memory_phases_are_recognised(self):
+        """Cinq des neuf phases de `fail_segment` concernent la mémoire."""
+        for phase in ("workspace preparation", "workspace capacity check",
+                      "workspace allocation", "weight preparation",
+                      "allocated capacity check"):
+            err = self._error(
+                ["sd-cli"],
+                [f"flux segment 3/34 (x) failed during {phase}"])
+            self.assertIsInstance(err, sdcpp.VramError, phase)
+
+    def test_the_other_phases_are_not_treated_as_memory(self):
+        """Les relancer en OOM ferait retenter une génération qui ne peut pas
+        mieux marcher."""
+        for phase in ("input binding", "execution or output caching",
+                      "output readback"):
+            err = self._error(
+                ["sd-cli"],
+                [f"flux segment 3/34 (x) failed during {phase}"])
+            self.assertNotIsInstance(err, sdcpp.VramError, phase)
+
+    def test_the_message_quotes_both_numbers(self):
+        """L'écart entre le besoin et le disponible dit s'il s'en fallait d'un
+        cheveu ou d'un gigaoctet — c'est ce qui rend le message actionnable."""
+        text = str(self._error(["sd-cli"]))
+        self.assertIn("1.0 GB", text)
+        self.assertIn("0.6 GB", text)
+
+    def test_without_a_budget_the_advice_is_to_give_one(self):
+        """Le journal type montre un budget de 17592186044416 MB : aucun. Le
+        planificateur découpe alors sans cible et le découvre trop tard."""
+        text = str(self._error(["sd-cli", "-p", "x"]))
+        self.assertIn("compute budget", text)
+        self.assertNotIn("Lower the resolution, or pick", text)
+
+    def test_with_a_budget_the_advice_changes(self):
+        """Le moteur a fait ce qu'il a pu : là seulement il faut renoncer à
+        quelque chose."""
+        text = str(self._error(["sd-cli", "--max-vram", "-1"]))
+        self.assertIn("Lower the resolution", text)

@@ -500,7 +500,16 @@ def generate(
         # d'échouer — un rechargement complet du modèle pour rater pareil.
         req.params_backend = (_te_on_cpu(params_backend)
                               if relief else params_backend)
-        req.max_vram = base_max_vram
+        # Et un BUDGET, si l'utilisateur n'en avait pas posé. C'est l'autre
+        # moitié du problème, et souvent la seule qui compte : sans
+        # `--max-vram`, le moteur découpe son graphe sans cible et découvre au
+        # troisième segment qu'il ne tient pas. Sortir l'encodeur ne l'aide
+        # pas — l'encodeur a déjà fini de travailler quand la diffusion
+        # échoue. On ne touche pas à un budget CHOISI : celui-là est une
+        # décision, pas un défaut.
+        req.max_vram = (base_max_vram or
+                        sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO)) if relief \
+            else base_max_vram
         return _run_attempt()
 
     def _run_attempt() -> list[Path]:
@@ -537,12 +546,17 @@ def generate(
         if flags.get("clip_on_cpu") and not auto_fit:
             raise
         if log:
-            log("↻ Not enough GPU memory — retrying with a tighter budget "
-                f"(--max-vram -{_OOM_RELIEF_SPARE_GIB:g}), so automatic "
-                "placement moves more weights out of the card."
-                if auto_fit else
-                "↻ Not enough GPU memory — retrying with the text encoder in "
-                "RAM (--clip-on-cpu).")
+            if auto_fit:
+                log("↻ Not enough GPU memory — retrying with a tighter budget "
+                    f"(--max-vram -{_OOM_RELIEF_SPARE_GIB:g}), so automatic "
+                    "placement moves more weights out of the card.")
+            elif base_max_vram:
+                log("↻ Not enough GPU memory — retrying with the text encoder "
+                    "in RAM (--clip-on-cpu).")
+            else:
+                log("↻ Not enough GPU memory — retrying with a compute budget "
+                    "(--max-vram auto) so the engine can cut its graph to "
+                    "fit, and with the text encoder in RAM.")
         paths = _attempt(True)
 
     if save_prompt and paths:
