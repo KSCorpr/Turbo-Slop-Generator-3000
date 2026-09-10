@@ -178,6 +178,67 @@ base_models:
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
     vram_min_gb: 6
 
+  # --------------------------------------------------------------------------
+  #  VIDÉO. `kind: video` n'est pas une étiquette : c'est ce qui empêche ce
+  #  modèle d'apparaître là où on attend une image. Outpaint, ADetailer, la
+  #  passe HD et le banc de mesure lisent tous le catalogue et proposeraient
+  #  sinon « Wan 2.2 » comme moteur d'image — un choix qui ne peut que rater.
+  #  Le catalogue de téléchargement, l'inventaire disque et la détection des
+  #  modèles orphelins, eux, le voient : ce sont les seuls endroits qui
+  #  demandent TOUT le catalogue.
+  - id: wan22-ti2v-5b
+    kind: video
+    name: "Wan 2.2 TI2V 5B"
+    family: wan22
+    tags: [vidéo, texte→vidéo, image→vidéo, apache-2.0]
+    description: >
+      Wan 2.2 TI2V 5B en GGUF — **texte → vidéo** et **image → vidéo** dans un
+      seul modèle, nativement dans sd.cpp (`-M vid_gen`). Diffusion Q4_K_M
+      ≈ 3,4 Go, VAE 1,4 Go, encodeur **umt5-xxl** déchargé en RAM : la carte
+      ne porte que 4,8 Go, donc ça tient sur 11 Go comme sur 12 Go.
+      **Apache-2.0 de bout en bout** (modèle, quantifications, encodeur) —
+      comme Z-Image Turbo, donc sans réserve pour un usage commercial.
+      Le nombre d'images est aligné sur **4n+1** par le moteur (33, 65, 81,
+      121) : c'est la contrainte du VAE temporel de Wan, pas un choix.
+    sources:
+      diffusion:
+        # QuantStack : l'échelle complète Q2_K → Q8_0, avec des tailles bien
+        # distinctes. C'est le dépôt que la doc sd.cpp elle-même désigne.
+        repo: QuantStack/Wan2.2-TI2V-5B-GGUF
+        match: "Wan2.2-TI2V-5B-{quant}.gguf"
+        quantizable: true
+      vae:
+        # Le VAE 2.2 (et PAS celui de Wan 2.1, qui sert à tous les autres
+        # modèles Wan) : TI2V 5B est le seul à utiliser celui-ci. Il vit dans
+        # le même dépôt que la diffusion, donc un seul dossier local.
+        repo: QuantStack/Wan2.2-TI2V-5B-GGUF
+        match: "VAE/Wan2.2_VAE.safetensors"
+      t5xxl:
+        # umt5-xxl : l'encodeur de texte de toute la famille Wan, passé à
+        # `--t5xxl`. Quantifié selon la RAM comme les autres encodeurs.
+        repo: city96/umt5-xxl-encoder-gguf
+        match: "umt5-xxl-encoder-{enc_quant}.gguf"
+        quantizable: true
+    defaults:
+      # Réglages de docs/wan.md : euler, cfg 6.0, flow-shift 3.0. Les 20 pas
+      # sont le défaut du moteur, que la doc ne remplace pas.
+      steps: 20
+      cfg_scale: 6.0
+      sampler: euler
+      scheduler: auto
+      flow_shift: 3.0
+      width: 704
+      height: 1280
+      video_frames: 33
+      fps: 24
+      supports_negative: true
+    presets:
+      - {name: "🎬 Essai (33 images ≈ 1,4 s)", steps: 20, cfg_scale: 6.0, video_frames: 33,  width: 704, height: 1280}
+      - {name: "Court (65 images ≈ 2,7 s)",    steps: 20, cfg_scale: 6.0, video_frames: 65,  width: 704, height: 1280}
+      - {name: "Standard (121 images ≈ 5 s)",  steps: 20, cfg_scale: 6.0, video_frames: 121, width: 704, height: 1280}
+      - {name: "Léger (480×832, 33 images)",   steps: 20, cfg_scale: 6.0, video_frames: 33,  width: 480, height: 832}
+    vram_min_gb: 10
+
 
 
 # ============================================================================

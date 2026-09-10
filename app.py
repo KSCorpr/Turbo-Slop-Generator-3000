@@ -214,6 +214,7 @@ from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
 from atelier.ui.theme import CSS, theme
 from atelier.ui.toolkit_tab import build_toolkit_tab
+from atelier.ui.video_tab import build_video_tab
 from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
@@ -336,6 +337,14 @@ def build_app() -> gr.Blocks:
                                        tabs=tabs, parent_tabs=tool_tabs)
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,
                                      parent_tabs=tool_tabs)
+                    # « 🎬 Video » vit ici et pas à la racine. Elle PRODUIT,
+                    # donc la règle de rangement la mettrait en haut — mais la
+                    # barre racine porte déjà sept onglets, et au-delà Gradio
+                    # replie les derniers dans un menu « … » où plus personne
+                    # ne les trouve. Sa voisine « Image → 3D » est là pour la
+                    # même raison, et pour la même parenté : les deux
+                    # fabriquent autre chose qu'une image.
+                    build_video_tab(parent_tabs=tool_tabs)
 
             with gr.Tab("⚙️ System", id="system"):
                 with gr.Tabs():

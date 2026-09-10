@@ -518,6 +518,123 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     return cmd
 
 
+# --------------------------------------------------------------------------- #
+#  VIDÉO (sd.cpp -M vid_gen)
+#
+#  Même moteur, même binaire, mêmes GGUF : ce n'est pas un second backend, mais
+#  un autre mode du premier. D'où l'héritage plutôt qu'une structure parallèle
+#  — tout ce que `memory_args` sait faire du placement mémoire vaut ici sans
+#  qu'une ligne soit recopiée, et c'est cette copie-là qui avait divergé la
+#  dernière fois (voir memory_args).
+# --------------------------------------------------------------------------- #
+
+#  Sorties possibles, et pourquoi trois.
+#
+#  sd.cpp encode lui-même : AUCUN ffmpeg à installer, ce qui est la raison
+#  pour laquelle cet onglet peut exister dans une application sans console.
+#  Mais il n'écrit pas du H.264 : selon l'extension c'est du VP8 (.webm), du
+#  Motion-JPEG (.avi) ou une suite d'images. Les trois répondent à trois
+#  besoins réellement différents, donc on les propose au lieu d'en choisir un :
+#
+#   · .webm — léger, lisible par le navigateur, donc le seul qui s'affiche
+#     dans l'onglet. C'est le défaut ;
+#   · .avi  — Motion-JPEG : chaque image est un JPEG, donc gros fichier, mais
+#     tout logiciel de montage le lit ;
+#   · .png  — la suite d'images elle-même, sans compression : le master.
+#
+#  Aucun des trois n'est ce qu'Adobe Stock demande (H.264/ProRes en MP4/MOV).
+#  La conversion se fait au montage ; l'application ne prétend pas la faire.
+VIDEO_FORMATS = (
+    ("Video — .webm (light, plays here)", "webm"),
+    ("For editing — .avi (Motion-JPEG, opens in any editor)", "avi"),
+    ("Image sequence — .png (lossless master)", "png"),
+)
+
+#  Le VAE temporel de Wan travaille par groupes de 4 images plus une : 33, 65,
+#  81, 121 sont exacts, 50 ne l'est pas. sd.cpp RÉALIGNE tout seul
+#  (`align_video_frames`), donc demander 50 ne casse rien — mais l'interface
+#  annoncerait une durée que la vidéo n'aurait pas. On aligne donc ici, avant
+#  d'écrire quoi que ce soit à l'écran.
+VIDEO_FRAME_STEP = 4
+
+
+def align_video_frames(frames: int) -> int:
+    """Le 4n+1 le plus proche par le bas, minimum 1 image."""
+    if frames <= 1:
+        return 1
+    return ((frames - 1) // VIDEO_FRAME_STEP) * VIDEO_FRAME_STEP + 1
+
+
+def video_duration_s(frames: int, fps: int) -> float:
+    return align_video_frames(frames) / float(fps or 24)
+
+
+@dataclass
+class VidRequest(GenRequest):
+    """Une demande de vidéo : une GenRequest, plus le temps."""
+    video_frames: int = 33
+    fps: int = 24
+    #  Image de DÉPART (image → vidéo). Distincte de `init_image`, qui en
+    #  img2img veut dire « repeins par-dessus, à hauteur de --strength ». Ici
+    #  l'image est la première du film, pas un brouillon : aucun `--strength`
+    #  ne doit partir avec elle.
+    start_image: Path | None = None
+
+
+def video_supported(sd_cli: Path | None) -> bool:
+    """Ce binaire sait-il faire de la vidéo ?
+
+    On le demande au binaire plutôt que de le déduire d'un numéro de version :
+    la même version porte des builds qui n'offrent pas les mêmes choses.
+    """
+    return "--video-frames" in supported_options(sd_cli)
+
+
+def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
+    _require(req.diffusion_model, req.vae, req.t5xxl, req.text_encoder,
+             req.start_image)
+    if not video_supported(sd_cli):
+        raise EngineError(
+            "This engine cannot generate video (`--video-frames` is missing). "
+            "Run update.bat — it brings the engine in line with the code.")
+
+    frames = align_video_frames(req.video_frames)
+    cmd: list[str] = [str(sd_cli), "--mode", "vid_gen",
+                      "--diffusion-model", str(req.diffusion_model)]
+    if req.vae:
+        cmd += ["--vae", str(req.vae)]
+    if req.t5xxl:
+        cmd += ["--t5xxl", str(req.t5xxl)]
+    if req.text_encoder:
+        cmd += ["--llm", str(req.text_encoder)]
+    cmd += list(req.extra_flags)
+    cmd += ["-p", req.prompt]
+    if req.negative and req.cfg_scale > 1.0:
+        cmd += ["-n", req.negative]
+    cmd += [
+        "--cfg-scale", f"{req.cfg_scale}",
+        "--steps", f"{req.steps}",
+        "--sampling-method", req.sampler,
+        "-W", f"{req.width}", "-H", f"{req.height}",
+        "-s", f"{req.seed}",
+        "--video-frames", f"{frames}",
+        "--fps", f"{req.fps}",
+    ]
+    if req.schedule:
+        cmd += ["--scheduler", req.schedule]
+    if req.flow_shift and req.flow_shift > 0:
+        cmd += ["--flow-shift", f"{req.flow_shift}"]
+    if req.start_image:
+        #  « -i » sans « --strength » : en vid_gen c'est la première image du
+        #  film, pas une base à repeindre.
+        cmd += ["-i", str(req.start_image)]
+    if req.lora_dir:
+        cmd += ["--lora-model-dir", str(req.lora_dir)]
+    cmd += memory_args(sd_cli, req)
+    cmd += ["-o", str(output), "-v"]
+    return cmd
+
+
 def build_convert_cmd(sd_cli: Path, input_model: Path, output_model: Path,
                       qtype: str) -> list[str]:
     """Conversion/quantification d'un modèle en GGUF (sd.cpp --mode convert).

@@ -104,7 +104,7 @@ def items(prefs: dict | None = None) -> list[Item]:
     # tous, et il faut que ce soit écrit avant le clic, pas découvert après.
     seen: dict[Path, int] = {}          # dossier -> index de l'élément porteur
     shared_names: dict[int, list[str]] = {}
-    for m in registry.load_base_models(prefs):
+    for m in registry.load_base_models(prefs, kind=registry.EVERYTHING):
         model_dirs = _model_dirs_for(m)
         new = [d for d in model_dirs if d not in seen]
         if new:

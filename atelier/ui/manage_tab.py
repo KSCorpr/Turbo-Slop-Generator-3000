@@ -532,7 +532,19 @@ def build_manage_tab():
                 "family: a GGUF ESRGAN or a **modern** model (DAT, SPAN, "
                 "PLKSR…), which hands SDXL a cleaner base to refine."
                 "\n\nEach tool installs in one "
-                "click (PyTorch on demand — *Details* needs none).")
+                "click (PyTorch on demand — *Details* needs none).\n\n"
+                "**🎬 Video** sits in the same group and is the odd one out: "
+                "it PRODUCES rather\nthan retouches. It is here because the "
+                "root tab bar is already full — past seven\ntabs Gradio "
+                "folds the last ones into a “…” menu where nobody finds "
+                "them.\nWan 2.2 TI2V 5B, through the same sd.cpp binary and "
+                "the same GGUF weights as\nthe images (`-M vid_gen`): no "
+                "second engine, no PyTorch, nothing extra to\ninstall. Load "
+                "a starting frame and it animates from there; leave it empty "
+                "and\nit starts from the prompt. Lengths are 33 / 65 / 81 / "
+                "121 frames because Wan's\ntemporal VAE works in groups of "
+                "four plus one — the durations shown are\ntherefore the real "
+                "ones. Expect **minutes per clip**, not seconds.")
 
         with gr.Accordion("🔄 Update the app",
                           open=False):

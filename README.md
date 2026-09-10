@@ -90,6 +90,7 @@ The exact tab tree, since two of the six are containers:
   - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
 - [Outpaint](#outpaint)
 - [Image → 3D](#image--3d)
+- [Video](#video)
 - [Toolkit](#toolkit)
   - [Image → prompt](#-image--prompt)
   - [Layers → PSD](#layers--psd)
@@ -1443,6 +1444,90 @@ dead end and no longer is.
 
 ---
 
+## Video
+
+**🧰 Tools → 🎬 Video** generates a short film with **Wan 2.2 TI2V 5B**, through
+the **same sd.cpp binary and the same GGUF machinery as the images** — `-M
+vid_gen`, no second backend, no PyTorch, nothing extra to install.
+
+Text → video and image → video are the *same model*: load a starting frame and
+it animates from there, leave the field empty and it starts from the prompt
+alone. The tab does not ask which mode you want; it looks at the field.
+
+### Why it fits on 11–12 GB when the earlier attempts did not
+
+This file has existed twice before, for LTX-2.3 and then MiniMax-H3, and was
+removed both times for one reason that had nothing to do with the interface:
+**their text encoder did not fit on a 12 GB card**, so there was nothing to
+show. Wan changes the arithmetic, and the three numbers have to be read
+together:
+
+| piece | size (Q4_K_M) | lives |
+| --- | --- | --- |
+| diffusion | 3.4 GB | on the card |
+| VAE 2.2 | 1.4 GB | on the card |
+| umt5-xxl text encoder | 3.7 GB | **in system RAM** (`te=cpu`) |
+
+The card therefore carries **4.8 GB of weights, not 8.5**. That is the same
+split the images already use, for the same reason — see
+[Machine profiles](#machine-profiles--one-button-per-known-tower).
+
+Upstream's own documentation warns that "Wan models vae requires really much
+VRAM". **That warning is older than the code.** sd.cpp now retries a failed VAE
+decode by tiling in *time* as well as in space
+(`prepare_vae_decode_retry_tiling`, PRs #1926 and #1932), so a current engine
+recovers by itself where the warning told you to fall back to a degraded TAE.
+The tab forces `--vae-tiling` on and supplies a `--max-vram` budget even when
+you have not set one: decoding is the only moment when every frame exists at
+once, and it is the one cost that does not show up in any weight file's size.
+
+### Length is 4n+1, and that is not a preference
+
+Wan's temporal VAE works in groups of four frames plus one. 33, 65, 81 and 121
+are exact; 50 is not — sd.cpp silently realigns it to 49. So the tab offers the
+exact values with their real duration next to them, instead of a "seconds"
+slider that would promise 2.0 s and hand you 1.9 s. At 24 fps:
+
+| frames | duration |
+| --- | --- |
+| 33 | 1.4 s |
+| 65 | 2.7 s |
+| 81 | 3.4 s |
+| 121 | 5.0 s |
+
+Native frame size is **704×1280** (or its transpose). 480×832 is there to try an
+idea quickly: four times fewer pixels per frame, so roughly four times less
+time.
+
+### What comes out, and what Adobe Stock wants
+
+sd.cpp encodes the file itself — **no ffmpeg to install**, which is the reason
+this tab can exist in an application with no console. But it does not write
+H.264. Three outputs, for three genuinely different needs:
+
+- **`.webm`** (VP8) — light, plays in the browser, so the only one that shows in
+  the tab. The default.
+- **`.avi`** (Motion-JPEG) — every frame is a JPEG, so the file is large, but
+  any editor opens it.
+- **`.png`** — the frame sequence itself, uncompressed: the master. Written to
+  its own folder so 121 files do not scatter through `outputs/`.
+
+None of the three is what Adobe Stock asks for (H.264 or ProRes in MP4/MOV).
+That conversion belongs in your editor; the app does not pretend to do it.
+
+**Licence**: Wan 2.2 is **Apache-2.0**, and so are the GGUF quantizations and
+the umt5 encoder — end to end, like Z-Image Turbo. Nothing in the chain
+restricts selling the result.
+
+### The one honest caveat
+
+A video is many images. On a 3060 at 704×1280, 20 steps, expect **minutes per
+clip**, not seconds — and 121 frames costs roughly four times what 33 costs.
+Start at 33 frames and 480×832 to find out whether the prompt works at all,
+then re-run the good ones long.
+
+---
+
 ## Toolkit
 
 One-click installable utilities (models pulled from Hugging Face, run as
@@ -1784,6 +1869,12 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
+**Wan 2.2 TI2V 5B** (family `wan22`, sd.cpp `-M vid_gen`) — **video**
+- diffusion — [`QuantStack/Wan2.2-TI2V-5B-GGUF`](https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF) (the repo sd.cpp's own docs point at; full Q2_K → Q8_0 ladder)
+- VAE — same repo, `VAE/Wan2.2_VAE.safetensors` (the **2.2** VAE — every other Wan model uses the 2.1 one)
+- text encoder — [`city96/umt5-xxl-encoder-gguf`](https://huggingface.co/city96/umt5-xxl-encoder-gguf) (via `--t5xxl`, offloaded to RAM)
+- **Apache-2.0** throughout. See [Video](#video).
+
 **Z-Image Turbo** (family `z_image`, sd.cpp)
 - diffusion — [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (6B distilled, 8 steps, CFG 1.0)
 - text encoder — [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (via `--llm`, offloaded to RAM)
@@ -1867,6 +1958,7 @@ atelier/
     highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
     outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
     trellis.py               # trellis.cpp server: image → GLB, transient or resident
+    video.py                 # 🎬 Wan 2.2 through sd.cpp `-M vid_gen`, same weights machinery
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces…)
     masks.py                 # mask cleanup and layer naming — pure numpy
     psd.py                   # PSD writer — pure Python, no compiled dependency
@@ -1876,7 +1968,7 @@ atelier/
     widgets.py               # shared image/gallery button lists (Gradio 6)
     preview.py               # data: URI fallback preview
     generate_tab.py · xanax_tab.py (hard-wired style) · library_tab.py
-    toolkit_tab.py · outpaint_tab.py · threed_tab.py
+    toolkit_tab.py · outpaint_tab.py · threed_tab.py · video_tab.py
     settings_tab.py · manage_tab.py · convert_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary

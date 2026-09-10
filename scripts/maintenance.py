@@ -82,9 +82,18 @@ REMOVED_FEATURES = [
      "files": ["update-engine-ci.bat",
                ".github/workflows/build-sdcpp.yml"],
      "dirs": []},
-    {"name": "Video generation (LTX-2.3, MiniMax-H3)",
-     "files": ["atelier/ui/video_tab.py", "atelier/engine/video.py"],
-     "dirs": []},
+    #  L'ancienne génération vidéo (LTX-2.3, MiniMax-H3) était déclarée ici,
+    #  par les deux noms `atelier/ui/video_tab.py` et
+    #  `atelier/engine/video.py`. Ces deux fichiers EXISTENT à nouveau, pour
+    #  Wan 2.2 — c'est le cas de reprise de nom décrit en haut de ce fichier,
+    #  et cette fois il s'est produit à l'endroit exact où l'avertissement
+    #  l'annonçait.
+    #
+    #  `_still_in_service` aurait refusé de les supprimer, puisque le code
+    #  actuel les importe. Mais une entrée qui ne peut plus rien supprimer
+    #  n'est pas inoffensive : elle imprime à chaque passage un avertissement
+    #  disant qu'un fichier retiré est toujours utilisé, ce qui décrit une
+    #  erreur qui n'existe pas. On la retire.
     # La sonde MiniMax-H3 a répondu à sa question (l'encodeur ne tient pas sur
     # une carte de 12 Go) ; elle est retirée avec le reste de MiniMax. Déclarée
     # ici pour que les copies déjà installées soient nettoyées à la maintenance.
@@ -359,7 +368,9 @@ def _expected_model_dirs() -> set[str]:
     from atelier import registry, settings
     prefs = settings.load_prefs()
     repos: set[str] = set()
-    for m in registry.load_base_models(prefs):
+    # TOUT le catalogue : un modèle vidéo absent d'ici passerait pour un
+    # dossier orphelin, et la purge proposerait de l'effacer.
+    for m in registry.load_base_models(prefs, kind=registry.EVERYTHING):
         repos.update(c.repo for c in m.components)
     up = registry.upscaler_config().get("repo")
     if up:
