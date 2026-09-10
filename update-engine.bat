@@ -3,6 +3,9 @@ REM ===========================================================================
 REM  Met a jour le moteur stable-diffusion.cpp (sd-cli) vers la DERNIERE version.
 REM  A lancer quand un nouveau modele (ex. Krea 2) n'est pas reconnu par le
 REM  moteur actuel ("get sd version from file failed").
+REM
+REM  A SAVOIR : update.bat le fait deja tout seul, apres avoir mis a jour le
+REM  code. Ce bouton-ci sert a forcer le moteur SANS toucher au code.
 REM ===========================================================================
 cd /d "%~dp0"
 set "PY=%~dp0python\python.exe"

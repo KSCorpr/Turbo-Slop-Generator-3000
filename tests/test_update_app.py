@@ -205,3 +205,92 @@ class MissingFilesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChainedMaintenanceTests(unittest.TestCase):
+    """Mettre à jour le code ne suffisait jamais, et rien ne le disait.
+
+    Le nouveau code attend parfois une option que l'ancien moteur n'a pas
+    (`update-engine.bat`), et une fonction retirée laisse ses fichiers derrière
+    elle (`maintenance.bat`). Trois boutons, dans un ordre que rien
+    n'indiquait, dont deux qu'on oubliait — donc un moteur en retard et un
+    dossier qui grossit. `update.bat` enchaîne les trois lui-même.
+    """
+
+    def _main(self, argv, code=0):
+        """Lance main() en neutralisant update() et le sous-processus."""
+        calls = {}
+
+        def fake_update(**kwargs):
+            calls["update"] = kwargs
+            return code
+
+        def fake_call(cmd, **kwargs):
+            calls.setdefault("subprocess", []).append(list(cmd))
+            return 0
+
+        import subprocess as sp
+        with patch.object(U, "update", fake_update), \
+             patch.object(U.sys, "argv", ["update_app.py", *argv]), \
+             patch.object(sp, "call", fake_call):
+            calls["exit"] = U.main()
+        return calls
+
+    def test_a_plain_update_also_does_the_engine_and_the_cleanup(self):
+        calls = self._main([])
+        cmd = calls["subprocess"][0]
+        self.assertIn("maintenance.py", cmd[1].replace("\\", "/"))
+        self.assertIn("--update-engine", cmd)
+        self.assertIn("--ask-purge", cmd)
+
+    def test_the_cleanup_runs_in_a_fresh_process_not_an_import(self):
+        """Ce n'est PAS un détail de style.
+
+        `update_app.py` vient de réécrire `maintenance.py` sur le disque. Un
+        import exécuterait le code chargé AVANT la mise à jour : l'ancienne
+        table des fonctions retirées, l'ancienne liste des capacités attendues
+        du moteur — c'est-à-dire précisément la version dont on vient de se
+        débarrasser. Seul un processus neuf relit le disque.
+        """
+        calls = self._main([])
+        self.assertEqual(calls["subprocess"][0][0], U.sys.executable)
+        # Et l'inverse, lu dans l'arbre plutôt que dans sys.modules : un autre
+        # test du même fichier peut très bien avoir importé `maintenance` de
+        # son côté, ce qui rendrait la vérification dépendante de l'ordre.
+        import ast, inspect
+        tree = ast.parse(inspect.getsource(U.run_maintenance))
+        imported = {a.name for n in ast.walk(tree)
+                    if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for a in n.names}
+        imported |= {n.module for n in ast.walk(tree)
+                     if isinstance(n, ast.ImportFrom) and n.module}
+        self.assertNotIn("maintenance", imported)
+        self.assertIn("subprocess", imported)
+
+    def test_the_engine_comes_before_the_app_is_restarted(self):
+        """L'ordre est le sujet : le ménage porte sur le code POSÉ."""
+        import inspect
+        src = inspect.getsource(U.main)
+        self.assertLess(src.index("update("), src.index("run_maintenance()"))
+
+    def test_check_mode_chains_nothing(self):
+        """`--check` promet de ne rien écrire. Mettre à jour le moteur
+        derrière serait exactement ce qu'il promet de ne pas faire."""
+        self.assertEqual(self._main(["--check"]).get("subprocess"), None)
+
+    def test_code_only_is_the_old_behaviour_kept(self):
+        self.assertEqual(self._main(["--code-only"]).get("subprocess"), None)
+
+    def test_a_failed_update_does_not_start_the_cleanup(self):
+        """Après un retour en arrière automatique, il n'y a rien à ranger —
+        et lancer la maintenance n'ajouterait que du bruit sous l'erreur."""
+        calls = self._main([], code=1)
+        self.assertIsNone(calls.get("subprocess"))
+        self.assertEqual(calls["exit"], 1)
+
+    def test_a_missing_maintenance_script_is_said_not_crashed(self):
+        """Une extraction partielle laisse un dossier incomplet. Le code, lui,
+        est posé : l'utilisateur doit l'apprendre, pas voir une trace."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(U, "ROOT", Path(tmp)):
+                self.assertEqual(U.run_maintenance(), 1)

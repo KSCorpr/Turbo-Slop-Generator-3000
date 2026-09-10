@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from .. import settings
-from . import release_resident_engine
 
 
 class EngineError(RuntimeError):
@@ -666,11 +665,6 @@ def child_env_for(gpu_index: int | None,
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
         gpu_index: int | None = None, all_gpus: bool = False) -> None:
     global _CANCELLED
-    # Le moteur résident garde son modèle en VRAM. Une commande sd-cli lancée
-    # par-dessus (LoRA, passe HD, upscale ESRGAN — tout ce que le serveur ne
-    # sert pas) tomberait sur une carte déjà pleine. Il rend la place ici et se
-    # rechargera à la prochaine image qu'il sait servir.
-    release_resident_engine("a command needs the whole card", log)
     env = child_env_for(gpu_index, all_gpus)
     if log:
         log("$ " + " ".join(_q(c) for c in cmd))

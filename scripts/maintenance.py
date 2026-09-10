@@ -106,6 +106,21 @@ REMOVED_FEATURES = [
      "files": [], "dirs": []},
     # Le moteur PyTorch de la branche Test7000, retiré à son tour. Aucune
     # DONNÉE propre : il lisait les mêmes fichiers GGUF que le moteur natif.
+    # Le moteur RÉSIDENT (`sd-server`, le modèle gardé en VRAM entre deux
+    # images) et le PARTAGE RÉSEAU (`run-lan`). Aucune donnée propre : le
+    # serveur lisait les mêmes GGUF que sd-cli, et le partage n'était qu'un
+    # drapeau au lancement.
+    #
+    # ⚠️ `atelier/engine/sdserver.py` reparaît ici, et c'est précisément le
+    # cas d'école décrit en haut de ce fichier : ce nom a déjà été listé,
+    # supprimé, puis REPRIS par un nouveau module. C'est `_still_in_service`
+    # qui rend l'entrée sûre — elle demande au code actuel s'il importe le
+    # fichier avant de l'effacer. Sans ce garde-fou, ne pas écrire cette ligne
+    # serait plus prudent que de l'écrire.
+    {"name": "Resident engine (sd-server) and LAN sharing",
+     "files": ["atelier/engine/sdserver.py", "tests/test_sdserver.py",
+               "run-lan.bat", "run-lan.sh"],
+     "dirs": []},
     {"name": "PyTorch generation engine",
      "files": ["scripts/setup_torch_engine.py", "setup-torch-engine.bat",
                "README-TORCH.md", "config/models_torch.yaml",
@@ -769,8 +784,12 @@ USAGE = """Maintenance — Turbo Slop Generator 3000
                                     and the orphans
   maintenance.bat --all             everything: purge + engine update
                                     ("after an update, all tidy")
+  maintenance.bat --ask-purge       like --purge, but MEASURES first and asks
+                                    before deleting anything (what update.bat
+                                    chains onto itself)
 
-To update the APPLICATION itself: update.bat (this script downloads nothing).
+To update the APPLICATION itself: update.bat — which then runs this script for
+you, engine included. This one downloads no code, only the engine.
 
 (./maintenance.sh … on Linux/Mac)
 Never touches models/custom/, loras/, outputs/, userdata/, python/.
@@ -861,37 +880,61 @@ def confirm_purge(total: int, read=input) -> bool:
     return answer in ("y", "yes", "o", "oui")
 
 
+def parse_args(argv: list, ask=None) -> tuple[bool, bool, bool, bool]:
+    """(supprimer, mettre à jour le moteur, purger les modèles, différer).
+
+    Sortie de `main` pour être LISIBLE d'un test : c'est ici que se décide si
+    plusieurs gigaoctets partent sans un mot ou après une question, et cette
+    décision-là ne doit pas se vérifier en relisant le code.
+
+    Trois façons de demander une suppression, et elles ne se valent pas :
+
+      · `--purge` / `--all` — tapée à la main : celui qui l'a écrite a décidé,
+        on supprime directement ;
+      · le MENU (sans argument, devant un terminal) — on MESURE d'abord, on
+        montre le total, on demande ;
+      · `--ask-purge` — ce que `update.bat` enchaîne. Une mise à jour ne peut
+        pas décider toute seule d'effacer plusieurs gigaoctets, ni les laisser
+        traîner sans le dire : même traitement en deux temps que le menu. Sans
+        terminal (sortie redirigée, tâche planifiée), `confirm_purge` reçoit
+        un EOF et répond non — le total reste affiché, rien n'est supprimé.
+
+    `--prune-models` est conservé comme alias historique (il ne visait que les
+    modèles).
+    """
+    everything = "--all" in argv
+    ask_purge = "--ask-purge" in argv
+    purge = everything or "--purge" in argv or ask_purge
+    update_engine = everything or "--update-engine" in argv
+    prune_models = purge or "--prune-models" in argv
+    #  Menu SEULEMENT sans argument et devant un vrai terminal. Un appel
+    #  automatisé — ou une sortie redirigée — ne doit jamais rester bloqué
+    #  sur une question que personne ne lira : `ask` vaut alors None.
+    asked = False
+    if len(argv) == 1 and ask is not None:
+        purge, update_engine = ask()
+        prune_models = purge
+        asked = True
+    deferred = purge and (asked or ask_purge)
+    if deferred:
+        purge = prune_models = False
+    return purge, update_engine, prune_models, deferred
+
+
 def main() -> int:
-    # « --purge » supprime TOUT ce qui reste des fonctions retirées : dossiers
-    # d'add-ons, modèles orphelins, données laissées derrière. « --prune-models »
-    # est conservé comme alias historique (il ne visait que les modèles).
     if "--help" in sys.argv or "-h" in sys.argv:
         print(USAGE)
         return 0
-    everything = "--all" in sys.argv
-    purge = everything or "--purge" in sys.argv
-    update_engine = everything or "--update-engine" in sys.argv
-    prune_models = purge or "--prune-models" in sys.argv
-    #  Menu SEULEMENT sans argument et devant un vrai terminal. Un appel
-    #  automatisé — ou une sortie redirigée — ne doit jamais rester bloqué
-    #  sur une question que personne ne lira.
-    asked = False
-    if len(sys.argv) == 1 and sys.stdin is not None and sys.stdin.isatty():
-        purge, update_engine = ask_choice()
-        prune_models = purge
-        asked = True
-    #  Quand le choix vient du menu, la suppression se fait en DEUX temps :
-    #  la première passe mesure et montre, la confirmation décide, la seconde
-    #  supprime. En ligne de commande `--purge` reste direct : celui qui l'a
-    #  tapée a déjà décidé.
-    deferred_purge = purge and asked
-    if deferred_purge:
-        purge = prune_models = False
+    interactive = sys.stdin is not None and sys.stdin.isatty()
+    purge, update_engine, prune_models, deferred_purge = parse_args(
+        sys.argv, ask=ask_choice if interactive else None)
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
     modes = []
     if purge:
         modes.append("deleting what removed features left behind")
+    elif deferred_purge:
+        modes.append("measuring the leftovers, then asking before deleting")
     if update_engine:
         modes.append("engine update")
     if modes:

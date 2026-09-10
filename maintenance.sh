@@ -5,6 +5,7 @@
 #   ./maintenance.sh --update-engine  + aligne le moteur sd-cli sur le code
 #   ./maintenance.sh --purge          + supprime les donnees des fonctions retirees
 #   ./maintenance.sh --all            tout d'un coup
+# À savoir : ./update.sh lance déjà ce script, moteur compris.
 set -e
 cd "$(dirname "$0")"
 if [ -d venv ]; then

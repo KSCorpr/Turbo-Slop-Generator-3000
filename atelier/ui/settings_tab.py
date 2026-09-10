@@ -36,7 +36,6 @@ import threading
 import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, settings
-from ..engine import engine_build_source, resident_engine
 from ..i18n import t
 from . import widgets
 
@@ -46,36 +45,6 @@ QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
 # Préfixe des confirmations. Elles sont au passé et concrètes — « appliqué »,
 # pas « enregistré » : ce qu'on veut savoir, c'est que c'est FAIT.
 _OK = "✅ "
-
-
-def _resident_reason() -> str:
-    """Pourquoi le moteur résident n'est pas proposable — ou "" s'il l'est.
-
-    Première version : la case disparaissait purement et simplement. Résultat,
-    on cherche dans les Réglages une case dont on vient de lire la description,
-    sans jamais savoir ce qui manque. Une option absente doit dire ce qui
-    l'empêche, et le geste qui la débloque.
-    """
-    server = resident_engine()
-    if server is None:
-        return t("⚠️ **Resident engine unavailable**: the file "
-                 "`atelier/engine/sdserver.py` is missing. Your copy of the "
-                 "application is incomplete — download the archive again, "
-                 "**close the application**, then re-extract it.")
-    if server.available():
-        return ""
-    if engine_build_source() == "custom-ci":
-        # Le build maison a été retiré du projet : il n'empaquetait qu'un
-        # binaire sur les deux, et entretenir une deuxième chaîne de
-        # compilation pour ça ne valait pas son prix.
-        return t("⚠️ **Resident engine unavailable**: `sd-server` is not in "
-                 "`bin/`. Your engine comes from the project's former "
-                 "in-house build, which only packaged `sd.exe` and no longer "
-                 "exists. Run `update-engine.bat` to switch to the official "
-                 "binary, which contains both.")
-    return t("⚠️ **Resident engine unavailable**: `sd-server` is not in "
-             "`bin/`. Run `update-engine.bat` to reinstall the complete "
-             "engine.")
 
 
 def _said(msg: str):
@@ -105,7 +74,8 @@ def _save(**changes) -> dict:
     """Applique des changements aux préférences et renvoie le tout."""
     p = settings.load_prefs()
     # Nettoyage des anciens réglages moteur (serveur/ComfyUI, retirés).
-    for stale in ("engine", "use_sd_server", "sd_server_port", "comfyui_port"):
+    for stale in ("engine", "use_sd_server", "sd_server_port",
+                  "comfyui_port", "resident_engine"):
         p.pop(stale, None)
     p.update(changes)
     settings.save_prefs(p)
@@ -404,23 +374,6 @@ def build_settings_tab():
                     info=t("Requires the model to be kept in RAM. Without "
                            "that, the engine ignores the option."))
 
-            gr.Markdown(t(
-                "---\n**Resident engine** — today the engine starts, reads "
-                "the model, makes the image and exits: the loading is paid "
-                "again for **every** image. Ticked, the model stays loaded "
-                "between generations. That is pure gain when you generate one "
-                "image at a time to refine a prompt.\n\nIn exchange: **no "
-                "preview while it computes** (the image arrives all at once), "
-                "and the model occupies the card permanently — Toolkit tools "
-                "unload it by themselves when they need the GPU. LoRAs and "
-                "the HD pass automatically go back to the old mode."))
-            _no_resident = _resident_reason()
-            gr.Markdown(_no_resident, visible=bool(_no_resident))
-            resident = gr.Checkbox(
-                value=bool(prefs.get("resident_engine")),
-                label="Keep the model loaded between images",
-                visible=not _no_resident)
-
             # Confirmation LOCALE : la ligne d'état du haut est hors de l'écran
             # quand on coche quelque chose ici. Un réglage qui s'applique sans
             # rien dire de visible, c'est un réglage dont on doute.
@@ -517,23 +470,6 @@ def build_settings_tab():
         for comp in _expert:
             comp.change(_apply_expert, inputs=_expert,
                         outputs=[headline, bias_note, expert_status])
-
-        # Le moteur résident n'est PAS un réglage de sd.cpp : il ne doit donc
-        # pas basculer l'application en mode manuel comme le fait `_apply_expert`.
-        def _apply_resident(on):
-            _save(resident_engine=bool(on))
-            if on:
-                return _said(_OK + t("The model will stay loaded between "
-                                     "images. The first load will take as "
-                                     "long as it always has."))
-            server = resident_engine()
-            if server is not None:
-                server.stop()
-            return _said(_OK + t("Resident engine off, the card's memory is "
-                                 "released."))
-
-        resident.change(_apply_resident, inputs=[resident],
-                        outputs=[expert_status])
 
         # ---- Theme, accounts ---------------------------------------------- #
         def _apply_theme(th):

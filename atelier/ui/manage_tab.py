@@ -390,9 +390,7 @@ def build_manage_tab():
                 "(collapsed, optional) exposes the raw sd.cpp options for "
                 "when you\nwant to measure instead of trust: forced "
                 "quantization, memory flags, step\ncache, direct convolution, "
-                "compute budget (`--max-vram`), layer streaming, and\nthe "
-                "**resident engine** (keeps the model loaded between images — "
-                "no live\npreview in exchange).\n\n**🧮 Multi-GPU** (two or "
+                "compute budget (`--max-vram`) and layer\nstreaming.\n\n**🧮 Multi-GPU** (two or "
                 "more cards) offers two mutually exclusive\nstrategies: "
                 "*single card* (the reliable default) and *text encoder on "
                 "the second\ncard*. A third placement, **auto-fit**, is not "
@@ -539,7 +537,17 @@ def build_manage_tab():
         with gr.Accordion("🔄 Update the app",
                           open=False):
             gr.Markdown(
-                "**`update.bat` updates the application itself.** It "
+                "**`update.bat` is one button for three steps**, in this "
+                "order: the **code**,\nthen the **sd.cpp engine** brought in "
+                "line with that code, then the **cleanup**.\nUpdating the "
+                "code alone was never enough — the new code sometimes expects "
+                "an\nengine option the installed binary has never heard of, "
+                "and a removed feature\nleaves its files behind. Two extra "
+                "buttons, in an order nothing announced, that\neveryone "
+                "forgot.\n\nThe cleanup **measures first**: it shows the "
+                "total it could free and **asks**\nbefore deleting anything. "
+                "Answer no and nothing is deleted. `update.bat --code-only`\n"
+                "skips both extra steps.\n\n**The code step** "
                 "downloads the current code\nof **the branch this install "
                 "came from** — printed before anything is fetched, and "
                 "changed\nonly with `update.bat --branch <name>` — and "
@@ -568,19 +576,20 @@ def build_manage_tab():
                 "“Install” button again**; already-downloaded weights\nare "
                 "not fetched twice. `maintenance.bat` names precisely what is "
                 "stale, so you\ndo not have to guess.\n\n**Summary**: "
-                "`update.bat` for the app, `update-engine.bat` for "
-                "sd.cpp,\n`update-trellis.bat` for the 3D engine, "
-                "`maintenance.bat` when something feels\noff.")
+                "`update.bat` does the app, the sd.cpp engine and the "
+                "cleanup.\n`update-trellis.bat` does the **3D** engine, which "
+                "is a separate ~16 GB download\nand stays on its own button. "
+                "`update-engine.bat` and `maintenance.bat` still\nexist for "
+                "when you want one without the other.")
 
-        with gr.Accordion("🌐 Network, sharing & maintenance", open=False):
+        with gr.Accordion("🌐 Updating & maintenance", open=False):
             gr.Markdown(
                 "**Hugging Face endpoint** — an alternative mirror when HF is "
                 "blocked or slow on\nyour network.\n**Civitai token** — "
-                "needed to import some gated LoRAs.\n**LAN sharing** — "
-                "`run-lan.bat` exposes the app to other machines on the "
-                "local\nnetwork (mind your firewall).\n**`update.bat`** — "
-                "updates the application itself (the code), with no "
-                "manual\nre-download.\n**`maintenance.bat`** — checks the "
+                "needed to import some gated LoRAs.\n**`update.bat`** — "
+                "updates the application (the code), then the sd.cpp engine, "
+                "then\nruns the cleanup. No manual re-download.\n"
+                "**`maintenance.bat`** — checks the "
                 "installation, removes obsolete files, purges\ncaches, "
                 "verifies everything compiles. Never touches your models or "
                 "outputs.\n**`update-engine.bat`** — updates the sd.cpp "

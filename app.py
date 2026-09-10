@@ -346,53 +346,30 @@ def build_app() -> gr.Blocks:
     return demo
 
 
-def _print_lan_banner(port: int, auth: bool) -> None:
-    urls = [f"http://{ip}:{port}" for ip in net.lan_ips()]
-    line = "═" * 64
-    print("\n" + line)
-    print("  " + i18n.t("{app} is reachable on your local network!").format(
-        app=APP_NAME))
-    print("  " + i18n.t("Share this address with colleagues (Mac/PC, same "
-                        "Wi-Fi),"))
-    print("  " + i18n.t("to open in Safari or Chrome:"))
-    for u in urls or [f"http://<IP-de-ce-PC>:{port}"]:
-        print(f"      →  {u}")
-    if auth:
-        print("  " + i18n.t("(they will be asked for a username/password)"))
-    print("  " + i18n.t("If access fails: allow the port in the Windows "
-                        "firewall."))
-    print(line + "\n")
+#  L'application n'écoute QUE sur cette machine, et ce n'est pas un défaut de
+#  configuration : c'est le périmètre.
+#
+#  Elle a su s'exposer au réseau local (`run-lan.bat`, `--listen`) et publier un
+#  lien gradio.live (`--share`). Les deux sont retirés. Un partage réseau
+#  transforme un outil local en service : il faut alors un mot de passe qui
+#  vaille quelque chose, une règle de pare-feu, et se souvenir de ce que
+#  `allowed_paths` laisse lire à quiconque connaît l'URL — trois questions dont
+#  aucune n'a de bonne réponse par défaut, pour un usage que personne n'a.
+HOST = "127.0.0.1"
 
 
 def main():
     ap = argparse.ArgumentParser(description=f"{APP_NAME} {__version__}")
-    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=7860)
-    ap.add_argument("--share", action="store_true",
-                    help="lien public temporaire gradio.live")
-    ap.add_argument("--listen", action="store_true",
-                    help="expose on the local network (0.0.0.0)")
-    ap.add_argument("--auth", default=None,
-                    help="password-protect: user:password")
     args = ap.parse_args()
 
-    host = "0.0.0.0" if args.listen else args.host
-    auth = None
-    if args.auth and ":" in args.auth:
-        u, p = args.auth.split(":", 1)
-        auth = (u, p)
-
     demo = build_app().queue()
-    port = net.find_free_port(args.port, host=host)
-
-    if args.listen:
-        _print_lan_banner(port, auth is not None)
+    port = net.find_free_port(args.port, host=HOST)
 
     # `show_api` n'existe plus dans Gradio 6 : la visibilité de la page d'API
     # se règle écouteur par écouteur (`api_visibility`). Sans intérêt ici —
     # l'application est locale et ne publie rien.
-    demo.launch(server_name=host, server_port=port, share=args.share,
-                auth=auth, inbrowser=not args.listen,
+    demo.launch(server_name=HOST, server_port=port, inbrowser=True,
                 allowed_paths=settings.served_paths(), **presentation())
 
 

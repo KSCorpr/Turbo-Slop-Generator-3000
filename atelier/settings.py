@@ -128,9 +128,9 @@ def served_paths() -> list[str]:
     une copie de cache — reçoit un 403, donc une icône cassée côté navigateur.
     C'est le cas de tout ce que l'application produit elle-même.
 
-    Volontairement limité aux deux dossiers qui contiennent des IMAGES. En
-    partage réseau (`--listen`), cette liste est ce que la machine expose :
-    y ajouter models/ ou la racine du projet publierait bien plus que ça.
+    Volontairement limité aux deux dossiers qui contiennent des IMAGES : c'est
+    ce que le navigateur a le droit de lire par chemin. Y ajouter models/ ou la
+    racine du projet donnerait la même permission à tout le reste.
     """
     return [str(OUTPUT_DIR), str(TMP_DIR)]
 

@@ -78,7 +78,7 @@ The exact tab tree, since two of the six are containers:
 - [Hardware & optimization](#hardware--optimization)
   - [Samplers & schedulers](#samplers--schedulers)
   - [Multi-GPU](#multi-gpu)
-  - [One-shot CLI by default, resident engine on demand](#one-shot-cli-by-default-resident-engine-on-demand)
+  - [One shot per image, and nothing kept warm](#one-shot-per-image-and-nothing-kept-warm)
   - [Updating the engines](#updating-the-engines)
   - [Interface language & theme](#interface-language--theme)
 - [Upscaling](#upscaling)
@@ -96,7 +96,7 @@ The exact tab tree, since two of the six are containers:
   - [Prompt enhancer](#prompt-enhancer-ai)
 - [Convert to GGUF](#convert-to-gguf)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
-- [Sharing on your LAN](#sharing-on-your-lan)
+- [Why it only listens on 127.0.0.1](#why-it-only-listens-on-127001)
 - [Distributing a portable package](#distributing-a-portable-package)
 - [Models & sources](#models--sources)
 - [Project layout](#project-layout)
@@ -112,7 +112,7 @@ The exact tab tree, since two of the six are containers:
 ```bat
 install.bat      ::  portable Python + dependencies + GGUF engine (CUDA)
 run.bat          ::  launch the UI at http://127.0.0.1:7860
-update.bat       ::  update the app itself (code only, never your data)
+update.bat       ::  update everything: code, engine, then the cleanup
 ```
 Windows and Linux use the **CUDA** build; macOS uses the **Metal** one. The
 engine variant is derived from the platform, so no flag to remember.
@@ -164,11 +164,33 @@ current code from GitHub and applies it in place — no manual re-download, and
 nothing of yours is touched: `models/`, `loras/`, `outputs/`, `userdata/`,
 `tools_repo/`, `bin/` and `python/` are off limits by construction.
 
+**It is one button for the three steps, and that is deliberate.** Updating the
+code alone was never enough: the new code sometimes expects an `sd-cli` option
+the installed engine has never heard of (`update-engine.bat`), and a removed
+feature leaves its files behind (`maintenance.bat`). Three buttons, in an order
+nothing announced, two of which everyone forgot — so: an engine one release
+behind, and a folder that only grows. `update.bat` now runs them itself, in
+order:
+
+1. **the code**, from GitHub;
+2. **the sd.cpp engine**, brought in line with that code;
+3. **the cleanup** — it *measures* what removed features left behind, shows the
+   total, and **asks** before deleting anything. Answer no (or run it with no
+   terminal attached) and nothing is deleted; the total stays on screen.
+
 ```bat
-update.bat              ::  fetch and apply the current code
+update.bat              ::  code, then engine, then cleanup
+update.bat --code-only  ::  the code only (the former behaviour)
 update.bat --check      ::  show what would change, write nothing
-update.bat --rollback   ::  undo the last update
+update.bat --rollback   ::  undo the last code update
 ```
+
+Step 2 and 3 run in a **fresh process**, not an import — `update.bat` has just
+rewritten `maintenance.py` on disk, and an import would run the version it just
+replaced: the old table of removed features, the old list of expected engine
+capabilities. They are also skipped when there is nothing to tidy: after
+`--check` (which promises to write nothing) and after a failed update that
+rolled itself back.
 
 What it does that dropping a ZIP over the folder cannot:
 
@@ -185,8 +207,10 @@ What it does that dropping a ZIP over the folder cannot:
 
 Close the app first: Windows cannot replace a file that is open.
 
-**`update.bat` updates the code only.** The engines are separate — see
-[Updating the engines](#updating-the-engines).
+`update-engine.bat` and `maintenance.bat` still exist on their own, for when
+you want one without the other — see [Updating the engines](#updating-the-engines).
+The **3D** engine (trellis.cpp) is not in the chain: it is a separate ~16 GB
+download, so it stays behind its own button, `update-trellis.bat`.
 
 ### Maintenance
 If you instead update by extracting the repo ZIP over your existing folder
@@ -767,69 +791,33 @@ unknown argument. `update-engine.bat` to get them.
 > `GGML_CUDA_FA`), plus GGUF quantization and the step caches above — which is
 > where the actual speedups live.
 
-### One-shot CLI by default, resident engine on demand
-Generation runs through **one-shot `sd-cli`** by default: it gives the **live
-step preview**, and it is the path every feature is verified against.
+### One shot per image, and nothing kept warm
+Generation runs through **one-shot `sd-cli`**: the engine starts, reads the
+model, makes the image and exits. That is the whole model now, and there is no
+second path.
 
-This section used to claim that reload cost was "handled by the OS disk cache".
-A measured log says otherwise — 250 s for one Krea 2 Turbo image, of which
-**80 s re-reading the model** and **38 s encoding the prompt**, against 117 s of
-actual sampling. Paid again for every image. That claim was wrong and is gone.
+There was one. This section used to describe a **resident engine** — `sd-server`
+from the same sd.cpp archive, keeping the model loaded and answering local HTTP
+requests, so the second image started straight at sampling. The measurement that
+motivated it is real and still worth knowing: on one 250 s Krea 2 Turbo image,
+**80 s went to re-reading the model** and **38 s to encoding the prompt**,
+against 117 s of actual sampling — paid again for every image.
 
-So the **resident engine** is back as an opt-in, in **Settings → Expert**. It
-runs `sd-server` — the same sd.cpp, shipped in the same archive, already sitting
-in `bin/` — which keeps the model loaded and answers local HTTP requests
-(`/sdcpp/v1/img_gen`, then polling `/sdcpp/v1/jobs/{id}`). The second image
-starts straight at sampling. On the profile that motivated it — one image at a
-time, tweaking a prompt — that removes the 118 s of fixed cost per image.
+**It is removed anyway, and the cost was not in the server.** Keeping a model
+resident means every other part of the project has to remember to make it give
+the card back before taking it: `sd-cli` runs, every Toolkit tool, the 3D tab,
+the benchmark's own baseline. Miss one and you get an out-of-memory error whose
+cause is somewhere else entirely, at a moment that has nothing to do with it.
+On top of that it served only a narrow slice — LoRAs, the HD pass, step caches
+and auto-fit all fell back to `sd-cli` — and it cost the **live step preview**,
+which is the thing you actually watch while a slow image renders.
 
-`sd-server` ships in the same archive as `sd-cli` — verified by listing the
-contents of `sd-master-6b3edaa-bin-win-cuda12-x64.zip`, which contains
-`sd-cli.exe` **and** `sd-server.exe` — but **only from the official upstream
-release**, and only from a release recent enough to have the server example.
-When the option cannot be offered, Settings says which of the two pieces is
-missing and what to do about it, instead of hiding the checkbox.
+The reload cost is better attacked where it lives: a **lighter quantization**
+reads fewer bytes, and keeping the **text encoder on a card that is fast at
+fp16** removes the 38 s rather than hiding it (see
+[Machine profiles](#machine-profiles--one-button-per-known-tower)).
 
-It is deliberately **never mandatory**:
-- LoRAs, the HD pass, step caches and auto-fit are **not** served — they fall
-  back to `sd-cli` silently (the API ignores `<lora:…>` prompt tags by design,
-  so serving them would quietly produce an image *without* the LoRA);
-- **multi-reference editing is served**, but only when the running server
-  answers `/capabilities` with `ref_images`. It was refused outright until an
-  external review pointed out the field is in the API; the capability is now
-  asked for at request time rather than deduced from a version number, since
-  one release number covers official and self-built binaries that do not offer
-  the same things;
-- any startup failure, timeout or protocol surprise falls back to `sd-cli`
-  with the reason in the log;
-- **no live preview**: the image arrives at the end, and the log says so;
-- the model holds VRAM, so `sd-cli` runs, Toolkit tools and trellis 3D all
-  **stop the server first** and let it reload on the next image;
-- changing model, quantization or residency restarts it — serving a different
-  model than the one requested would be far worse than being slow. The **size
-  and date** of the weight files are part of that identity too: replacing a
-  GGUF at the same path used to leave the old one being served indefinitely,
-  with nothing in the log to say so.
-
-**Stopping is a process kill, and that is not laziness.** The API reports
-`cancel_generating: false` and answers **409 "job is currently generating and
-cannot be interrupted yet"**. The code used to post `/cancel`, swallow that 409
-(`HTTPError` subclasses `URLError`) and announce "cancelled" while the GPU kept
-going to completion. The protocol cannot interrupt, so pressing Stop terminates
-the server: VRAM back immediately, at the cost of a reload on the next image.
-An honest trade beats a button that lies.
-
-Two more guards, neither of which you should ever see: **one generation at a
-time** (two concurrent requests would fight over a server that holds one
-model), and a **two-hour job ceiling** — not to cut off a slow image, but so a
-server that has stopped answering eventually releases the interface instead of
-hanging it.
-
-The client also talks to `127.0.0.1` **through no proxy**. A corporate
-`HTTP_PROXY` in the environment would otherwise receive the request — init
-images and references included, base64-encoded in the payload.
-
-(The earlier ComfyUI backend stays removed: too fragile.)
+(The earlier ComfyUI backend stays removed too: too fragile.)
 
 ### Engine binary: official or self-built (CI)
 By default `update-engine.bat` downloads the **official** prebuilt binary from
@@ -1734,22 +1722,33 @@ produced upstream.
 
 ---
 
-## Sharing on your LAN
+## Why it only listens on 127.0.0.1
 
-Colleagues can generate from their **Mac/PC** using **your** machine and its GPU,
-without installing anything — just a link in a browser.
+The app binds the **loopback address and nothing else**. There is no flag to
+change that: `--listen`, `--share`, `--auth` and `--host` are gone, and so is
+`run-lan.bat`.
 
-1. On your PC, run **`run-lan.bat`** (instead of `run.bat`).
-2. The address to share is printed, e.g. `http://192.168.1.42:7860`.
-3. Colleagues on the **same Wi-Fi/network** open it in their browser. That’s it.
+It did offer LAN sharing — colleagues on the same Wi-Fi opening
+`http://192.168.1.42:7860` in a browser and generating on your GPU. Removing it
+is not a security posture, it is an honest accounting of what serving costs. An
+interface that accepts connections has to answer three questions, and none of
+them has a good default:
 
-Options:
-- **Password**: `run-lan.bat --auth name:password` (prompted on connect).
-- **Firewall**: on first launch Windows may ask to allow Python — accept (private
-  networks). Otherwise allow port 7860 in the firewall.
+- **who may connect** — the password was a `--auth user:password` typed on a
+  command line, in a project whose whole point is that the user never opens one;
+- **what the firewall should allow** — Windows asks once, about "Python", and
+  the answer sticks for every other Python program on the machine;
+- **what a viewer can read** — `allowed_paths` is what the browser may fetch by
+  path. On loopback that is a display detail. Open to the network it becomes a
+  permission, granted to anyone who knows the URL.
 
-> Generations run **on your PC**: don’t turn it off during use. One generation is
-> processed at a time (automatic queue).
+Nobody was using it. Keeping it meant keeping three answers that were all "it
+depends", so the feature went instead.
+
+A copy already installed still has `run-lan.bat` sitting in its folder —
+extracting a ZIP over a folder never deletes anything. `update.bat` removes it
+(it is declared in `REMOVED_FEATURES`), which is one more reason the cleanup is
+now part of the update rather than a button beside it.
 
 ---
 
@@ -1860,11 +1859,10 @@ atelier/
   storage.py                 # moving models to another drive (+ junctions/symlinks)
   imgcheck.py                # image-display diagnostic (cache, MIME, last upload)
   diagnostics.py             # machine report for bug traces
-  net.py                     # LAN address discovery
+  net.py                     # finds a free port for the local interface
   i18n.py                    # identity seam — the interface is English (see above)
   engine/
     sdcpp.py                 # build/run sd-cli commands, error typing, DiskWatch
-    sdserver.py              # resident engine (sd-server HTTP), opt-in
     generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN + HD
     highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
     outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
@@ -1960,8 +1958,8 @@ it. Handy to keep image models on the NVMe while parking bulky ones elsewhere.
 - **🩺 Diagnose image display** — the three-layer test for the broken-image-icon
   problem, described in [Troubleshooting](#troubleshooting). Press the button
   instead of opening the browser console.
-- **🌐 Network, sharing & maintenance** — what `run-lan.bat`, `maintenance.bat`
-  and `update.bat` each do, in the same place as the buttons that need them.
+- **🌐 Updating & maintenance** — what `update.bat`, `maintenance.bat` and
+  `update-engine.bat` each do, in the same place as the buttons that need them.
 
 ---
 
@@ -2032,8 +2030,8 @@ required.
   anything the app hands over *by path* rather than through that cache — a
   generated image sent to a tool, a live preview, a mask — used to get a **403**,
   because `allowed_paths` was never declared at launch; `outputs/` and `tmp/` are
-  now declared (and only those: on `--listen` that list is what the machine
-  exposes). A third was closed off later: the cache was pinned with
+  now declared (and only those: that list is what the browser may fetch by
+  path). A third was closed off later: the cache was pinned with
   `os.environ.setdefault`, so a `GRADIO_TEMP_DIR` already present in your
   environment — left by another Gradio app or an old install — silently took
   precedence and put the cache back in `%TEMP%`, reintroducing the exact bug the

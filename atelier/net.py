@@ -1,33 +1,13 @@
-"""Utilitaires réseau : adresses IP locales et recherche de port libre.
+"""Un seul besoin réseau : trouver un port libre pour l'interface locale.
 
-Sert à exposer Atelier sur le réseau local (collègues sur le même Wi-Fi/LAN).
+Ce module a aussi su lister les adresses IP de la machine (`primary_ip`,
+`lan_ips`), pour annoncer au démarrage l'adresse à partager avec les autres
+postes du réseau. Le partage réseau est retiré — l'application n'écoute que
+sur 127.0.0.1 — et ces deux fonctions sont parties avec lui.
 """
 from __future__ import annotations
 
 import socket
-
-
-def primary_ip() -> str:
-    """IP locale principale (interface utilisée pour sortir vers le réseau)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
-def lan_ips() -> list[str]:
-    """Toutes les IPv4 locales plausibles (hors loopback)."""
-    ips = {primary_ip()}
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ips.add(info[4][0])
-    except OSError:
-        pass
-    return sorted(ip for ip in ips if not ip.startswith("127."))
 
 
 def find_free_port(start: int, count: int = 25, host: str = "") -> int:

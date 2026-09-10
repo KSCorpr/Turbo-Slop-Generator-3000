@@ -17,8 +17,9 @@ REM      maintenance.bat --purge
 REM      maintenance.bat --all
 REM
 REM  Ne touche JAMAIS a models\custom\, loras\, outputs\, userdata\, python\.
-REM  Pour mettre a jour l'APPLICATION : update.bat (ce script ne telecharge
-REM  rien).
+REM
+REM  A SAVOIR : update.bat lance deja ce script tout seul, moteur compris. Ce
+REM  bouton-ci sert quand on veut faire le menage SANS mettre a jour le code.
 REM ===========================================================================
 cd /d "%~dp0"
 set "PY=%~dp0python\python.exe"

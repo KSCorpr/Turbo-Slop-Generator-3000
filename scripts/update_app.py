@@ -23,7 +23,15 @@ Ce script fait les deux correctement :
 Ce qu'il ne touche JAMAIS : models/, loras/, outputs/, userdata/, tools_repo/,
 bin/, python/, tmp/ — vos modèles, vos images, vos réglages, vos moteurs.
 
-    update.bat              met à jour
+Depuis, il fait AUSSI la suite. Mettre à jour le code ne suffisait jamais :
+il restait à lancer `update-engine.bat` parce que le nouveau code attend une
+option que l'ancien moteur n'a pas, puis `maintenance.bat` pour effacer ce
+qu'une fonction retirée laisse derrière elle. Trois boutons, dans un ordre que
+rien n'indiquait, dont deux qu'on oubliait. C'est maintenant une seule
+commande : le code, puis le moteur, puis le ménage.
+
+    update.bat              met à jour le code, le moteur, et fait le ménage
+    update.bat --code-only  le code seulement (l'ancien comportement)
     update.bat --check      dit seulement ce qui changerait
     update.bat --rollback   annule la dernière mise à jour
 """
@@ -386,7 +394,7 @@ def update(check_only: bool = False, branch: str | None = None) -> int:
     absent = missing_files()
 
     if not (added or updated or removed):
-        _say(OK + "already up to date — no file changes.")
+        _say(OK + "the code is already up to date — no file changes.")
         _save_manifest(files, commit or manifest.get("commit") or {},
                        branch)
         return 0
@@ -455,10 +463,43 @@ def update(check_only: bool = False, branch: str | None = None) -> int:
             shutil.rmtree(old, ignore_errors=True)
 
     _say("")
-    _say(OK + f"update finished ({len(written)} file(s) written).")
+    _say(OK + f"code updated ({len(written)} file(s) written).")
     _say(INFO + "undo it with: update.bat --rollback")
-    _say(INFO + "start the app again with run.bat.")
     return 0
+
+
+def run_maintenance() -> int:
+    """Enchaîne scripts/maintenance.py : moteur remis à niveau, puis ménage.
+
+    En SOUS-PROCESSUS, et ce n'est pas un détail de style. Ce programme vient
+    de réécrire des fichiers du projet — `maintenance.py` compris. Un import
+    ici exécuterait le code chargé AVANT la mise à jour, c'est-à-dire
+    exactement la version dont on vient de se débarrasser : l'ancienne table
+    des fonctions retirées, l'ancienne liste des capacités attendues du moteur.
+    Un processus neuf relit le disque, donc le nouveau code.
+
+    `--ask-purge` plutôt que `--purge` : la mise à jour peut proposer de
+    libérer plusieurs gigaoctets, elle ne peut pas en décider. Le total est
+    montré, la question est posée, et sans terminal la réponse est non.
+    """
+    import subprocess
+    script = ROOT / "scripts" / "maintenance.py"
+    if not script.is_file():
+        _say(WARN + "scripts/maintenance.py is missing — skipping the "
+             "engine update and the cleanup.")
+        return 1
+    _say("")
+    _say("=" * 60)
+    _say("  Now the engine and the cleanup (maintenance)")
+    _say("=" * 60)
+    try:
+        return subprocess.call([sys.executable, str(script),
+                                "--update-engine", "--ask-purge"],
+                               cwd=str(ROOT))
+    except OSError as exc:
+        _say(WARN + f"maintenance could not be started ({exc}).")
+        _say("    Run maintenance.bat by hand — the code itself is updated.")
+        return 1
 
 
 def main() -> int:
@@ -467,13 +508,27 @@ def main() -> int:
                     help="show what would change, without writing anything")
     ap.add_argument("--rollback", action="store_true",
                     help="undo the last update")
+    ap.add_argument("--code-only", action="store_true",
+                    help="stop after the code: no engine update, no cleanup")
     ap.add_argument("--branch", default=None,
                     help=f"branch to update from (default: {DEFAULT_BRANCH}, "
                          "or whatever the last update used)")
     args = ap.parse_args()
     if args.rollback:
         return _rollback()
-    return update(check_only=args.check, branch=args.branch)
+    code = update(check_only=args.check, branch=args.branch)
+    #  Le ménage porte sur le code POSÉ. S'il n'a pas été posé — échec de
+    #  téléchargement, retour en arrière automatique, ou `--check` qui n'écrit
+    #  rien par définition — il n'y a rien à ranger, et lancer la maintenance
+    #  ne ferait qu'ajouter du bruit à un message d'erreur.
+    if code != 0 or args.check or args.code_only:
+        if code == 0 and not args.check:
+            _say(INFO + "start the app again with run.bat.")
+        return code
+    code = run_maintenance()
+    _say("")
+    _say(INFO + "start the app again with run.bat.")
+    return code
 
 
 if __name__ == "__main__":

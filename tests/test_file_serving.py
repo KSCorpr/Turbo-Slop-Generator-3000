@@ -22,7 +22,7 @@ class ServedPathsTests(unittest.TestCase):
         self.assertIn(settings.TMP_DIR.resolve(), served)
 
     def test_stays_narrow(self):
-        """En partage réseau, cette liste est ce que la machine expose."""
+        """Ce que le navigateur a le droit de lire par chemin, et rien de plus."""
         served = {Path(p).resolve() for p in settings.served_paths()}
         for forbidden in (settings.MODELS_DIR, settings.LORA_DIR,
                           settings.BIN_DIR, settings.ROOT):
