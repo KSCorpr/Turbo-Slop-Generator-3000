@@ -237,8 +237,29 @@ def build_settings_tab():
             "the **prompt** and the **styles**, not a hardware setting."))
 
         # ------------------------------------------------------------------ #
-        #  Deux cartes : on ne fait pas parier, on propose de mesurer
+        #  Profils de MACHINE — un bouton par tour connue
         # ------------------------------------------------------------------ #
+        # Placés ICI et pas sous « Expert » : ce sont eux qui évitent d'aller
+        # y toucher. Un profil ne s'affiche que si SES cartes sont présentes —
+        # un bouton « profil bureau » sur une machine qui n'a pas la carte est
+        # un bouton qui ment.
+        _presets = hardware.available_presets()
+        preset_buttons = []
+        if _presets:
+            gr.Markdown(t(
+                "---\n### This machine is one we know\nOne click sets the "
+                "card assignment, the quantization and the memory options "
+                "that were **measured** on it — including the two things the "
+                "automatic profile cannot guess: never letting a Pascal card "
+                "encode text, and giving an 11 GB card a compute budget so it "
+                "does not run out mid-image."))
+            with gr.Row():
+                for _preset, _cards in _presets:
+                    preset_buttons.append(
+                        (_preset, gr.Button(t(_preset.label), size="sm")))
+            preset_status = gr.Markdown("", elem_classes="feedback",
+                                        visible=False)
+
         gpu = gr.Dropdown(
             label="Card used for generating", choices=_gpu_choices(),
             value=prefs.get("gpu_index"), visible=multi_gpu,
@@ -405,9 +426,6 @@ def build_settings_tab():
             # rien dire de visible, c'est un réglage dont on doute.
             expert_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
-            combo = hardware.rtx3060_1080ti_combo() if multi_gpu else None
-            combo_btn = gr.Button(t("⚡ RTX 3060 + GTX 1080 Ti profile"),
-                                  visible=bool(combo))
 
         # ------------------------------------------------------------------ #
         #  Ce qui n'a rien à voir avec la génération
@@ -624,13 +642,22 @@ def build_settings_tab():
 
         report_btn.click(_system_report, outputs=[system_md, bench_file])
 
-        def _apply_combo():
-            preset = hardware.rtx3060_1080ti_prefs()
-            p = _save(**preset)
-            return (_headline(p), gr.update(value=preset["gpu_index"]),
-                    gr.update(value="encoder"),
-                    _said(_OK + t("Two-card profile applied: the RTX 3060 "
-                                  "draws, the 1080 Ti reads your text.")))
+        def _apply_machine_preset(key: str, label: str, summary: str):
+            def _run():
+                values = hardware.preset_prefs(key)
+                p = _save(**values)
+                #  La stratégie affichée doit suivre ce que le profil a
+                #  RÉELLEMENT posé : un profil mono-carte qui laisserait le
+                #  sélecteur sur « encodeur sur la 2e carte » se contredirait
+                #  à l'écran.
+                return (_headline(p),
+                        gr.update(value=values["gpu_index"]),
+                        gr.update(value=_strategy_of(p)),
+                        gr.update(value=_OK + t(label) + " — " + t(summary),
+                                  visible=True))
+            return _run
 
-        combo_btn.click(_apply_combo,
-                        outputs=[headline, gpu, strategy, status])
+        for _preset, _btn in preset_buttons:
+            _btn.click(_apply_machine_preset(_preset.key, _preset.label,
+                                             _preset.summary),
+                       outputs=[headline, gpu, strategy, preset_status])

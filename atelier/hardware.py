@@ -552,6 +552,144 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
     return profile
 
 
+# --------------------------------------------------------------------------- #
+#  Profils de MACHINE — « ma tour du salon », « le PC du bureau »
+# --------------------------------------------------------------------------- #
+#  Le profil automatique déduit tout de la VRAM, et il a raison la plupart du
+#  temps. Ce qu'il ne sait pas, c'est qu'on travaille sur DEUX machines connues,
+#  chacune avec ses travers mesurés : une Pascal qui ne doit surtout pas
+#  encoder, une carte de 11 Go qui manque de place pour calculer une fois les
+#  poids posés. Un profil nommé règle les deux d'un clic, sans avoir à se
+#  rappeler lequel des huit réglages experts en était responsable.
+#
+#  Un profil ne s'affiche que si SES cartes sont là. Proposer « profil bureau »
+#  sur une machine qui n'a pas la carte, c'est un bouton qui ment.
+@dataclass(frozen=True)
+class MachinePreset:
+    key: str
+    label: str
+    summary: str
+    #  (motif de nom, VRAM minimale) pour chaque carte EXIGÉE. La VRAM compte
+    #  autant que le nom : une 3060 Ti 8 Go porte presque le même nom qu'une
+    #  3060 12 Go et n'a pas du tout le même profil mémoire.
+    cards: tuple
+    build: "Callable[[tuple], dict]"
+
+
+def _match_cards(spec: tuple, gpus: tuple) -> tuple | None:
+    """Les cartes du profil, dans l'ordre déclaré — ou None s'il en manque une.
+
+    Une carte déjà attribuée n'est pas réutilisée : sur une machine à deux
+    1080 Ti, un profil qui en demande deux doit en trouver deux, pas compter la
+    même fois deux.
+    """
+    left = list(gpus)
+    found = []
+    for pattern, min_vram in spec:
+        card = next((g for g in left
+                     if re.search(pattern, g.name.upper())
+                     and g.vram_gb >= min_vram), None)
+        if card is None:
+            return None
+        left.remove(card)
+        found.append(card)
+    return tuple(found)
+
+
+def _home_prefs(cards: tuple) -> dict:
+    """Le profil deux cartes, inchangé — il a été mesuré, pas deviné."""
+    return rtx3060_1080ti_prefs(cards)
+
+
+def _office_prefs(cards: tuple) -> dict:
+    """RTX 2080 Ti seule — Turing, 11 Go, tensor cores.
+
+    Deux décisions valent d'être écrites, parce qu'elles viennent de pannes
+    réelles et pas d'un principe.
+
+    **Les poids de l'encodeur restent en RAM.** 11 Go doivent loger la
+    diffusion ET de quoi calculer ; les 4 Go de l'encodeur y tiennent mal.
+    `--params-backend` décide de la RÉSIDENCE, pas du lieu d'exécution : le
+    calcul se fait bien sur la carte, sd.cpp transfère les poids au moment de
+    s'en servir.
+
+    **Le budget de calcul est posé.** C'est la panne du jour : sans
+    `--max-vram`, le moteur découpe son graphe sans cible et découvre au
+    troisième segment qu'il ne reste que 622 Mo pour un besoin de 1049. Sur
+    12 Go on peut s'en passer, sur 11 non — surtout avec un bureau Windows qui
+    prend sa part. Un peu plus lent, et ça finit.
+    """
+    main = cards[0]
+    profile = auto_profile(main.index)
+    return {
+        "auto_optimize": False,
+        "gpu_index": main.index,
+        "text_gpu_index": main.index,
+        "encoder_gpu_index": main.index,
+        # Mono-GPU : CUDA_VISIBLE_DEVICES remappe la carte choisie en cuda0.
+        "params_backend": "diffusion=cuda0,vae=cuda0,te=cpu",
+        "auto_fit": False,
+        "split_mode": "",
+        "quant": profile.quant,
+        "enc_quant": profile.enc_quant,
+        "cache_mode": "",
+        "cache_option": "",
+        #  LE réglage qui distingue ce profil de l'automatique.
+        "max_vram": "auto",
+        "stream_layers": False,
+        "flags": {
+            "diffusion_fa": True,
+            #  La résidence est décidée ci-dessus, explicitement. `--offload-
+            #  to-cpu` est l'ancien raccourci « tout en RAM » : lui laisser la
+            #  main annulerait le placement qu'on vient d'écrire.
+            "offload_to_cpu": False,
+            "vae_tiling": True,
+            "clip_on_cpu": False,
+            "vae_on_cpu": False,
+        },
+    }
+
+
+MACHINE_PRESETS: tuple = (
+    MachinePreset(
+        key="home",
+        label="🏠 Home — RTX 3060 12 GB + GTX 1080 Ti",
+        summary="The 3060 draws and reads your text; the 1080 Ti runs the "
+                "prompt improver and holds weights.",
+        cards=((r"RTX\s*3060(?!\s*TI)", 11.5), (r"GTX\s*1080\s*TI", 10.0)),
+        build=_home_prefs),
+    MachinePreset(
+        key="office",
+        label="🏢 Office — RTX 2080 Ti",
+        summary="One card for everything, with the text encoder's weights in "
+                "RAM and a compute budget so 11 GB does not run out mid-image.",
+        cards=((r"RTX\s*2080\s*TI", 10.0),),
+        build=_office_prefs),
+)
+
+
+def available_presets(gpus: tuple | None = None) -> list[tuple]:
+    """[(profil, cartes)] pour les profils dont TOUTES les cartes sont là."""
+    cards_present = tuple(gpus if gpus is not None else detect_gpus())
+    out = []
+    for preset in MACHINE_PRESETS:
+        matched = _match_cards(preset.cards, cards_present)
+        if matched is not None:
+            out.append((preset, matched))
+    return out
+
+
+def preset_prefs(key: str, gpus: tuple | None = None) -> dict:
+    """Les préférences d'un profil nommé, ou une erreur qui dit ce qui manque."""
+    for preset, cards in available_presets(gpus):
+        if preset.key == key:
+            return preset.build(cards)
+    known = {p.key: p.label for p in MACHINE_PRESETS}
+    if key not in known:
+        raise ValueError(f"Unknown machine profile: {key}")
+    raise ValueError(f"“{known[key]}” needs cards this machine does not have.")
+
+
 def rtx3060_1080ti_combo() -> tuple[Gpu, Gpu] | None:
     """Détecte le duo ciblé par le preset : RTX 3060 12 Go + GTX 1080 Ti.
 
@@ -569,7 +707,7 @@ def rtx3060_1080ti_combo() -> tuple[Gpu, Gpu] | None:
     return (rtx, pascal) if rtx is not None and pascal is not None else None
 
 
-def rtx3060_1080ti_prefs() -> dict:
+def rtx3060_1080ti_prefs(cards: tuple | None = None) -> dict:
     """Préférences sûres et mesurables pour le duo 3060 12 Go / 1080 Ti.
 
     Ampere exécute diffusion, encodeur et VAE (tensor cores, Flash Attention).
@@ -584,7 +722,7 @@ def rtx3060_1080ti_prefs() -> dict:
     de sa vitesse fp32 (c'est la puce, pas un réglage), et l'encodage de prompt
     est précisément un gros matmul fp16.
     """
-    combo = rtx3060_1080ti_combo()
+    combo = cards or rtx3060_1080ti_combo()
     if combo is None:
         raise ValueError("The RTX 3060 12 GB + GTX 1080 Ti pair was not detected.")
     main, secondary = combo

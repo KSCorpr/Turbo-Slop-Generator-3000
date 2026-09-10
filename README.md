@@ -558,6 +558,26 @@ no longer a row of five buttons in the interface — the three-notch choice cove
 the same ground with one decision instead of five — but `generation_profile()`
 remains the reference used by the auto profile and the tests.
 
+### Machine profiles — one button per known tower
+Two machines are described in the app, and each gets a button in **Settings**
+when its cards are actually present:
+
+| Profile | Cards | What it sets that the automatic profile cannot guess |
+|---|---|---|
+| 🏠 **Home** | RTX 3060 12 GB + GTX 1080 Ti | the Pascal card **never encodes text**; it runs the prompt improver and holds weights |
+| 🏢 **Office** | RTX 2080 Ti | the encoder's **weights stay in RAM**, and the engine gets a **compute budget** |
+
+Both are measurements, not preferences. Getting the first wrong costs **38 s of
+prompt encoding per image** (see below). Getting the second wrong produces
+`cannot make enough memory available … workspace capacity check` part-way
+through an image: 11 GB has to hold the diffusion weights *and* room to compute,
+and without `--max-vram` the engine cuts its graph with no target to aim at.
+
+A profile appears only when its cards are detected — a button offering a profile
+for hardware you do not have is a button that lies. VRAM is checked as well as
+the name: an RTX 3060 Ti 8 GB is not an RTX 3060 12 GB, however close the names
+look.
+
 ### Multi-GPU
 When **two or more GPUs** are detected, a **Multi-GPU** accordion appears with a
 single mutually-exclusive strategy:

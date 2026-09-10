@@ -370,6 +370,15 @@ def build_manage_tab():
 
         with gr.Accordion("⚙️ Settings (hardware & optimization)", open=False):
             gr.Markdown(
+                "**Known machines get a button.** Two towers are described in "
+                "the app — a\nRTX 3060 12 GB + GTX 1080 Ti pair and a lone "
+                "RTX 2080 Ti. One click sets\nthe card assignment, the "
+                "quantization and the memory options measured on\nthem, "
+                "including the two things no automatic profile can guess: a "
+                "Pascal card\nmust never encode text (its fp16 runs at 1/64 "
+                "of its fp32 rate), and an 11 GB\ncard needs a compute budget "
+                "or it runs out of room mid-image. A profile only\nappears "
+                "when its cards are actually present.\n\n"
                 "**One question, not twenty.** Everything the machine can "
                 "work out from your\nhardware, it works out: diffusion "
                 "quantization from **VRAM**, text-encoder\nquantization from "
