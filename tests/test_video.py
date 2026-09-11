@@ -258,6 +258,185 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("not a video model", str(caught.exception))
 
 
+class VaeDecodeMemoryTests(unittest.TestCase):
+    """Le mode d'échec mesuré : l'échantillonnage passe, le décodage tombe.
+
+    Journal réel, 2080 Ti, 832×480, 33 images. 20 pas à 4,3 s/it, 89 s, aucun
+    problème. Puis :
+
+        model manager cannot make enough memory available on CUDA0:
+          need 13919.74 MB device, available 6683.00 MB device
+        wan_vae segment 1/1 (graph) failed during weight preparation
+
+    Trois faits, qu'aucun test ne couvrait :
+
+    1. sur ces 13,9 Go, ~1,3 Go sont les poids du VAE et **12,5 Go le tampon
+       du graphe**. Le décodage est le seul moment où les 33 images existent
+       ensemble ;
+    2. `--vae-tiling` SEUL ne découpait rien. Sans `--vae-tile-size`, sd.cpp
+       prend 32 pixels de latent ; un 832×480 fait 52×30, donc les tuiles
+       faisaient 32×30 — les trois cinquièmes de l'image ;
+    3. il ne restait que 6,7 Go des 10,1 Go libres, parce que les 3,3 Go de
+       poids de diffusion ne quittent pas la carte : sous auto-fit leur
+       résidence EST la carte, et le gestionnaire ne libère que ce qu'il peut
+       recharger d'ailleurs.
+    """
+
+    def test_a_tile_size_is_always_sent(self):
+        """C'était le bug : on demandait le découpage sans le dimensionner."""
+        req = sdcpp.VidRequest(prompt="x", vae_tile=16)
+        with patch.object(sdcpp, "video_supported", return_value=True), \
+             patch.object(sdcpp, "supported_options",
+                          return_value=frozenset({"--vae-tile-size"})), \
+             patch.object(sdcpp, "_require"):
+            cmd = sdcpp.build_vid_cmd(Path("sd-cli"), req, Path("o.webm"))
+        self.assertIn("--vae-tile-size", cmd)
+        self.assertEqual(cmd[cmd.index("--vae-tile-size") + 1], "16x16")
+
+    def test_an_engine_without_the_option_is_not_handed_it(self):
+        """Un argument inconnu fait sortir sd-cli sur un message illisible."""
+        req = sdcpp.VidRequest(prompt="x", vae_tile=16)
+        with patch.object(sdcpp, "video_supported", return_value=True), \
+             patch.object(sdcpp, "supported_options",
+                          return_value=frozenset()), \
+             patch.object(sdcpp, "_require"):
+            cmd = sdcpp.build_vid_cmd(Path("sd-cli"), req, Path("o.webm"))
+        self.assertNotIn("--vae-tile-size", cmd)
+
+    def test_every_card_gets_a_tile_smaller_than_the_engine_default(self):
+        """32 est le défaut de sd.cpp, et il ne découpe rien en 832×480.
+
+        Une carte de 24 Go peut le garder ; en dessous, toute valeur choisie
+        doit être STRICTEMENT plus petite, sinon ce réglage ne sert à rien.
+        """
+        for vram in (16, 12, 11, 8):
+            self.assertLess(sdcpp.video_vae_tile(vram), 32, f"{vram} GB")
+
+    def test_the_scale_never_inverts(self):
+        """Une carte plus grosse ne doit jamais recevoir des tuiles plus
+        petites — c'est le genre de table qu'on édite et qu'on casse."""
+        tiles = [sdcpp.video_vae_tile(v) for v in (4, 8, 11, 12, 16, 24, 48)]
+        self.assertEqual(tiles, sorted(tiles), tiles)
+
+    def test_a_card_that_cannot_be_read_still_gets_a_tile(self):
+        self.assertGreater(sdcpp.video_vae_tile(0.0), 0)
+
+
+class VaeDecodeAdviceTests(unittest.TestCase):
+    """Le message d'erreur nommait un réglage qui ne peut rien y faire.
+
+    « Prenez une quantification plus légère » est le conseil générique pour un
+    manque de VRAM. Sur un décodage de VAE il est faux : la quantification
+    porte sur les poids de DIFFUSION, et à ce moment-là l'échantillonnage est
+    fini depuis quatre-vingt-neuf secondes.
+    """
+
+    #  Les lignes exactes du journal de l'utilisateur.
+    TAIL = [
+        "[WARN] model manager cannot make enough memory available on CUDA0: "
+        "need 13919.74 MB device / 13919.74 MB budget, available 6683.00 MB "
+        "device / 5821.51 MB budget",
+        "[ERROR] wan_vae segment 1/1 (graph) failed during weight preparation",
+        "[ERROR] vae decode compute failed while processing a tile",
+        "[ERROR] decode_first_stage failed for video",
+    ]
+
+    def _error(self, cmd):
+        from collections import deque
+        return sdcpp._failure_error(1, cmd, deque(self.TAIL))
+
+    def test_it_is_recognised_as_a_memory_failure_at_all(self):
+        """Sans ça, pas de reprise : c'est le TYPE qui la déclenche."""
+        self.assertIsInstance(self._error(["sd-cli", "--mode", "vid_gen"]),
+                              sdcpp.VramError)
+
+    def test_it_no_longer_points_at_the_quantization(self):
+        msg = str(self._error(["sd-cli", "--mode", "vid_gen", "--max-vram"]))
+        self.assertNotIn("quantization in", msg)
+        self.assertIn("VAE decode", msg)
+
+    def test_it_names_the_two_levers_that_work(self):
+        msg = str(self._error(["sd-cli", "--mode", "vid_gen", "--max-vram"]))
+        self.assertIn("33 frames", msg)
+        self.assertIn("retries", msg)
+
+    def test_the_measured_numbers_are_quoted_back(self):
+        """13,9 Go demandés contre 6,7 disponibles : l'écart dit s'il s'en
+        fallait d'un cheveu ou d'un gigaoctet."""
+        msg = str(self._error(["sd-cli", "--mode", "vid_gen"]))
+        self.assertIn("13.6 GB", msg)
+        self.assertIn("6.5 GB", msg)
+
+    def test_an_image_failure_keeps_the_advice_it_had(self):
+        """La vidéo ne doit pas avoir changé le message des images."""
+        from collections import deque
+        tail = deque(["cudaMalloc failed: out of memory"])
+        msg = str(sdcpp._failure_error(1, ["sd-cli", "--mode", "img_gen",
+                                           "--max-vram"], tail))
+        self.assertIn("quantization", msg)
+
+
+class ReliefPassTests(unittest.TestCase):
+    """Une reprise, et elle change les DEUX choses qui comptent."""
+
+    def _attempts(self, fail_first: bool):
+        """Renvoie la liste des VidRequest réellement lancées."""
+        seen: list = []
+        prefs = {"auto_optimize": False, "flags": {}, "auto_fit": True,
+                 "params_backend": "diffusion=cuda0,vae=cuda0,te=cpu"}
+        model = registry.get_base_model("wan22-ti2v-5b",
+                                        settings.load_prefs())
+        import copy
+
+        def fake_files(m, **_):
+            return {"diffusion": Path("d.gguf"), "vae": Path("v.st"),
+                    "t5xxl": Path("t.gguf"), "enc": None, "model_path": None,
+                    "uncond": None, "clip_l": None, "llm_vision": None}
+
+        def fake_build(sd_cli, req, output):
+            seen.append(copy.deepcopy(req))
+            if fail_first and len(seen) == 1:
+                raise sdcpp.VramError("boom")
+            return ["sd-cli"]
+
+        with patch.object(settings, "load_prefs", return_value=prefs), \
+             patch.object(settings, "find_sd_cli", return_value=Path("sd")), \
+             patch.object(registry, "get_base_model", return_value=model), \
+             patch.object(video, "resolve_model_files", fake_files), \
+             patch.object(sdcpp, "build_vid_cmd", fake_build), \
+             patch.object(sdcpp, "run"), \
+             patch.object(Path, "is_file", lambda self: True):
+            video.generate_video(prompt="a cat")
+        return seen
+
+    def test_a_run_that_works_is_not_retried(self):
+        self.assertEqual(len(self._attempts(fail_first=False)), 1)
+
+    def test_the_retry_halves_the_tiles(self):
+        first, second = self._attempts(fail_first=True)
+        self.assertLess(second.vae_tile, first.vae_tile)
+
+    def test_the_retry_puts_the_weights_in_ram(self):
+        """La seule façon de récupérer les 3,3 Go de diffusion.
+
+        Le gestionnaire de mémoire ne libère que ce qu'il peut recharger
+        d'ailleurs. Tant que la carte est à la fois la résidence ET le calcul
+        des poids de diffusion, ils restent bloqués pendant le décodage. En
+        RAM, ils redeviennent libérables — et c'est la configuration que la
+        doc Wan utilise dans tous ses exemples.
+        """
+        _, second = self._attempts(fail_first=True)
+        self.assertTrue(second.flags["offload_to_cpu"])
+        self.assertFalse(second.auto_fit,
+                         "auto-fit ignore l'offload : il replace tout")
+        self.assertEqual(second.params_backend, "",
+                         "une résidence explicite annule l'offload")
+
+    def test_the_retry_keeps_the_tiling_on(self):
+        _, second = self._attempts(fail_first=True)
+        self.assertTrue(second.flags["vae_tiling"])
+
+
 class RenamedFileTests(unittest.TestCase):
     """Le piège de la reprise de nom, refermé pour de bon."""
 

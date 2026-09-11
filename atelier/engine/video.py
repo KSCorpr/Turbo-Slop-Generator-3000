@@ -28,7 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from .. import registry, settings
+from .. import hardware, registry, settings
 from . import sdcpp
 from .generate import _resolved_flags, resolve_model_files
 from .sdcpp import VidRequest
@@ -139,6 +139,14 @@ def generate_video(
     flags = dict(flags)
     flags["vae_tiling"] = True
 
+    #  Et une TAILLE de tuile, sans quoi le découpage n'a pas lieu. Mesuré sur
+    #  une 2080 Ti : sans `--vae-tile-size`, sd.cpp prend son défaut de 32
+    #  pixels de latent, et un 832×480 (52×30 en latent) se retrouve découpé
+    #  en deux tuiles de 32×30 — soit trois cinquièmes de l'image chacune. Le
+    #  décodage réclamait alors 13,9 Go. Voir `video_vae_tile`.
+    card = hardware.gpu_at(gpu_index)
+    tile = sdcpp.video_vae_tile(card.vram_gb if card else 8.0)
+
     frames = sdcpp.align_video_frames(
         int(video_frames or d.get("video_frames", 33) or 33))
     rate = int(fps or d.get("fps", 24) or 24)
@@ -185,6 +193,7 @@ def generate_video(
         max_vram=sdcpp.max_vram_arg(
             prefs.get("max_vram") or sdcpp.MAX_VRAM_AUTO),
         lora_dir=settings.LORA_DIR if settings.LORA_DIR.is_dir() else None,
+        vae_tile=tile,
     )
 
     if log:
@@ -195,8 +204,45 @@ def generate_video(
             log(f"ℹ️ Frame count aligned to {frames}: Wan's temporal VAE "
                 "works in groups of four plus one.")
 
-    cmd = sdcpp.build_vid_cmd(sd_cli, req, output)
-    sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+    if log:
+        log(f"🧩 VAE decode in {tile}×{tile} latent tiles.")
+
+    def _attempt() -> None:
+        cmd = sdcpp.build_vid_cmd(sd_cli, req, output)
+        sdcpp.run(cmd, log=log, gpu_index=gpu_index)
+
+    try:
+        _attempt()
+    except sdcpp.VramError:
+        #  UNE reprise, et elle change les deux choses qui comptent — parce
+        #  que chacune seule ne suffisait pas.
+        #
+        #  1. Des tuiles DEUX FOIS plus petites. Le tampon de décodage suit
+        #     l'aire, donc c'est un facteur quatre.
+        #
+        #  2. Les poids en RAM (`--offload-to-cpu`), qui est la configuration
+        #     que la doc Wan utilise dans TOUS ses exemples — on ne le faisait
+        #     pas. Ce n'est pas une superstition : sous auto-fit, les poids de
+        #     diffusion ont la carte pour résidence ET pour calcul, et le
+        #     gestionnaire de mémoire ne libère que ce qu'il peut recharger
+        #     d'ailleurs. Les 3,3 Go du modèle restaient donc bloqués pendant
+        #     le décodage, sur une carte qui en manquait. En RAM, ils
+        #     redeviennent libérables.
+        #
+        #  Le prix est la vitesse : l'échantillonnage relit ses poids depuis
+        #  la RAM à chaque pas. On ne le paie donc qu'après un échec, pas par
+        #  précaution.
+        relief_tile = max(8, tile // 2)
+        if log:
+            log("⚠️ Not enough VRAM to decode. Retrying with "
+                f"{relief_tile}×{relief_tile} tiles and the weights in RAM "
+                "(slower — this is the configuration Wan's own documentation "
+                "uses).")
+        req.vae_tile = relief_tile
+        req.auto_fit = False
+        req.params_backend = ""
+        req.flags = {**req.flags, "offload_to_cpu": True, "vae_tiling": True}
+        _attempt()
 
     if ext == "png":
         produced = sorted(output.parent.glob("frame_*.png"))

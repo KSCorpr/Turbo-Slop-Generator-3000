@@ -569,6 +569,40 @@ def video_duration_s(frames: int, fps: int) -> float:
     return align_video_frames(frames) / float(fps or 24)
 
 
+#  TAILLE DE TUILE DU VAE VIDÉO, en pixels de LATENT — et c'est le réglage qui
+#  décide si une vidéo sort ou pas.
+#
+#  Mesuré sur une 2080 Ti, 832×480, 33 images : l'échantillonnage passe sans
+#  effort (4,3 s/it, 89 s au total), puis le DÉCODAGE réclame **13,9 Go** et
+#  échoue. Le détail du chiffre, lu dans `check_capacity` : environ 1,3 Go de
+#  poids de VAE à monter sur la carte, et **12,5 Go de tampon de calcul pour
+#  le graphe**. Le décodage est le seul moment où les 33 images existent
+#  ensemble.
+#
+#  `--vae-tiling` seul n'y changeait rien, et c'était l'erreur. Sans
+#  `--vae-tile-size`, sd.cpp prend son défaut de **32 pixels de latent**
+#  (`get_tile_sizes`, vae.hpp) ; un 832×480 fait 52×30 en latent, donc les
+#  « tuiles » mesuraient 32×30 — deux tuiles, chacune les trois cinquièmes de
+#  l'image. On demandait un découpage et on n'en obtenait aucun.
+#
+#  Le coût suit l'aire de la tuile, donc diviser son côté par deux divise le
+#  tampon par environ quatre. Les valeurs ci-dessous sont choisies pour que ce
+#  tampon tienne dans ce qui reste APRÈS les poids de diffusion, qui, eux, ne
+#  bougent pas de la carte pendant le décodage (voir plus bas).
+#
+#  Le prix est la couture : plus de tuiles, plus de raccords à fondre. D'où
+#  une échelle par carte plutôt qu'une valeur basse pour tout le monde.
+_VIDEO_TILE_BY_VRAM = ((24, 32), (16, 24), (11, 16), (0, 12))
+
+
+def video_vae_tile(vram_gb: float) -> int:
+    """Côté de tuile (latent) pour le décodage vidéo, selon la carte."""
+    for floor, tile in _VIDEO_TILE_BY_VRAM:
+        if vram_gb >= floor:
+            return tile
+    return _VIDEO_TILE_BY_VRAM[-1][1]
+
+
 @dataclass
 class VidRequest(GenRequest):
     """Une demande de vidéo : une GenRequest, plus le temps."""
@@ -579,6 +613,9 @@ class VidRequest(GenRequest):
     #  l'image est la première du film, pas un brouillon : aucun `--strength`
     #  ne doit partir avec elle.
     start_image: Path | None = None
+    #  Côté de tuile du VAE, en latent. 0 = laisser sd.cpp décider, ce qui
+    #  veut dire 32 et, sur une vidéo, ne rien découper du tout.
+    vae_tile: int = 0
 
 
 def video_supported(sd_cli: Path | None) -> bool:
@@ -630,6 +667,8 @@ def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
         cmd += ["-i", str(req.start_image)]
     if req.lora_dir:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
+    if req.vae_tile and "--vae-tile-size" in supported_options(sd_cli):
+        cmd += ["--vae-tile-size", f"{req.vae_tile}x{req.vae_tile}"]
     cmd += memory_args(sd_cli, req)
     cmd += ["-o", str(output), "-v"]
     return cmd
@@ -880,14 +919,42 @@ def _failure_error(code: int, cmd: list[str],
                 break
         return VramError(
             "❌ Not enough GPU memory." + want + "\n"
-            + ("The HD pass re-denoises the WHOLE image: its cost climbs with "
-               "the pixel count, and it adds to the model weights already on "
-               "the card.\n→ Lower the enlargement factor, or go through “🔼 "
-               "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
-               "works in tiles and fits in far less VRAM."
-               if "--hires" in cmd else
-               _no_budget_advice(cmd)))
+            + (_hires_advice() if "--hires" in cmd
+               else _video_advice(tail) if "vid_gen" in cmd
+               else _no_budget_advice(cmd)))
     return EngineError(_diagnose_failure(code, cmd, tail))
+
+
+def _hires_advice() -> str:
+    return ("The HD pass re-denoises the WHOLE image: its cost climbs with "
+            "the pixel count, and it adds to the model weights already on "
+            "the card.\n→ Lower the enlargement factor, or go through “🔼 "
+            "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
+            "works in tiles and fits in far less VRAM.")
+
+
+#  Le décodage du VAE se reconnaît à ces lignes, et il faut le reconnaître :
+#  c'est le seul manque de mémoire de la vidéo qui ne se soigne NI par la
+#  quantification NI par la résolution. Le conseil générique — « prenez une
+#  quantification plus légère » — envoyait vers un réglage qui ne peut rien y
+#  faire : la quantification porte sur les poids de diffusion, et à ce
+#  moment-là l'échantillonnage est fini depuis longtemps.
+_VAE_DECODE_MARKERS = ("vae decode compute failed",
+                       "decode_first_stage failed",
+                       "wan_vae segment")
+
+
+def _video_advice(tail: "deque[str]") -> str:
+    if not any(m in ln for ln in tail for m in _VAE_DECODE_MARKERS):
+        return ("→ Try a shorter clip, or a smaller frame size. A video costs "
+                "roughly what one image costs, multiplied by its frames.")
+    return ("This is the **VAE decode**, the moment when every frame of the "
+            "clip exists at once — not the model weights, and not the "
+            "quantization, which stopped mattering when sampling ended.\n"
+            "→ The shortest clip (33 frames) and the smaller frame size are "
+            "the two levers that work. The app already retries once with "
+            "half-size decode tiles and the weights in RAM; if you are "
+            "reading this, that retry failed too.")
 
 
 def _no_budget_advice(cmd: list[str]) -> str:

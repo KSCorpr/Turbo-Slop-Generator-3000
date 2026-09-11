@@ -1495,14 +1495,46 @@ The card therefore carries **4.8 GB of weights, not 8.5**. That is the same
 split the images already use, for the same reason — see
 [Machine profiles](#machine-profiles--one-button-per-known-tower).
 
-Upstream's own documentation warns that "Wan models vae requires really much
-VRAM". **That warning is older than the code.** sd.cpp now retries a failed VAE
-decode by tiling in *time* as well as in space
-(`prepare_vae_decode_retry_tiling`, PRs #1926 and #1932), so a current engine
-recovers by itself where the warning told you to fall back to a degraded TAE.
-The tab forces `--vae-tiling` on and supplies a `--max-vram` budget even when
-you have not set one: decoding is the only moment when every frame exists at
-once, and it is the one cost that does not show up in any weight file's size.
+### The VAE decode is the expensive part, and it is measured
+
+Upstream's documentation warns that "Wan models vae requires really much VRAM".
+It is right, and the number is worth knowing. Measured on a 2080 Ti at
+832×480, 33 frames: **sampling is easy** — 20 steps at 4.3 s/it, 89 s, no
+trouble at all. Then the decode asks for **13.9 GB** and falls over. Of that,
+~1.3 GB is the VAE's own weights; **~12.5 GB is the graph's compute buffer**.
+Decoding is the only moment when all 33 frames exist together, and it is the
+one cost that appears in no weight file's size.
+
+Two things make that number manageable, and the app does both:
+
+- **A real tile size.** `--vae-tiling` alone does nothing here: without
+  `--vae-tile-size`, sd.cpp takes its 32-latent-pixel default, and an 832×480
+  frame is 52×30 in latent — so the "tiles" came out 32×30, two of them, each
+  three fifths of the picture. The tab now sends a tile sized from your card
+  (`video_vae_tile`): 16 latent px on an 11–12 GB card, 24 on 16 GB, 32 on
+  24 GB+. The cost follows the tile's *area*, so halving its side quarters the
+  buffer. The price is seams, which is why it is a scale per card rather than
+  one small value for everyone.
+- **A `--max-vram` budget**, supplied even when you have not set one, so the
+  planner cuts its graph against a target instead of blind.
+
+If it still does not fit, the app **retries once**, and the retry changes both
+of the things that matter: tiles half the size again, and `--offload-to-cpu` —
+which is the configuration every Wan example in upstream's own documentation
+uses. That second half is not superstition. Under auto-fit the diffusion
+weights have the card as both their residence *and* their compute device, and
+sd.cpp's memory manager only frees what it can reload from somewhere else — so
+those 3.3 GB stay pinned through the decode, on a card that is short of room.
+Moved to RAM they become evictable again. The price is speed: sampling re-reads
+its weights from RAM every step. So it is paid **after** a failure, never as a
+precaution.
+
+One upstream behaviour worth knowing: sd.cpp's own fallback retries a failed
+decode with *temporal* tiling (`prepare_vae_decode_retry_tiling`, PRs #1926 and
+#1932). On Wan that asks for **more** memory, not less — 14.7 GB against 13.9
+in the measured run — because Wan's stateful temporal path carries a feature
+cache between tiles. So it is not the lever for this model, and the spatial
+tile size is.
 
 ### Length is 4n+1, and that is not a preference
 
@@ -1544,10 +1576,10 @@ restricts selling the result.
 
 ### The one honest caveat
 
-A video is many images. On a 3060 at 704×1280, 20 steps, expect **minutes per
-clip**, not seconds — and 121 frames costs roughly four times what 33 costs.
-Start at 33 frames and 480×832 to find out whether the prompt works at all,
-then re-run the good ones long.
+A video is many images. On a 2080 Ti at 832×480, 33 frames, 20 steps, sampling
+alone is **89 seconds** — and 121 frames costs roughly four times what 33 does,
+with a decode that grows with it. Start at 33 frames and the light frame size
+to find out whether the prompt works at all, then re-run the good ones long.
 
 ---
 

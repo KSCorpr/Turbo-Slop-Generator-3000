@@ -468,6 +468,23 @@ def generation_profile(gen_key: str, vram_gb: float | None = None,
     )
 
 
+def gpu_at(index: int | None = None) -> "Gpu | None":
+    """La carte d'index donné, ou la plus grosse, ou None.
+
+    Extrait de `auto_profile`, qui faisait déjà ce choix-là au milieu d'une
+    trentaine de lignes sur les quantifications : la vidéo a besoin de la
+    carte pour dimensionner ses tuiles de VAE, et pas du reste du profil.
+    """
+    gpus = detect_gpus()
+    if not gpus:
+        return None
+    if index is not None:
+        found = next((g for g in gpus if g.index == index), None)
+        if found is not None:
+            return found
+    return max(gpus, key=lambda g: g.vram_gb)
+
+
 def auto_profile(gpu_index: int | None = None) -> Profile:
     """Construit un profil d'optimisation à partir du matériel détecté."""
     gpus = detect_gpus()
