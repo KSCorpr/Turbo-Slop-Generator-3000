@@ -106,3 +106,95 @@ class DiagnosisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackgroundRemovalTests(unittest.TestCase):
+    """L'auto est une ABSENCE de drapeau, pas une valeur — et c'est piégeux.
+
+    `trellis_args.h` déclare trois états : 1 BiRefNet, 0 seuil, **-1 auto**.
+    Le parseur, lui, écrit :
+
+        p.birefnet = (strcmp(v, "birefnet") == 0) ? 1 : 0;
+
+    Aucune chaîne ne produit -1. Écrire « --bg-removal auto » donne donc le
+    SEUIL — exactement l'inverse de ce qu'on demande, et le seuil est le mode
+    que l'amont documente comme perceur de trous : il lit les hautes lumières
+    spéculaires (min(RGB) ≥ 232) comme du fond, et le flow génère des trous
+    là où il y avait un reflet.
+    """
+
+    def _args(self, **kw):
+        from atelier.engine import trellis
+        return trellis.build_server_args(512, **kw)
+
+    def test_the_flag_is_never_sent_for_auto(self):
+        """Il n'est d'ailleurs jamais sent AU LANCEMENT : le détourage est un
+        réglage par requête. Ce test fixe surtout qu'on n'invente pas une
+        valeur « auto » quelque part."""
+        self.assertNotIn("--bg-removal", self._args())
+
+    def test_auto_is_the_default_of_the_pipeline(self):
+        import inspect
+        from atelier.engine import trellis
+        sig = inspect.signature(trellis.generate)
+        self.assertEqual(sig.parameters["bg_removal"].default,
+                         trellis.BG_AUTO)
+
+    def test_the_request_omits_the_field_when_auto(self):
+        """Côté serveur la règle est la même (`trellis-server.cpp:99`) :
+        envoyer « auto » dans le champ donnerait le seuil. On l'omet."""
+        import inspect
+        from atelier.engine import trellis
+        src = inspect.getsource(trellis._post_generate)
+        self.assertIn("if bg_removal in (BG_BIREFNET, BG_THRESHOLD)", src)
+
+    def test_the_ui_offers_auto_first_and_warns_about_the_threshold(self):
+        import inspect
+        from atelier.ui import threed_tab
+        src = inspect.getsource(threed_tab.build_threed_tab)
+        block = src[src.index("bg = gr.Dropdown("):]
+        block = block[:block.index("label=\"Background removal\"")]
+        self.assertLess(block.index("BG_AUTO"), block.index("BG_BIREFNET"),
+                        "l'automatique doit être proposé en premier")
+        self.assertIn("punches holes", block)
+
+
+class GlbTextureTests(unittest.TestCase):
+    """Les textures WebP passent par une EXTENSION glTF.
+
+    `EXT_texture_webp` n'est pas lu par tous les visualiseurs ni par toutes
+    les places de marché. Le défaut amont est WebP (fichier plus léger) ; on
+    veut pouvoir retomber sur du PNG pour un GLB qui doit sortir d'ici.
+    """
+
+    def _args(self, **kw):
+        from atelier.engine import trellis
+        return trellis.build_server_args(512, **kw)
+
+    def test_webp_stays_the_default_and_sends_nothing(self):
+        self.assertNotIn("--webp", self._args())
+
+    def test_asking_for_png_sends_the_flag(self):
+        args = self._args(webp=False)
+        self.assertIn("--webp", args)
+        self.assertEqual(args[args.index("--webp") + 1], "off")
+
+
+class DecimationTests(unittest.TestCase):
+    """`--decim` est une GRILLE, pas un nombre de faces, et elle est legacy."""
+
+    def test_zero_sends_nothing_so_the_engine_default_applies(self):
+        """Le défaut du moteur (`decim = -1`) est une simplification quadrique
+        à 150 000 faces en 512. Envoyer « --decim 0 » demanderait au contraire
+        de GARDER le maillage brut — plusieurs millions de faces."""
+        from atelier.engine import trellis
+        self.assertNotIn("--decim", trellis.build_server_args(512, decim=0))
+
+    def test_the_label_no_longer_promises_a_face_count(self):
+        import inspect
+        from atelier.ui import threed_tab
+        src = inspect.getsource(threed_tab.build_threed_tab)
+        block = src[src.index("decim = gr.Number("):]
+        block = block[:block.index("atlas = gr.Dropdown(")]
+        self.assertNotIn("target faces", block)
+        self.assertIn("legacy", block)

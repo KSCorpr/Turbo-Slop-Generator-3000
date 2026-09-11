@@ -10,7 +10,7 @@ API serveur (POST /generate, multipart) :
   - image        : fichier image (requis)
   - resolution   : 512 | 1024 | 1536   (512 « light » tient sur ≤ 12 Go)
   - seed         : entier (optionnel)
-  - bg_removal   : threshold | birefnet
+  - bg_removal   : auto | birefnet | threshold  (voir BG_AUTO)
   Réponse : octets GLB bruts (model/gltf-binary).
 """
 from __future__ import annotations
@@ -279,12 +279,31 @@ def resident_stop() -> str:
     return "⏹️ Resident server stopped — VRAM freed."
 
 
+#  DÉTOURAGE : trois états côté moteur, et seulement deux exprimables.
+#
+#  `trellis_args.h` déclare `int birefnet = -1` avec trois valeurs : 1 BiRefNet,
+#  0 seuil, **-1 auto**. Mais le parseur écrit :
+#
+#      p.birefnet = (strcmp(v, "birefnet") == 0) ? 1 : 0;
+#
+#  Aucune chaîne ne produit -1. **L'auto ne s'obtient qu'en N'ENVOYANT PAS le
+#  drapeau** — et c'est pour ça que ce module traite `BG_AUTO` comme une
+#  absence plutôt que comme une valeur. Écrire `--bg-removal auto` donnerait le
+#  SEUIL, c'est-à-dire l'exact contraire de ce qu'on demande.
+#
+#  Et l'auto vaut le détour : si l'image porte déjà un canal alpha, il le garde
+#  tel quel et saute BiRefNet. Notre propre boîte à outils produit des PNG
+#  détourés ; sans ça, on repassait un détourage neuronal de treize secondes
+#  par-dessus un détourage que l'utilisateur avait déjà choisi.
+BG_AUTO, BG_BIREFNET, BG_THRESHOLD = "auto", "birefnet", "threshold"
+
+
 def build_server_args(res: int, decim: int = 0, atlas: int = 0,
                       no_texture: bool = False, box_uv: bool = False,
                       require_gpu: bool = True, f32: bool = False,
                       no_fa: bool = False,
                       gpu: int | None = None, variant: str = "f16",
-                      band: float = 0.0) -> list[str]:
+                      band: float = 0.0, webp: bool = True) -> list[str]:
     """Flags de lancement du serveur trellis (voir README trellis.cpp)."""
     args = ["--models", str(variant_dir(variant)), "--res", str(int(res))]
     if band and float(band) > 0:
@@ -296,7 +315,14 @@ def build_server_args(res: int, decim: int = 0, atlas: int = 0,
         # CUDA_VISIBLE_DEVICES, et l'index correspond à celui affiché au démarrage.
         args += ["--gpu", str(int(gpu))]
     if decim and int(decim) > 0:
-        args += ["--decim", str(int(decim))]       # cible de décimation (faces)
+        #  « --decim GRID » est la décimation par GRILLE DE CLUSTERS, que
+        #  l'amont marque LEGACY. Sans ce drapeau (`decim = -1` côté moteur),
+        #  on obtient le chemin par défaut : simplification quadrique à
+        #  150 000 faces en 512 / 300 000 en 1024, suivie d'un soudage, d'un
+        #  bouchage des petits trous et d'une seconde passe qui jette les
+        #  composants parasites. C'est meilleur, et c'est ce qu'on envoie
+        #  quand le champ est laissé à zéro.
+        args += ["--decim", str(int(decim))]
     if atlas and int(atlas) > 0:
         args += ["--atlas", str(int(atlas))]       # taille de l'atlas UV (px)
     if no_texture:
@@ -310,11 +336,18 @@ def build_server_args(res: int, decim: int = 0, atlas: int = 0,
         args.append("--f32")                       # précision 32 bits (défaut f16)
     if no_fa:
         args.append("--no-fa")                     # désactive FlashAttention
+    if not webp:
+        #  Textures du GLB en PNG au lieu de WebP. Le défaut amont est WebP,
+        #  qui passe par `EXT_texture_webp` — une EXTENSION glTF que tous les
+        #  lecteurs ne connaissent pas. Un GLB destiné à sortir d'ici (vente,
+        #  import dans un autre logiciel) est plus sûr en PNG, au prix du
+        #  poids du fichier.
+        args += ["--webp", "off"]
     return args
 
 
 def generate(image_path: Path, out_path: Path, res: int = 512,
-             seed: int | None = None, bg_removal: str = "birefnet",
+             seed: int | None = None, bg_removal: str = BG_AUTO,
              port: int = DEFAULT_PORT, extra: str = "",
              log: Callable[[str], None] | None = None,
              gpu_index: int | None = None,
@@ -322,7 +355,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
              decim: int = 0, atlas: int = 0, no_texture: bool = False,
              box_uv: bool = False, require_gpu: bool = True,
              f32: bool = False, no_fa: bool = False,
-             variant: str = "f16", band: float = 0.0,
+             variant: str = "f16", band: float = 0.0, webp: bool = True,
              meta: dict | None = None) -> Path:
     """Génère un GLB 3D à partir d'une image via le serveur trellis.
 
@@ -361,7 +394,7 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     launch_args = build_server_args(
         res, decim=decim, atlas=atlas, no_texture=no_texture, box_uv=box_uv,
         require_gpu=require_gpu, f32=f32, no_fa=no_fa, gpu=gpu_index,
-        variant=variant, band=band)
+        variant=variant, band=band, webp=webp)
     if extra and extra.strip():
         launch_args += shlex.split(extra)
     sig = tuple(launch_args)
@@ -509,7 +542,12 @@ def _post_generate(image_path: Path, out_path: Path, res: int,
                    _log: Callable[[str], None],
                    gpu_index: "int | None" = None) -> Path:
     """POST /generate (multipart) → écrit les octets GLB reçus."""
-    data = {"resolution": str(int(res)), "bg_removal": bg_removal or "birefnet"}
+    #  L'auto est une ABSENCE, pas une valeur : le serveur applique la même
+    #  règle que la ligne de commande (`trellis-server.cpp:99`), donc envoyer
+    #  « auto » dans le champ donnerait le seuil.
+    data = {"resolution": str(int(res))}
+    if bg_removal in (BG_BIREFNET, BG_THRESHOLD):
+        data["bg_removal"] = bg_removal
     if seed is not None:
         data["seed"] = str(int(seed))
     try:

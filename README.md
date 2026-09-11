@@ -1487,12 +1487,36 @@ removal can change without a reload.
 | **Input image** | one object, simple background |
 | **Pad to square** | TRELLIS processes its input as a square — without this a non-square image comes out **distorted** |
 | **Geometry resolution** | 512 (recommended, ≤ 12 GB) · 1024 · 1536 |
-| **Decimation — target faces** | lower = lighter mesh (0 = engine default) |
+| **Decimation — legacy cluster grid** | a GRID size, not a face count, and upstream marks it legacy. Left at 0 you get the current default: quadric simplify to 150K faces at 512 (300K at 1024), then weld, hole-fill and a stray-component pass |
 | **UV atlas size** | texture resolution — the cheapest quality gain |
-| **Background removal** | BiRefNet (quality, recommended) or threshold |
+| **Background removal** | **Automatic** (default), always BiRefNet, or threshold — see below |
+| **WebP textures** (Advanced) | on by default upstream; untick for PNG textures and a GLB any viewer opens |
 | **Geometry only** | skip the texture, faster |
 | **Card used for 3D** | passed to the engine as its own `--gpu N` |
 | **Seed** | shown under the result, to replay the same object |
+
+**Background removal has three states, and only two can be typed.** trellis.cpp
+declares `int birefnet = -1` — 1 BiRefNet, 0 threshold, **-1 auto** — but its
+parser is `p.birefnet = (strcmp(v, "birefnet") == 0) ? 1 : 0`. No string yields
+-1: **auto is only reachable by not passing the flag at all**, and writing
+`--bg-removal auto` gives you the *threshold*, the opposite of what you asked
+for. The app therefore treats automatic as an absence, on the command line and
+in the resident server's form field alike.
+
+Automatic is worth having: if the image already carries an alpha channel it is
+kept as-is and BiRefNet is skipped entirely. The Toolkit's own **✂️ Background
+removal** produces exactly such PNGs — without this, a cutout you chose was
+re-matted by a second, different neural cutout costing ~13 s.
+
+And the threshold keyer is a trap rather than a fast path: it reads bright
+specular highlights (`min(RGB) ≥ 232`) as background, and the flow then
+**generates holes right where the highlight was** — upstream names the helmet
+crest and axe edge of its own test asset. It stays available, labelled.
+
+**WebP textures.** The GLB's textures are WebP by default, through the
+`EXT_texture_webp` glTF extension — which not every viewer or marketplace
+reads. Untick it in *Advanced options* for PNG and a file anything can open, at
+the cost of size.
 
 The result is previewed in the browser and written to `outputs/`. Generation
 tabs carry a **🧊 Send selection to Image → 3D** button.

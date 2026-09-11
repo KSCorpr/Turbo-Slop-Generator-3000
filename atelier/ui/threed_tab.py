@@ -298,9 +298,17 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = random)")
                     bg = gr.Dropdown(
-                        [("BiRefNet (quality, recommended)", "birefnet"),
-                         ("Seuil (rapide)", "threshold")],
-                        value="birefnet", label="Background removal")
+                        [("Automatic (recommended)", trellis.BG_AUTO),
+                         ("Always BiRefNet", trellis.BG_BIREFNET),
+                         ("Threshold — ⚠️ punches holes in highlights",
+                          trellis.BG_THRESHOLD)],
+                        value=trellis.BG_AUTO, label="Background removal",
+                        info=t("Automatic keeps an image's existing alpha "
+                               "(the Toolkit's cutout, for one) and runs "
+                               "BiRefNet only when there is none. The "
+                               "threshold keyer reads bright specular "
+                               "highlights as background, and the model then "
+                               "generates HOLES right there."))
                 with gr.Accordion("⚡ Resident server (for a run of 3D objects)", open=False):
                     gr.Markdown(
                         "By default the server **starts and stops** for each "
@@ -323,8 +331,16 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     with gr.Row():
                         decim = gr.Number(
                             value=0, precision=0,
-                            label="Decimation — target faces (0 = default)",
-                            info="Lower = lighter mesh.")
+                            label="Decimation — legacy cluster grid "
+                                  "(0 = leave the default alone)",
+                            info=t("A GRID size, not a face count, and "
+                                   "upstream marks it legacy. Left at 0 you "
+                                   "get the current default instead: a "
+                                   "quadric simplify to 150K faces at 512 "
+                                   "(300K at 1024), then welding, hole "
+                                   "filling and a pass that drops stray "
+                                   "components. Better in every case we "
+                                   "know of."))
                         atlas = gr.Dropdown(
                             [("Default", 0), ("1024 px", 1024),
                              ("2048 px", 2048), ("4096 px", 4096)],
@@ -359,6 +375,14 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         no_fa = gr.Checkbox(value=False,
                                             label="Disable FlashAttention")
                 with gr.Accordion("Advanced options", open=False):
+                    webp = gr.Checkbox(
+                        value=True,
+                        label="WebP textures in the GLB (smaller file)",
+                        info=t("On by default upstream, through the "
+                               "`EXT_texture_webp` glTF extension — which "
+                               "not every viewer or marketplace reads. "
+                               "Untick for PNG textures and a GLB anything "
+                               "can open, at the cost of file size."))
                     style_tpl = gr.Textbox(
                         value=STUDIO_STYLE, lines=3,
                         label="How the prompt is rewritten for TRELLIS",
@@ -440,7 +464,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                           bg_val, resident_val,
                           decim_val, atlas_val, no_tex_val, box_uv_val,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
-                          extra_args):
+                          webp_val, extra_args):
             if not image_path and not (prompt_val or "").strip():
                 raise gr.Error(t("Describe an object, or load an image."))
             if not trellis.is_ready():
@@ -528,7 +552,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         else int(gpu_val)
                     trellis.generate(in_png, out_glb, res=int(res_val),
                                      seed=(None if _seed < 0 else _seed),
-                                     bg_removal=bg_val or "birefnet",
+                                     bg_removal=bg_val or trellis.BG_AUTO,
                                      resident=bool(resident_val),
                                      gpu_index=_gpu,
                                      decim=int(decim_val or 0),
@@ -539,6 +563,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                                      f32=bool(f32_val), no_fa=bool(no_fa_val),
                                      variant=variant_val or "f16",
                                      band=float(band_val or 0),
+                                     webp=bool(webp_val),
                                      extra=extra_args or "", log=q.put,
                                      meta=meta)
                     state["ok"] = True
@@ -575,7 +600,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     square_pad, pad_color, res, variant, band,
                     seed, bg, resident,
                     decim, atlas, no_texture,
-                    box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
+                    box_uv, gpu_pick, require_gpu, f32, no_fa, webp, extra],
             outputs=[status, model3d, glb_file, log, res_status, seed_used,
                      image])
         widgets.stop_into_status(stop, sdcpp.cancel_active, status, [gen_evt])
