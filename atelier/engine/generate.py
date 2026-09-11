@@ -240,7 +240,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     if not sdcpp.adetailer_supported(sd_cli):
         raise sdcpp.EngineError(
             "Your sd.cpp engine does not know ADetailer yet (the `--ad-model` "
-            "option). Run update-engine.bat, then restart the application.")
+            "option). Run update.bat, then restart the application.")
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
@@ -559,7 +559,7 @@ def upscale_image(image, model_name: str, repeats: int = 1,
         else:
             log("[esrgan] sd-cli too old for --upscale-tile-size: tiles of "
                 f"{sdcpp.SDCPP_DEFAULT_UPSCALE_TILE} px (seams possible). "
-                "Update the engine (update-engine.bat).")
+                "Update the engine (update.bat).")
 
     def _cmd(tile_px: int) -> list[str]:
         return sdcpp.build_upscale_cmd(sd_cli, src, model, out,
@@ -725,7 +725,7 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     if not sdcpp.hires_supported(sd_cli):
         raise sdcpp.EngineError(
             "Your sd.cpp engine does not know the HD pass yet (the “--hires” "
-            "option).\n→ Run update-engine.bat to fetch a recent version, "
+            "option).\n→ Run update.bat to fetch a recent version, "
             "then restart the application.")
     prefs = settings.load_prefs()
     model = registry.get_base_model(model_id, prefs)

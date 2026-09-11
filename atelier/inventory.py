@@ -90,7 +90,7 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item(
         "engine_sdcpp", "stable-diffusion.cpp engine (sd-cli + DLLs)", "Engines",
         _engine_sdcpp_paths(),
-        note="Reinstallable: install.bat / update-engine.bat."))
+        note="Reinstallable: install.bat / update.bat."))
     out.append(Item(
         "engine_trellis", "trellis.cpp engine (image → 3D)", "Engines",
         [trellis.TRELLIS_BIN_DIR],

@@ -12,7 +12,7 @@ Deux difficultés, et la seconde décide de toute la forme de ce script.
    qui contient les CLASSES d'Ultralytics — sans le paquet, il ne se dépickle
    pas. Or ultralytics est en AGPL-3.0, tire opencv/pandas/scipy, et veut un
    NumPy que nos add-ons n'ont pas. L'installer à côté des autres casserait
-   exactement ce que `maintenance.bat` passe son temps à signaler.
+   exactement ce que le ménage d'`update.bat` passe son temps à signaler.
 
 D'où le choix : un environnement **jetable**. On crée un venv isolé, on
 convertit, **on le supprime**. Il reste 6 Mo de safetensors et aucune

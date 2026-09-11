@@ -113,7 +113,7 @@ The exact tab tree, since two of the six are containers:
 ```bat
 install.bat      ::  portable Python + dependencies + GGUF engine (CUDA)
 run.bat          ::  launch the UI at http://127.0.0.1:7860
-update.bat       ::  update everything: code, engine, then the cleanup
+update.bat       ::  the ONLY update button: code, cleanup, both engines
 ```
 Windows and Linux use the **CUDA** build; macOS uses the **Metal** one. The
 engine variant is derived from the platform, so no flag to remember.
@@ -165,33 +165,54 @@ current code from GitHub and applies it in place — no manual re-download, and
 nothing of yours is touched: `models/`, `loras/`, `outputs/`, `userdata/`,
 `tools_repo/`, `bin/` and `python/` are off limits by construction.
 
-**It is one button for the three steps, and that is deliberate.** Updating the
-code alone was never enough: the new code sometimes expects an `sd-cli` option
-the installed engine has never heard of (`update-engine.bat`), and a removed
-feature leaves its files behind (`maintenance.bat`). Three buttons, in an order
-nothing announced, two of which everyone forgot — so: an engine one release
-behind, and a folder that only grows. `update.bat` now runs them itself, in
-order:
+**It is the only update button, and it does four things in order.** Updating
+the code alone was never enough. There used to be `update-engine.bat`, because
+the new code expects an `sd-cli` option the installed engine has never heard of;
+`update-trellis.bat` for the 3D engine; and `maintenance.bat` to erase what a
+removed feature left behind. **Four buttons, in an order nothing announced,
+three of which everyone forgot** — so: an engine a release behind, a folder that
+only grows, and failures whose cause was an update half-done weeks earlier.
+
+There is one now:
 
 1. **the code**, from GitHub;
-2. **the sd.cpp engine**, brought in line with that code;
-3. **the cleanup** — it *measures* what removed features left behind, shows the
-   total, and **asks** before deleting anything. Answer no (or run it with no
-   terminal attached) and nothing is deleted; the total stays on screen.
+2. **the cleanup** — what removed features left behind, then a check that
+   everything compiles and the catalog holds together. It *measures* first,
+   shows the total, and **asks** before deleting anything. Answer no (or run it
+   with no terminal attached) and nothing is deleted; the total stays on screen;
+3. **the sd.cpp engine** (images *and* video), brought in line with that code;
+4. **the 3D engine** (trellis.cpp) — the binary only, and **only if it is
+   already installed**. The ~16 GB of 3D weights are never re-downloaded, and
+   someone who has never opened the 3D tab is not handed a download they did
+   not ask for.
+
+**The order is the point.** Everything after step 1 has to run on the *new*
+code: it is the code that declares which options `sd-cli` must know and which
+files a removed feature left behind. And the two engines come last because they
+are the only steps that touch the network — everything sayable offline has
+already been said by the time a connection drops.
 
 ```bat
-update.bat              ::  code, then engine, then cleanup
-update.bat --code-only  ::  the code only (the former behaviour)
-update.bat --check      ::  show what would change, write nothing
+update.bat              ::  all four, in order
+update.bat --clean      ::  the cleanup only
+update.bat --engine     ::  the sd.cpp engine only
+update.bat --trellis    ::  the 3D engine only
+update.bat --code       ::  the code only
+update.bat --check      ::  show what the code would change, write nothing
 update.bat --rollback   ::  undo the last code update
 ```
 
-Step 2 and 3 run in a **fresh process**, not an import — `update.bat` has just
+Those four flags are what replaced the three separate launchers: doing one part
+without the others is a real need, it just did not deserve four files.
+
+Steps 2–4 run in **one fresh process**, not an import — `update.bat` has just
 rewritten `maintenance.py` on disk, and an import would run the version it just
 replaced: the old table of removed features, the old list of expected engine
-capabilities. They are also skipped when there is nothing to tidy: after
-`--check` (which promises to write nothing) and after a failed update that
-rolled itself back.
+capabilities. One call rather than three, because `maintenance.py` already
+sequences the cleanup before the engines; splitting it here would replay its
+checks three times and make their order depend on this file. They are skipped
+entirely when there is nothing to tidy: after `--check` (which promises to write
+nothing) and after a failed update that rolled itself back.
 
 What it does that dropping a ZIP over the folder cannot:
 
@@ -208,10 +229,11 @@ What it does that dropping a ZIP over the folder cannot:
 
 Close the app first: Windows cannot replace a file that is open.
 
-`update-engine.bat` and `maintenance.bat` still exist on their own, for when
-you want one without the other — see [Updating the engines](#updating-the-engines).
-The **3D** engine (trellis.cpp) is not in the chain: it is a separate ~16 GB
-download, so it stays behind its own button, `update-trellis.bat`.
+`maintenance.bat`, `update-engine.bat` and `update-trellis.bat` are **gone**.
+An installed copy still has them sitting in its folder — extracting a ZIP over a
+folder never deletes anything — so they are declared in `REMOVED_FEATURES` and
+the first `update.bat` deletes them. That matters: left there, they still work
+and still do a quarter of the job, without ever saying so.
 
 ### Maintenance
 If you instead update by extracting the repo ZIP over your existing folder
@@ -219,7 +241,7 @@ If you instead update by extracting the repo ZIP over your existing folder
 but never deletes** the ones removed upstream — they linger as orphans, and
 stale `__pycache__` can confuse Python. After each copy-paste update, run:
 ```bat
-maintenance.bat      ::  Windows   (./maintenance.sh on Linux/Mac)
+update.bat --clean      ::  Windows   (./update.sh --clean on Linux/Mac)
 ```
 It deletes the **code** of removed features, purges `__pycache__` and `tmp/`,
 then verifies that everything compiles, the model catalog is valid, and the
@@ -235,10 +257,10 @@ needs, and names the feature rather than the flag ("`--hires` missing" tells
 nobody anything; "the HD tab will not work" does). To fix everything in one go:
 
 ```bat
-maintenance.bat --all    ::  purge + engine update  (./maintenance.sh --all)
+update.bat               ::  code, cleanup, sd.cpp engine, 3D engine
 ```
 
-`--update-engine` alone does just the engine. Updates are transactional: the
+`update.bat --engine` does just the sd.cpp one. Updates are transactional: the
 archive is unpacked into a staging directory, checked with `sd-cli -h`, and only
 then swapped into `bin/`. The last known-good engine stays in
 `.engine-previous/`; use `rollback-engine.bat` (or `./rollback-engine.sh`) to
@@ -257,7 +279,8 @@ folders no longer in the catalog. Erasing those silently is not the script's cal
 so it reports each one with its size and a single recoverable total:
 
 ```bat
-maintenance.bat --purge      ::  actually deletes them (./maintenance.sh --purge)
+update.bat --clean                     ::  shows the total, then asks
+python scripts\maintenance.py --purge  ::  deletes without asking
 ```
 
 Three things are checked, and none of them relies on a hand-kept list of files:
@@ -272,7 +295,7 @@ something is dropped.
 | | In the ZIP? | Refreshed by copy-paste |
 | --- | --- | --- |
 | App code, `config/models.yaml`, docs | yes | **yes** |
-| Engine binary (`bin/`) | no | no — run `update-engine.bat` only when a new sd.cpp feature is needed |
+| Engine binary (`bin/`) | no | no — `update.bat` brings it in line as step 3 |
 | Models, LoRAs, outputs, prefs (`models/`, `loras/`, `outputs/`, `userdata/`) | no | no — kept, which is the point |
 | Toolkit add-ons (`tools_repo/`) | no | **no — and this one bites** |
 
@@ -390,7 +413,7 @@ The accordion adapts to the model family:
   the image as a **context reference** (style transfer, subject reference, edits)
   instead of an img2img starting point. This requires a **Krea 2 edit LoRA**
   (e.g. HF repo [`ostris/krea2_turbo_style_reference`](https://huggingface.co/ostris/krea2_turbo_style_reference) —
-  add it via the LoRA panel) and a **recent sd.cpp engine** (`update-engine.bat`;
+  add it via the LoRA panel) and a **recent sd.cpp engine** (`update.bat`;
   needs the `Krea2OstrisEdit` + `--llm_vision` support from July 2026). The
   Qwen3-VL **vision projector (mmproj)** downloads automatically with the model
   and is only loaded in edit mode.
@@ -669,7 +692,7 @@ default** (the docs never force one), at each model's documented steps/CFG
 (Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0). The dropdowns
 still expose the full sd.cpp list for manual experimentation, **annotated per
 model** — with a description card and a fold-out rationale right in the tab.
-New entries need a recent engine (`update-engine.bat`).
+New entries need a recent engine (`update.bat`).
 
 #### Why most of the menu does not apply here
 Three properties of our two models — read off sd.cpp itself, not guessed —
@@ -738,7 +761,7 @@ a typo can't reach the menu.
 option (e.g. `threshold=0.2`). It reuses near-identical computations across
 diffusion steps. Honest note: it pays off mostly above ~10 steps — on 4–8-step
 distilled models the gain is small and artifacts are possible, hence **off by
-default**. Requires a recent engine (`update-engine.bat`).
+default**. Requires a recent engine (`update.bat`).
 
 ### Measured hardware profile
 **Settings → 🧪 Measure this machine** runs a fixed 512×512 / 4-step / seed
@@ -778,7 +801,7 @@ The clear case for turning it on is when you are close to running out of memory.
 
 Both are recent sd.cpp options: the app **checks the installed binary** and
 simply omits them if it doesn't know them, so an older engine cannot break on an
-unknown argument. `update-engine.bat` to get them.
+unknown argument. `update.bat` to get them.
 
 > **What about SageAttention or Triton?** They cannot be added, and it is not a
 > matter of build flags. Both live in the **PyTorch** ecosystem: Triton is a
@@ -821,7 +844,7 @@ fp16** removes the 38 s rather than hiding it (see
 (The earlier ComfyUI backend stays removed too: too fragile.)
 
 ### Engine binary: official or self-built (CI)
-By default `update-engine.bat` downloads the **official** prebuilt binary from
+By default the engine step downloads the **official** prebuilt binary from
 [`leejet/stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp)
 releases — the simplest, always-works path.
 
@@ -834,16 +857,18 @@ where the two engines differ.
 
 ### Updating the engines
 
-**The code and the engines update separately, and that is the trap.** Three
-scripts, three targets:
+**The code and the engines used to update separately, and that was the trap.**
+They do not any more: `update.bat` is one button for all of it (see
+[Updating the app itself](#updating-the-app-itself)), and each part is still
+reachable alone.
 
-| Script | Updates |
+| Command | Updates |
 |---|---|
-| `update.bat` | **the application** — code, from GitHub (see [Updating the app itself](#updating-the-app-itself)) |
-| `update-engine.bat` | **sd.cpp** — latest official prebuilt binary (image generation) |
-| `update-trellis.bat` | **trellis.cpp** — latest official Windows CUDA build (Image → 3D) |
+| `update.bat` | **everything**, in order: code, cleanup, sd.cpp, 3D |
+| `update.bat --engine` | **sd.cpp** only — latest official prebuilt binary (images and video) |
+| `update.bat --trellis` | **trellis.cpp** only — latest official Windows CUDA build (Image → 3D), and only if already installed |
 
-The two engine scripts replace only the **engine binary**. sd.cpp updates are
+The engine steps replace only the **engine binary**. sd.cpp updates are
 first validated outside `bin/`, then swapped atomically; the previous working
 build is retained for one-command rollback (`rollback-engine.bat` /
 `./rollback-engine.sh`) and an `engine-manifest.json` records its exact commit,
@@ -855,11 +880,9 @@ those from the **🧊 Image → 3D** tab if ever needed.
 **When do you need to update the engine?** When a tab tells you to. The app
 parses `sd-cli -h` and checks the options the current code actually needs, so a
 missing capability is reported as a *feature* ("the HD tab will not work"), not
-as a flag name. `maintenance.bat --all` does the purge and the engine update in
-one go.
+as a flag name. Running `update.bat` with no flag does all of it in one go.
 
-`update-trellis.bat` picks its archive from your card — see
-[Image → 3D](#image--3d).
+The 3D step picks its archive from your card — see [Image → 3D](#image--3d).
 
 ### Keeping the interface shallow
 Two rules, enforced by `tests/test_ui_shape.py` rather than by good intentions:
@@ -1087,7 +1110,7 @@ or use the tiled ESRGAN → SDXL path, which fits in far less VRAM) instead of t
 old bare "sd-cli exited with code 1".
 
 Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
-and points at `update-engine.bat` instead of silently producing a plain image.
+and points at `update.bat` instead of silently producing a plain image.
 
 
 ### 🔍 High resolution (Flux.2 as its own upscaler)
@@ -1193,7 +1216,7 @@ sd.cpp will not read Ultralytics `.pt` files — it needs a safetensors with its
 own tensor names and BatchNorm already fused into the convolutions, and nobody
 publishes those. The conversion needs `ultralytics`, which is AGPL-3.0, pulls
 opencv/pandas/scipy and wants a NumPy the other add-ons do not have; installing
-it beside them would cause exactly the breakage `maintenance.bat` spends its
+it beside them would cause exactly the breakage the cleanup spends its
 time reporting. So the one-click install builds a **throwaway environment,
 converts, and deletes it**: about 12 MB of detectors stay, and nothing
 permanent — nor anything AGPL — is added to the application.
@@ -1218,7 +1241,7 @@ click.
 
 Regions are processed **one after another**, each result feeding the next, and
 the seed is incremented per region. Requires a recent engine: on an `sd-cli`
-that predates `--ad-model`, the tab says so and points at `update-engine.bat`
+that predates `--ad-model`, the tab says so and points at `update.bat`
 instead of failing at the first click.
 
 ### ✨ Creative (SDXL, *Ultimate SD Upscale*)
@@ -1849,7 +1872,7 @@ To share the GUI so friends install nothing:
    fetch the **models** from the Model Catalog tab (via Hugging Face).
 
 This works even if someone’s network filters GitHub — the engine is already in the
-ZIP. To update the GGUF engine later, run **`update-engine.bat`**.
+ZIP. To update the GGUF engine later, run **`update.bat`**.
 
 ---
 
@@ -1973,8 +1996,9 @@ atelier/
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary
   get_trellis.py             # downloads the trellis.cpp binary + GGUF weights
-  update_app.py              # update.bat: code update, manifest, backup, rollback
-  maintenance.py             # purge, orphan detection, engine capability check
+  update_app.py              # update.bat: the four steps, in order (code → clean → engines)
+  maintenance.py             # steps 2-4: purge, orphan detection, engine capabilities
+                             #   (no launcher of its own: update.bat --clean runs it)
   _torch_setup.py            # shared PyTorch-CUDA install helpers
   setup_tools.py             # installs the PyTorch add-ons
   tools/_device.py           # CUDA / Metal-MPS / CPU picker shared by the runners
@@ -2050,15 +2074,15 @@ it. Handy to keep image models on the NVMe while parking bulky ones elsewhere.
 - **🩺 Diagnose image display** — the three-layer test for the broken-image-icon
   problem, described in [Troubleshooting](#troubleshooting). Press the button
   instead of opening the browser console.
-- **🌐 Updating & maintenance** — what `update.bat`, `maintenance.bat` and
-  `update-engine.bat` each do, in the same place as the buttons that need them.
+- **🌐 Updating & maintenance** — what `update.bat` does, step by step, in the
+  same place as the settings that need it.
 
 ---
 
 ## Gradio version
 
 The app targets **Gradio 6** (`gradio>=6.0,<7` in `requirements.txt`) and will
-not run on 5.x — the 6.0 release removed parameters it used. `maintenance.bat`
+not run on 5.x — the 6.0 release removed parameters it used. The cleanup
 names the problem if an old version is still installed, rather than letting it
 surface as a `TypeError` while the interface is being built.
 
@@ -2215,7 +2239,7 @@ required.
   the server's output and reported instead.
 - **A Toolkit add-on fails at import (`DTensor`, `diffusers`, numpy…)** → a
   shared package drifted. All add-ons share one Python, so the last installer to
-  run decides the versions. Run `maintenance.bat`: it names the offending
+  run decides the versions. Run `update.bat --clean`: it names the offending
   package, then reinstall that add-on.
 
 ---

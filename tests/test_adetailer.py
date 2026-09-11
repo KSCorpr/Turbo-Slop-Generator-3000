@@ -89,7 +89,7 @@ class RefusalTests(unittest.TestCase):
         with patch.object(settings, "find_sd_cli", return_value=Path("sd-cli")), \
              patch.object(sdcpp, "supported_options", return_value=frozenset()):
             reason = tools.adetailer_reason()
-        self.assertIn("update-engine.bat", reason)
+        self.assertIn("update.bat", reason)
 
     def test_a_missing_binary_is_reported_first(self):
         with patch.object(settings, "find_sd_cli", return_value=None):

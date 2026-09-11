@@ -21,10 +21,13 @@ l'installation est saine.
 Par défaut il ne supprime AUCUNE donnée : il affiche l'espace récupérable et la
 commande pour le libérer.
 
-    maintenance.bat                 # vérifie et nettoie le code seulement
-    maintenance.bat --purge         # + supprime les données des fonctions
-                                    #   retirées et les orphelins
-    (./maintenance.sh sur Linux/Mac)
+Il n'a plus de lanceur à lui : `update.bat` l'appelle, et `update.bat --clean`
+ne fait que lui. C'est voulu — il faisait un quart du travail, et le bouton
+séparé donnait l'impression d'avoir tout fait.
+
+    update.bat                      # tout, dans l'ordre
+    update.bat --clean              # ce script seul (mesure, puis demande)
+    python scripts/maintenance.py --purge     # supprime sans demander
 
 Ne touche jamais à models/custom/, loras/, outputs/, userdata/, python/, bin/.
 """
@@ -33,6 +36,7 @@ from __future__ import annotations
 import shutil
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -126,6 +130,15 @@ REMOVED_FEATURES = [
     # qui rend l'entrée sûre — elle demande au code actuel s'il importe le
     # fichier avant de l'effacer. Sans ce garde-fou, ne pas écrire cette ligne
     # serait plus prudent que de l'écrire.
+    # Les trois lanceurs fusionnés dans `update.bat`. Aucune donnée : quatre
+    # fichiers texte. Mais ils doivent DISPARAÎTRE des copies installées —
+    # sinon on continue de double-cliquer `maintenance.bat`, qui existe encore
+    # sur le disque, appelle un script qui marche toujours, et ne fait qu'un
+    # quart du travail sans jamais le dire.
+    {"name": "The separate update launchers (merged into update.bat)",
+     "files": ["maintenance.bat", "maintenance.sh",
+               "update-engine.bat", "update-trellis.bat"],
+     "dirs": []},
     {"name": "Resident engine (sd-server) and LAN sharing",
      "files": ["atelier/engine/sdserver.py", "tests/test_sdserver.py",
                "run-lan.bat", "run-lan.sh"],
@@ -608,8 +621,7 @@ def check_engine(update: bool) -> bool:
         if update:
             print(INFO + "binaire absent → installation…")
             return not _run_get_sdcpp()
-        _warn("sd-cli binary not found → maintenance.bat --update-engine (or "
-              "install.bat)")
+        _warn("sd-cli binary not found → update.bat (or install.bat)")
         return True
     print(OK + f"found: {sd}")
 
@@ -617,7 +629,7 @@ def check_engine(update: bool) -> bool:
     if not opts:
         _warn("the binary does not answer “-h”: its capabilities cannot be "
               "checked. If it does not start either, reinstall it "
-              "(maintenance.bat --update-engine).")
+              "(update.bat).")
         return False
 
     missing = [f for f in ENGINE_FEATURES if f["option"] not in opts]
@@ -634,37 +646,75 @@ def check_engine(update: bool) -> bool:
         print(INFO + "updating the engine…")
         return not _run_get_sdcpp(force=True)
     print(INFO + "The engine is older than the code. To bring it in line:")
-    print("        maintenance.bat --update-engine"
-          "   (./maintenance.sh --update-engine)")
+    print("        update.bat   (./update.sh on Linux/Mac)")
     return True
 
 
-def _run_get_sdcpp(force: bool = False) -> bool:
-    """Lance scripts/get_sdcpp.py dans CE Python. True si ça a réussi.
+def _run_downloader(script: str, args: list, label: str) -> bool:
+    """Lance un téléchargeur de scripts/ dans CE Python. True si ça a réussi.
 
-    Sous-process plutôt qu'import : le script est fait pour être un programme
-    (il appelle sys.exit), et un échec de téléchargement ne doit pas emporter
-    la maintenance avec lui.
+    Sous-processus plutôt qu'import, et c'est délibéré : ces scripts sont faits
+    pour être des PROGRAMMES — ils appellent `sys.exit` — et un échec de
+    téléchargement ne doit pas emporter la maintenance avec lui. Le réseau
+    tombe ; le reste des vérifications, lui, a encore quelque chose à dire.
+
+    Un seul corps pour les deux moteurs : ils se récupèrent de la même façon,
+    et deux copies de ces vingt lignes finiraient par diverger sur la gestion
+    d'erreur — exactement comme les deux constructeurs de ligne de commande
+    l'avaient fait avant qu'on les réunisse.
     """
     import subprocess
-    cmd = [sys.executable, str(ROOT / "scripts" / "get_sdcpp.py")]
-    if force:
-        cmd.append("--force")
+    cmd = [sys.executable, str(ROOT / "scripts" / script), *args]
     print(INFO + "$ " + " ".join(cmd))
     try:
         code = subprocess.call(cmd, cwd=str(ROOT))
     except OSError as exc:
-        _warn(f"lancement impossible : {exc}")
+        _warn(f"could not be started: {exc}")
         return False
     if code == 0:
-        # Le cache d'options est indexé sur (chemin, mtime, taille) : un
-        # nouveau binaire produit une clé différente, la relecture est donc
-        # automatique. On revérifie pour AFFICHER le résultat, pas pour purger.
-        print(OK + "engine installed/updated.")
+        print(OK + f"{label} installed/updated.")
         return True
-    _warn(f"the engine update failed (code {code}). Network? "
-          "Try again, or run update-engine.bat.")
+    _warn(f"the {label} update failed (code {code}). Network? Try again.")
     return False
+
+
+def _run_get_sdcpp(force: bool = False) -> bool:
+    # Le cache d'options est indexé sur (chemin, mtime, taille) : un nouveau
+    # binaire produit une clé différente, donc la relecture est automatique.
+    return _run_downloader("get_sdcpp.py", ["--force"] if force else [],
+                           "the sd.cpp engine")
+
+
+def check_trellis(update: bool) -> bool:
+    """Le moteur 3D. Renvoie True si une mise à jour reste à faire.
+
+    Il n'est PAS installé par défaut, et il ne doit pas l'être ici. Le binaire
+    seul est petit, mais il ne sert à rien sans ses poids — 16 Go que personne
+    n'a demandés en lançant une mise à jour. Donc : on ne touche à trellis que
+    s'il est DÉJÀ là. Absent, on le dit en une ligne et on passe.
+
+    Et seulement le BINAIRE (`--binary`). Les poids changent rarement, ils
+    pèsent le prix d'une soirée de téléchargement, et le bouton d'installation
+    de l'onglet « Image → 3D » est l'endroit qui en parle correctement.
+    """
+    print("• trellis.cpp engine (3D)…")
+    try:
+        from atelier.engine import trellis
+    except Exception as exc:  # noqa: BLE001
+        _warn(f"cannot check: {exc}")
+        return False
+    server = trellis.find_server()
+    if server is None:
+        print(INFO + "not installed — nothing to update. The “🧰 Tools → "
+                     "🧊 Image → 3D” tab installs it (engine + ~16 GB of "
+                     "weights).")
+        return False
+    print(OK + f"found: {server}")
+    if update:
+        print(INFO + "updating the 3D engine (binary only, not the weights)…")
+        return not _run_downloader("get_trellis.py", ["--binary", "--force"],
+                                   "the trellis.cpp engine")
+    return True
 
 
 def _module_map() -> dict[str, "Path"]:
@@ -788,21 +838,26 @@ def check_orphan_modules() -> None:
 
 USAGE = """Maintenance — Turbo Slop Generator 3000
 
-  maintenance.bat                   asks: 1 update, 2 clean, 3 both,
-                                    0 just check (the safe default)
-  maintenance.bat --update-engine   + bring the sd-cli engine in line with the code
-  maintenance.bat --purge           + delete the data of removed features,
-                                    and the orphans
-  maintenance.bat --all             everything: purge + engine update
-                                    ("after an update, all tidy")
-  maintenance.bat --ask-purge       like --purge, but MEASURES first and asks
-                                    before deleting anything (what update.bat
-                                    chains onto itself)
+This script has no launcher of its own any more: `update.bat` runs it, and
+`update.bat --clean` runs only it.
 
-To update the APPLICATION itself: update.bat — which then runs this script for
-you, engine included. This one downloads no code, only the engine.
+  update.bat                        everything, in order: code, cleanup,
+                                    sd.cpp engine, 3D engine
+  update.bat --clean                this script, measuring first and asking
+                                    before it deletes anything
 
-(./maintenance.sh … on Linux/Mac)
+Called directly (python scripts/maintenance.py …):
+
+  --update-engine                   bring the sd-cli engine in line with the code
+  --update-trellis                  same for the 3D engine, if it is installed
+  --purge                           delete the data of removed features, and
+                                    the orphans — WITHOUT asking
+  --ask-purge                       like --purge, but MEASURES first, shows the
+                                    total, and asks
+  --all                             purge + both engines
+  (no argument, at a terminal)      asks: 1 update, 2 clean, 3 both, 0 check
+
+This script downloads no code — only the engines.
 Never touches models/custom/, loras/, outputs/, userdata/, python/.
 """
 
@@ -839,7 +894,7 @@ def check_install_complete() -> None:
 
 MENU = """What do you want to do?
 
-  1  Update   — bring the sd-cli engine in line with the code
+  1  Update   — bring the engines (sd.cpp, and 3D if installed) in line
   2  Clean    — delete what removed features and orphans left behind
   3  Both
   0  Just check — the default: measures, deletes nothing
@@ -891,8 +946,23 @@ def confirm_purge(total: int, read=input) -> bool:
     return answer in ("y", "yes", "o", "oui")
 
 
-def parse_args(argv: list, ask=None) -> tuple[bool, bool, bool, bool]:
-    """(supprimer, mettre à jour le moteur, purger les modèles, différer).
+class Plan(NamedTuple):
+    """Ce que cette exécution va faire. Nommé, pas positionnel.
+
+    C'était un quadruplet, et il a gagné un cinquième membre le jour où le
+    moteur 3D est entré dans la liste. Un appelant qui déballe cinq booléens
+    dans le bon ordre n'est pas relisible — et se trompe en silence quand
+    l'ordre change.
+    """
+    purge: bool
+    update_engine: bool
+    update_trellis: bool
+    prune_models: bool
+    deferred: bool
+
+
+def parse_args(argv: list, ask=None) -> "Plan":
+    """Ce que la ligne de commande demande, décidé en un seul endroit.
 
     Sortie de `main` pour être LISIBLE d'un test : c'est ici que se décide si
     plusieurs gigaoctets partent sans un mot ou après une question, et cette
@@ -917,6 +987,7 @@ def parse_args(argv: list, ask=None) -> tuple[bool, bool, bool, bool]:
     ask_purge = "--ask-purge" in argv
     purge = everything or "--purge" in argv or ask_purge
     update_engine = everything or "--update-engine" in argv
+    update_trellis = everything or "--update-trellis" in argv
     prune_models = purge or "--prune-models" in argv
     #  Menu SEULEMENT sans argument et devant un vrai terminal. Un appel
     #  automatisé — ou une sortie redirigée — ne doit jamais rester bloqué
@@ -924,12 +995,16 @@ def parse_args(argv: list, ask=None) -> tuple[bool, bool, bool, bool]:
     asked = False
     if len(argv) == 1 and ask is not None:
         purge, update_engine = ask()
+        #  « Update » au menu veut dire LES moteurs. Les distinguer là
+        #  poserait une question de plus à quelqu'un qui, la plupart du temps,
+        #  n'a même pas installé le second.
+        update_trellis = update_engine
         prune_models = purge
         asked = True
     deferred = purge and (asked or ask_purge)
     if deferred:
         purge = prune_models = False
-    return purge, update_engine, prune_models, deferred
+    return Plan(purge, update_engine, update_trellis, prune_models, deferred)
 
 
 def main() -> int:
@@ -937,8 +1012,10 @@ def main() -> int:
         print(USAGE)
         return 0
     interactive = sys.stdin is not None and sys.stdin.isatty()
-    purge, update_engine, prune_models, deferred_purge = parse_args(
-        sys.argv, ask=ask_choice if interactive else None)
+    plan = parse_args(sys.argv, ask=ask_choice if interactive else None)
+    purge, update_engine = plan.purge, plan.update_engine
+    update_trellis, prune_models = plan.update_trellis, plan.prune_models
+    deferred_purge = plan.deferred
     print("=" * 60)
     print("  Maintenance — Turbo Slop Generator 3000")
     modes = []
@@ -946,7 +1023,7 @@ def main() -> int:
         modes.append("deleting what removed features left behind")
     elif deferred_purge:
         modes.append("measuring the leftovers, then asking before deleting")
-    if update_engine:
+    if update_engine or update_trellis:
         modes.append("engine update")
     if modes:
         print("  (" + " + ".join(modes) + ")")
@@ -972,19 +1049,27 @@ def main() -> int:
 
     compile_check()
     check_deps()
+    #  Les moteurs EN DERNIER, et les deux à la suite. Ils dépendent du code
+    #  qu'on vient de vérifier — c'est lui qui dit quelles options sd-cli doit
+    #  connaître — et leur téléchargement est la seule étape qui touche au
+    #  réseau. La placer au bout veut dire que tout ce qui pouvait être dit
+    #  hors ligne a déjà été dit quand la connexion lâche.
     engine_stale = check_engine(update_engine)
+    trellis_stale = check_trellis(update_trellis)
     print("-" * 60)
     if recoverable > 0:
         # Un chiffre global, puis la commande exacte : c'est tout ce qu'il faut
         # pour décider, sans avoir à additionner les lignes soi-même.
         print(f"💾 {_human(recoverable)} reclaimable (leftovers from removed "
               "features).")
-        print("   To reclaim it:  maintenance.bat --purge   (./maintenance.sh "
-              "--purge on Linux/Mac)")
-    if engine_stale and not update_engine:
-        print("🔧 The engine is behind the code.")
-        print("   To bring everything in line at once:  maintenance.bat --all")
-    if recoverable > 0 or (engine_stale and not update_engine):
+        print("   To reclaim it:  update.bat --clean   (./update.sh --clean "
+              "on Linux/Mac)")
+    stale = ((engine_stale and not update_engine)
+             or (trellis_stale and not update_trellis))
+    if stale:
+        print("🔧 An engine is behind the code.")
+        print("   To bring everything in line at once:  update.bat")
+    if recoverable > 0 or stale:
         print("-" * 60)
     if _problems == 0:
         print("✅ Everything is clean and checked. You can run run.bat.")

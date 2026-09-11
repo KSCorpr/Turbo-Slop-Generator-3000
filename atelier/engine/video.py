@@ -80,7 +80,7 @@ def engine_ready() -> str:
     if not sdcpp.video_supported(sd_cli):
         return ("⚠️ **Your engine cannot generate video yet** — it does not "
                 "know the `--video-frames` option. Run **`update.bat`**: it "
-                "updates the engine right after the code.")
+                "updates the engine as part of the same run.")
     return ""
 
 

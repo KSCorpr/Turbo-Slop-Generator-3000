@@ -23,17 +23,27 @@ Ce script fait les deux correctement :
 Ce qu'il ne touche JAMAIS : models/, loras/, outputs/, userdata/, tools_repo/,
 bin/, python/, tmp/ — vos modèles, vos images, vos réglages, vos moteurs.
 
-Depuis, il fait AUSSI la suite. Mettre à jour le code ne suffisait jamais :
-il restait à lancer `update-engine.bat` parce que le nouveau code attend une
-option que l'ancien moteur n'a pas, puis `maintenance.bat` pour effacer ce
-qu'une fonction retirée laisse derrière elle. Trois boutons, dans un ordre que
-rien n'indiquait, dont deux qu'on oubliait. C'est maintenant une seule
-commande : le code, puis le moteur, puis le ménage.
+Depuis, il fait AUSSI tout le reste, et c'est le sujet de ce fichier.
 
-    update.bat              met à jour le code, le moteur, et fait le ménage
-    update.bat --code-only  le code seulement (l'ancien comportement)
-    update.bat --check      dit seulement ce qui changerait
-    update.bat --rollback   annule la dernière mise à jour
+Mettre à jour le code n'a jamais suffi. Il restait `update-engine.bat`, parce
+que le nouveau code attend une option que l'ancien moteur n'a pas ;
+`update-trellis.bat` pour le moteur 3D ; et `maintenance.bat` pour effacer ce
+qu'une fonction retirée laisse derrière elle. QUATRE boutons, dans un ordre
+que rien n'indiquait, dont trois qu'on oubliait — donc un moteur en retard,
+un dossier qui grossit, et des pannes dont la cause était une mise à jour
+faite à moitié trois semaines plus tôt.
+
+Il n'en reste qu'un. Les quatre étapes s'enchaînent ici, dans l'ordre (voir
+`STEPS`), et chacune reste atteignable seule par son drapeau quand on veut
+vraiment l'une sans les autres.
+
+    update.bat              tout, dans l'ordre : code, ménage, moteurs
+    update.bat --clean      le ménage seul
+    update.bat --engine     le moteur sd.cpp seul
+    update.bat --trellis    le moteur 3D seul
+    update.bat --code       le code seul
+    update.bat --check      dit ce que le code changerait, n'écrit rien
+    update.bat --rollback   annule la dernière mise à jour du code
 """
 from __future__ import annotations
 
@@ -468,15 +478,20 @@ def update(check_only: bool = False, branch: str | None = None) -> int:
     return 0
 
 
-def run_maintenance() -> int:
-    """Enchaîne scripts/maintenance.py : moteur remis à niveau, puis ménage.
+def run_rest(engine: bool, trellis: bool, clean: bool) -> int:
+    """Les trois étapes qui suivent le code, dans le même sous-processus.
 
     En SOUS-PROCESSUS, et ce n'est pas un détail de style. Ce programme vient
     de réécrire des fichiers du projet — `maintenance.py` compris. Un import
     ici exécuterait le code chargé AVANT la mise à jour, c'est-à-dire
     exactement la version dont on vient de se débarrasser : l'ancienne table
-    des fonctions retirées, l'ancienne liste des capacités attendues du moteur.
-    Un processus neuf relit le disque, donc le nouveau code.
+    des fonctions retirées, l'ancienne liste des capacités attendues du
+    moteur. Un processus neuf relit le disque, donc le nouveau code.
+
+    UN seul appel pour les trois, et pas trois appels : `maintenance.py` fait
+    déjà le ménage d'abord et les moteurs en dernier, ce qui est l'ordre
+    voulu. Les découper ici rejouerait ses vérifications trois fois et
+    laisserait leur ordre dépendre de celui-ci.
 
     `--ask-purge` plutôt que `--purge` : la mise à jour peut proposer de
     libérer plusieurs gigaoctets, elle ne peut pas en décider. Le total est
@@ -485,47 +500,101 @@ def run_maintenance() -> int:
     import subprocess
     script = ROOT / "scripts" / "maintenance.py"
     if not script.is_file():
-        _say(WARN + "scripts/maintenance.py is missing — skipping the "
-             "engine update and the cleanup.")
+        _say(WARN + "scripts/maintenance.py is missing — the engines and the "
+             "cleanup are skipped. Your copy is incomplete: run update.bat "
+             "again.")
         return 1
+    args = [sys.executable, str(script)]
+    if engine:
+        args.append("--update-engine")
+    if trellis:
+        args.append("--update-trellis")
+    if clean:
+        args.append("--ask-purge")
     _say("")
     _say("=" * 60)
-    _say("  Now the engine and the cleanup (maintenance)")
+    _say("  Now the engines and the cleanup")
     _say("=" * 60)
     try:
-        return subprocess.call([sys.executable, str(script),
-                                "--update-engine", "--ask-purge"],
-                               cwd=str(ROOT))
+        return subprocess.call(args, cwd=str(ROOT))
     except OSError as exc:
-        _say(WARN + f"maintenance could not be started ({exc}).")
-        _say("    Run maintenance.bat by hand — the code itself is updated.")
+        _say(WARN + f"the second half could not be started ({exc}).")
+        _say("    The code itself is updated. Run update.bat again.")
         return 1
+
+
+#  Les quatre étapes, dans l'ORDRE, et l'ordre est le sujet.
+#
+#    1. le CODE          — tout ce qui suit doit tourner sur le code neuf :
+#                          la nouvelle table des fonctions retirées, la
+#                          nouvelle liste des options attendues du moteur ;
+#    2. le MÉNAGE        — il efface ce qu'une fonction retirée a laissé, PUIS
+#                          vérifie que tout compile et que le catalogue tient
+#                          debout. Avant les moteurs, parce que c'est lui qui
+#                          dit ce que le code exige d'eux ;
+#    3. le moteur sd.cpp — remis au niveau de ce code ;
+#    4. le moteur 3D     — même chose, et seulement s'il est déjà installé.
+#
+#  Les étapes 2 à 4 vivent dans `maintenance.py`, qui les enchaîne déjà dans
+#  cet ordre-là. On ne les rejoue donc pas ici : on l'appelle une fois.
+STEPS = ("code", "clean", "engine", "trellis")
+
+
+def selected_steps(args) -> dict:
+    """Quelles étapes cette invocation demande.
+
+    Sans drapeau d'étape : TOUT, dans l'ordre. C'est le cas normal, et c'est
+    la raison d'être de ce script — un seul bouton.
+
+    Avec au moins un drapeau : seulement ceux-là. C'est ce qui remplace les
+    trois lanceurs qu'on avait (`maintenance.bat`, `update-engine.bat`,
+    `update-trellis.bat`) : ils existaient pour faire une partie sans les
+    autres, ce besoin est réel, il ne méritait juste pas trois fichiers.
+    """
+    asked = {name: bool(getattr(args, name)) for name in STEPS}
+    if any(asked.values()):
+        return asked
+    return {name: True for name in STEPS}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
-                    help="show what would change, without writing anything")
+                    help="show what the code update would change, write "
+                         "nothing, run nothing else")
     ap.add_argument("--rollback", action="store_true",
-                    help="undo the last update")
-    ap.add_argument("--code-only", action="store_true",
-                    help="stop after the code: no engine update, no cleanup")
+                    help="undo the last code update")
     ap.add_argument("--branch", default=None,
                     help=f"branch to update from (default: {DEFAULT_BRANCH}, "
                          "or whatever the last update used)")
+    steps = ap.add_argument_group(
+        "one step only (default: all four, in order)")
+    steps.add_argument("--code", action="store_true",
+                       help="the application code, from GitHub")
+    steps.add_argument("--clean", action="store_true",
+                       help="delete what removed features left behind, and "
+                            "check the installation")
+    steps.add_argument("--engine", action="store_true",
+                       help="the sd.cpp engine (images and video)")
+    steps.add_argument("--trellis", action="store_true",
+                       help="the trellis.cpp engine (3D), if it is installed")
     args = ap.parse_args()
     if args.rollback:
         return _rollback()
-    code = update(check_only=args.check, branch=args.branch)
-    #  Le ménage porte sur le code POSÉ. S'il n'a pas été posé — échec de
-    #  téléchargement, retour en arrière automatique, ou `--check` qui n'écrit
-    #  rien par définition — il n'y a rien à ranger, et lancer la maintenance
-    #  ne ferait qu'ajouter du bruit à un message d'erreur.
-    if code != 0 or args.check or args.code_only:
-        if code == 0 and not args.check:
-            _say(INFO + "start the app again with run.bat.")
-        return code
-    code = run_maintenance()
+
+    want = selected_steps(args)
+    code = 0
+    if want["code"]:
+        code = update(check_only=args.check, branch=args.branch)
+        #  La suite porte sur le code POSÉ. S'il ne l'a pas été — échec de
+        #  téléchargement, retour en arrière automatique, ou `--check` qui
+        #  n'écrit rien par définition — il n'y a rien à ranger, et lancer la
+        #  suite n'ajouterait que du bruit sous un message d'erreur.
+        if code != 0 or args.check:
+            return code
+    if any(want[name] for name in ("clean", "engine", "trellis")):
+        code = run_rest(engine=want["engine"], trellis=want["trellis"],
+                        clean=want["clean"]) or code
     _say("")
     _say(INFO + "start the app again with run.bat.")
     return code

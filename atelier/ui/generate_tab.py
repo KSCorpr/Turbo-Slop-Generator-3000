@@ -346,7 +346,7 @@ def build_generative_tab(model_id: str, title: str,
                                 "point. Requires a **Krea 2 editing LoRA** — "
                                 "one-click install button below — and an "
                                 "up-to-date sd.cpp engine "
-                                "(`update-engine.bat`). 💡 Editing costs more "
+                                "(`update.bat`). 💡 Editing costs more "
                                 "VRAM (reference tokens): the reference is "
                                 "downscaled automatically, and the automatic "
                                 "quantization (Q4_K_M on 11–12 GB) leaves the "

@@ -79,6 +79,11 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
     # Scripts internes, appelés par le code et jamais à la main.
     INTERNAL = {"get_sdcpp.py", "get_trellis.py", "setup_tools.py",
                 "setup_adetailer.py",  # idem, onglet « Détails »
+                # La maintenance a PERDU son lanceur, et c'est le but : elle
+                # ne faisait qu'un quart du travail, et son bouton séparé
+                # donnait l'impression d'avoir tout fait. `update.bat`
+                # l'appelle, `update.bat --clean` ne fait qu'elle.
+                "maintenance.py",
                 "_torch_setup.py", "convert_gguf.py"}
 
     @staticmethod

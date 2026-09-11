@@ -148,14 +148,26 @@ class MenuTests(unittest.TestCase):
 
     def test_a_typed_purge_deletes_straight_away(self):
         """Celui qui a écrit `--purge` a déjà décidé : on ne redemande pas."""
-        purge, engine, models, deferred = M.parse_args(
-            ["maintenance.py", "--purge"])
-        self.assertEqual((purge, models, deferred), (True, True, False))
-        self.assertFalse(engine)
+        plan = M.parse_args(["maintenance.py", "--purge"])
+        self.assertEqual((plan.purge, plan.prune_models, plan.deferred),
+                         (True, True, False))
+        self.assertFalse(plan.update_engine)
 
-    def test_all_does_both_without_asking(self):
-        purge, engine, _, deferred = M.parse_args(["maintenance.py", "--all"])
-        self.assertEqual((purge, engine, deferred), (True, True, False))
+    def test_all_does_both_engines_without_asking(self):
+        plan = M.parse_args(["maintenance.py", "--all"])
+        self.assertTrue(plan.purge)
+        self.assertTrue(plan.update_engine)
+        self.assertTrue(plan.update_trellis)
+        self.assertFalse(plan.deferred)
+
+    def test_each_engine_can_be_asked_for_on_its_own(self):
+        """`update.bat --engine` et `--trellis` reposent là-dessus."""
+        sd = M.parse_args(["maintenance.py", "--update-engine"])
+        self.assertTrue(sd.update_engine)
+        self.assertFalse(sd.update_trellis)
+        three_d = M.parse_args(["maintenance.py", "--update-trellis"])
+        self.assertFalse(three_d.update_engine)
+        self.assertTrue(three_d.update_trellis)
 
     def test_ask_purge_measures_first_and_deletes_nothing_yet(self):
         """La première passe ne doit RIEN supprimer : elle chiffre.
@@ -164,12 +176,12 @@ class MenuTests(unittest.TestCase):
         laissé à True ici, et le message « voici ce qu'on peut libérer »
         arriverait après la suppression.
         """
-        purge, engine, models, deferred = M.parse_args(
+        plan = M.parse_args(
             ["maintenance.py", "--update-engine", "--ask-purge"])
-        self.assertTrue(deferred)
-        self.assertTrue(engine)
-        self.assertFalse(purge, "la passe de mesure supprime déjà")
-        self.assertFalse(models, "la passe de mesure supprime déjà")
+        self.assertTrue(plan.deferred)
+        self.assertTrue(plan.update_engine)
+        self.assertFalse(plan.purge, "la passe de mesure supprime déjà")
+        self.assertFalse(plan.prune_models, "la passe de mesure supprime déjà")
 
     def test_the_menu_is_never_shown_when_arguments_were_given(self):
         """Un appel automatisé ne doit jamais rester bloqué sur une question."""
@@ -179,8 +191,18 @@ class MenuTests(unittest.TestCase):
 
     def test_the_menu_is_not_shown_without_a_terminal(self):
         """`ask=None` est ce que passe `main` quand stdin n'est pas un tty."""
-        self.assertEqual(M.parse_args(["maintenance.py"], ask=None),
-                         (False, False, False, False))
+        plan = M.parse_args(["maintenance.py"], ask=None)
+        self.assertEqual(list(plan), [False] * len(plan))
+
+    def test_the_menu_update_choice_covers_both_engines(self):
+        """« 1 Update » au menu ne peut pas vouloir dire « un des deux ».
+
+        Distinguer les deux moteurs poserait une question de plus à quelqu'un
+        qui, la plupart du temps, n'a même pas installé le second.
+        """
+        plan = M.parse_args(["maintenance.py"], ask=lambda: (False, True))
+        self.assertTrue(plan.update_engine)
+        self.assertTrue(plan.update_trellis)
 
     def test_the_menu_choices_mean_what_the_menu_says(self):
         for answer, expected in (("1", (False, True)), ("2", (True, False)),

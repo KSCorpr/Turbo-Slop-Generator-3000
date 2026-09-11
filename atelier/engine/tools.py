@@ -369,7 +369,7 @@ def adetailer_reason() -> str:
         return ("The sd-cli binary was not found. Run install.bat.")
     if not sdcpp.adetailer_supported(sd_cli):
         return ("Your sd.cpp engine does not know ADetailer yet (the "
-                "`--ad-model` option). Run update-engine.bat, then come back.")
+                "`--ad-model` option). Run update.bat, then come back.")
     if not adetailer_is_installed():
         return ("No detector installed — use the button below (~12 MB once "
                 "converted).")

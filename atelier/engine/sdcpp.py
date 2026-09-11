@@ -204,7 +204,7 @@ def auto_fit_args(sd_cli: Path | None, enabled: bool) -> list[str]:
     if "--auto-fit" not in supported_options(sd_cli):
         if enabled:
             raise EngineError(
-                "Auto-fit needs a newer engine. Run update-engine.bat.")
+                "Auto-fit needs a newer engine. Run update.bat.")
         return []
     modern = bool(re.search(r"--auto-fit[^\n]*(?:on\|off|'on' or 'off')",
                             binary_help(sd_cli)))
@@ -262,7 +262,7 @@ def memory_args(sd_cli: Path | None, req: "GenRequest") -> list[str]:
             and req.encoder_gpu_index != req.gpu_index):
         if "--backend" not in known:
             raise EngineError("Splitting the text encoder onto a second card "
-                              "needs a newer engine. Run update-engine.bat.")
+                              "needs a newer engine. Run update.bat.")
         # Split d'encodeur : diffusion + VAE sur le GPU principal, encodeur
         # (te) sur l'autre. Ordre CUDA par bus PCI forcé via l'environnement.
         # `clip_on_cpu` gagne sur le split : c'est la reprise après OOM qui le
@@ -502,14 +502,14 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
                 "--preview-interval", "1"]
     # Accélération par cache (opt-in) : saute des calculs quasi identiques entre
-    # pas. Nécessite un sd-cli récent (update-engine.bat si flag inconnu).
+    # pas. Nécessite un sd-cli récent (update.bat si le flag est inconnu).
     if req.cache_mode:
         # Un moteur qui ne connaît pas l'option échouerait sur un argument
         # inconnu, message illisible à l'appui. On le dit avant de lancer.
         if ("--cache-mode" not in known
                 or (req.cache_option and "--cache-option" not in known)):
             raise EngineError("This cache setting needs a newer engine. "
-                              "Run update-engine.bat.")
+                              "Run update.bat.")
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
