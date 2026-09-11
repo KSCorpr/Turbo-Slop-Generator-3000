@@ -58,10 +58,6 @@ class BaseModel:
     defaults: dict[str, Any]
     vram_min_gb: float
     presets: list[dict] = None  # type: ignore[assignment]
-    # Ce que ce modèle PRODUIT : « image » ou « video ». Le catalogue les
-    # range ensemble parce qu'ils se téléchargent, se mesurent et se
-    # suppriment de la même façon ; ils ne se PROPOSENT pas au même endroit.
-    kind: str = "image"
 
 
 @lru_cache(maxsize=4)
@@ -94,29 +90,19 @@ def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
     return q_diff, q_enc
 
 
-IMAGE, VIDEO, EVERYTHING = "image", "video", None
+def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
+    """Tous les modèles du catalogue.
 
-
-def load_base_models(prefs: dict[str, Any],
-                     kind: str | None = IMAGE) -> list[BaseModel]:
-    """Les modèles du catalogue, filtrés par ce qu'ils PRODUISENT.
-
-    Le défaut est volontairement le plus étroit — « image ». Une quinzaine
-    d'endroits lisent ce catalogue pour remplir une liste de modèles : la
-    passe HD, l'outpaint, ADetailer, l'upscale créatif, le banc de mesure.
-    Aucun ne peut rien faire d'un modèle vidéo, et aucun n'aurait signalé
-    qu'on venait de lui en proposer un — il aurait juste échoué à la
-    génération suivante, loin d'ici.
-
-    Passer `kind=EVERYTHING` est donc un choix explicite, réservé aux trois
-    endroits qui parlent du catalogue en tant que catalogue : le
-    téléchargement, l'inventaire disque, et la détection des orphelins.
+    Ce lecteur a porté un filtre `kind` le temps qu'un modèle VIDÉO habite le
+    catalogue : il empêchait Wan 2.2 d'être proposé là où on attend un modèle
+    d'image — passe HD, outpaint, ADetailer, banc de mesure. La vidéo est
+    retirée, le catalogue est de nouveau homogène, et un filtre à une seule
+    valeur possible n'est plus un garde-fou : c'est du code que personne ne
+    relit et que le premier ajout contredira.
     """
     q_diff, q_enc = effective_quants(prefs)
     out: list[BaseModel] = []
     for m in _catalog().get("base_models", []):
-        if kind is not None and (m.get("kind") or IMAGE) != kind:
-            continue
         comps: list[Component] = []
         for role, spec in (m.get("sources") or {}).items():
             template = spec["match"]
@@ -136,24 +122,12 @@ def load_base_models(prefs: dict[str, Any],
             components=comps, defaults=m.get("defaults", {}),
             vram_min_gb=float(m.get("vram_min_gb", 0)),
             presets=m.get("presets", []),
-            kind=(m.get("kind") or IMAGE),
         ))
     return out
 
 
 def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
-    """Un modèle par son identifiant, quel que soit ce qu'il produit.
-
-    Ici PAS de filtre : on demande un modèle qu'on nomme, donc on sait déjà
-    ce qu'on demande. Le filtre sert à remplir des listes, pas à répondre à
-    une question précise.
-    """
-    return next((m for m in load_base_models(prefs, kind=EVERYTHING)
-                 if m.id == model_id), None)
-
-
-def load_video_models(prefs: dict[str, Any]) -> list[BaseModel]:
-    return load_base_models(prefs, kind=VIDEO)
+    return next((m for m in load_base_models(prefs) if m.id == model_id), None)
 
 
 
@@ -352,11 +326,9 @@ def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:
     Retourne la liste des fichiers supprimés."""
     mine = {resolve_component_path(c) for c in model.components}
     mine.discard(None)
-    # Fichiers utilisés par les AUTRES modèles : à préserver. TOUT le
-    # catalogue, image comme vidéo — Krea 2 et Wan 2.2 partagent des VAE de la
-    # même famille, et supprimer l'un ne doit pas amputer l'autre.
+    # Fichiers utilisés par les AUTRES modèles : à préserver.
     shared: set = set()
-    for other in load_base_models(prefs, kind=EVERYTHING):
+    for other in load_base_models(prefs):
         if other.id == model.id:
             continue
         for c in other.components:
@@ -399,7 +371,7 @@ def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
     vram = prof.gpu.vram_gb if prof.gpu else 0.0
     out: dict[str, list[str]] = {}
     from .i18n import t
-    for m in load_base_models(prefs, kind=EVERYTHING):
+    for m in load_base_models(prefs):
         labels: list[str] = []
         if vram and vram >= m.vram_min_gb:
             labels.append(t("✅ suits your card"))

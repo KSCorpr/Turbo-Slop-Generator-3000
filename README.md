@@ -48,7 +48,7 @@ per model; adding a model adds a tab, never a setting.)
 | 🟢 **Z-Image Turbo** | the lightest of the three (6B, 8 steps) · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for any of the three engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
 The exact tab tree, since two of the six are containers:
@@ -56,7 +56,7 @@ The exact tab tree, since two of the six are containers:
 ```
 🟣 Flux.2 Klein 9B   ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
 💊 Xanax   📚 Model Catalog
-🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Image → 3D
+🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
 
 🧰 Toolkit  → 📝 Image → prompt · 🌐 Depth · ✂️ Background removal
@@ -89,8 +89,7 @@ The exact tab tree, since two of the six are containers:
   - [🖐️ Details — hands and faces](#-details--hands-faces-and-anything-a-detector-finds)
   - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
 - [Outpaint](#outpaint)
-- [Image → 3D](#image--3d)
-- [Video](#video)
+- [Text / Image → 3D](#text--image--3d)
 - [Toolkit](#toolkit)
   - [Image → prompt](#-image--prompt)
   - [Layers → PSD](#layers--psd)
@@ -143,7 +142,7 @@ stable-diffusion.cpp instead of the CUDA one. What differs on a Mac:
 - **Toolkit add-ons run on MPS** (Metal) via PyTorch, with
   `PYTORCH_ENABLE_MPS_FALLBACK` set so an operator MPS lacks drops to CPU instead
   of killing the run.
-- **🧊 Image → 3D is unavailable.** trellis.cpp ships a Windows-CUDA binary only —
+- **🧊 Text / Image → 3D is unavailable.** trellis.cpp ships a Windows-CUDA binary only —
   no Apple Silicon build, no Metal path. The tab says so instead of offering an
   installer that would find nothing. Everything else works.
 - **16 GB is the realistic floor**, 24 GB+ comfortable. Intel Macs are not
@@ -875,14 +874,14 @@ build is retained for one-command rollback (`rollback-engine.bat` /
 archive checksum and supported options. DLLs from two releases therefore never
 mix, while a broken download can never destroy the working install. **Models
 are never re-downloaded** — including the ~10 GB trellis 3D set; reinstall
-those from the **🧊 Image → 3D** tab if ever needed.
+those from the **🧊 Text / Image → 3D** tab if ever needed.
 
 **When do you need to update the engine?** When a tab tells you to. The app
 parses `sd-cli -h` and checks the options the current code actually needs, so a
 missing capability is reported as a *feature* ("the HD tab will not work"), not
 as a flag name. Running `update.bat` with no flag does all of it in one go.
 
-The 3D step picks its archive from your card — see [Image → 3D](#image--3d).
+The 3D step picks its archive from your card — see [Text / Image → 3D](#text--image--3d).
 
 ### Keeping the interface shallow
 Two rules, enforced by `tests/test_ui_shape.py` rather than by good intentions:
@@ -1396,12 +1395,50 @@ sidecar recording model, seed and settings. Generation tabs have a
 
 ---
 
-## Image → 3D
+## Text / Image → 3D
 
-**🧰 Tools → 🧊 Image → 3D** turns one image into a **textured 3D mesh** (GLB)
-through **[trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (TRELLIS.2) —
-a native CUDA binary on GGML, **no PyTorch**. Give it a sharp image of a
-**single object** on a simple background; background removal is automatic.
+**🧰 Tools → 🧊 Text / Image → 3D** turns a **prompt or an image** into a
+**textured 3D mesh** (GLB) through
+**[trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (TRELLIS.2) — a native
+CUDA binary on GGML, **no PyTorch**.
+
+### Text → 3D is a chain, not another model
+
+TRELLIS only reads images. So a prompt is turned into one first, with the
+generation model you already have, and that image is handed over. This is not a
+shortcut on our side — it is what trellis.cpp's own documentation means by
+text-to-3D: *"optionally driven end-to-end from a text prompt with
+stable-diffusion.cpp producing the input image"*.
+
+Two consequences shape the tab:
+
+- **The intermediate image is shown, not hidden.** It lands in the image field
+  before the mesh starts. That is where things go wrong — a tight crop, a cast
+  shadow, a background — and a single button that chained everything would make
+  you pay for a full mesh to find out. Seeing it costs one look; re-rolling it
+  costs seconds, where the mesh costs minutes.
+- **The prompt is rewritten**, and that is not decoration. TRELLIS reconstructs
+  *one* object: it cuts out the subject, processes the image as a square, and
+  assumes what it sees is the whole thing. A tight crop makes it invent what is
+  off-frame; a cast shadow becomes geometry; a background becomes noise on the
+  mesh. So your subject is wrapped in terms that each answer one of those
+  failures — *one object only, entire object visible in frame, plain flat
+  neutral background, no cast shadow, centred* — and the image is generated
+  **square at 1024²**, because TRELLIS would square it anyway and it is better
+  to choose the framing than to let it crop.
+
+  The template is in **Advanced options**, editable and visible. Empty it and
+  your prompt goes through untouched.
+
+One thing the tab handles for you: the **resident 3D server holds the card**.
+If it is running, it is stopped before the image is generated — otherwise you
+would get an out-of-memory error whose cause is the 3D tab itself, which is
+exactly the kind of failure nobody traces back.
+
+### Image → 3D
+
+Give it a sharp image of a **single object** on a simple background;
+background removal is automatic.
 
 > ⛔ **Windows CUDA only.** There is no Apple Silicon build and no Metal path.
 > The tab says so on a Mac instead of offering an installer that would find
@@ -1445,6 +1482,8 @@ removal can change without a reload.
 
 | Control | What it does |
 |---|---|
+| **Object to model** | a prompt — leave empty to use an image instead |
+| **Model used for the image** | any generation model you have downloaded |
 | **Input image** | one object, simple background |
 | **Pad to square** | TRELLIS processes its input as a square — without this a non-square image comes out **distorted** |
 | **Geometry resolution** | 512 (recommended, ≤ 12 GB) · 1024 · 1536 |
@@ -1464,122 +1503,6 @@ mid-generation the HTTP connection is cut and `requests` raises a bare
 own last lines and reports those instead — see the `no kernel image` entry in
 [Troubleshooting](#troubleshooting), which is the one failure that used to be a
 dead end and no longer is.
-
----
-
-## Video
-
-**🧰 Tools → 🎬 Video** generates a short film with **Wan 2.2 TI2V 5B**, through
-the **same sd.cpp binary and the same GGUF machinery as the images** — `-M
-vid_gen`, no second backend, no PyTorch, nothing extra to install.
-
-Text → video and image → video are the *same model*: load a starting frame and
-it animates from there, leave the field empty and it starts from the prompt
-alone. The tab does not ask which mode you want; it looks at the field.
-
-### Why it fits on 11–12 GB when the earlier attempts did not
-
-This file has existed twice before, for LTX-2.3 and then MiniMax-H3, and was
-removed both times for one reason that had nothing to do with the interface:
-**their text encoder did not fit on a 12 GB card**, so there was nothing to
-show. Wan changes the arithmetic, and the three numbers have to be read
-together:
-
-| piece | size (Q4_K_M) | lives |
-| --- | --- | --- |
-| diffusion | 3.4 GB | on the card |
-| VAE 2.2 | 1.4 GB | on the card |
-| umt5-xxl text encoder | 3.7 GB | **in system RAM** (`te=cpu`) |
-
-The card therefore carries **4.8 GB of weights, not 8.5**. That is the same
-split the images already use, for the same reason — see
-[Machine profiles](#machine-profiles--one-button-per-known-tower).
-
-### The VAE decode is the expensive part, and it is measured
-
-Upstream's documentation warns that "Wan models vae requires really much VRAM".
-It is right, and the number is worth knowing. Measured on a 2080 Ti at
-832×480, 33 frames: **sampling is easy** — 20 steps at 4.3 s/it, 89 s, no
-trouble at all. Then the decode asks for **13.9 GB** and falls over. Of that,
-~1.3 GB is the VAE's own weights; **~12.5 GB is the graph's compute buffer**.
-Decoding is the only moment when all 33 frames exist together, and it is the
-one cost that appears in no weight file's size.
-
-Two things make that number manageable, and the app does both:
-
-- **A real tile size.** `--vae-tiling` alone does nothing here: without
-  `--vae-tile-size`, sd.cpp takes its 32-latent-pixel default, and an 832×480
-  frame is 52×30 in latent — so the "tiles" came out 32×30, two of them, each
-  three fifths of the picture. The tab now sends a tile sized from your card
-  (`video_vae_tile`): 16 latent px on an 11–12 GB card, 24 on 16 GB, 32 on
-  24 GB+. The cost follows the tile's *area*, so halving its side quarters the
-  buffer. The price is seams, which is why it is a scale per card rather than
-  one small value for everyone.
-- **A `--max-vram` budget**, supplied even when you have not set one, so the
-  planner cuts its graph against a target instead of blind.
-
-If it still does not fit, the app **retries once**, and the retry changes both
-of the things that matter: tiles half the size again, and `--offload-to-cpu` —
-which is the configuration every Wan example in upstream's own documentation
-uses. That second half is not superstition. Under auto-fit the diffusion
-weights have the card as both their residence *and* their compute device, and
-sd.cpp's memory manager only frees what it can reload from somewhere else — so
-those 3.3 GB stay pinned through the decode, on a card that is short of room.
-Moved to RAM they become evictable again. The price is speed: sampling re-reads
-its weights from RAM every step. So it is paid **after** a failure, never as a
-precaution.
-
-One upstream behaviour worth knowing: sd.cpp's own fallback retries a failed
-decode with *temporal* tiling (`prepare_vae_decode_retry_tiling`, PRs #1926 and
-#1932). On Wan that asks for **more** memory, not less — 14.7 GB against 13.9
-in the measured run — because Wan's stateful temporal path carries a feature
-cache between tiles. So it is not the lever for this model, and the spatial
-tile size is.
-
-### Length is 4n+1, and that is not a preference
-
-Wan's temporal VAE works in groups of four frames plus one. 33, 65, 81 and 121
-are exact; 50 is not — sd.cpp silently realigns it to 49. So the tab offers the
-exact values with their real duration next to them, instead of a "seconds"
-slider that would promise 2.0 s and hand you 1.9 s. At 24 fps:
-
-| frames | duration |
-| --- | --- |
-| 33 | 1.4 s |
-| 65 | 2.7 s |
-| 81 | 3.4 s |
-| 121 | 5.0 s |
-
-Native frame size is **704×1280** (or its transpose). 480×832 is there to try an
-idea quickly: four times fewer pixels per frame, so roughly four times less
-time.
-
-### What comes out, and what Adobe Stock wants
-
-sd.cpp encodes the file itself — **no ffmpeg to install**, which is the reason
-this tab can exist in an application with no console. But it does not write
-H.264. Three outputs, for three genuinely different needs:
-
-- **`.webm`** (VP8) — light, plays in the browser, so the only one that shows in
-  the tab. The default.
-- **`.avi`** (Motion-JPEG) — every frame is a JPEG, so the file is large, but
-  any editor opens it.
-- **`.png`** — the frame sequence itself, uncompressed: the master. Written to
-  its own folder so 121 files do not scatter through `outputs/`.
-
-None of the three is what Adobe Stock asks for (H.264 or ProRes in MP4/MOV).
-That conversion belongs in your editor; the app does not pretend to do it.
-
-**Licence**: Wan 2.2 is **Apache-2.0**, and so are the GGUF quantizations and
-the umt5 encoder — end to end, like Z-Image Turbo. Nothing in the chain
-restricts selling the result.
-
-### The one honest caveat
-
-A video is many images. On a 2080 Ti at 832×480, 33 frames, 20 steps, sampling
-alone is **89 seconds** — and 121 frames costs roughly four times what 33 does,
-with a decode that grows with it. Start at 33 frames and the light frame size
-to find out whether the prompt works at all, then re-run the good ones long.
 
 ---
 
@@ -1924,12 +1847,6 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
-**Wan 2.2 TI2V 5B** (family `wan22`, sd.cpp `-M vid_gen`) — **video**
-- diffusion — [`QuantStack/Wan2.2-TI2V-5B-GGUF`](https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF) (the repo sd.cpp's own docs point at; full Q2_K → Q8_0 ladder)
-- VAE — same repo, `VAE/Wan2.2_VAE.safetensors` (the **2.2** VAE — every other Wan model uses the 2.1 one)
-- text encoder — [`city96/umt5-xxl-encoder-gguf`](https://huggingface.co/city96/umt5-xxl-encoder-gguf) (via `--t5xxl`, offloaded to RAM)
-- **Apache-2.0** throughout. See [Video](#video).
-
 **Z-Image Turbo** (family `z_image`, sd.cpp)
 - diffusion — [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (6B distilled, 8 steps, CFG 1.0)
 - text encoder — [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (via `--llm`, offloaded to RAM)
@@ -2013,7 +1930,6 @@ atelier/
     highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
     outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
     trellis.py               # trellis.cpp server: image → GLB, transient or resident
-    video.py                 # 🎬 Wan 2.2 through sd.cpp `-M vid_gen`, same weights machinery
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces…)
     masks.py                 # mask cleanup and layer naming — pure numpy
     psd.py                   # PSD writer — pure Python, no compiled dependency
@@ -2023,7 +1939,7 @@ atelier/
     widgets.py               # shared image/gallery button lists (Gradio 6)
     preview.py               # data: URI fallback preview
     generate_tab.py · xanax_tab.py (hard-wired style) · library_tab.py
-    toolkit_tab.py · outpaint_tab.py · threed_tab.py · video_tab.py
+    toolkit_tab.py · outpaint_tab.py · threed_tab.py
     settings_tab.py · manage_tab.py · convert_tab.py
 scripts/
   get_sdcpp.py               # downloads the stable-diffusion.cpp binary

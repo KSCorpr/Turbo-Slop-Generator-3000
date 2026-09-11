@@ -31,9 +31,7 @@ def build_library_tab():
             "after the download.")
 
         prefs = settings.load_prefs()
-        # Le catalogue de téléchargement montre TOUT : c'est ici qu'on va
-        # chercher un modèle, image ou vidéo.
-        models = registry.load_base_models(prefs, kind=registry.EVERYTHING)
+        models = registry.load_base_models(prefs)
         recos = registry.recommend(prefs)
 
         cards: list[gr.Markdown] = []
@@ -85,8 +83,7 @@ def build_library_tab():
             p = settings.load_prefs()
             r = registry.recommend(p)
             ups = [gr.update(value=_card_md(m, r))
-                   for m in registry.load_base_models(
-                       p, kind=registry.EVERYTHING)]
+                   for m in registry.load_base_models(p)]
             # Avec une seule carte, Gradio attend une valeur unique (pas une
             # liste), sinon la liste est passée telle quelle au Markdown.
             return ups[0] if len(ups) == 1 else ups

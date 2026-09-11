@@ -1,8 +1,26 @@
-"""Onglet « 🧊 Image → 3D » : génère un maillage 3D texturé (GLB) à partir d'une
-image, via le binaire natif trellis-cli (trellis.cpp — C++/GGML/CUDA, no PyTorch).
+"""Onglet « 🧊 Texte / Image → 3D » : un maillage 3D texturé (GLB), via le
+binaire natif trellis-cli (trellis.cpp — C++/GGML/CUDA, no PyTorch).
 
 One-shot : le process se termine et libère la VRAM (stratégie low-VRAM). Le mode
 512 « light » vise les cartes ≤ 12 Go ; 1024/1536 demandent ~16 Go+.
+
+**TEXTE → 3D est un ENCHAÎNEMENT, pas un modèle de plus**, et c'est aussi ce que
+la doc de trellis.cpp entend par là : « optionally driven end-to-end from a text
+prompt with stable-diffusion.cpp producing the input image ». TRELLIS ne lit que
+des images. On fabrique donc l'image avec le modèle du catalogue, puis on la lui
+donne.
+
+Deux conséquences de conception, et les deux comptent :
+
+  · **l'image intermédiaire est MONTRÉE**, pas cachée. C'est là que ça rate — un
+    sujet mal cadré, une ombre portée, un décor — et un bouton unique qui
+    enchaîne tout ferait payer un maillage complet pour le découvrir après. Elle
+    atterrit dans le champ image : on peut la garder, la relancer, ou en charger
+    une autre ;
+  · **le prompt est réécrit** pour ce que TRELLIS sait traiter : un objet unique,
+    centré, entier dans le cadre, sur fond neutre. Un prompt de belle photo
+    donne un mauvais maillage, et ce n'est pas un réglage que l'utilisateur
+    peut deviner. Voir `STUDIO_STYLE`, modifiable et affiché.
 """
 from __future__ import annotations
 
@@ -15,11 +33,44 @@ import time
 
 import gradio as gr
 
-from .. import settings
+from .. import registry, settings
+from ..engine import generate as gen_engine
 from ..engine import sdcpp
 from ..engine import trellis
 from ..i18n import t
 from . import widgets
+
+#  Ce qu'on ajoute au prompt pour obtenir une image que TRELLIS sait traiter.
+#
+#  Ce n'est pas de la décoration. TRELLIS reconstruit UN objet : il détoure
+#  l'image, la traite en carré, et suppose que ce qu'il voit est le sujet
+#  entier. Un cadrage serré lui fait inventer ce qui dépasse ; une ombre portée
+#  devient de la géométrie ; un décor devient du bruit sur le maillage. Les
+#  termes ci-dessous adressent chacun un de ces échecs, et ils sont affichés
+#  plutôt que codés en dur quelque part : c'est le genre de réglage qu'on veut
+#  pouvoir corriger sans lire le source.
+STUDIO_STYLE = ("{subject}, one object only, centred, entire object visible "
+                "in frame, plain flat neutral grey background, even soft "
+                "studio lighting, no cast shadow, no floor, no props, sharp "
+                "focus, product photograph")
+
+
+def studio_prompt(subject: str, template: str = STUDIO_STYLE) -> str:
+    """Le prompt d'objet isolé, ou le sujet tel quel si le gabarit est vidé."""
+    subject = (subject or "").strip()
+    template = (template or "").strip()
+    if not template:
+        return subject
+    if "{subject}" not in template:
+        return f"{subject}, {template}"
+    return template.format(subject=subject)
+
+
+def _ready_models(prefs: dict) -> list[tuple[str, str]]:
+    """Modèles d'image TÉLÉCHARGÉS. Proposer les autres serait un piège :
+    on clique, et la génération échoue sur un fichier absent."""
+    return [(m.name, m.id) for m in registry.load_base_models(prefs)
+            if registry.model_is_ready(m)]
 
 
 def _res_choices():
@@ -84,7 +135,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                      parent_tabs=None):
     """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet (voir
     build_toolkit_tab — l'image doit atterrir dans un onglet VISIBLE)."""
-    with gr.Tab("🧊 Image → 3D", id=tab_id):
+    with gr.Tab("🧊 Text / Image → 3D", id=tab_id):
         ready = trellis.is_ready()
         # trellis.cpp n'est publié qu'en binaire Windows CUDA. Sur Mac (et sur
         # une machine sans NVIDIA), mieux vaut le dire tout de suite que laisser
@@ -199,8 +250,27 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             upd_btn.click(_update_binary, outputs=[inst_log])
 
         # ---- Génération ----
+        _prefs = settings.load_prefs()
+        _models = _ready_models(_prefs)
         with gr.Row():
             with gr.Column(scale=3):
+                gr.Markdown(t(
+                    "**Describe an object, or load an image.** TRELLIS only "
+                    "reads images, so a prompt\nis turned into one first — "
+                    "with the model you already have — and you get to **see "
+                    "that\nimage** before it becomes a mesh. That is where "
+                    "it goes wrong, and it is cheap to redo."))
+                prompt = gr.Textbox(
+                    label="Object to model (leave empty to use an image)",
+                    lines=2, placeholder=t("a weathered bronze dragon statue"))
+                with gr.Row():
+                    gen_model = gr.Dropdown(
+                        _models or [(t("No model downloaded"), "")],
+                        value=(_models[0][1] if _models else ""),
+                        scale=2, label="Model used for the image")
+                    img_seed = gr.Number(
+                        value=-1, precision=0, scale=1,
+                        label="Image seed (-1 = random)")
                 image = gr.Image(label="Input image (a single object)",
                                  type="filepath",
                                  buttons=widgets.IMAGE_VIEW_ONLY)
@@ -289,11 +359,21 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         no_fa = gr.Checkbox(value=False,
                                             label="Disable FlashAttention")
                 with gr.Accordion("Advanced options", open=False):
+                    style_tpl = gr.Textbox(
+                        value=STUDIO_STYLE, lines=3,
+                        label="How the prompt is rewritten for TRELLIS",
+                        info=t("`{subject}` is replaced by what you typed. "
+                               "Each term here fixes one way a mesh comes "
+                               "out wrong: a tight crop makes TRELLIS invent "
+                               "what is cut off, a cast shadow becomes "
+                               "geometry, a background becomes noise. Empty "
+                               "it to send your prompt untouched."))
                     extra = gr.Textbox(
                         label="Extra trellis-server arguments (optional)",
                         placeholder="e.g. extra server flags")
                 with gr.Row():
-                    run = gr.Button("🧊 Generate the 3D", variant="primary", scale=3)
+                    run = gr.Button("🧊 Generate the 3D", variant="primary",
+                                    scale=3)
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
@@ -309,18 +389,113 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 log = gr.Textbox(label="Log", lines=12, autoscroll=True,
                                  elem_classes="log-box")
 
-        def do_generate3d(image_path, square_val, pad_val, res_val,
+        def _image_from_prompt(text, model_id, tpl, seed_val, say):
+            """Fabrique l'image de départ à partir du prompt. Renvoie son chemin.
+
+            Le serveur 3D résident est arrêté AVANT : il garde son modèle en
+            VRAM, et la génération d'image tomberait sur une carte déjà pleine
+            — avec un manque de mémoire dont la cause serait l'onglet 3D
+            lui-même, ce qui est exactement le genre de panne qu'on ne relie
+            jamais à sa cause.
+            """
+            if not model_id:
+                raise gr.Error(t("No image model is downloaded. Open "
+                                 "📚 Model catalog, or load an image "
+                                 "instead."))
+            if trellis.resident_is_running():
+                say(t("⏹️ Stopping the 3D server first — it is holding the "
+                      "card."))
+                say(trellis.resident_stop())
+            prefs = settings.load_prefs()
+            model = registry.get_base_model(model_id, prefs)
+            if model is None:
+                raise gr.Error(t("Unknown model: {m}").format(m=model_id))
+            d = dict(model.defaults)
+            full = studio_prompt(text, tpl)
+            say(f"🖼️ Image prompt: {full}")
+            try:
+                seed = int(seed_val)
+            except (TypeError, ValueError):
+                seed = -1
+            #  CARRÉ, et pas la résolution par défaut du modèle. TRELLIS
+            #  traite son entrée en carré de toute façon : lui donner du 16:9
+            #  revient à choisir nous-mêmes ce qui sera rogné ou déformé.
+            outs = gen_engine.generate(
+                model_id=model_id, prompt=full, negative="",
+                steps=int(d.get("steps", 8) or 8),
+                cfg_scale=float(d.get("cfg_scale", 1.0) or 1.0),
+                width=1024, height=1024, seed=seed, batch_count=1,
+                sampler=d.get("sampler") or "euler",
+                schedule=("" if d.get("scheduler") in (None, "", "auto")
+                          else d["scheduler"]),
+                log=say)
+            if not outs:
+                raise gr.Error(t("The image could not be generated."))
+            return str(outs[0])
+
+        def do_generate3d(image_path, prompt_val, model_val, img_seed_val,
+                          style_val,
+                          square_val, pad_val, res_val,
                           variant_val, band_val, seed_val,
                           bg_val, resident_val,
                           decim_val, atlas_val, no_tex_val, box_uv_val,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
                           extra_args):
-            if not image_path:
-                raise gr.Error(t("Load an input image."))
+            if not image_path and not (prompt_val or "").strip():
+                raise gr.Error(t("Describe an object, or load an image."))
             if not trellis.is_ready():
                 raise gr.Error(t("trellis.cpp is not installed — open "
                                  "“Install trellis.cpp” above."))
             settings.ensure_dirs()
+            logs: list[str] = []
+
+            def _out(status=None, img=None):
+                """Un tuple de sortie complet, pour ne pas compter à la main.
+
+                Sept composants, et une seule position qui change à chaque
+                fois : les recopier en toutes lettres à chaque `yield` est
+                exactement comment on en décale un.
+                """
+                return (gr.update() if status is None else status,
+                        gr.update(), gr.update(),
+                        "\n".join(logs[-500:]),
+                        gr.update(), gr.update(),
+                        gr.update() if img is None else gr.update(value=img))
+
+            #  TEXTE → 3D. Le fil séparé n'est pas du zèle : `generate` bloque
+            #  jusqu'à l'image, et sans lui le journal n'apparaîtrait qu'à la
+            #  fin — sur une minute de calcul, ça ressemble à un plantage.
+            if not image_path:
+                pq: "queue.Queue[str | None]" = queue.Queue()
+                pstate: dict = {}
+
+                def prompt_worker():
+                    try:
+                        pstate["path"] = _image_from_prompt(
+                            prompt_val, model_val, style_val, img_seed_val,
+                            pq.put)
+                    except Exception as exc:  # noqa: BLE001
+                        pstate["err"] = str(exc)
+                    finally:
+                        pq.put(None)
+
+                threading.Thread(target=prompt_worker, daemon=True).start()
+                yield _out(t("⏳ Making the starting image…"))
+                while True:
+                    line = pq.get()
+                    if line is None:
+                        break
+                    logs.append(line)
+                    yield _out()
+                if "err" in pstate:
+                    logs.append(f"\n[ERROR] {pstate['err']}")
+                    yield _out(t("❌ The image failed — see the log."))
+                    return
+                image_path = pstate["path"]
+                #  Montrée tout de suite : c'est le moment où l'on décide de
+                #  relancer plutôt que de payer un maillage pour rien.
+                yield _out(t("🖼️ Image ready — now the mesh."), image_path)
+
             # Normalise l'entrée en PNG (trellis-cli attend un fichier image).
             from PIL import Image as _PI
             in_png = settings.TMP_DIR / "trellis_in.png"
@@ -373,37 +548,36 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     q.put(None)
 
             threading.Thread(target=worker, daemon=True).start()
-            logs: list[str] = []
-            # (status, model3d, glb_file, log, res_status, seed_used)
-            yield (t("⏳ Generating 3D ({r} mode)…").format(r=res_val),
-                   gr.update(), gr.update(), gr.update(), gr.update(),
-                   gr.update())
+            # (status, model3d, glb_file, log, res_status, seed_used, image)
+            yield _out(t("⏳ Generating 3D ({r} mode)…").format(r=res_val))
             while True:
                 line = q.get()
                 if line is None:
                     break
                 logs.append(line)
-                yield (gr.update(), gr.update(), gr.update(),
-                       "\n".join(logs[-500:]), gr.update(), gr.update())
+                yield _out()
 
             if "err" in state:
                 logs.append(f"\n[ERROR] {state['err']}")
                 yield (t("❌ Failed — see the log."), gr.update(),
                        gr.update(), "\n".join(logs),
-                       gr.update(value=trellis.resident_status()), gr.update())
+                       gr.update(value=trellis.resident_status()), gr.update(),
+                       gr.update())
                 return
             yield (t("✅ 3D generated: {name}").format(name=out_glb.name),
                    gr.update(value=str(out_glb)), gr.update(value=str(out_glb)),
                    "\n".join(logs), gr.update(value=trellis.resident_status()),
-                   gr.update(value=str(meta.get("seed", ""))))
+                   gr.update(value=str(meta.get("seed", ""))), gr.update())
 
         gen_evt = run.click(
             do_generate3d,
-            inputs=[image, square_pad, pad_color, res, variant, band,
+            inputs=[image, prompt, gen_model, img_seed, style_tpl,
+                    square_pad, pad_color, res, variant, band,
                     seed, bg, resident,
                     decim, atlas, no_texture,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, extra],
-            outputs=[status, model3d, glb_file, log, res_status, seed_used])
+            outputs=[status, model3d, glb_file, log, res_status, seed_used,
+                     image])
         widgets.stop_into_status(stop, sdcpp.cancel_active, status, [gen_evt])
 
         def _reuse_seed(v):

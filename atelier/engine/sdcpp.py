@@ -518,162 +518,6 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     return cmd
 
 
-# --------------------------------------------------------------------------- #
-#  VIDÉO (sd.cpp -M vid_gen)
-#
-#  Même moteur, même binaire, mêmes GGUF : ce n'est pas un second backend, mais
-#  un autre mode du premier. D'où l'héritage plutôt qu'une structure parallèle
-#  — tout ce que `memory_args` sait faire du placement mémoire vaut ici sans
-#  qu'une ligne soit recopiée, et c'est cette copie-là qui avait divergé la
-#  dernière fois (voir memory_args).
-# --------------------------------------------------------------------------- #
-
-#  Sorties possibles, et pourquoi trois.
-#
-#  sd.cpp encode lui-même : AUCUN ffmpeg à installer, ce qui est la raison
-#  pour laquelle cet onglet peut exister dans une application sans console.
-#  Mais il n'écrit pas du H.264 : selon l'extension c'est du VP8 (.webm), du
-#  Motion-JPEG (.avi) ou une suite d'images. Les trois répondent à trois
-#  besoins réellement différents, donc on les propose au lieu d'en choisir un :
-#
-#   · .webm — léger, lisible par le navigateur, donc le seul qui s'affiche
-#     dans l'onglet. C'est le défaut ;
-#   · .avi  — Motion-JPEG : chaque image est un JPEG, donc gros fichier, mais
-#     tout logiciel de montage le lit ;
-#   · .png  — la suite d'images elle-même, sans compression : le master.
-#
-#  Aucun des trois n'est ce qu'Adobe Stock demande (H.264/ProRes en MP4/MOV).
-#  La conversion se fait au montage ; l'application ne prétend pas la faire.
-VIDEO_FORMATS = (
-    ("Video — .webm (light, plays here)", "webm"),
-    ("For editing — .avi (Motion-JPEG, opens in any editor)", "avi"),
-    ("Image sequence — .png (lossless master)", "png"),
-)
-
-#  Le VAE temporel de Wan travaille par groupes de 4 images plus une : 33, 65,
-#  81, 121 sont exacts, 50 ne l'est pas. sd.cpp RÉALIGNE tout seul
-#  (`align_video_frames`), donc demander 50 ne casse rien — mais l'interface
-#  annoncerait une durée que la vidéo n'aurait pas. On aligne donc ici, avant
-#  d'écrire quoi que ce soit à l'écran.
-VIDEO_FRAME_STEP = 4
-
-
-def align_video_frames(frames: int) -> int:
-    """Le 4n+1 le plus proche par le bas, minimum 1 image."""
-    if frames <= 1:
-        return 1
-    return ((frames - 1) // VIDEO_FRAME_STEP) * VIDEO_FRAME_STEP + 1
-
-
-def video_duration_s(frames: int, fps: int) -> float:
-    return align_video_frames(frames) / float(fps or 24)
-
-
-#  TAILLE DE TUILE DU VAE VIDÉO, en pixels de LATENT — et c'est le réglage qui
-#  décide si une vidéo sort ou pas.
-#
-#  Mesuré sur une 2080 Ti, 832×480, 33 images : l'échantillonnage passe sans
-#  effort (4,3 s/it, 89 s au total), puis le DÉCODAGE réclame **13,9 Go** et
-#  échoue. Le détail du chiffre, lu dans `check_capacity` : environ 1,3 Go de
-#  poids de VAE à monter sur la carte, et **12,5 Go de tampon de calcul pour
-#  le graphe**. Le décodage est le seul moment où les 33 images existent
-#  ensemble.
-#
-#  `--vae-tiling` seul n'y changeait rien, et c'était l'erreur. Sans
-#  `--vae-tile-size`, sd.cpp prend son défaut de **32 pixels de latent**
-#  (`get_tile_sizes`, vae.hpp) ; un 832×480 fait 52×30 en latent, donc les
-#  « tuiles » mesuraient 32×30 — deux tuiles, chacune les trois cinquièmes de
-#  l'image. On demandait un découpage et on n'en obtenait aucun.
-#
-#  Le coût suit l'aire de la tuile, donc diviser son côté par deux divise le
-#  tampon par environ quatre. Les valeurs ci-dessous sont choisies pour que ce
-#  tampon tienne dans ce qui reste APRÈS les poids de diffusion, qui, eux, ne
-#  bougent pas de la carte pendant le décodage (voir plus bas).
-#
-#  Le prix est la couture : plus de tuiles, plus de raccords à fondre. D'où
-#  une échelle par carte plutôt qu'une valeur basse pour tout le monde.
-_VIDEO_TILE_BY_VRAM = ((24, 32), (16, 24), (11, 16), (0, 12))
-
-
-def video_vae_tile(vram_gb: float) -> int:
-    """Côté de tuile (latent) pour le décodage vidéo, selon la carte."""
-    for floor, tile in _VIDEO_TILE_BY_VRAM:
-        if vram_gb >= floor:
-            return tile
-    return _VIDEO_TILE_BY_VRAM[-1][1]
-
-
-@dataclass
-class VidRequest(GenRequest):
-    """Une demande de vidéo : une GenRequest, plus le temps."""
-    video_frames: int = 33
-    fps: int = 24
-    #  Image de DÉPART (image → vidéo). Distincte de `init_image`, qui en
-    #  img2img veut dire « repeins par-dessus, à hauteur de --strength ». Ici
-    #  l'image est la première du film, pas un brouillon : aucun `--strength`
-    #  ne doit partir avec elle.
-    start_image: Path | None = None
-    #  Côté de tuile du VAE, en latent. 0 = laisser sd.cpp décider, ce qui
-    #  veut dire 32 et, sur une vidéo, ne rien découper du tout.
-    vae_tile: int = 0
-
-
-def video_supported(sd_cli: Path | None) -> bool:
-    """Ce binaire sait-il faire de la vidéo ?
-
-    On le demande au binaire plutôt que de le déduire d'un numéro de version :
-    la même version porte des builds qui n'offrent pas les mêmes choses.
-    """
-    return "--video-frames" in supported_options(sd_cli)
-
-
-def build_vid_cmd(sd_cli: Path, req: VidRequest, output: Path) -> list[str]:
-    _require(req.diffusion_model, req.vae, req.t5xxl, req.text_encoder,
-             req.start_image)
-    if not video_supported(sd_cli):
-        raise EngineError(
-            "This engine cannot generate video (`--video-frames` is missing). "
-            "Run update.bat — it brings the engine in line with the code.")
-
-    frames = align_video_frames(req.video_frames)
-    cmd: list[str] = [str(sd_cli), "--mode", "vid_gen",
-                      "--diffusion-model", str(req.diffusion_model)]
-    if req.vae:
-        cmd += ["--vae", str(req.vae)]
-    if req.t5xxl:
-        cmd += ["--t5xxl", str(req.t5xxl)]
-    if req.text_encoder:
-        cmd += ["--llm", str(req.text_encoder)]
-    cmd += list(req.extra_flags)
-    cmd += ["-p", req.prompt]
-    if req.negative and req.cfg_scale > 1.0:
-        cmd += ["-n", req.negative]
-    cmd += [
-        "--cfg-scale", f"{req.cfg_scale}",
-        "--steps", f"{req.steps}",
-        "--sampling-method", req.sampler,
-        "-W", f"{req.width}", "-H", f"{req.height}",
-        "-s", f"{req.seed}",
-        "--video-frames", f"{frames}",
-        "--fps", f"{req.fps}",
-    ]
-    if req.schedule:
-        cmd += ["--scheduler", req.schedule]
-    if req.flow_shift and req.flow_shift > 0:
-        cmd += ["--flow-shift", f"{req.flow_shift}"]
-    if req.start_image:
-        #  « -i » sans « --strength » : en vid_gen c'est la première image du
-        #  film, pas une base à repeindre.
-        cmd += ["-i", str(req.start_image)]
-    if req.lora_dir:
-        cmd += ["--lora-model-dir", str(req.lora_dir)]
-    if req.vae_tile and "--vae-tile-size" in supported_options(sd_cli):
-        cmd += ["--vae-tile-size", f"{req.vae_tile}x{req.vae_tile}"]
-    cmd += memory_args(sd_cli, req)
-    cmd += ["-o", str(output), "-v"]
-    return cmd
-
-
 def build_convert_cmd(sd_cli: Path, input_model: Path, output_model: Path,
                       qtype: str) -> list[str]:
     """Conversion/quantification d'un modèle en GGUF (sd.cpp --mode convert).
@@ -920,7 +764,6 @@ def _failure_error(code: int, cmd: list[str],
         return VramError(
             "❌ Not enough GPU memory." + want + "\n"
             + (_hires_advice() if "--hires" in cmd
-               else _video_advice(tail) if "vid_gen" in cmd
                else _no_budget_advice(cmd)))
     return EngineError(_diagnose_failure(code, cmd, tail))
 
@@ -931,30 +774,6 @@ def _hires_advice() -> str:
             "the card.\n→ Lower the enlargement factor, or go through “🔼 "
             "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
             "works in tiles and fits in far less VRAM.")
-
-
-#  Le décodage du VAE se reconnaît à ces lignes, et il faut le reconnaître :
-#  c'est le seul manque de mémoire de la vidéo qui ne se soigne NI par la
-#  quantification NI par la résolution. Le conseil générique — « prenez une
-#  quantification plus légère » — envoyait vers un réglage qui ne peut rien y
-#  faire : la quantification porte sur les poids de diffusion, et à ce
-#  moment-là l'échantillonnage est fini depuis longtemps.
-_VAE_DECODE_MARKERS = ("vae decode compute failed",
-                       "decode_first_stage failed",
-                       "wan_vae segment")
-
-
-def _video_advice(tail: "deque[str]") -> str:
-    if not any(m in ln for ln in tail for m in _VAE_DECODE_MARKERS):
-        return ("→ Try a shorter clip, or a smaller frame size. A video costs "
-                "roughly what one image costs, multiplied by its frames.")
-    return ("This is the **VAE decode**, the moment when every frame of the "
-            "clip exists at once — not the model weights, and not the "
-            "quantization, which stopped mattering when sampling ended.\n"
-            "→ The shortest clip (33 frames) and the smaller frame size are "
-            "the two levers that work. The app already retries once with "
-            "half-size decode tiles and the weights in RAM; if you are "
-            "reading this, that retry failed too.")
 
 
 def _no_budget_advice(cmd: list[str]) -> str:

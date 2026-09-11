@@ -86,6 +86,19 @@ REMOVED_FEATURES = [
      "files": ["update-engine-ci.bat",
                ".github/workflows/build-sdcpp.yml"],
      "dirs": []},
+    #  La génération vidéo (Wan 2.2 TI2V 5B), retirée à son tour. Elle
+    #  marchait — l'échantillonnage passait en 89 s sur une 2080 Ti — mais
+    #  personne n'en voulait, et un onglet dont on ne se sert pas coûte à
+    #  chaque lecture de cet écran.
+    #
+    #  Les POIDS (~8,5 Go) ne sont pas déclarés ici : le catalogue ne les
+    #  référence plus, donc le contrôle des modèles orphelins les signalera
+    #  de lui-même, avec leur taille, et la purge demandera avant d'effacer.
+    #  C'est le bon chemin pour des gigaoctets — celui-ci ne sert qu'au code.
+    {"name": "Video generation (Wan 2.2)",
+     "files": ["atelier/engine/video.py", "atelier/ui/video_tab.py",
+               "tests/test_video.py"],
+     "dirs": []},
     #  L'ancienne génération vidéo (LTX-2.3, MiniMax-H3) était déclarée ici,
     #  par les deux noms `atelier/ui/video_tab.py` et
     #  `atelier/engine/video.py`. Ces deux fichiers EXISTENT à nouveau, pour
@@ -381,9 +394,7 @@ def _expected_model_dirs() -> set[str]:
     from atelier import registry, settings
     prefs = settings.load_prefs()
     repos: set[str] = set()
-    # TOUT le catalogue : un modèle vidéo absent d'ici passerait pour un
-    # dossier orphelin, et la purge proposerait de l'effacer.
-    for m in registry.load_base_models(prefs, kind=registry.EVERYTHING):
+    for m in registry.load_base_models(prefs):
         repos.update(c.repo for c in m.components)
     up = registry.upscaler_config().get("repo")
     if up:

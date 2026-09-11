@@ -470,8 +470,23 @@ def build_manage_tab():
                 "so on).\n\nEvery result is saved in `outputs/` with a `.txt` "
                 "file beside it recording the\nmodel, seed and settings.")
 
-        with gr.Accordion("🧊 Image → 3D (trellis)", open=False):
+        with gr.Accordion("🧊 Text / Image → 3D (trellis)", open=False):
             gr.Markdown(
+                "**Text → 3D is a chain, not another model.** TRELLIS only "
+                "reads images, so a\nprompt is turned into one first — with "
+                "the generation model you already have —\nand that image is "
+                "handed over. It is what trellis.cpp's own documentation "
+                "means\nby text-to-3D.\n\nThe **intermediate image is "
+                "shown** rather than hidden: it lands in the image\nfield "
+                "before the mesh starts. That is where things go wrong, and "
+                "re-rolling an\nimage costs seconds where a mesh costs "
+                "minutes.\n\nThe **prompt is rewritten** for what TRELLIS "
+                "can handle — one object, entire object\nin frame, plain "
+                "background, no cast shadow — because a tight crop makes it "
+                "invent\nwhat is off-frame, a shadow becomes geometry, and a "
+                "background becomes noise on\nthe mesh. The template is in "
+                "*Advanced options*: edit it, or empty it to send "
+                "your\nprompt untouched.\n\n"
                 "**Weights** — model variant: **f16** (~16.5 GB), **q8** "
                 "(~9.9 GB) or **q4**\n(~6 GB). ⚠️ **f16 is the FASTEST** when "
                 "it fits: in ggml, quantized weights are\ndequantized on the "
@@ -532,19 +547,7 @@ def build_manage_tab():
                 "family: a GGUF ESRGAN or a **modern** model (DAT, SPAN, "
                 "PLKSR…), which hands SDXL a cleaner base to refine."
                 "\n\nEach tool installs in one "
-                "click (PyTorch on demand — *Details* needs none).\n\n"
-                "**🎬 Video** sits in the same group and is the odd one out: "
-                "it PRODUCES rather\nthan retouches. It is here because the "
-                "root tab bar is already full — past seven\ntabs Gradio "
-                "folds the last ones into a “…” menu where nobody finds "
-                "them.\nWan 2.2 TI2V 5B, through the same sd.cpp binary and "
-                "the same GGUF weights as\nthe images (`-M vid_gen`): no "
-                "second engine, no PyTorch, nothing extra to\ninstall. Load "
-                "a starting frame and it animates from there; leave it empty "
-                "and\nit starts from the prompt. Lengths are 33 / 65 / 81 / "
-                "121 frames because Wan's\ntemporal VAE works in groups of "
-                "four plus one — the durations shown are\ntherefore the real "
-                "ones. Expect **minutes per clip**, not seconds.")
+                "click (PyTorch on demand — *Details* needs none).")
 
         with gr.Accordion("🔄 Update the app",
                           open=False):
