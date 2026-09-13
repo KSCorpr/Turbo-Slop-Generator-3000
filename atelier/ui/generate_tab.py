@@ -508,6 +508,10 @@ def build_generative_tab(model_id: str, title: str,
                     seed = gr.Number(value=-1, label="Seed (-1 = random)",
                                      precision=0)
                     batch = gr.Slider(1, 8, value=1, step=1, label="Images")
+                circular = gr.Checkbox(
+                    value=False,
+                    label="Seamless pattern (circular)",
+                    info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
 
                 # (« Générer » / « Annuler » sont en haut, sous le prompt.)
 
@@ -833,7 +837,7 @@ def build_generative_tab(model_id: str, title: str,
                         init_image,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
-                        seed, batch, lora1, lora1_w, lora2, lora2_w,
+                        seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
                         custom_diff, custom_vae, custom_enc):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
@@ -955,7 +959,8 @@ def build_generative_tab(model_id: str, title: str,
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
                         schedule=schedule, flow_shift=float(flow_shift or 0.0),
                         init_image=init_path, strength=float(strength),
-                        ref_image=(ref_paths or None), loras=loras,
+                        ref_image=(ref_paths or None), circular=bool(circular),
+                        loras=loras,
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
@@ -1059,6 +1064,7 @@ def build_generative_tab(model_id: str, title: str,
                     init_image,
                     ref_image2, ref_image3, strength, outpaint, edit_mode, width,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
+                    circular,
                     lora1, lora1_w, lora2, lora2_w,
                     custom_diff, custom_vae, custom_enc],
             outputs=[status_md, preview_img, gallery, logbox,

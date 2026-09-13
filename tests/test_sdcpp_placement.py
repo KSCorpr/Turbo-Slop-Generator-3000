@@ -49,6 +49,14 @@ class ParamsBackendTests(unittest.TestCase):
         self.assertNotIn("--params-backend", cmd)
         self.assertIn("--offload-to-cpu", cmd)
 
+    def test_circular_flag_is_passed_when_requested(self):
+        req_on = sdcpp.GenRequest(diffusion_model=Path("model.gguf"), circular=True)
+        req_off = sdcpp.GenRequest(diffusion_model=Path("model.gguf"), circular=False)
+        cmd_on = self._cmd(req_on, {"--circular"})
+        cmd_off = self._cmd(req_off, {"--circular"})
+        self.assertIn("--circular", cmd_on)
+        self.assertNotIn("--circular", cmd_off)
+
 
 class BenchmarkPlanTests(unittest.TestCase):
     def test_exact_combo_compares_resident_and_staged_encoder(self):

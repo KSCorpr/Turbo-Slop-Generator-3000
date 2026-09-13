@@ -135,9 +135,9 @@ class GenRequest:
     cache_option: str = ""             # ex. "threshold=0.2"
     hires: "HiresParams | None" = None  # passe HD native (voir HiresParams)
     # Budget VRAM pour l'exécution SEGMENTÉE (voir max_vram_arg). Vide = option
-    # non envoyée, sd.cpp alloue son graphe d'un bloc comme avant.
     max_vram: str = ""
     stream_layers: bool = False
+    circular: bool = False             # --circular : texture sans couture (seamless pattern)
 
 
 # --------------------------------------------------------------------------- #
@@ -513,6 +513,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--cache-mode", req.cache_mode]
         if req.cache_option:
             cmd += ["--cache-option", req.cache_option]
+    if req.circular and "--circular" in known:
+        cmd += ["--circular"]
     cmd += memory_args(sd_cli, req)
     cmd += ["-o", str(output), "-v"]
     return cmd

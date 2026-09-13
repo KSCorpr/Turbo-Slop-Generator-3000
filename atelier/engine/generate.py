@@ -326,6 +326,7 @@ def generate(
     # Même logique que `max_vram` ci-dessus : la passe HD force le streaming
     # des couches pour une tentative précise, sans toucher aux préférences.
     stream_layers: bool | None = None,
+    circular: bool = False,
     log: Callable[[str], None] | None = None,
     # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
     prefs_override: dict | None = None,
@@ -432,6 +433,7 @@ def generate(
         max_vram=(max_vram if max_vram is not None
                   else sdcpp.max_vram_arg(prefs.get("max_vram") or "")),
         stream_layers=stream_layers,
+        circular=circular,
     )
     out = sdcpp.unique_output(model.family)
     base_max_vram = req.max_vram
