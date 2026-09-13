@@ -6,6 +6,7 @@ bin/
 .engine-broken/
 .engine-swap/
 .engine-stage-*/
+.update-backup/
 vendor/
 tools_repo/
 
