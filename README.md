@@ -15,8 +15,8 @@
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Krea 2 Turbo** and **Z-Image
-Turbo**, with an
+CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1**,
+**Krea 2 Turbo** and **Z-Image Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
 editing, three upscalers, and a utility toolkit.
@@ -34,27 +34,28 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
-**Seven root tabs**, arranged by what they do rather than by what they are: what
+**Eight root tabs**, arranged by what they do rather than by what they are: what
 *produces* an image stays at the root, what *retouches* one lives under **Tools**,
 what administers the machine lives under **System**. (Eleven root tabs used to
 overflow into a `…` menu, which made Manage and Settings invisible at a glance —
-so the grouping is not decoration. Three of the seven are generation tabs, one
+so the grouping is not decoration. Four of the eight are generation tabs, one
 per model; adding a model adds a tab, never a setting.)
 
 | Tab | What it does |
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
+| **Qwen Image 2.1** | guided image generation & native multi-reference editing · PNG transparency · 2K formats |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🟢 **Z-Image Turbo** | the lightest of the three (6B, 8 steps) · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
-| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for any of the three engines |
+| 🟢 **Z-Image Turbo** | 6B, 8 steps · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
+| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for the distilled engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
 | 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
-The exact tab tree, since two of the six are containers:
+The exact tab tree, since two of the eight are containers:
 
 ```
-🟣 Flux.2 Klein 9B   ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
+🟣 Flux.2 Klein 9B   Qwen Image 2.1   ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
 💊 Xanax   📚 Model Catalog
 🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
@@ -73,6 +74,7 @@ The exact tab tree, since two of the six are containers:
   - [Maintenance](#maintenance)
 - [Quick start](#quick-start)
 - [Model catalog](#model-catalog)
+- [Qwen Image 2.1](#qwen-image-21)
 - [Generation options](#generation-options)
 - [Xanax tab](#xanax-tab)
 - [Hardware & optimization](#hardware--optimization)
@@ -350,6 +352,25 @@ The tools that live under 🧰 Toolkit are **not** here: each one carries its ow
 one-click installer in its own tab, because each pulls a different Python
 dependency set.
 
+### Qwen Image 2.1
+
+Update the app and sd.cpp with **`update.bat`** (`./update.sh` on Linux/Mac).
+Qwen Image 2.1 needs official sd.cpp build **896 or
+newer** for transparent image inputs. Download **Qwen Image 2.1** in Model
+Catalog; the one-click download gets GGUF diffusion weights, the **Qwen Image
+2.1 VAE**, Qwen3-VL-8B encoder and its vision projector. Older Qwen Image and
+Wan VAEs are incompatible with this model. The projector is loaded only when
+editing.
+
+The Qwen tab starts at **1024×1024, Euler, CFG 6, 40 steps**. The upstream
+model is native 2K, but 2K presets may exhaust 11–12 GB cards: start at 1024.
+Edit up to **three reference images** through `-r` by describing the changes;
+no strength slider or editing LoRA is needed. Image sizes follow a 32-pixel
+grid. For transparency, prompt e.g. `This is an RGBA image with transparency.
+A red flower. The image has alpha channel and the background is transparent.`
+and save as **PNG**. The weights carry the **Qwen Research** license; check its
+terms before commercial use.
+
 ---
 
 ## Generation options
@@ -357,7 +378,7 @@ dependency set.
 Every generation tab exposes the same controls.
 
 ### Prompt & system style
-- **Prompt** — your description. For **edit models** (Flux.2 Klein) describe the
+- **Prompt** — your description. For **edit models** (Flux.2 Klein, Qwen 2.1) describe the
   *modification* to apply to the reference image.
 - **✨ Enhance prompt (AI)** — see [Prompt enhancer](#prompt-enhancer-ai). Note
   that a **style preset translates nothing** — it is a prefix glued in front of
@@ -366,8 +387,8 @@ Every generation tab exposes the same controls.
   active preset as a constraint**: it describes the subject without adding
   camera, lens, lighting or processing wording that would contradict the style.
   Pick the preset first, then enhance.
-- **Negative prompt** — shown only for models that support it (CFG > 1). Both
-  our models are distilled at CFG 1.0 and ignore it, so the field stays hidden.
+- **Negative prompt** — shown for Qwen 2.1 (CFG 6); hidden on the distilled
+  models at CFG 1.0, where it has no effect.
 - **System / style prefix** (🎨 Styles → *Custom preset*) — a prefix prepended
   to every prompt. Save
   reusable styles to a dropdown (persisted in `userdata/`). Styles are **global**:
@@ -408,6 +429,9 @@ The accordion adapts to the model family:
   strength slider — editing is prompt-driven. Output aspect follows your image.
   An **🧩 Outpaint** slider (experimental) extends the canvas and lets the model
   fill the new borders — describe the extension in the prompt.
+- **Qwen Image 2.1** — native multi-reference editing via `-r` as above; the
+  Qwen3-VL-8B vision projector is required for editing, no LoRA. Uploaded PNG
+  alpha is preserved for transparent image editing.
 - **Krea 2 Turbo — ✏️ Edit mode (Ostris Edit)** — tick **✏️ Edit mode** to pass
   the image as a **context reference** (style transfer, subject reference, edits)
   instead of an img2img starting point. This requires a **Krea 2 edit LoRA**
@@ -441,10 +465,12 @@ best on these):
   1344×768… (+ a 2K option).
 - **Z-Image Turbo** — 1024 family on a **16-px grid** (patch size 2 × VAE
   factor 8): 1024², 1216×832, 1152×896, 1344×768… (+ a 2K option).
+- **Qwen 2.1** — a 32-px grid with 1024-class presets and native 2K formats
+  (2048², 2400×1792, 2752×1536…).
 
 Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
-height (256–2048, step 16). Loading a reference image auto-fits width/height to
-its aspect.
+height (256–2048, step 16 for the distilled tabs; 256–2816, step 32 for
+Qwen). Loading a reference image auto-fits width/height to its aspect.
 
 ### Sampler / scheduler / steps
 - **Preset** — vetted combos per model (e.g. Flux.2 Klein → 4 steps / CFG 1.0 /
@@ -692,9 +718,13 @@ default** (the docs never force one), at each model's documented steps/CFG
 still expose the full sd.cpp list for manual experimentation, **annotated per
 model** — with a description card and a fold-out rationale right in the tab.
 New entries need a recent engine (`update.bat`).
+Qwen 2.1 follows `docs/qwen_image_2.1.md`: Euler / CFG 6 and an automatic
+resolution-dependent flow schedule, with 40 steps from Qwen's official example.
+The two columns below compare **Flux.2 Klein and Krea 2 Turbo**; Qwen's tab
+gives separate guidance for its longer, guided sampling.
 
 #### Why most of the menu does not apply here
-Three properties of our two models — read off sd.cpp itself, not guessed —
+Three properties of the two models compared below — read off sd.cpp itself —
 decide almost every verdict, and they rule out whole families at once:
 
 1. **They are flow-matching models.** sd.cpp runs both in `FLUX_FLOW_PRED` /
@@ -1865,6 +1895,11 @@ resolved from your hardware; the downloader picks the closest matching file.
 - diffusion — [`unsloth/FLUX.2-klein-9B-GGUF`](https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF) (distilled, 4 steps, CFG 1.0)
 - VAE — [`Comfy-Org/flux2-klein-9B`](https://huggingface.co/Comfy-Org/flux2-klein-9B) (`flux2-vae.safetensors`)
 - text encoder — [`unsloth/Qwen3-8B-GGUF`](https://huggingface.co/unsloth/Qwen3-8B-GGUF) (official Qwen3-8B, via `--llm`, offloaded to RAM)
+
+**Qwen Image 2.1** (family `qwen21`, generation + edit)
+- diffusion — [`leejet/Qwen-Image-2.1-GGUF`](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) (quantization picked for VRAM)
+- VAE — [`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) (`qwen_image_2.1_vae_bf16.safetensors`)
+- text encoder and optional editing projector — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (`--llm`, `--llm_vision`)
 
 **Krea 2 Turbo** (family `krea2`, sd.cpp)
 - diffusion — [`vantagewithai/Krea-2-Turbo-GGUF`](https://huggingface.co/vantagewithai/Krea-2-Turbo-GGUF) (8 steps, CFG 1.0)

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B / Krea 2 Turbo, GGUF) · Xanax (style figé) ·
+Onglets : Génération (Flux.2 Klein 9B / Qwen Image 2.1 / Krea 2 Turbo / Z-Image,
+GGUF) · Xanax (style figé) ·
 Catalogue de modèles ·
 Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · Réglages.
 """
@@ -306,6 +307,10 @@ def build_app() -> gr.Blocks:
         with gr.Tabs() as tabs:
             prompt_boxes["flux2-klein-9b"] = build_generative_tab(
                 "flux2-klein-9b", "🟣 Flux.2 Klein 9B",
+                pending_toolkit=pending_toolkit, tabs=tabs,
+                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+            prompt_boxes["qwen-image-2.1"] = build_generative_tab(
+                "qwen-image-2.1", "Qwen Image 2.1",
                 pending_toolkit=pending_toolkit, tabs=tabs,
                 pending_3d=pending_3d, pending_outpaint=pending_outpaint)
             prompt_boxes["krea2-turbo"] = build_generative_tab(

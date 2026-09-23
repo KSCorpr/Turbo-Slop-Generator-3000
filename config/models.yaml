@@ -69,6 +69,51 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: qwen-image-2.1
+    name: "Qwen Image 2.1"
+    family: qwen21
+    tags: [qualité, édition, transparence, texte]
+    description: >
+      Qwen Image 2.1 en GGUF : génération, édition native avec jusqu'à trois
+      images de référence et sortie PNG transparente sur demande. Encodeur
+      Qwen3-VL-8B en RAM et VAE propre à la version 2.1. Euler, CFG 6 et
+      40 pas selon les exemples officiels ; 1024 px par défaut pour limiter
+      la mémoire sur les cartes 11–12 Go. Les formats 2K sont plus exigeants.
+      Pour l'édition, le projecteur vision doit également être installé.
+      Mettez le moteur sd.cpp à jour avec update.bat. Licence Qwen Research.
+    sources:
+      diffusion:
+        repo: leejet/Qwen-Image-2.1-GGUF
+        match: "qwen_image_2.1-{quant}.gguf"
+        quantizable: true
+        # Ce dépôt utilise Q4_K et Q5_0, pas les variantes K_M du profil auto.
+        quant_map: {Q4_K_M: Q4_K, Q5_K_M: Q5_0}
+      vae:
+        repo: Comfy-Org/Qwen-Image-2.1
+        match: "vae/qwen_image_2.1_vae_bf16.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
+        match: "Qwen3VL-8B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
+        optional: true  # text-to-image sans ce fichier ; édition avec -r
+    defaults:
+      steps: 40
+      cfg_scale: 6.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: true
+      edit: full
+    presets:
+      - {name: "Recommandé (40 pas, doc)", sampler: euler, scheduler: auto, steps: 40, cfg_scale: 6.0}
+      - {name: "Essai rapide (28 pas)",     sampler: euler, scheduler: auto, steps: 28, cfg_scale: 6.0}
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
   - id: krea2-turbo
     name: "Krea 2 Turbo"
     family: krea2

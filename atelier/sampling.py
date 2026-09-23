@@ -200,7 +200,8 @@ SCHEDULES: dict[str, tuple] = {
         "Auto (model)",
         "Lets the engine choose according to the loaded model.",
         "Always consistent with the model: `flux2` for Flux.2 Klein, "
-        "`discrete` for Krea 2. This is the setting sd.cpp documents.",
+        "`discrete` for Krea 2, a resolution-dependent flow schedule for "
+        "Qwen 2.1. This is the setting sd.cpp documents.",
         "None — unless you want to experiment knowingly.",
         {"flux2": BEST, "krea2": BEST, "z_image": BEST}),
     "discrete": (
@@ -305,7 +306,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "z_image")
+FAMILIES = ("flux2", "krea2", "z_image", "qwen21")
 
 
 def _family(model_family: str) -> str:
@@ -316,6 +317,14 @@ def level(kind: str, key: str, model_family: str) -> str:
     table = SAMPLERS if kind == "sampler" else SCHEDULES
     entry = table.get(key)
     if not entry:
+        return OK
+    if model_family == "qwen21":
+        # Qwen is guided (CFG 6 / 40 steps), unlike the distilled models.
+        # Avoid copying their 4–8-step verdicts onto this new family.
+        if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
+            return BEST
+        if key in ("lcm", "tcd"):
+            return BAD
         return OK
     return entry[4].get(_family(model_family), OK)
 
@@ -393,6 +402,14 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "qwen21":
+        return ("**Qwen Image 2.1** is a guided model: the sd.cpp example "
+                "uses **Euler, CFG 6.0** and the engine's automatic "
+                "resolution-dependent flow schedule; Qwen's official "
+                "example uses **40 steps**. Negative prompts are available "
+                "when CFG is above 1. LCM and TCD need models distilled for "
+                "those methods. Other methods are left as experiments here: "
+                "the 4–8-step verdicts for distilled models do not apply.")
     name, steps, cfg = _MODEL[fam]
     # Traduire AVANT de formater : les placeholders survivent (garanti par
     # tests/test_i18n.py), et le texte inséré est traduit séparément.

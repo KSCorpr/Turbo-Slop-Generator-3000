@@ -156,6 +156,9 @@ class ModelChoiceTests(unittest.TestCase):
 
         made = [model("klein", "full", True), model("krea", "optional", True),
                 model("autre", None, True), model("pas-la", "full", False)]
+        qwen, _ = model("qwen", "full", True)
+        qwen.family = "qwen21"
+        made.append((qwen, True))
         with patch.object(highres.registry, "load_base_models",
                           return_value=[m for m, _ in made]), \
              patch.object(highres.registry, "model_is_ready",

@@ -60,16 +60,18 @@ MAX_RETRIES = 3
 
 
 def edit_models(prefs: dict | None = None) -> list[tuple[str, str]]:
-    """Modèles utilisables ici : ceux qui savent prendre une RÉFÉRENCE.
+    """Modèles utilisables ici : Flux.2, pour lequel la passe est calibrée.
 
-    La méthode repose sur `-r`. Un modèle sans édition native ne ferait qu'un
-    img2img ordinaire — autant ne pas le proposer et laisser croire.
+    La méthode repose sur `-r`, mais aussi sur les 8 pas, le budget de pixels
+    et la correction des couleurs propres à Flux.2. Un autre modèle capable
+    de `-r` (Qwen 2.1) ne doit pas être proposé sans calibration dédiée.
     """
     prefs = prefs if prefs is not None else settings.load_prefs()
     out = []
     for model in registry.load_base_models(prefs):
         kind = model.defaults.get("edit")
-        if kind in (True, "full") and registry.model_is_ready(model):
+        if model.family == "flux2" and kind in (True, "full") \
+                and registry.model_is_ready(model):
             out.append((model.name, model.id))
     return out
 
