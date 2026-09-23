@@ -73,6 +73,26 @@ class QwenEngineTests(unittest.TestCase):
         self.assertNotIn("--scheduler", cmd)
         self.assertNotIn("--strength", cmd)
 
+    def test_preview_cli_uses_model_method_and_interval(self):
+        with patch.object(sdcpp, "_require"), \
+             patch.object(sdcpp, "supported_options", return_value=frozenset()):
+            for method, interval in (("vae", 5), ("proj", 1)):
+                with self.subTest(method=method):
+                    preview_options = ({"preview_method": method,
+                                        "preview_interval": interval}
+                                       if method == "vae" else {})
+                    req = sdcpp.GenRequest(
+                        diffusion_model=Path("model.gguf"),
+                        preview_path=Path("preview.png"),
+                        **preview_options)
+                    cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req,
+                                              Path("output.png"))
+                    self.assertEqual(cmd[cmd.index("--preview") + 1], method)
+                    self.assertEqual(cmd[cmd.index("--preview-path") + 1],
+                                     "preview.png")
+                    self.assertEqual(cmd[cmd.index("--preview-interval") + 1],
+                                     str(interval))
+
     def test_edit_without_projector_fails_but_text_generation_does_not(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -95,8 +115,17 @@ class QwenEngineTests(unittest.TestCase):
                  patch.object(generate.sdcpp, "collect_outputs", return_value=[]):
                 generate.generate("qwen-image-2.1", "a cat", "", 40, 6.0,
                                   1024, 1024, 1, 1, prefs_override=prefs,
+                                  preview_path=root / "preview.png",
                                   save_prompt=False)
-                self.assertIsNone(build.call_args.args[1].llm_vision)
+                request = build.call_args.args[1]
+                self.assertIsNone(request.llm_vision)
+                self.assertEqual(request.preview_method, "vae")
+                self.assertEqual(request.preview_interval, 5)
+                generate.generate("qwen-image-2.1", "a cat", "", 3, 6.0,
+                                  1024, 1024, 1, 1, prefs_override=prefs,
+                                  preview_path=root / "preview.png",
+                                  save_prompt=False)
+                self.assertEqual(build.call_args.args[1].preview_interval, 3)
                 with self.assertRaisesRegex(sdcpp.EngineError,
                                             "vision projector is missing"):
                     generate.generate("qwen-image-2.1", "edit", "", 40, 6.0,

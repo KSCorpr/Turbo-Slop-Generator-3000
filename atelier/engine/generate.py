@@ -453,6 +453,11 @@ def generate(
         init_image=init_image, strength=strength, mask_image=mask_image,
         ref_image=ref_image,
         lora_dir=lora_dir, preview_path=preview_path,
+        # sd.cpp n'a pas de projection RGB pour les 64 canaux de Qwen 2.1 :
+        # "proj" ne crée aucun fichier d'aperçu. Son propre VAE sait les
+        # décoder ; on espace les décodages pour limiter le coût GPU/VRAM.
+        preview_method="vae" if model.family == "qwen21" else "proj",
+        preview_interval=min(5, max(1, steps)) if model.family == "qwen21" else 1,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         params_backend=params_backend,

@@ -497,8 +497,10 @@ Qwen). Loading a reference image auto-fits width/height to its aspect.
 - **Images** — batch count (1–8).
 
 ### Output
-- **Merged preview & results** — the live preview shows in the gallery during
-  generation, then the final images replace it (one view).
+- **Live preview** — a preview image appears during generation; the final
+  images appear in the gallery when generation finishes. Qwen Image 2.1 uses
+  its VAE for the preview (every five steps, or sooner for shorter runs),
+  which takes longer than the lightweight preview used by other models.
 - **Seed** — the selected image's seed shows in a copy-button box; **Reuse this
   seed** drops it back into the seed field. Clearing the seed field resets it to -1.
 - **Send to Toolkit** — push the selected image straight into a Toolkit tool

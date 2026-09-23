@@ -112,7 +112,9 @@ class GenRequest:
     # édition (-r / --ref-image, Flux.2 / Qwen 2.1) : chemin ou liste
     ref_image: "Path | list[Path] | None" = None
     lora_dir: Path | None = None       # --lora-model-dir
-    preview_path: Path | None = None   # aperçu temps réel (--preview proj)
+    preview_path: Path | None = None   # aperçu temps réel (--preview-path)
+    preview_method: str = "proj"       # Qwen 2.1 (64 canaux) requiert "vae"
+    preview_interval: int = 1          # décodage VAE plus coûteux que proj
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
@@ -499,8 +501,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.hires and hires_supported(sd_cli):
         cmd += hires_args(req.hires)
     if req.preview_path:
-        cmd += ["--preview", "proj", "--preview-path", str(req.preview_path),
-                "--preview-interval", "1"]
+        cmd += ["--preview", req.preview_method,
+                "--preview-path", str(req.preview_path),
+                "--preview-interval", str(req.preview_interval)]
     # Accélération par cache (opt-in) : saute des calculs quasi identiques entre
     # pas. Nécessite un sd-cli récent (update.bat si le flag est inconnu).
     if req.cache_mode:
