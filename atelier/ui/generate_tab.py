@@ -62,6 +62,21 @@ RATIOS_ZIMAGE: dict[str, tuple[int, int]] = {
     "Vertical 9:16 — 768×1344": (768, 1344),
     "Custom (sliders)": (0, 0),
 }
+RATIOS_QWEN21: dict[str, tuple[int, int]] = {
+    "Square 1:1 — 1024×1024": (1024, 1024),
+    "Landscape 3:2 — 1248×832": (1248, 832),
+    "Portrait 2:3 — 832×1248": (832, 1248),
+    "Wide 16:9 — 1408×800": (1408, 800),
+    "Vertical 9:16 — 800×1408": (800, 1408),
+    "Square 1:1 — 2048×2048 (2K)": (2048, 2048),
+    "Landscape 4:3 — 2400×1792 (2K)": (2400, 1792),
+    "Portrait 3:4 — 1792×2400 (2K)": (1792, 2400),
+    "Landscape 3:2 — 2528×1696 (2K)": (2528, 1696),
+    "Portrait 2:3 — 1696×2528 (2K)": (1696, 2528),
+    "Wide 16:9 — 2752×1536 (2K)": (2752, 1536),
+    "Vertical 9:16 — 1536×2752 (2K)": (1536, 2752),
+    "Custom (sliders)": (0, 0),
+}
 _CUSTOM_LABEL = "Custom (sliders)"
 
 # Entrée « neutre » en tête du menu des styles perso : la sélectionner RETIRE
@@ -80,6 +95,8 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
+    if family == "qwen21":
+        return RATIOS_QWEN21
     # startswith et non == : toute variante Krea à venir partagera
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
@@ -123,6 +140,8 @@ def build_generative_tab(model_id: str, title: str,
         ready = m is not None and registry.model_is_ready(m)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
+        size_step = 32 if family == "qwen21" else 16
+        size_max = 2816 if family == "qwen21" else 2048
         # Capacité d'édition, déclarée par le catalogue (defaults.edit) :
         #   "full"     -> modèle d'édition natif (Flux.2) : UI images de référence ;
         #   "optional" -> édition possible AVEC un LoRA d'édition (Krea 2 Ostris
@@ -330,6 +349,15 @@ def build_generative_tab(model_id: str, title: str,
                             "reference images** to combine elements (e.g. "
                             "*“put the character from image 1 into the scene "
                             "of image 2”*).")
+                        if family == "qwen21":
+                            gr.Markdown(
+                                "**Qwen 2.1:** editing requires the vision "
+                                "projector downloaded with the model; no "
+                                "editing LoRA is needed. For a transparent "
+                                "PNG, use: `This is an RGBA image with "
+                                "transparency. <your description>. The image "
+                                "has alpha channel and the background is "
+                                "transparent.` 2K formats need more VRAM.")
                     else:
                         gr.Markdown(
                             "**Reference image** (image-to-image): load a "
@@ -353,15 +381,20 @@ def build_generative_tab(model_id: str, title: str,
                                 "headroom it needs.")
                     init_image = gr.Image(
                         label="Image to edit" if is_edit else "Starting image",
-                        type="pil",
+                        type="pil", image_mode=("RGBA" if family == "qwen21"
+                                                else "RGB"),
                         buttons=widgets.IMAGE_VIEW_ONLY)
                     if is_edit:
                         with gr.Row():
                             ref_image2 = gr.Image(
                                 label="Reference 2 (optional)", type="pil",
+                                image_mode=("RGBA" if family == "qwen21"
+                                            else "RGB"),
                                 buttons=widgets.IMAGE_VIEW_ONLY)
                             ref_image3 = gr.Image(
                                 label="Reference 3 (optional)", type="pil",
+                                image_mode=("RGBA" if family == "qwen21"
+                                            else "RGB"),
                                 buttons=widgets.IMAGE_VIEW_ONLY)
                     else:
                         ref_image2 = gr.State(None)
@@ -444,21 +477,26 @@ def build_generative_tab(model_id: str, title: str,
                                          d.get("height", 1024))),
                     label="Aspect ratio")
                 with gr.Row():
-                    width = gr.Slider(256, 2048, value=d.get("width", 1024), step=16,
+                    width = gr.Slider(256, size_max, value=d.get("width", 1024),
+                                      step=size_step,
                                       label="Width")
-                    height = gr.Slider(256, 2048, value=d.get("height", 1024), step=16,
+                    height = gr.Slider(256, size_max, value=d.get("height", 1024),
+                                       step=size_step,
                                        label="Height")
                 with gr.Row():
                     steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
                                       label="Steps")
                     cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
                                     step=0.1, label="CFG",
-                                    info="On sd.cpp, CFG disabled = 1.0 "
-                                         "(normal for distilled models). 0.0 "
-                                         "= pure unconditional: may IGNORE "
-                                         "the prompt (Krea's “cfg 0” is its "
-                                         "own convention, ≠ sd.cpp). >1 = "
-                                         "guidance.")
+                                    info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
+                                          "example; negative prompts can work."
+                                          if family == "qwen21" else
+                                          "On sd.cpp, CFG disabled = 1.0 "
+                                          "(normal for distilled models). 0.0 "
+                                          "= pure unconditional: may IGNORE "
+                                          "the prompt (Krea's “cfg 0” is its "
+                                          "own convention, ≠ sd.cpp). >1 = "
+                                          "guidance."))
                 preset_list = _presets(model_id)
                 preset = gr.Dropdown(
                     [t(p["name"]) for p in preset_list],
@@ -494,7 +532,9 @@ def build_generative_tab(model_id: str, title: str,
                 schedule.change(
                     lambda k: sampling.describe("schedule", k, family),
                     inputs=[schedule], outputs=[schedule_doc])
-                with gr.Accordion("📖 Why half of this menu is useless here",
+                with gr.Accordion(("📖 Why Euler and Auto for Qwen 2.1" if
+                                   family == "qwen21" else
+                                   "📖 Why half of this menu is useless here"),
                                   open=False):
                     gr.Markdown(sampling.rationale(family))
                 flow_shift = gr.Slider(
@@ -804,14 +844,14 @@ def build_generative_tab(model_id: str, title: str,
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ
-            (côté long plafonné à 1024 px, multiples de 16)."""
+            (côté long plafonné à 1024 px, grille propre au modèle)."""
             if img is None:
                 return gr.update(), gr.update(), gr.update()
             w0, h0 = img.size
             longest = max(w0, h0) or 1
             sc = 1024 / longest if longest > 1024 else 1.0
-            w = max(256, min(2048, int(round(w0 * sc / 16)) * 16))
-            h = max(256, min(2048, int(round(h0 * sc / 16)) * 16))
+            w = max(256, min(size_max, int(round(w0 * sc / size_step)) * size_step))
+            h = max(256, min(size_max, int(round(h0 * sc / size_step)) * size_step))
             return (gr.update(value=w), gr.update(value=h),
                     gr.update(value=t(_CUSTOM_LABEL)))
 
@@ -882,7 +922,7 @@ def build_generative_tab(model_id: str, title: str,
                 base_seed = random.randint(0, 2**31 - 1)
 
             settings.ensure_dirs()
-            # Modèle d'édition (Flux.2) -> image(s) via -r (ref_image) ; sinon
+            # Modèle d'édition (Flux.2 / Qwen 2.1) -> image(s) via -r ; sinon
             # img2img classique via -i (init_image) + force.
             init_path = None
             ref_paths: list = []
@@ -893,11 +933,15 @@ def build_generative_tab(model_id: str, title: str,
                 # plausible), image d'origine recollée au centre.
                 from PIL import Image as _PI, ImageFilter as _IF
                 ow, oh = init_image.size
-                nw = max(256, min(2048, int(round(ow * of / 16)) * 16))
-                nh = max(256, min(2048, int(round(oh * of / 16)) * 16))
-                bg = init_image.convert("RGB").resize((nw, nh), _PI.LANCZOS)
+                nw = max(256, min(size_max,
+                                  int(round(ow * of / size_step)) * size_step))
+                nh = max(256, min(size_max,
+                                  int(round(oh * of / size_step)) * size_step))
+                mode = "RGBA" if family == "qwen21" else "RGB"
+                bg = init_image.convert(mode).resize((nw, nh), _PI.LANCZOS)
                 bg = bg.filter(_IF.GaussianBlur(28))
-                bg.paste(init_image.convert("RGB"), ((nw - ow) // 2, (nh - oh) // 2))
+                bg.paste(init_image.convert(mode),
+                         ((nw - ow) // 2, (nh - oh) // 2))
                 rp = settings.TMP_DIR / "outpaint_ref.png"
                 bg.save(rp)
                 ref_paths.append(rp)

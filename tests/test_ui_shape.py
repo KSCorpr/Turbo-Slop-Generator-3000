@@ -188,6 +188,32 @@ class AccordionBudgetTests(unittest.TestCase):
 class GenerationTabTests(unittest.TestCase):
     """L'onglet le plus utilisé : rien d'expérimental ne doit s'y inviter."""
 
+    def test_qwen_tab_preserves_alpha_and_exposes_guided_controls(self):
+        demo = _build(all_installed=False)
+        tab = next(b for b in demo.blocks.values()
+                   if isinstance(b, gr.Tab) and b.id == "qwen-image-2.1")
+
+        def belongs_to_qwen(block):
+            parent = block.parent
+            while parent is not None:
+                if parent is tab:
+                    return True
+                parent = parent.parent
+            return False
+
+        controls = [b for b in demo.blocks.values() if belongs_to_qwen(b)]
+        refs = [b for b in controls if isinstance(b, gr.Image)
+                and b.label in ("Image to edit", "Reference 2 (optional)",
+                                "Reference 3 (optional)")]
+        self.assertEqual(len(refs), 3)
+        self.assertTrue(all(b.image_mode == "RGBA" for b in refs))
+        cfg = next(b for b in controls if isinstance(b, gr.Slider)
+                   and b.label == "CFG")
+        self.assertEqual(cfg.value, 6.0)
+        width = next(b for b in controls if isinstance(b, gr.Slider)
+                     and b.label == "Width")
+        self.assertEqual((width.maximum, width.step), (2816, 32))
+
     def test_the_int8_variant_stays_hidden_until_it_is_installed(self):
         """Proposer un modèle non téléchargé, c'est un piège : on clique, la
         génération échoue. Le sélecteur n'existe que si le fichier est là."""

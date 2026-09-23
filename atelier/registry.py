@@ -114,6 +114,8 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
                 q = quant.shift(q_diff, int(spec.get("quant_bias") or 0))
             else:
                 q = None
+            if q is not None:
+                q = spec.get("quant_map", {}).get(q, q)
             comps.append(Component(role, spec["repo"], template, q,
                                    optional=bool(spec.get("optional"))))
         out.append(BaseModel(

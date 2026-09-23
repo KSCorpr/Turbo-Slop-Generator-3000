@@ -44,9 +44,7 @@ def _models() -> list:
 
 
 def _is_edit(m) -> bool:
-    """Modèle d'ÉDITION natif (Flux.2 Klein) : il « voit » l'image qu'on
-    lui passe en référence grâce à son encodeur vision. C'est la seule famille
-    capable de prolonger une scène de façon sensée."""
+    """Modèle d'ÉDITION natif : reçoit la toile via une image de référence."""
     return (m.defaults.get("edit") if m else None) in (True, "full")
 
 
@@ -90,8 +88,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         gr.Markdown(
             "### Extend an image (outpaint)\nEnlarges the canvas in the "
             "directions you pick and lets the model **continue the scene**, "
-            "Midjourney-style.\n\n**Use it with an EDITING model** (Flux.2 "
-            "Klein). Only such a model actually *looks* at the image, through "
+            "Midjourney-style.\n\n**Use an EDITING model** (Flux.2 Klein or "
+            "Qwen Image 2.1). Only such a model actually *looks* at the image, through "
             "its vision encoder: it knows what it is continuing. The enlarged "
             "canvas is handed to it as a **reference** along with an "
             "**extension instruction written automatically** — that is what "
@@ -101,7 +99,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             "the image, it only gets a noised latent, and it **reinvents "
             "instead of continuing**. The fallback is kept, but the result is "
             "incoherent by construction — that is a limit of the method, not "
-            "a setting to tune.")
+            "a setting to tune. This outpaint tool composites in RGB; for "
+            "transparency, use the Qwen generation tab.")
 
         _choices, _first = _model_choices()
         with gr.Row():
@@ -115,7 +114,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     0.05, 1.0, value=0.25, step=0.05,
                     label="Extension per side (as a fraction of the image)",
                     info="0.25 = +25% on each side you pick. The canvas is "
-                         "aligned to 16 px and capped at 2048 px.")
+                         "aligned to 32 px for Qwen, 16 px otherwise, and "
+                         "capped at 2048 px.")
                 plan_md = gr.Markdown("")
                 model = gr.Dropdown(_choices, value=_first,
                                     label="Model used")
@@ -170,14 +170,15 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                                  elem_classes="log-box")
 
         # --- Aperçu du plan (dimensions) ---
-        def _preview(img, dirs, amt):
+        def _preview(img, dirs, amt, mid):
             if img is None:
                 return ""
-            p = op.plan(img.size, (dirs or "").split("|"), float(amt))
+            p = op.plan(img.size, (dirs or "").split("|"), float(amt),
+                        multiple=32 if mid == "qwen-image-2.1" else 16)
             return f"**New size:** {op.describe(p)}"
 
-        for comp in (image, direction, amount):
-            comp.change(_preview, inputs=[image, direction, amount],
+        for comp in (image, direction, amount, model):
+            comp.change(_preview, inputs=[image, direction, amount, model],
                         outputs=[plan_md])
 
         # Le choix du modèle change tout : nombre d'étapes, chemin utilisé, et
@@ -192,7 +193,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 note = ("⚠️ **Model without editing** — img2img fallback: it "
                         "does not see the image, it gets a noised latent and "
                         "**reinvents** instead of continuing. The result is "
-                        "often incoherent. Prefer Flux.2 Klein.")
+                        "often incoherent. Prefer Flux.2 Klein or Qwen 2.1.")
             return (gr.update(value=dd["steps"]),
                     gr.update(interactive=not dd["edit"]),
                     gr.update(value="neutral" if dd["edit"] else "edge"),
@@ -207,7 +208,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 raise gr.Error(t("Load an image to extend."))
             if not model_id:
                 raise gr.Error(t("Pick a model."))
-            p = op.plan(img.size, (dirs or "").split("|"), float(amt))
+            p = op.plan(img.size, (dirs or "").split("|"), float(amt),
+                        multiple=32 if model_id == "qwen-image-2.1" else 16)
             if not any(p[d] for d in op.DIRECTIONS):
                 raise gr.Error(t("No direction selected."))
 
@@ -227,7 +229,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             # ------------------------------------------------------------------
             # DEUX CHEMINS RADICALEMENT DIFFÉRENTS.
             #
-            # Modèle d'ÉDITION (Flux.2 Klein) -> la toile part en
+            # Modèle d'ÉDITION (Flux.2 Klein / Qwen 2.1) -> la toile part en
             # RÉFÉRENCE (-r) avec une consigne d'extension explicite. Le modèle
             # REGARDE l'image via son encodeur vision : il sait ce qu'il prolonge.
             # C'est la seule façon d'obtenir une extension qui ait du sens.

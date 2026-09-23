@@ -3,12 +3,35 @@ préférences matérielles et les LoRA, puis lance stable-diffusion.cpp.
 """
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings
 from . import sdcpp
 from .sdcpp import GenRequest
+
+# Official build 896 includes the Qwen 2.1 RGBA input fix; the supported CLI
+# flags alone cannot distinguish an older binary from one that loads the model.
+QWEN21_MIN_BUILD = 896
+
+
+def _check_qwen_engine(model: registry.BaseModel) -> None:
+    if model.family != "qwen21":
+        return
+    manifest = settings.BIN_DIR / "engine-manifest.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        tag = data.get("tag") if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError):
+        return  # Manually installed engine: sd.cpp will validate the model.
+    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
+        if isinstance(tag, str) else None
+    if match and int(match.group(1)) < QWEN21_MIN_BUILD:
+        raise sdcpp.EngineError(
+            f"Qwen Image 2.1 needs sd.cpp build {QWEN21_MIN_BUILD} or newer. "
+            "Run update.bat (or ./update.sh on Linux/Mac).")
 
 
 def cancel() -> str:
@@ -191,9 +214,14 @@ def resolve_model_files(model: "registry.BaseModel",
         t5xxl = _component(model, "t5xxl")
         clip_l = _component(model, "clip_l")
         # Projecteur vision (mmproj) : chargé UNIQUEMENT quand une image de
-        # référence est fournie (édition Krea 2 / Ostris Edit) — inutile en
+        # référence est fournie (Qwen 2.1 ou Krea 2 / Ostris Edit) — inutile en
         # text-to-image pur, et ça évite son coût mémoire.
         llm_vision = _component(model, "text_encoder_vision") if want_vision else None
+        if want_vision and any(c.role == "text_encoder_vision" for c in model.components) \
+                and (llm_vision is None or not llm_vision.is_file()):
+            raise sdcpp.EngineError(
+                f"“{model.name}”: the vision projector is missing. "
+                "Download the model again in the Model catalog to edit images.")
         # On exige UNIQUEMENT les composants que le modèle déclare : certains
         # modèles peuvent ne pas avoir de VAE, ou utiliser t5xxl/clip_l au lieu
         # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
@@ -342,6 +370,7 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
+    _check_qwen_engine(model)
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image))
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],

@@ -87,7 +87,7 @@ class GenRequest:
     model_path: Path | None = None        # checkpoint complet -> -m
     text_encoder: Path | None = None       # --llm (modèles à encodeur LLM)
     # --llm_vision : projecteur vision (mmproj) de l'encodeur — permet à
-    # Qwen3-VL de « voir » l'image de référence (édition Krea 2 / Ostris Edit).
+    # Qwen3-VL de « voir » l'image de référence (Qwen 2.1 / Krea 2 Edit).
     llm_vision: Path | None = None
     t5xxl: Path | None = None              # --t5xxl (FLUX.1, etc.)
     clip_l: Path | None = None             # --clip_l
@@ -109,7 +109,7 @@ class GenRequest:
     # Masque d'inpainting (blanc = à régénérer, noir = à conserver). L'option
     # est DÉTECTÉE sur le binaire (mask_flag) : ignorée s'il ne la connaît pas.
     mask_image: Path | None = None
-    # édition (-r / --ref-image, Flux.2) : un chemin OU une liste (multi-référence)
+    # édition (-r / --ref-image, Flux.2 / Qwen 2.1) : chemin ou liste
     ref_image: "Path | list[Path] | None" = None
     lora_dir: Path | None = None       # --lora-model-dir
     preview_path: Path | None = None   # aperçu temps réel (--preview proj)

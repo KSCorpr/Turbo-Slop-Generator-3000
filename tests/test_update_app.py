@@ -68,7 +68,10 @@ class PlanTests(unittest.TestCase):
         for rel, content in local.items():
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
+            # Le ZIP simulé contient des octets LF sous tous les OS. Écrire le
+            # témoin avec write_text() crée des CRLF sous Windows et fabrique
+            # une différence que ce test veut justement exclure.
+            p.write_bytes(content.encode("utf-8"))
         return root
 
     def test_only_real_differences_are_written(self):
