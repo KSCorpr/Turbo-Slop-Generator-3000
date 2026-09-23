@@ -169,6 +169,38 @@ class MenuTests(unittest.TestCase):
         self.assertFalse(three_d.update_engine)
         self.assertTrue(three_d.update_trellis)
 
+    def test_engine_update_checks_release_even_when_all_options_exist(self):
+        from atelier import settings
+        from atelier.engine import sdcpp
+
+        options = frozenset(f["option"] for f in M.ENGINE_FEATURES)
+        with patch.object(settings, "find_sd_cli", return_value=Path("sd-cli")), \
+             patch.object(sdcpp, "supported_options", return_value=options), \
+             patch.object(M, "_run_get_sdcpp", return_value=True) as downloader:
+            self.assertFalse(M.check_engine(update=True))
+            downloader.assert_called_once_with(update=True)
+
+    def test_an_unresponsive_engine_is_reinstalled_when_updating(self):
+        from atelier import settings
+        from atelier.engine import sdcpp
+
+        with patch.object(settings, "find_sd_cli", return_value=Path("sd-cli")), \
+             patch.object(sdcpp, "supported_options", return_value=frozenset()), \
+             patch.object(M, "_run_get_sdcpp", return_value=True) as downloader:
+            self.assertFalse(M.check_engine(update=True))
+            downloader.assert_called_once_with(force=True)
+
+    def test_a_missing_engine_option_forces_repair(self):
+        from atelier import settings
+        from atelier.engine import sdcpp
+
+        with patch.object(settings, "find_sd_cli", return_value=Path("sd-cli")), \
+             patch.object(sdcpp, "supported_options",
+                          return_value=frozenset({"--mode"})), \
+             patch.object(M, "_run_get_sdcpp", return_value=True) as downloader:
+            self.assertFalse(M.check_engine(update=True))
+            downloader.assert_called_once_with(force=True)
+
     def test_ask_purge_measures_first_and_deletes_nothing_yet(self):
         """La première passe ne doit RIEN supprimer : elle chiffre.
 

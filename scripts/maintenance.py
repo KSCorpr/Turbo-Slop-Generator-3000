@@ -616,7 +616,7 @@ ENGINE_FEATURES = [
 
 
 def check_engine(update: bool) -> bool:
-    """Présence ET capacités du moteur. Renvoie True si une MAJ est conseillée."""
+    """Contrôle les options et, si demandé, compare la release installée."""
     print("• stable-diffusion.cpp engine (sd-cli)…")
     try:
         from atelier import settings
@@ -638,24 +638,34 @@ def check_engine(update: bool) -> bool:
 
     opts = sdcpp.supported_options(sd)
     if not opts:
+        if update:
+            print(INFO + "sd-cli -h does not respond; reinstalling the engine…")
+            return not _run_get_sdcpp(force=True)
         _warn("the binary does not answer “-h”: its capabilities cannot be "
               "checked. If it does not start either, reinstall it "
               "(update.bat).")
-        return False
+        return True
 
     missing = [f for f in ENGINE_FEATURES if f["option"] not in opts]
     if not missing:
         print(OK + f"{len(ENGINE_FEATURES)} expected capability/capabilities present.")
-        return False
-    for f in missing:
-        line = f"{f['option']} absent → {f['needed_by']} will not work."
-        if f["blocking"]:
-            _warn(line)
-        else:
-            print(INFO + line)
+    else:
+        for f in missing:
+            line = f"{f['option']} absent → {f['needed_by']} will not work."
+            if f["blocking"] and not update:
+                _warn(line)
+            else:
+                print(INFO + line)
     if update:
-        print(INFO + "updating the engine…")
-        return not _run_get_sdcpp(force=True)
+        # Qwen 2.1 et d'autres modèles arrivent parfois sans nouvelle option
+        # dans sd-cli -h : les capacités ne donnent PAS la version du moteur.
+        if missing:
+            print(INFO + "repairing the engine with the latest official release…")
+            return not _run_get_sdcpp(force=True)
+        print(INFO + "checking the latest official engine release…")
+        return not _run_get_sdcpp(update=True)
+    if not missing:
+        return False
     print(INFO + "The engine is older than the code. To bring it in line:")
     print("        update.bat   (./update.sh on Linux/Mac)")
     return True
@@ -689,10 +699,11 @@ def _run_downloader(script: str, args: list, label: str) -> bool:
     return False
 
 
-def _run_get_sdcpp(force: bool = False) -> bool:
+def _run_get_sdcpp(force: bool = False, update: bool = False) -> bool:
     # Le cache d'options est indexé sur (chemin, mtime, taille) : un nouveau
     # binaire produit une clé différente, donc la relecture est automatique.
-    return _run_downloader("get_sdcpp.py", ["--force"] if force else [],
+    args = ["--force"] if force else ["--update"] if update else []
+    return _run_downloader("get_sdcpp.py", args,
                            "the sd.cpp engine")
 
 

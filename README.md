@@ -162,9 +162,9 @@ each via its own one-click installer.
 ### Updating the app itself
 
 **`update.bat` is the way** (`./update.sh` on Linux/Mac). It downloads the
-current code from GitHub and applies it in place — no manual re-download, and
-nothing of yours is touched: `models/`, `loras/`, `outputs/`, `userdata/`,
-`tools_repo/`, `bin/` and `python/` are off limits by construction.
+current code from GitHub **main** and applies it in place. The code step leaves
+your models, outputs, settings, portable Python and installed engines alone;
+the later engine step updates sd.cpp in `bin/` with a rollback copy.
 
 **It is the only update button, and it does four things in order.** Updating
 the code alone was never enough. There used to be `update-engine.bat`, because
@@ -894,7 +894,7 @@ reachable alone.
 | Command | Updates |
 |---|---|
 | `update.bat` | **everything**, in order: code, cleanup, sd.cpp, 3D |
-| `update.bat --engine` | **sd.cpp** only — latest official prebuilt binary (images and video) |
+| `update.bat --engine` | **sd.cpp** only — checks the latest official prebuilt release and installs it if newer (images and video) |
 | `update.bat --trellis` | **trellis.cpp** only — latest official Windows CUDA build (Image → 3D), and only if already installed |
 
 The engine steps replace only the **engine binary**. sd.cpp updates are
@@ -906,10 +906,11 @@ mix, while a broken download can never destroy the working install. **Models
 are never re-downloaded** — including the ~10 GB trellis 3D set; reinstall
 those from the **🧊 Text / Image → 3D** tab if ever needed.
 
-**When do you need to update the engine?** When a tab tells you to. The app
-parses `sd-cli -h` and checks the options the current code actually needs, so a
-missing capability is reported as a *feature* ("the HD tab will not work"), not
-as a flag name. Running `update.bat` with no flag does all of it in one go.
+**When do you need to update the engine?** When a tab tells you to, or when a
+new model arrives. The updater compares the installed build with the latest
+official release even if `sd-cli -h` exposes all the options the app knows:
+model support can change without adding a command-line flag. Running
+`update.bat` with no flag checks it as part of the full update.
 
 The 3D step picks its archive from your card — see [Text / Image → 3D](#text--image--3d).
 

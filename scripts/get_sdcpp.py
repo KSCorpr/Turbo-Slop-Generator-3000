@@ -42,10 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 PREVIOUS_DIR = ROOT / ".engine-previous"
 ENGINE_MANIFEST = "engine-manifest.json"
-# Les correctifs de découpe du graphe et de re-clamp du budget VRAM sont dans
-# les builds officiels 823+. Refuser un build plus ancien évite une régression
-# comportementale que la simple détection de flags ne peut pas voir.
-MIN_OFFICIAL_BUILD = 823
+# Qwen Image 2.1 exige au moins la build 896 pour les entrées RGBA. La simple
+# détection des options de sd-cli ne peut pas vérifier le support du modèle.
+MIN_OFFICIAL_BUILD = 896
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
 _UA = {"User-Agent": "atelier"}
 
@@ -465,6 +464,22 @@ def _read_embedded_metadata(root: Path) -> dict:
         return {}
 
 
+def _installed_release_is_current(release: dict, asset: dict) -> bool:
+    """Compare le manifeste du binaire avec l'archive officielle choisie."""
+    if not _has_sd_cli(BIN_DIR):
+        return False
+    try:
+        manifest = json.loads((BIN_DIR / ENGINE_MANIFEST).read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return (isinstance(manifest, dict)
+            and manifest.get("source") == "official"
+            and manifest.get("tag") == release.get("tag_name")
+            and manifest.get("archive") == asset.get("name")
+            and manifest.get("asset_id") == asset.get("id"))
+
+
 def _keep_what_the_archive_does_not_bring(old: Path, stage: Path) -> None:
     """Reporte dans le nouveau bin/ ce qui n'appartient pas au moteur.
 
@@ -598,7 +613,10 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--force", action="store_true",
                     help="download again even if a binary is present (to "
-                         "UPDATE the engine)")
+                         "repair the engine)")
+    ap.add_argument("--update", action="store_true",
+                    help="install the latest official build when it differs "
+                         "from the installed release")
     ap.add_argument("--allow-ipv6", action="store_true",
                     help="do not force IPv4 (IPv4 is forced by default)")
     ap.add_argument("--rollback", action="store_true",
@@ -641,9 +659,13 @@ def main():
             print(" ", a["name"])
         sys.exit("Download one by hand into ./bin.")
 
-    # Binaire principal (skip si déjà présent, utile en cas de relance).
-    if _has_sd_cli() and not args.force:
-        print("The sd-cli binary is already there, skipping the download.")
+    # --update compare la release et l'archive, même si sd-cli -h expose déjà
+    # toutes les options connues : un nouveau modèle peut ne changer aucun flag.
+    if args.update and not args.force and _installed_release_is_current(rel, best):
+        print(f"The sd.cpp engine is already current ({rel.get('tag_name')}).")
+    elif _has_sd_cli(BIN_DIR) and not (args.force or args.update):
+        print("The sd-cli binary is already there, skipping the download. "
+              "Use --update to check for a newer official release.")
     else:
         print(f"Downloading (binary): {best['name']}")
         blob = _download(best["browser_download_url"])

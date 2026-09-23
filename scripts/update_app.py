@@ -67,26 +67,17 @@ except Exception:  # noqa: BLE001
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "KSCorpr/Turbo-Slop-Generator-3000"
 
-#  LA BRANCHE DE CETTE COPIE DU CODE, et pas « la branche principale ».
-#
-#  La distinction a coûté une mauvaise surprise : ce fichier disait `main` en
-#  dur, donc une installation faite depuis une autre branche se faisait écraser
-#  par `main` au premier `update.bat`. Silencieusement, et sans retour possible
-#  autre que le rollback.
-#
-#  La valeur ci-dessous voyage AVEC le code : chaque branche porte la sienne,
-#  donc une mise à jour reste sur la branche d'où elle vient. Un test refuse
-#  qu'elle diverge du dépôt git quand il y en a un — c'est ce qui a attrapé la
-#  fusion de Test7000, qui l'aurait ramenée ici.
+#  Canal unique de mise à jour : une ancienne valeur « branch » conservée dans
+#  userdata/app-update.json ne doit plus détourner l'installation de main.
 DEFAULT_BRANCH = "main"
 
 
-def archive_url(branch: str) -> str:
-    return f"https://codeload.github.com/{REPO}/zip/refs/heads/{branch}"
+def archive_url() -> str:
+    return f"https://codeload.github.com/{REPO}/zip/refs/heads/{DEFAULT_BRANCH}"
 
 
-def commits_url(branch: str) -> str:
-    return f"https://api.github.com/repos/{REPO}/commits/{branch}"
+def commits_url() -> str:
+    return f"https://api.github.com/repos/{REPO}/commits/{DEFAULT_BRANCH}"
 
 MANIFEST = ROOT / "userdata" / "app-update.json"
 BACKUP_DIR = ROOT / ".update-backup"
@@ -129,14 +120,14 @@ def _fetch(url: str, timeout: int = 180) -> bytes:
         return response.read()
 
 
-def _latest_commit(branch: str = DEFAULT_BRANCH) -> dict:
+def _latest_commit() -> dict:
     """Dernier commit de la branche : sha, date, titre. {} si indisponible.
 
     Purement informatif — la mise à jour ne dépend PAS de l'API GitHub, qui
     limite les requêtes anonymes. C'est le contenu de l'archive qui fait foi.
     """
     try:
-        data = json.loads(_fetch(commits_url(branch), timeout=30)
+        data = json.loads(_fetch(commits_url(), timeout=30)
                           .decode("utf-8"))
         return {
             "sha": data.get("sha", "")[:12],
@@ -299,17 +290,13 @@ def _load_manifest() -> dict:
         return {}
 
 
-def _save_manifest(files: dict[str, bytes], commit: dict,
-                   branch: str = DEFAULT_BRANCH) -> None:
+def _save_manifest(files: dict[str, bytes], commit: dict) -> None:
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps({
         "schema": 1,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "commit": commit,
-        #  La branche d'où vient CE contenu. C'est elle qui sera suivie la
-        #  prochaine fois, et c'est ce qui rend un changement de branche
-        #  visible au lieu d'être subi.
-        "branch": branch,
+        "branch": DEFAULT_BRANCH,
         "files": sorted(files),
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -350,52 +337,27 @@ def _rollback() -> int:
     return 0
 
 
-def resolve_branch(asked: str | None, manifest: dict) -> tuple[str, str]:
-    """(branche à suivre, avertissement éventuel).
-
-    Trois sources, dans cet ordre : ce que l'utilisateur demande, ce que la
-    dernière mise à jour a posé, ce que dit ce fichier. La deuxième est celle
-    qui compte : elle mémorise la branche RÉELLEMENT installée, et permet de
-    remarquer qu'une archive d'une autre branche a été dépliée par-dessus.
-    """
-    recorded = str(manifest.get("branch") or "")
-    if asked:
-        return asked, ""
-    if recorded and recorded != DEFAULT_BRANCH:
-        return recorded, (
-            f"this install was updated from “{recorded}” but the code here "
-            f"says “{DEFAULT_BRANCH}”. Following “{recorded}”; pass "
-            f"--branch {DEFAULT_BRANCH} to switch on purpose.")
-    return recorded or DEFAULT_BRANCH, ""
-
-
-def update(check_only: bool = False, branch: str | None = None) -> int:
+def update(check_only: bool = False) -> int:
     _say("=" * 60)
     _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
 
     manifest = _load_manifest()
-    branch, warning = resolve_branch(branch, manifest)
-    #  Annoncée AVANT tout téléchargement. Une mise à jour qui change de
-    #  branche sans le dire est la façon la plus rapide de perdre une
-    #  installation qu'on avait montée exprès.
-    _say(f"{INFO}branch: {branch}")
-    if warning:
-        _say(WARN + warning)
+    _say(f"{INFO}branch: {DEFAULT_BRANCH}")
 
-    commit = _latest_commit(branch)
+    commit = _latest_commit()
     if commit:
         _say(f"{INFO}latest commit: {commit['sha']} — {commit['title']}")
 
     _say("Downloading the code from GitHub…")
     try:
-        blob = _fetch(archive_url(branch))
+        blob = _fetch(archive_url())
         files = _archive_files(blob)
     except Exception as exc:  # noqa: BLE001
         _say(ERR + f"download failed: {exc}")
         _say("    On a corporate network, set HTTPS_PROXY before running")
         _say("    update.bat, or fetch the archive by hand:")
-        _say(f"    https://github.com/{REPO}/archive/refs/heads/{branch}.zip")
+        _say(f"    https://github.com/{REPO}/archive/refs/heads/main.zip")
         return 1
     _say(OK + f"archive read: {len(files)} files, "
          f"fingerprint {_sha(blob)[:12]}.")
@@ -405,8 +367,8 @@ def update(check_only: bool = False, branch: str | None = None) -> int:
 
     if not (added or updated or removed):
         _say(OK + "the code is already up to date — no file changes.")
-        _save_manifest(files, commit or manifest.get("commit") or {},
-                       branch)
+        if not check_only:
+            _save_manifest(files, commit or manifest.get("commit") or {})
         return 0
 
     _say("")
@@ -466,7 +428,7 @@ def update(check_only: bool = False, branch: str | None = None) -> int:
         return 1
     _say(OK + "all the code compiles.")
 
-    _save_manifest(files, commit or {}, branch)
+    _save_manifest(files, commit or {})
     # Une seule sauvegarde conservée : celle qui précède la mise à jour.
     for old in sorted(p for p in BACKUP_DIR.iterdir() if p.is_dir()):
         if old != stamp_dir:
@@ -564,9 +526,6 @@ def main() -> int:
                          "nothing, run nothing else")
     ap.add_argument("--rollback", action="store_true",
                     help="undo the last code update")
-    ap.add_argument("--branch", default=None,
-                    help=f"branch to update from (default: {DEFAULT_BRANCH}, "
-                         "or whatever the last update used)")
     steps = ap.add_argument_group(
         "one step only (default: all four, in order)")
     steps.add_argument("--code", action="store_true",
@@ -585,7 +544,7 @@ def main() -> int:
     want = selected_steps(args)
     code = 0
     if want["code"]:
-        code = update(check_only=args.check, branch=args.branch)
+        code = update(check_only=args.check)
         #  La suite porte sur le code POSÉ. S'il ne l'a pas été — échec de
         #  téléchargement, retour en arrière automatique, ou `--check` qui
         #  n'écrit rien par définition — il n'y a rien à ranger, et lancer la

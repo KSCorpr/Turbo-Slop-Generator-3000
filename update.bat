@@ -11,8 +11,8 @@ REM    3. le MOTEUR sd.cpp (images et video), remis au niveau du code ;
 REM    4. le MOTEUR 3D trellis.cpp — le binaire seul, et seulement s'il est
 REM       deja installe (les ~16 Go de modeles 3D ne sont PAS retelecharges).
 REM
-REM  Ne touche jamais a vos donnees : models\, loras\, outputs\, userdata\,
-REM  tools_repo\, bin\, python\ sont laisses intacts.
+REM  Le code ne touche pas a vos donnees ; l'etape moteur met bin\ a jour
+REM  en gardant l'ancien moteur pour rollback.
 REM
 REM    update.bat                   tout, dans l'ordre
 REM    update.bat --clean           le menage seul
@@ -21,10 +21,8 @@ REM    update.bat --trellis         le moteur 3D seul
 REM    update.bat --code            le code seul
 REM    update.bat --check           dit ce que le code changerait, n'ecrit rien
 REM    update.bat --rollback        annule la derniere mise a jour du code
-REM    update.bat --branch main     change de branche VOLONTAIREMENT
 REM
-REM  La branche suivie est affichee AVANT tout telechargement. Sans --branch,
-REM  la mise a jour reste sur la branche d'ou vient cette installation.
+REM  Le code est toujours telecharge depuis main. Pas de changement de branche.
 REM
 REM  FERMEZ l'application avant de lancer ce script (un fichier ouvert ne peut
 REM  pas etre remplace sous Windows).

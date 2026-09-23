@@ -139,5 +139,53 @@ class TransactionalUpdateTests(unittest.TestCase):
             self.assertEqual((previous / "version.txt").read_text(), "new")
 
 
+class ReleaseCheckTests(unittest.TestCase):
+    def test_a_binary_with_the_same_options_can_still_be_outdated(self):
+        release = {"tag_name": "master-900"}
+        asset = {"name": "sd-master-900-bin-win-cuda12-x64.zip", "id": 900}
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(U, "BIN_DIR", Path(tmp)), \
+             patch.object(U, "_has_sd_cli", return_value=True):
+            manifest = Path(tmp) / U.ENGINE_MANIFEST
+            manifest.write_text(json.dumps({
+                "source": "official", "tag": "master-895",
+                "archive": asset["name"], "asset_id": asset["id"],
+                "supported_options": ["--hires", "--preview"],
+            }), encoding="utf-8")
+            self.assertFalse(U._installed_release_is_current(release, asset))
+            manifest.write_text(json.dumps({
+                "source": "official", "tag": "master-900",
+                "archive": asset["name"], "asset_id": asset["id"],
+            }), encoding="utf-8")
+            self.assertTrue(U._installed_release_is_current(release, asset))
+            self.assertFalse(U._installed_release_is_current(
+                release, {**asset, "id": 901}))
+
+    def test_update_installs_a_new_release_and_skips_the_current_one(self):
+        release = {"tag_name": "master-900", "assets": [{
+            "name": "sd-master-900-bin-win-cuda12-x64.zip",
+            "browser_download_url": "https://github.com/example/sd.zip", "id": 900,
+        }]}
+        with patch.object(U.sys, "argv", ["get_sdcpp.py", "--update"]), \
+             patch.object(U, "_force_ipv4"), \
+             patch.object(U, "_latest_release_with_assets", return_value=release), \
+             patch.object(U, "_score_main", return_value=20), \
+             patch.object(U, "_installed_release_is_current", return_value=False), \
+             patch.object(U, "_download", return_value=b"binary") as download, \
+             patch.object(U, "_transactional_install") as install:
+            U.main()
+            download.assert_called_once_with(
+                release["assets"][0]["browser_download_url"])
+            self.assertEqual(install.call_args.args[1], release["assets"][0]["name"])
+        with patch.object(U.sys, "argv", ["get_sdcpp.py", "--update"]), \
+             patch.object(U, "_force_ipv4"), \
+             patch.object(U, "_latest_release_with_assets", return_value=release), \
+             patch.object(U, "_score_main", return_value=20), \
+             patch.object(U, "_installed_release_is_current", return_value=True), \
+             patch.object(U, "_download") as download:
+            U.main()
+            download.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

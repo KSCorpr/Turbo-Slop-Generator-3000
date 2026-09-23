@@ -61,6 +61,39 @@ class ArchiveTests(unittest.TestCase):
                                           ".github/workflows/ci.yml": "on: push"}))
         self.assertEqual(set(files), set(SANE))
 
+    def test_old_manifest_branch_cannot_redirect_the_update(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(U, "ROOT", Path(tmp)), \
+             patch.object(U, "_load_manifest",
+                          return_value={"branch": "Test7000", "files": []}), \
+             patch.object(U, "_latest_commit", return_value={}), \
+             patch.object(U, "missing_files", return_value=[]), \
+             patch.object(U, "_fetch", return_value=archive(SANE)) as fetch:
+            self.assertEqual(U.update(check_only=True), 0)
+        fetch.assert_called_once_with(U.archive_url())
+        self.assertIn("/refs/heads/main", fetch.call_args.args[0])
+
+    def test_a_noop_update_replaces_legacy_branch_but_check_changes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel, content in SANE.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content.encode("utf-8"))
+            manifest = root / "userdata" / "app-update.json"
+            with patch.object(U, "ROOT", root), \
+                 patch.object(U, "MANIFEST", manifest), \
+                 patch.object(U, "_load_manifest", return_value={
+                     "branch": "Test7000", "files": sorted(SANE),
+                 }), \
+                 patch.object(U, "_latest_commit", return_value={}), \
+                 patch.object(U, "missing_files", return_value=[]), \
+                 patch.object(U, "_fetch", return_value=archive(SANE)):
+                self.assertEqual(U.update(check_only=True), 0)
+                self.assertFalse(manifest.exists())
+                self.assertEqual(U.update(), 0)
+            self.assertEqual(json.loads(manifest.read_text())["branch"], "main")
+
 
 class PlanTests(unittest.TestCase):
     def _root(self, tmp, local: dict):
