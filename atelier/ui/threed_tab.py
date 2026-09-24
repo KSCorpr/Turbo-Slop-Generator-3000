@@ -1,5 +1,5 @@
-"""Onglet « 🧊 Texte / Image → 3D » : un maillage 3D texturé (GLB), via le
-binaire natif trellis-cli (trellis.cpp — C++/GGML/CUDA, no PyTorch).
+"""Onglet « 🧊 Texte / Image → 3D » : un maillage 3D (GLB), via le
+serveur natif trellis.cpp (C++/GGML/CUDA, sans PyTorch).
 
 One-shot : le process se termine et libère la VRAM (stratégie low-VRAM). Le mode
 512 « light » vise les cartes ≤ 12 Go ; 1024/1536 demandent ~16 Go+.
@@ -34,6 +34,7 @@ import time
 import gradio as gr
 
 from .. import registry, settings
+from ..trellis_models import pixal_files
 from ..engine import generate as gen_engine
 from ..engine import sdcpp
 from ..engine import trellis
@@ -131,6 +132,34 @@ def _gpu_choices() -> list[tuple[str, int]]:
             for g in hardware.detect_gpus()]
 
 
+def _pixal_sizes(resolution: int) -> str:
+    """Tailles publiées sur HF, sans deviner celles qui n'y figurent pas."""
+    from huggingface_hub import HfApi
+    settings.configure_hf_env()
+    siblings = HfApi().model_info(repo_id="vegax87/Pixal3D",
+                                  files_metadata=True).siblings or []
+    published = {s.rfilename: s.size for s in siblings}
+    files = pixal_files(int(resolution))
+    lines = []
+    remaining = 0
+    for name in files:
+        size = published.get(name)
+        installed = (trellis.MODELS_DIR / name).is_file()
+        status = " · installed" if installed else ""
+        if size is None:
+            lines.append(f"- `{name}` — size unknown{status}")
+        else:
+            lines.append(f"- `{name}` — {size / 1e9:.2f} GB{status}")
+            if not installed:
+                remaining += size
+    total = sum(published.get(name) or 0 for name in files)
+    lines.append(f"**Total Pixal3D: {total / 1e9:.2f} GB** (the existing "
+                 "TRELLIS decoders and DINOv3 are shared).")
+    lines.append(f"**Still to download: {remaining / 1e9:.2f} GB** "
+                 "(for files with known sizes).")
+    return "\n".join(lines)
+
+
 def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                      parent_tabs=None):
     """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet (voir
@@ -151,8 +180,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                 "through stable-diffusion.cpp, which does have a Metal build.")
             return
         gr.Markdown(
-            "### Image → 3D model (GLB)\nTurns an image into a **textured 3D "
-            "mesh** (GLB) through **trellis.cpp**\n(TRELLIS.2, a native CUDA "
+            "### Image → 3D model (GLB)\nTurns an image into a **3D "
+            "mesh** (GLB) through **trellis.cpp**\n(TRELLIS.2 or Pixal3D, a native CUDA "
             "binary — no PyTorch). Load a sharp image of a\n**single object** "
             "on a simple background; background removal is automatic. "
             "The\ntrellis server **starts and then stops** for each "
@@ -168,7 +197,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             "VRAM cost.")
 
         # ---- Installation (binaire + modèles) ----
-        with gr.Accordion("⚙️ Install trellis.cpp (binary + models, one click)",
+        with gr.Accordion("⚙️ Install 3D models (TRELLIS.2 / Pixal3D) and update binary",
                           open=not ready):
             gr.Markdown(
                 "Downloads the **Windows CUDA binary** "
@@ -208,6 +237,37 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             upd_btn = gr.Button("⬆️ Update the binary (models untouched)",
                                 size="sm")
 
+            with gr.Group():
+                gr.Markdown(
+                    "### Pixal3D (trellis.cpp v0.8.0+)\nAdds only its own "
+                    "GGUF flows to the TRELLIS.2 weights you already have. "
+                    "**512 makes geometry only** (~5.5 GB to download); "
+                    "**1024 adds texture** (~11 GB total Pixal weights) "
+                    "and needs substantially more GPU memory. "
+                    "On an 11–12 GB card, start at 512. For q4/q8 the Pixal "
+                    "files are shared through hard links: no second disk copy.")
+                with gr.Row():
+                    pixal_variant = gr.Dropdown(
+                        _variant_choices(), value=_default_variant(),
+                        label="TRELLIS weights to share (f16, q8, or q4)")
+                    pixal_res = gr.Radio(
+                        [("512 · geometry only", 512),
+                         ("1024 · textured, ≥16 GB GPU recommended", 1024)],
+                        value=512, label="Pixal3D files to download")
+                pixal_sizes = gr.Markdown("")
+                pixal_size_btn = gr.Button("Check Pixal3D GGUF file sizes",
+                                           size="sm")
+                pixal_btn = gr.Button("Download / complete Pixal3D weights")
+
+                def _show_pixal_sizes(resolution):
+                    try:
+                        return _pixal_sizes(int(resolution))
+                    except Exception as exc:  # noqa: BLE001
+                        return f"Cannot retrieve Pixal3D file sizes: {exc}"
+
+                pixal_size_btn.click(_show_pixal_sizes, inputs=[pixal_res],
+                                     outputs=[pixal_sizes])
+
             def _run_installer(args: list[str], first_msg: str):
                 """Lance get_trellis.py en streamant son journal."""
                 cmd = [sys.executable,
@@ -224,7 +284,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     logs.append(line.rstrip("\n"))
                     yield "\n".join(logs[-400:])
                 proc.wait()
-                logs.append("\n✅ Done." if trellis.is_ready()
+                logs.append("\n✅ Done." if proc.returncode == 0
                             else "\n⚠️ Incomplete installation — see above.")
                 yield "\n".join(logs[-400:])
 
@@ -248,6 +308,19 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             inst_evt = inst_btn.click(_install, inputs=[inst_variant],
                                       outputs=[inst_log])
             upd_btn.click(_update_binary, outputs=[inst_log])
+
+            def _install_pixal(inst_var, resolution):
+                if trellis.resident_is_running():
+                    yield "Stopping the resident 3D server before updating its binary…"
+                    trellis.resident_stop()
+                yield from _run_installer(
+                    ["--pixal3d", "--variant", str(inst_var or "f16"),
+                     "--resolution", str(int(resolution))],
+                    "Checking trellis.cpp v0.8.0+ and downloading Pixal3D GGUF…")
+
+            pixal_evt = pixal_btn.click(
+                _install_pixal, inputs=[pixal_variant, pixal_res],
+                outputs=[inst_log])
 
         # ---- Génération ----
         _prefs = settings.load_prefs()
@@ -286,6 +359,18 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                          ("Transparent", "transparent")],
                         value="white", scale=1, label="Bars added")
                 with gr.Row():
+                    family = gr.Dropdown(
+                        [("TRELLIS.2 · textured at 512", "trellis"),
+                         ("Pixal3D · geometry at 512, texture at 1024",
+                          "pixal3d")],
+                        value="trellis", label="3D model family",
+                        info="Pixal3D requires its additional GGUF above. "
+                             "At 512 it exports a GLB without texture.")
+                    fov = gr.Number(
+                        value=None, label="Pixal3D camera FOV (degrees)",
+                        info="Empty = default 49.13°. Change if the "
+                             "geometry drifts from the subject's silhouette.")
+                with gr.Row():
                     res = gr.Radio(_res_choices(), value=512, scale=2,
                                    label="Geometry resolution")
                     variant = gr.Dropdown(
@@ -318,8 +403,9 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         "stop it before\ngenerating images.\nℹ️ If you change "
                         "a **launch** setting (resolution, decimation, atlas, "
                         "GPU,\ntexture…), the server **restarts "
-                        "automatically** to apply it — only seed "
-                        "and\nbackground removal can change without a reload.")
+                        "automatically** to apply it. Seed, background "
+                        "removal, model family and Pixal3D camera settings "
+                        "are sent with each request.")
                     resident = gr.Checkbox(
                         value=False,
                         label="Keep the server resident between generations")
@@ -375,6 +461,15 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                         no_fa = gr.Checkbox(value=False,
                                             label="Disable FlashAttention")
                 with gr.Accordion("Advanced options", open=False):
+                    with gr.Row():
+                        mesh_scale = gr.Number(
+                            value=1.0, label="Pixal3D mesh scale",
+                            info="Object size inside the unit grid (default 1).")
+                        extend_pixel = gr.Number(
+                            value=0, precision=0,
+                            label="Pixal3D extend pixel",
+                            info="0 is recommended; larger values can distort "
+                                 "the geometry at the silhouette edge.")
                     webp = gr.Checkbox(
                         value=True,
                         label="WebP textures in the GLB (smaller file)",
@@ -459,17 +554,21 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
 
         def do_generate3d(image_path, prompt_val, model_val, img_seed_val,
                           style_val,
-                          square_val, pad_val, res_val,
+                          square_val, pad_val, family_val, fov_val, res_val,
                           variant_val, band_val, seed_val,
                           bg_val, resident_val,
                           decim_val, atlas_val, no_tex_val, box_uv_val,
                           gpu_val, req_gpu_val, f32_val, no_fa_val,
-                          webp_val, extra_args):
+                          webp_val, mesh_scale_val, extend_val, extra_args):
             if not image_path and not (prompt_val or "").strip():
                 raise gr.Error(t("Describe an object, or load an image."))
             if not trellis.is_ready():
                 raise gr.Error(t("trellis.cpp is not installed — open "
                                  "“Install trellis.cpp” above."))
+            if family_val == "pixal3d" and not trellis.pixal_ready(
+                    variant_val or "f16", int(res_val)):
+                raise gr.Error("Pixal3D weights are missing for this "
+                               "resolution and variant. Install them above.")
             settings.ensure_dirs()
             logs: list[str] = []
 
@@ -534,7 +633,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
             except Exception as exc:  # noqa: BLE001
                 raise gr.Error(t("Image illisible : {e}").format(e=exc))
             out_glb = settings.OUTPUT_DIR / \
-                f"trellis-{time.strftime('%Y%m%d-%H%M%S')}.glb"
+                f"{family_val or 'trellis'}-{time.strftime('%Y%m%d-%H%M%S')}.glb"
 
             q: "queue.Queue[str | None]" = queue.Queue()
             state: dict = {}
@@ -564,6 +663,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                                      variant=variant_val or "f16",
                                      band=float(band_val or 0),
                                      webp=bool(webp_val),
+                                     family=family_val or "trellis",
+                                     fov=(float(fov_val) if fov_val is not None
+                                          else None),
+                                     mesh_scale=float(mesh_scale_val or 1.0),
+                                     extend_pixel=int(extend_val or 0),
                                      extra=extra_args or "", log=q.put,
                                      meta=meta)
                     state["ok"] = True
@@ -597,10 +701,11 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         gen_evt = run.click(
             do_generate3d,
             inputs=[image, prompt, gen_model, img_seed, style_tpl,
-                    square_pad, pad_color, res, variant, band,
+                    square_pad, pad_color, family, fov, res, variant, band,
                     seed, bg, resident,
                     decim, atlas, no_texture,
-                    box_uv, gpu_pick, require_gpu, f32, no_fa, webp, extra],
+                    box_uv, gpu_pick, require_gpu, f32, no_fa, webp,
+                    mesh_scale, extend_pixel, extra],
             outputs=[status, model3d, glb_file, log, res_status, seed_used,
                      image])
         widgets.stop_into_status(stop, sdcpp.cancel_active, status, [gen_evt])
@@ -618,10 +723,13 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         def _refresh_diag():
             return (gr.update(value=trellis.diagnose()),
                     gr.update(choices=_variant_choices(),
+                              value=_default_variant()),
+                    gr.update(choices=_variant_choices(),
                               value=_default_variant()))
 
-        diag_btn.click(_refresh_diag, outputs=[diag_md, variant])
-        inst_evt.then(_refresh_diag, outputs=[diag_md, variant])
+        diag_btn.click(_refresh_diag, outputs=[diag_md, variant, pixal_variant])
+        inst_evt.then(_refresh_diag, outputs=[diag_md, variant, pixal_variant])
+        pixal_evt.then(_refresh_diag, outputs=[diag_md, variant, pixal_variant])
 
         def _stop_resident():
             msg = trellis.resident_stop()

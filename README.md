@@ -1445,8 +1445,8 @@ sidecar recording model, seed and settings. Generation tabs have a
 ## Text / Image → 3D
 
 **🧰 Tools → 🧊 Text / Image → 3D** turns a **prompt or an image** into a
-**textured 3D mesh** (GLB) through
-**[trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (TRELLIS.2) — a native
+**3D mesh** (GLB) through
+**[trellis.cpp](https://github.com/pwilkin/trellis.cpp)** (TRELLIS.2 or Pixal3D) — a native
 CUDA binary on GGML, **no PyTorch**.
 
 ### Text → 3D is a chain, not another model
@@ -1515,15 +1515,38 @@ offload nor tiling. To gain quality *without* touching the resolution, raise the
 **UV atlas** (2048/4096) and the **decimation**: a well-textured 512 mesh beats a
 botched 1024 one, at almost no VRAM cost.
 
-**How the server is driven.** The Windows release ships `trellis-server.exe` —
-an HTTP server, not a one-shot CLI. By default the app **starts it, posts the
+### Pixal3D (trellis.cpp 0.8.0+)
+
+Select **Pixal3D** in the same 3D tab. Its installer checks the binary and
+fetches the [GGUF files recommended by trellis.cpp](https://github.com/pwilkin/trellis.cpp/blob/v0.8.0/docs/pixal3d/README.md)
+from [`vegax87/Pixal3D`](https://huggingface.co/vegax87/Pixal3D).
+Click **Check Pixal3D GGUF file sizes** to see the published sizes first.
+
+| Download choice | Pixal3D files added | Output |
+|---|---:|---|
+| **512** | 3 GGUF, about 5.5 GB | Geometry only: no 512 texture checkpoint exists |
+| **1024** | 5 GGUF total, about 11 GB | Textured GLB; at least 16 GB VRAM recommended |
+
+The Pixal3D flows are stored once in `models/trellis/`. Its decoders, DINOv3
+and BiRefNet are reused from the selected TRELLIS.2 weight variant. For q4 or
+q8, local hard links make the Pixal3D flows available beside the selected
+decoders without another disk copy. An external models drive must support hard
+links (NTFS on Windows); select f16 if it does not.
+
+The **horizontal FOV** describes the camera of the input photograph. Leave it
+empty for Pixal3D's default 49.13°. Try another value if the generated geometry
+drifts from the object's silhouette. trellis.cpp does not implement the
+reference's MoGe-2 camera estimation.
+
+**How the server is driven.** The Windows release ships `trellis-server.exe`
+and a CLI. The app **starts the server, posts the
 image, takes the GLB and stops it**, so all the VRAM is released afterwards
 (the low-VRAM strategy). A **⚡ Resident server** checkbox keeps it alive
 instead: the next objects skip the ~30 s model reload, but the VRAM stays
 occupied — stop it before generating images. Changing a *launch* setting
 (resolution, decimation, atlas, GPU, texture) restarts the server automatically,
-because those are not renegotiable per request; only the seed and background
-removal can change without a reload.
+because those are not renegotiable per request. The seed, background removal,
+model family and Pixal3D camera can change per request without a reload.
 
 **Controls**
 
@@ -1532,6 +1555,8 @@ removal can change without a reload.
 | **Object to model** | a prompt — leave empty to use an image instead |
 | **Model used for the image** | any generation model you have downloaded |
 | **Input image** | one object, simple background |
+| **3D model family** | TRELLIS.2 or Pixal3D; 512 Pixal3D produces geometry only |
+| **Pixal3D camera FOV** | horizontal field of view; empty = 49.13° |
 | **Pad to square** | TRELLIS processes its input as a square — without this a non-square image comes out **distorted** |
 | **Geometry resolution** | 512 (recommended, ≤ 12 GB) · 1024 · 1536 |
 | **Decimation — legacy cluster grid** | a GRID size, not a face count, and upstream marks it legacy. Left at 0 you get the current default: quadric simplify to 150K faces at 512 (300K at 1024), then weld, hole-fill and a stray-component pass |

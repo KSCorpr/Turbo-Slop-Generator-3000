@@ -470,7 +470,7 @@ def build_manage_tab():
                 "so on).\n\nEvery result is saved in `outputs/` with a `.txt` "
                 "file beside it recording the\nmodel, seed and settings.")
 
-        with gr.Accordion("🧊 Text / Image → 3D (trellis)", open=False):
+        with gr.Accordion("🧊 Text / Image → 3D (TRELLIS.2 / Pixal3D)", open=False):
             gr.Markdown(
                 "**Text → 3D is a chain, not another model.** TRELLIS only "
                 "reads images, so a\nprompt is turned into one first — with "
@@ -494,7 +494,13 @@ def build_manage_tab():
                 "amortized\non a compute-bound 3D workload — unlike LLMs. "
                 "q8/q4 exist only to make a mode\n(1024/1536) fit that would "
                 "otherwise overflow. Several variants can coexist;\nyou "
-                "switch at generation time.\n\n"
+                "switch at generation time.\n\n**Pixal3D** uses the same "
+                "trellis.cpp 0.8+ binary and reuses these decoders. The "
+                "installer adds 3 GGUF (~5.5 GB) for 512 geometry only, or "
+                "5 (~11 GB total) for 1024 with texture. Check the exact "
+                "file sizes in the 3D tab first. Its camera FOV defaults to "
+                "49.13°; adjust it when geometry drifts from the object's "
+                "silhouette. A 16 GB+ card is recommended for 1024.\n\n"
                 "**Background removal** — **Automatic** by default, and that "
                 "is not the same as\nBiRefNet. trellis.cpp has three states "
                 "(BiRefNet / threshold / auto) but only two\ncan be written "

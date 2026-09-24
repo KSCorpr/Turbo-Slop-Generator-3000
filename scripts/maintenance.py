@@ -399,7 +399,8 @@ def _expected_model_dirs() -> set[str]:
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)
-    return {settings.model_repo_dir(r).name for r in repos if r}
+    # Installés depuis l'onglet 3D, hors du catalogue des modèles d'image.
+    return {settings.model_repo_dir(r).name for r in repos if r} | {"trellis"}
 
 
 def report_orphan_models(prune: bool) -> int:

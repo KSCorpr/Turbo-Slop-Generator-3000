@@ -131,7 +131,7 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Models",
                     [registry.upscalers_dir()],
                     note="Reinstallable: Toolkit → Enlarge."))
-    out.append(Item("trellis_models", "Trellis 3D models (GGUF, ~10 GB)",
+    out.append(Item("trellis_models", "TRELLIS.2 / Pixal3D weights (GGUF)",
                     "Models", [trellis.MODELS_DIR],
                     note="Reinstallable: the “Image → 3D” tab."))
 

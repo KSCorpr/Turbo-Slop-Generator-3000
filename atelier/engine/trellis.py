@@ -1,7 +1,7 @@
 """Moteur trellis.cpp : image → maillage 3D (GLB) via le binaire natif.
 
-La release Windows prête fournit **`trellis-server.exe`** (serveur HTTP,
-C++/GGML/CUDA, aucun PyTorch), pas de CLI one-shot. On le pilote donc de façon
+La release Windows fournit **`trellis-server.exe`** (serveur HTTP,
+C++/GGML/CUDA, aucun PyTorch) et un CLI. L'application pilote le serveur de façon
 **TRANSITOIRE** : on le démarre, on attend `/health`, on poste l'image sur
 `/generate`, on récupère le GLB, puis on **arrête le serveur** → toute la VRAM
 est libérée (stratégie low-VRAM, comme AISmith-3D).
@@ -15,6 +15,7 @@ API serveur (POST /generate, multipart) :
 """
 from __future__ import annotations
 
+import math
 import os
 import platform
 import re
@@ -24,10 +25,13 @@ import subprocess
 import threading
 import time
 from collections import deque
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
 from .. import settings
+from ..trellis_models import (TRELLIS_FILES, all_present, pixal_files,
+                              shared_files)
 from . import sdcpp
 
 try:
@@ -95,11 +99,36 @@ def variant_dir(variant: str = "f16") -> Path:
 
 def models_ready(variant: str = "f16") -> bool:
     d = variant_dir(variant)
-    if not d.is_dir():
+    return all_present(d, TRELLIS_FILES)
+
+
+def pixal_ready(variant: str = "f16", res: int = 512) -> bool:
+    d = variant_dir(variant)
+    return all_present(d, shared_files(res) + pixal_files(res))
+
+
+@lru_cache(maxsize=8)
+def _pixal_option(binary: str, mtime_ns: int, size: int) -> bool:
+    """Teste le binaire installé, même s'il n'a pas de manifeste d'installation."""
+    try:
+        result = subprocess.run([binary, "--help"], capture_output=True,
+                                text=True, timeout=15, encoding="utf-8",
+                                errors="replace")
+        help_text = result.stdout + result.stderr
+        return "--model" in help_text and "pixal3d" in help_text
+    except (OSError, subprocess.TimeoutExpired):
         return False
-    # En f16, les .gguf des sous-dossiers q8//q4/ ne comptent pas.
-    return any(d.glob("*.gguf") if variant in (None, "", "f16")
-               else d.rglob("*.gguf"))
+
+
+def supports_pixal3d() -> bool:
+    binary = find_server()
+    if binary is None:
+        return False
+    try:
+        st = binary.stat()
+    except OSError:
+        return False
+    return _pixal_option(str(binary), st.st_mtime_ns, st.st_size)
 
 
 def installed_variants() -> list[str]:
@@ -125,6 +154,9 @@ def diagnose() -> str:
             lines.append(f"- ✅ **{v}** — {n} file(s) in `{d}`")
         else:
             lines.append(f"- — {v}: absent (`{d}`)")
+        if pixal_ready(v):
+            level = "1024 textured" if pixal_ready(v, 1024) else "512 geometry"
+            lines.append(f"  - Pixal3D: **{level}** (shared with {v})")
     # Un jeu de modèles présent dans le dossier PROJET alors qu'on regarde
     # ailleurs = installation faite avant/hors du déplacement des modèles.
     proj = settings.DEFAULT_MODELS_DIR / "trellis"
@@ -360,7 +392,9 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
              box_uv: bool = False, require_gpu: bool = True,
              f32: bool = False, no_fa: bool = False,
              variant: str = "f16", band: float = 0.0, webp: bool = True,
-             meta: dict | None = None) -> Path:
+             meta: dict | None = None, family: str = "trellis",
+             fov: float | None = None, mesh_scale: float = 1.0,
+             extend_pixel: int = 0) -> Path:
     """Génère un GLB 3D à partir d'une image via le serveur trellis.
 
     `resident=False` (défaut) : serveur démarré puis ARRÊTÉ (VRAM libérée).
@@ -372,6 +406,24 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     """
     if requests is None:
         raise sdcpp.EngineError("Module « requests » manquant (pip install requests).")
+    if family not in ("trellis", "pixal3d"):
+        raise sdcpp.EngineError(f"Unknown 3D model family: {family}")
+    if family == "pixal3d":
+        if not supports_pixal3d():
+            raise sdcpp.EngineError(
+                "Pixal3D requires trellis.cpp v0.8.0 or newer. Update the "
+                "binary in the 3D tab, then install the Pixal3D GGUF weights.")
+        if not pixal_ready(variant, res):
+            raise sdcpp.EngineError(
+                f"Pixal3D {res} weights missing for {variant}. Use the "
+                "Pixal3D installer in the 3D tab for this variant.")
+        if fov is not None and (not math.isfinite(float(fov))
+                                or not 0 < float(fov) < 180):
+            raise sdcpp.EngineError("Pixal3D FOV must be between 0 and 180°.")
+        if not math.isfinite(float(mesh_scale)) or float(mesh_scale) <= 0:
+            raise sdcpp.EngineError("Pixal3D mesh scale must be positive.")
+        if int(extend_pixel) < 0:
+            raise sdcpp.EngineError("Pixal3D extend pixel must be nonnegative.")
     server = find_server()
     if server is None:
         raise sdcpp.EngineError(
@@ -407,7 +459,9 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     params = {"image": Path(image_path).name, "res": int(res),
               "bg_removal": bg_removal, "decim": decim, "atlas": atlas,
               "no_texture": no_texture, "box_uv": box_uv, "f32": f32,
-              "no_fa": no_fa, "gpu": gpu_index, "variant": variant}
+              "no_fa": no_fa, "gpu": gpu_index, "variant": variant,
+              "family": family, "fov": fov, "mesh_scale": mesh_scale,
+              "extend_pixel": extend_pixel}
 
     # Réutilise le serveur résident SEULEMENT si TOUS les flags de lancement
     # sont identiques. decim/atlas/no-texture/gpu… ne sont pas renégociables
@@ -421,7 +475,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
                  "no model reload.")
             _CRASH.clear()
             _post_generate(image_path, out_path, res, seed, bg_removal,
-                           use_port, _log, gpu_index)
+                           use_port, _log, gpu_index, family=family, fov=fov,
+                           mesh_scale=mesh_scale, extend_pixel=extend_pixel)
             _sidecar(out_path, {**params, "seed": info.get("seed", seed)})
             return out_path
         _log("🔄 Launch settings changed (resolution/decimation/atlas/GPU…) — "
@@ -490,7 +545,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
 
         _log(f"✅ Server ready (port {use_port}) — sending the image…")
         _post_generate(image_path, out_path, res, seed, bg_removal, use_port,
-                       _log, gpu_index)
+                       _log, gpu_index, family=family, fov=fov,
+                       mesh_scale=mesh_scale, extend_pixel=extend_pixel)
     finally:
         if resident:
             # Mode résident : on GARDE le serveur en vie pour la suite. On
@@ -532,7 +588,11 @@ def _sidecar(out_path: Path, params: dict) -> None:
         lines.append("Flags: " + ", ".join(flags))
     if params.get("gpu") is not None:
         lines.append(f"GPU: {params['gpu']}")
-    lines.append(f"Engine: trellis.cpp (TRELLIS.2)")
+    lines.append(f"Engine: trellis.cpp ({params.get('family', 'trellis')})")
+    if params.get("family") == "pixal3d":
+        lines.append(f"FOV: {params.get('fov') or 'default (49.13°)'}")
+        lines.append(f"Mesh scale: {params.get('mesh_scale', 1.0)}")
+        lines.append(f"Extend pixel: {params.get('extend_pixel', 0)}")
     lines.append(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         out_path.with_suffix(".txt").write_text("\n".join(lines),
@@ -544,12 +604,23 @@ def _sidecar(out_path: Path, params: dict) -> None:
 def _post_generate(image_path: Path, out_path: Path, res: int,
                    seed: int | None, bg_removal: str, port: int,
                    _log: Callable[[str], None],
-                   gpu_index: "int | None" = None) -> Path:
+                   gpu_index: "int | None" = None, *,
+                   family: str = "trellis", fov: float | None = None,
+                   mesh_scale: float = 1.0, extend_pixel: int = 0) -> Path:
     """POST /generate (multipart) → écrit les octets GLB reçus."""
     #  L'auto est une ABSENCE, pas une valeur : le serveur applique la même
     #  règle que la ligne de commande (`trellis-server.cpp:99`), donc envoyer
     #  « auto » dans le champ donnerait le seuil.
-    data = {"resolution": str(int(res))}
+    # Le moteur v0.8 permet de changer de famille et de caméra à chaque POST.
+    # Un serveur résident peut donc servir les deux modèles sans redémarrer.
+    data = {"resolution": str(int(res)), "model": family}
+    if family == "pixal3d":
+        if fov is not None:
+            data["fov"] = str(float(fov))
+        if mesh_scale != 1.0:
+            data["mesh_scale"] = str(float(mesh_scale))
+        if extend_pixel:
+            data["extend_pixel"] = str(int(extend_pixel))
     if bg_removal in (BG_BIREFNET, BG_THRESHOLD):
         data["bg_removal"] = bg_removal
     if seed is not None:

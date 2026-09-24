@@ -42,6 +42,8 @@ import get_sdcpp  # noqa: E402
 # redéfinir les chemins ici : l'installeur écrirait ailleurs que là où l'app
 # cherche, et rien ne le signalerait.
 from atelier import settings as _settings  # noqa: E402
+from atelier.trellis_models import (TRELLIS_FILES, all_present,
+                                   pixal_files)  # noqa: E402
 
 BIN_DIR = _settings.BIN_DIR
 TRELLIS_BIN_DIR = BIN_DIR / "trellis"
@@ -50,6 +52,7 @@ MODELS_DIR = _settings.MODELS_DIR / "trellis"
 
 GH_RELEASE = "https://api.github.com/repos/pwilkin/trellis.cpp/releases/latest"
 HF_MODEL_REPO = "ilintar/trellis2-gguf"
+PIXAL_MODEL_REPO = "vegax87/Pixal3D"  # GGUF recommandés par trellis.cpp v0.8
 
 # --------------------------------------------------------------------------- #
 #  CHOIX DU PAQUET — et pourquoi ce n'est plus « Vulkan par défaut ».
@@ -304,11 +307,9 @@ def variant_dir(variant: str) -> Path:
 
 def has_models(variant: str = "f16") -> bool:
     d = variant_dir(variant)
-    if not d.is_dir():
-        return False
-    # En f16, ne PAS compter les .gguf des sous-dossiers q8//q4/.
-    files = d.glob("*.gguf") if variant == "f16" else d.rglob("*.gguf")
-    return any(files)
+    # Des fichiers Pixal3D seuls, ou un téléchargement interrompu, ne rendent
+    # pas TRELLIS.2 utilisable. Tester les dix fichiers réellement chargés.
+    return all_present(d, TRELLIS_FILES)
 
 
 def install_models(variant: str = "f16", log=print) -> bool:
@@ -320,8 +321,8 @@ def install_models(variant: str = "f16", log=print) -> bool:
         log(f"Trellis models “{variant}” already there, skipping.")
         return True
     try:
-        import os
         os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+        _settings.configure_hf_env()
         from huggingface_hub import snapshot_download
     except ImportError:
         log("huggingface_hub manquant (pip install huggingface_hub).")
@@ -351,6 +352,60 @@ def install_models(variant: str = "f16", log=print) -> bool:
     return False
 
 
+def install_pixal_models(variant: str = "f16", resolution: int = 512,
+                         log=print) -> bool:
+    """Ajoute 3 ou 5 GGUF Pixal sans dupliquer les décodeurs TRELLIS.
+
+    Le téléchargement vit à la racine. Pour q4/q8, on crée des liens durs
+    locaux vers ces mêmes octets : trellis.cpp n'accepte qu'un dossier --models
+    et charge les décodeurs de la variante choisie dans ce dossier.
+    """
+    if variant not in VARIANTS or resolution not in (512, 1024):
+        log("Pixal3D: choose a weight variant and 512 or 1024 resolution.")
+        return False
+    if not install_models(variant, log=log):
+        return False
+    required = pixal_files(resolution)
+    if not all_present(MODELS_DIR, required):
+        try:
+            os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+            _settings.configure_hf_env()
+            from huggingface_hub import snapshot_download
+            missing = [name for name in required
+                       if not (MODELS_DIR / name).is_file()]
+            log(f"Downloading {len(missing)} Pixal3D GGUF from "
+                f"{PIXAL_MODEL_REPO} into {MODELS_DIR} (auto-resume)…")
+            snapshot_download(repo_id=PIXAL_MODEL_REPO,
+                              local_dir=str(MODELS_DIR),
+                              allow_patterns=missing)
+        except Exception as exc:  # noqa: BLE001
+            log(f"Pixal3D download failed: {exc}")
+            return False
+    if not all_present(MODELS_DIR, required):
+        log("Pixal3D: one or more GGUF files are still missing.")
+        return False
+    if variant != "f16":
+        target = variant_dir(variant)
+        for name in required:
+            src, dest = MODELS_DIR / name, target / name
+            try:
+                if dest.exists():
+                    if os.path.samefile(src, dest):
+                        continue
+                    log(f"Pixal3D: {dest} already exists with different "
+                        "content. Move it aside before installing.")
+                    return False
+                os.link(src, dest)
+            except OSError as exc:
+                log(f"Cannot share {name} with {variant} through a hard link: "
+                    f"{exc}. Choose f16 or use an NTFS drive.")
+                return False
+        log(f"Pixal3D flows shared with {variant} without another disk copy.")
+    log(f"[OK] Pixal3D {resolution} ready with {variant} weights "
+        f"({'geometry only' if resolution == 512 else 'textured'}).")
+    return True
+
+
 def install_all(force: bool = False, variant: str = "f16", log=print,
                 backend: str | None = None, update: bool = False) -> bool:
     ok_bin = install_binary(force=force, log=log, backend=backend,
@@ -371,6 +426,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--binary", action="store_true", help="binaire seul")
     ap.add_argument("--models", action="store_true", help="models only")
+    ap.add_argument("--pixal3d", action="store_true",
+                    help="install Pixal3D 512 geometry or 1024 textured weights")
+    ap.add_argument("--resolution", type=int, choices=[512, 1024], default=512,
+                    help="Pixal3D weights to install: 512 geometry or 1024 textured")
     ap.add_argument("--variant", choices=list(VARIANTS), default="f16",
                     help="weight variant: f16 (default), q8 or q4")
     ap.add_argument("--force", action="store_true",
@@ -393,7 +452,18 @@ def main():
     print(f"Engine folder: {TRELLIS_BIN_DIR}")
 
     backend = None if args.backend == "auto" else args.backend
-    if args.binary:
+    if args.pixal3d:
+        ok = install_binary(update=True, backend=backend)
+        if ok:
+            from atelier.engine import trellis
+            if not trellis.supports_pixal3d():
+                print("This trellis.cpp binary does not support Pixal3D. "
+                      "Update the binary to v0.8.0+ and retry.")
+                ok = False
+        if ok:
+            ok = install_pixal_models(variant=args.variant,
+                                      resolution=args.resolution)
+    elif args.binary:
         ok = install_binary(force=args.force, update=args.update, backend=backend)
     elif args.models:
         ok = install_models(variant=args.variant)
