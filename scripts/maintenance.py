@@ -734,7 +734,7 @@ def check_trellis(update: bool) -> bool:
     print(OK + f"found: {server}")
     if update:
         print(INFO + "updating the 3D engine (binary only, not the weights)…")
-        return not _run_downloader("get_trellis.py", ["--binary", "--force"],
+        return not _run_downloader("get_trellis.py", ["--binary", "--update"],
                                    "the trellis.cpp engine")
     return True
 

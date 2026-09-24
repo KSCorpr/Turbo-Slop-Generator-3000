@@ -242,8 +242,8 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                             "binary)…")
                     trellis.resident_stop()
                 yield from _run_installer(
-                    ["--binary", "--force"],
-                    t("⏳ Downloading the latest trellis binary…"))
+                    ["--binary", "--update"],
+                    t("⏳ Checking the latest trellis binary…"))
 
             inst_evt = inst_btn.click(_install, inputs=[inst_variant],
                                       outputs=[inst_log])

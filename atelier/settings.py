@@ -79,6 +79,9 @@ DEFAULT_PREFS: dict[str, Any] = {
     "auto_optimize": True,      # déduire les flags du matériel
     "quant": None,              # None = recommandé selon VRAM
     "enc_quant": None,          # None = recommandé selon RAM
+    # Fichiers GGUF choisis explicitement dans le catalogue, par modèle/rôle.
+    # L'absence de choix conserve la quantification automatique.
+    "model_files": {},
     # Surcharges manuelles (utilisées seulement si auto_optimize = False)
     "flags": {
         "diffusion_fa": True,

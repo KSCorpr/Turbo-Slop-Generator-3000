@@ -20,8 +20,13 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import io
+import json
+import os
 import platform
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +45,7 @@ from atelier import settings as _settings  # noqa: E402
 
 BIN_DIR = _settings.BIN_DIR
 TRELLIS_BIN_DIR = BIN_DIR / "trellis"
+MANIFEST = "engine-manifest.json"
 MODELS_DIR = _settings.MODELS_DIR / "trellis"
 
 GH_RELEASE = "https://api.github.com/repos/pwilkin/trellis.cpp/releases/latest"
@@ -109,10 +115,13 @@ def _is_binary(p: Path) -> bool:
         x in stem for x in ("test", "studio", "bench", "convert")))
 
 
-def _find_binary() -> Path | None:
-    if not BIN_DIR.exists():
+def _find_binary(root: Path | None = None) -> Path | None:
+    if root is None:
+        installed = _find_binary(TRELLIS_BIN_DIR)
+        return installed or _find_binary(BIN_DIR)
+    if not root.exists():
         return None
-    hits = [p for p in BIN_DIR.rglob("*") if _is_binary(p)]
+    hits = [p for p in root.rglob("*") if _is_binary(p)]
     if not hits:
         return None
     # Priorité au serveur (ce que fournit la release), sinon le premier trellis.
@@ -174,9 +183,10 @@ def _pick_asset(assets: list[dict], backend: str = "cuda") -> dict | None:
 
 
 def install_binary(force: bool = False, log=print,
-                   backend: str | None = None) -> bool:
-    if has_cli() and not force:
-        log("The trellis-cli binary is already there, skipping (--force to update).")
+                   backend: str | None = None, update: bool = False) -> bool:
+    installed = has_cli()
+    if installed and not (force or update):
+        log("The trellis binary is already there (use --update to check releases).")
         return True
     if backend is None:
         # Choix guidé par la carte : voir CUDA_ARCHS plus haut.
@@ -201,41 +211,81 @@ def install_binary(force: bool = False, log=print,
         else:
             log(f"CUDA package picked ({sm} — Turing or newer).")
     log("Looking for the latest pwilkin/trellis.cpp release…")
-    rel = get_sdcpp._fetch_json(GH_RELEASE)
+    try:
+        rel = get_sdcpp._fetch_json(GH_RELEASE)
+    except Exception as exc:  # noqa: BLE001
+        log(f"Cannot check the latest release: {exc}; keeping the installed engine.")
+        return False
     if isinstance(rel, dict) and rel.get("message") and not rel.get("assets"):
         log(f"API GitHub : {rel.get('message')}")
         return False
+    tag = rel.get("tag_name", "")
+    # Une release peut paraître avant ses archives CUDA. Pendant une mise à
+    # jour, on garde le moteur installé au lieu de passer subrepticement à
+    # Vulkan en attendant la fin des jobs CI. Une première installation peut
+    # toujours se rabattre sur Vulkan.
     asset = _pick_asset(rel.get("assets", []), backend)
+    if installed and asset and _backend_of(asset["name"]) != backend:
+        log(f"The {backend} archive for {tag} is not published yet; "
+            "keeping the installed engine. Try the update again later.")
+        return True
     if not asset:
+        if installed:
+            log("The latest release has no compatible Windows archive yet; "
+                "keeping the installed engine.")
+            return True
         log("No Windows archive found in the release. Available:")
         for a in rel.get("assets", []):
             log("  " + a.get("name", "?"))
         return False
-    log(f"Release : {rel.get('tag_name')} — {asset['name']} "
+    manifest_path = TRELLIS_BIN_DIR / MANIFEST
+    if installed and update and not force and manifest_path.is_file():
+        try:
+            current = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if (current.get("tag") == tag
+                    and current.get("asset") == asset["name"]):
+                log(f"trellis.cpp {tag} is already installed.")
+                return True
+        except (OSError, ValueError):
+            pass
+    log(f"Release : {tag} — {asset['name']} "
         f"({asset.get('size', 0) / 1e6:.0f} Mo)")
-    # MISE À JOUR : on vide l'ancienne version avant d'extraire, sinon des DLL
-    # obsolètes de la release précédente resteraient à côté des nouvelles.
-    if force and TRELLIS_BIN_DIR.exists():
-        import shutil
-        shutil.rmtree(TRELLIS_BIN_DIR, ignore_errors=True)
-        log("     (previous engine version removed)")
-    TRELLIS_BIN_DIR.mkdir(parents=True, exist_ok=True)
-    blob = get_sdcpp._download(asset["browser_download_url"])
-    import io
-    import zipfile
-    with zipfile.ZipFile(io.BytesIO(blob)) as z:
-        z.extractall(TRELLIS_BIN_DIR)
-    found = _find_binary()
-    if found is not None:
-        log(f"[OK] Binary installed: {found}")
+    BIN_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        # Même disque pour permettre un renommage atomique des dossiers. Aucun
+        # fichier de l'ancienne version ne se retrouve dans la nouvelle.
+        with tempfile.TemporaryDirectory(prefix=".trellis-update-",
+                                         dir=BIN_DIR.parent) as temp:
+            staged = Path(temp) / "new"
+            staged.mkdir()
+            blob = get_sdcpp._download(asset["browser_download_url"])
+            with zipfile.ZipFile(io.BytesIO(blob)) as z:
+                z.extractall(staged)
+            if _find_binary(staged) is None:
+                log("[!] The downloaded archive has no trellis executable; "
+                    "keeping the installed engine. Contents: "
+                    + ", ".join(_list_exes(staged)))
+                return False
+            (staged / MANIFEST).write_text(json.dumps({
+                "tag": tag, "backend": _backend_of(asset["name"]),
+                "asset": asset["name"],
+            }, indent=2), encoding="utf-8")
+            backup = Path(temp) / "previous"
+            had_previous = TRELLIS_BIN_DIR.exists()
+            if had_previous:
+                os.replace(TRELLIS_BIN_DIR, backup)
+            try:
+                os.replace(staged, TRELLIS_BIN_DIR)
+            except OSError:
+                if had_previous:
+                    os.replace(backup, TRELLIS_BIN_DIR)
+                raise
+        log(f"[OK] Binary installed: {_find_binary(TRELLIS_BIN_DIR)}")
         return True
-    exes = _list_exes(TRELLIS_BIN_DIR)
-    log("[!] trellis-cli not found after extraction. Executables found:")
-    for name in exes:
-        log("    - " + name)
-    if not exes:
-        log("    (no .exe — the archive may not carry the expected binary)")
-    return False
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
+        log(f"[!] trellis.cpp update failed: {exc}; "
+            "the previous engine was kept when possible.")
+        return False
 
 
 # Variantes de poids : f16 (défaut, dépôt racine) ou quantifiées (sous-dossiers
@@ -302,8 +352,9 @@ def install_models(variant: str = "f16", log=print) -> bool:
 
 
 def install_all(force: bool = False, variant: str = "f16", log=print,
-                backend: str | None = None) -> bool:
-    ok_bin = install_binary(force=force, log=log, backend=backend)
+                backend: str | None = None, update: bool = False) -> bool:
+    ok_bin = install_binary(force=force, log=log, backend=backend,
+                            update=update)
     ok_mdl = install_models(variant=variant, log=log)
     return ok_bin and ok_mdl
 
@@ -324,6 +375,8 @@ def main():
                     help="weight variant: f16 (default), q8 or q4")
     ap.add_argument("--force", action="store_true",
                     help="download the binary again even if it is present")
+    ap.add_argument("--update", action="store_true",
+                    help="check the latest release, download only if newer")
     ap.add_argument("--backend", choices=["auto", "cuda", "cuda12", "vulkan"],
                     default="auto",
                     help="package to install. auto (default) = cuda for "
@@ -341,11 +394,12 @@ def main():
 
     backend = None if args.backend == "auto" else args.backend
     if args.binary:
-        ok = install_binary(force=args.force, backend=backend)
+        ok = install_binary(force=args.force, update=args.update, backend=backend)
     elif args.models:
         ok = install_models(variant=args.variant)
     else:
-        ok = install_all(force=args.force, variant=args.variant,
+        ok = install_all(force=args.force, update=args.update,
+                         variant=args.variant,
                          backend=backend)
     print("Done." if ok else "Finished with errors (see above).")
     sys.exit(0 if ok else 1)

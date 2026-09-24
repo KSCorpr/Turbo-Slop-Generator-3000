@@ -12,7 +12,7 @@ from .. import downloader, i18n, registry, sampling, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
-from . import widgets
+from . import preview, widgets
 
 # Les listes de samplers/schedulers ET leur documentation vivent dans
 # atelier/sampling.py : un menu dont on ne sait pas quoi choisir n'est pas un
@@ -983,11 +983,7 @@ def build_generative_tab(model_id: str, title: str,
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
 
-            preview_path = settings.TMP_DIR / f"preview_{int(time.time()*1000)}.png"
-            try:
-                preview_path.unlink()
-            except OSError:
-                pass
+            preview_path = settings.TMP_DIR / f"preview_{time.time_ns()}_%03d.png"
 
             total = max(1, int(steps))
             step_re = re.compile(rf"(\d+)\s*/\s*{total}\b")
@@ -1017,7 +1013,7 @@ def build_generative_tab(model_id: str, title: str,
 
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
-            last_mtime = None
+            next_preview = 0
             last_emit = 0.0
             last_log_len = 0
             status = t("⏳ Loading the model…")
@@ -1032,9 +1028,11 @@ def build_generative_tab(model_id: str, title: str,
                     line = q.get(timeout=0.3)
                 except queue.Empty:
                     line = ""
-                if line is None:
-                    break
-                if line:
+                done = line is None
+                if line and not done:
+                    if "No latent to RGB projection known" in line:
+                        status = ("Live preview requires a newer sd.cpp engine. "
+                                  "Run update.bat, then restart the app.")
                     mt = step_re.search(line)
                     if mt:
                         cur = min(int(mt.group(1)), total)
@@ -1050,38 +1048,38 @@ def build_generative_tab(model_id: str, title: str,
                                 c=lm.group(1), t=lm.group(2))
                     if not is_bar:
                         logs.append(line)
-                # Aperçu dans l'Image DÉDIÉE : nouvelle frame SEULEMENT si le
-                # fichier a changé (mtime). On lit en mémoire (copie PIL) car sous
-                # Windows sd-cli écrit ce fichier en continu (verrou en écriture).
-                prev = gr.update()
-                new_prev = False
-                if preview_path.exists():
-                    try:
-                        m = preview_path.stat().st_mtime
-                        if m != last_mtime:
-                            from PIL import Image
-                            with Image.open(preview_path) as _pim:
-                                _img = _pim.copy()
-                            # Valeur SEULE (visibilité déjà True) → l'<img> est
-                            # remplacé sur place, sans re-montage ni reflow.
-                            prev = gr.update(value=_img)
-                            last_mtime = m
-                            new_prev = True
-                    except (OSError, ValueError):
-                        pass
-                # On n'émet QUE s'il y a du NOUVEAU : frame d'aperçu (tout de
-                # suite), statut qui change (≤4x/s, ex. compteur de chargement),
-                # ou vraie ligne de journal (≤1x/s). Sinon rien → zéro re-render.
+                # sd.cpp écrit preview_000.png, preview_001.png, etc. Chaque
+                # pas reste lisible même si plusieurs images arrivent entre
+                # deux rafraîchissements de l'interface.
+                for idx, frame in preview.step_frames(preview_path, next_preview):
+                    next_preview = idx + 1
+                    last_emit = time.time()
+                    last_log_len = len(logs)
+                    last_status = status
+                    yield (status, gr.update(value=frame), gr.update(),
+                           "\n".join(logs[-400:]), gr.update(), gr.update())
+                if done:
+                    break
+                # Les autres mises à jour concernent le statut (≤4x/s) ou le
+                # journal (≤1x/s). Les images sont émises ci-dessus sans délai.
                 now = time.time()
                 log_changed = len(logs) != last_log_len
                 status_changed = status != last_status
-                if new_prev or (status_changed and now - last_emit >= 0.25) \
+                if (status_changed and now - last_emit >= 0.25) \
                         or (log_changed and now - last_emit >= 1.0):
                     last_emit = now
                     last_log_len = len(logs)
                     last_status = status
-                    yield (status, prev, gr.update(),
+                    yield (status, gr.update(), gr.update(),
                            "\n".join(logs[-400:]), gr.update(), gr.update())
+
+            # Les images ont été copiées par Gradio dans son cache et ne sont
+            # plus nécessaires sur le disque après la fin de sd-cli.
+            for path in settings.TMP_DIR.glob(preview_path.name.replace("%03d", "*")):
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
 
             if "err" in state:
                 logs.append(f"\n[ERROR] {state['err']}")
@@ -1090,6 +1088,10 @@ def build_generative_tab(model_id: str, title: str,
                        gr.update(visible=False), gr.update(visible=True),
                        "\n".join(logs), gr.update(), gr.update())
                 return
+            if next_preview == 0:
+                logs.append("[WARNING] sd.cpp did not write a live preview. "
+                            "Run update.bat to refresh the engine; check the "
+                            "generation log for preview decode errors.")
             paths = state.get("outs", [])
 
             seeds = [base_seed + i for i in range(len(paths))]

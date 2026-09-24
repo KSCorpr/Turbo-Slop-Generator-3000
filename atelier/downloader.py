@@ -111,6 +111,49 @@ def _pick_file(comp: Component, files: list[str]) -> str | None:
     return None
 
 
+def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
+    """GGUF du dépôt et leurs tailles réelles, chargés à la demande dans l'UI.
+
+    Les métadonnées d'un même dépôt sont demandées une seule fois. Une taille
+    absente reste inconnue :
+    on ne présente jamais une estimation comme un poids vérifié.
+    """
+    settings.configure_hf_env()
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    repos: dict[str, list] = {}
+    result: dict[str, list[tuple[str, str]]] = {}
+    for comp in model.components:
+        if comp.role not in ("diffusion", "text_encoder") or not \
+                comp.base_glob().lower().endswith(".gguf"):
+            continue
+        if comp.repo not in repos:
+            repos[comp.repo] = api.model_info(
+                repo_id=comp.repo, files_metadata=True).siblings or []
+        # Une sélection persistée est un nom exact, mais les AUTRES versions
+        # doivent rester visibles via le motif du catalogue d'origine.
+        pattern = comp.base_glob()
+        options = []
+        for sibling in repos[comp.repo]:
+            name = sibling.rfilename
+            if not name.lower().endswith(".gguf") or not _fn(name, pattern):
+                continue
+            if comp.role == "text_encoder" and "mmproj" in name.lower():
+                continue
+            size = getattr(sibling, "size", None)
+            if size is None and getattr(sibling, "lfs", None):
+                size = getattr(sibling.lfs, "size", None)
+            human = f"{size / 1e9:.2f} GB" if size is not None else "size unknown"
+            here = settings.model_repo_dir(comp.repo) / name
+            installed = " · installed" if here.is_file() else ""
+            options.append((f"{name} — {human}{installed}", name))
+        options.sort(key=lambda row: (
+            quant._idx(quant.find_quant(row[1])) or -1, row[1]))
+        result[comp.role] = options
+    return result
+
+
 def download_component(comp: Component,
                        log: Callable[[str], None] | None = None,
                        *, _repo_files: dict[str, list[str]] | None = None
@@ -126,10 +169,9 @@ def download_component(comp: Component,
     # utilisable hors ligne sur un modèle complet, et instantané au lieu de
     # plusieurs secondes de listage par composant.
     #
-    # La condition porte sur le fichier DEMANDÉ, pas sur n'importe quel fichier
-    # du même modèle : `resolve_component_path` sait se rabattre sur un quant
-    # voisin, et accepter ce repli ici empêcherait toute MONTÉE en qualité —
-    # un Q4 déjà installé bloquerait le Q6 qu'on vient de demander.
+    # La diffusion et les poids choisis explicitement exigent le fichier
+    # demandé : un Q4 installé ne doit pas bloquer un Q6 choisi. Seul
+    # l'encodeur en mode automatique réutilise une autre quant compatible.
     from .registry import resolve_component_path
     local_dir = settings.model_repo_dir(comp.repo)
     installed = resolve_component_path(comp)
@@ -138,10 +180,15 @@ def download_component(comp: Component,
             relative = installed.relative_to(local_dir).as_posix()
         except ValueError:
             relative = installed.name
-        if _fn(relative, comp.requested()) or _fn(installed.name,
-                                                  comp.requested()):
+        exact = (_fn(relative, comp.requested()) or
+                 _fn(installed.name, comp.requested()))
+        # Encodeur automatique : réutiliser une quantification déjà présente
+        # évite des copies de plusieurs Go quand le profil matériel change.
+        # Un choix explicite dans le catalogue n'a plus de token et reste exact.
+        if exact or (comp.role == "text_encoder" and comp.token):
             if log:
-                log(f"  ✓ already there: {comp.role} ({installed.name})")
+                note = " · shared existing weight" if not exact else ""
+                log(f"  ✓ already there: {comp.role} ({installed.name}){note}")
             return installed
 
     # Un modèle peut tirer deux composants du MÊME dépôt (l'encodeur et son

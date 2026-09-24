@@ -35,6 +35,27 @@ import io
 MAX_SIDE = 720
 
 
+def step_frames(template, first: int):
+    """Lit tous les aperçus numérotés depuis `first`, sans sauter de pas.
+
+    Si sd.cpp écrit encore une image, elle sera relue au prochain tour.
+    L'écriture d'un seul preview.png ferait perdre les étapes intermédiaires.
+    """
+    from pathlib import Path
+    from PIL import Image
+
+    idx = first
+    while True:
+        path = Path(str(template).replace("%03d", f"{idx:03d}"))
+        try:
+            with Image.open(path) as image:
+                frame = image.copy()
+        except (OSError, ValueError):
+            return
+        yield idx, frame
+        idx += 1
+
+
 def data_uri(img, max_side: int = MAX_SIDE) -> str:
     """`data:image/png;base64,…` réduit, ou `""` si l'image est inutilisable."""
     if img is None:

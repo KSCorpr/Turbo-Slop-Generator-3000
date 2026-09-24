@@ -25,6 +25,7 @@ class Component:
     # Composant facultatif (ex. mmproj vision pour l'édition Krea 2) : téléchargé
     # avec le modèle, mais son absence ne rend PAS le modèle « non prêt ».
     optional: bool = False
+    source_template: str | None = None  # motif de toutes les variantes GGUF
 
     @property
     def token(self) -> str | None:
@@ -42,9 +43,8 @@ class Component:
 
     def base_glob(self) -> str:
         """Motif quant-agnostique (token remplacé par *) pour le repli."""
-        if self.token:
-            return self.template.replace(self.token, "*")
-        return self.template
+        template = self.source_template or self.template
+        return template.replace("{quant}", "*").replace("{enc_quant}", "*")
 
 
 @dataclass
@@ -104,8 +104,13 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
     out: list[BaseModel] = []
     for m in _catalog().get("base_models", []):
         comps: list[Component] = []
+        saved_files = prefs.get("model_files") or {}
+        overrides = (saved_files.get(m["id"], {})
+                     if isinstance(saved_files, dict) else {})
+        if not isinstance(overrides, dict):
+            overrides = {}
         for role, spec in (m.get("sources") or {}).items():
-            template = spec["match"]
+            template = source_template = spec["match"]
             if "{enc_quant}" in template:
                 q = q_enc
             elif "{quant}" in template:
@@ -116,8 +121,21 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
                 q = None
             if q is not None:
                 q = spec.get("quant_map", {}).get(q, q)
+            # Une sélection précise prime sur le profil matériel. On vérifie
+            # qu'elle reste dans le motif du composant et dans son dépôt :
+            # le fichier peut aussi avoir disparu d'un catalogue distant.
+            selected = overrides.get(role)
+            if (isinstance(selected, str) and q is not None
+                    and selected.lower().endswith(".gguf")
+                    and not selected.startswith("/") and "\\" not in selected
+                    and ".." not in selected.split("/")
+                    and fnmatch.fnmatch(selected,
+                                        template.replace("{quant}", "*")
+                                                .replace("{enc_quant}", "*"))):
+                template, q = selected, None
             comps.append(Component(role, spec["repo"], template, q,
-                                   optional=bool(spec.get("optional"))))
+                                   optional=bool(spec.get("optional")),
+                                   source_template=source_template))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),

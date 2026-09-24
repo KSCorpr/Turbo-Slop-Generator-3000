@@ -61,13 +61,17 @@ def _is_trellis_exe(p: Path) -> bool:
 def find_server() -> Path | None:
     """Localise le binaire serveur trellis (nom variable selon la release)."""
     if settings.BIN_DIR.exists():
-        exes = [p for p in settings.BIN_DIR.rglob("*") if _is_trellis_exe(p)]
-        # Priorité à un binaire « server » ; sinon le premier exécutable trellis.
-        srv = [p for p in exes if "server" in p.name.lower()]
-        if srv:
-            return srv[0]
-        if exes:
-            return exes[0]
+        # L'installeur écrit sous bin/trellis/. Une copie ancienne laissée
+        # directement sous bin/ ne doit pas intercepter la nouvelle release.
+        for root in (settings.BIN_DIR / "trellis", settings.BIN_DIR):
+            if not root.exists():
+                continue
+            exes = [p for p in root.rglob("*") if _is_trellis_exe(p)]
+            srv = [p for p in exes if "server" in p.name.lower()]
+            if srv:
+                return srv[0]
+            if exes:
+                return exes[0]
     for name in ("trellis-server", "trellis"):
         found = shutil.which(name)
         if found:

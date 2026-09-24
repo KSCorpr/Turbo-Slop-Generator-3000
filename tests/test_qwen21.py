@@ -5,8 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 from atelier import downloader, registry, sampling
 from atelier.engine import generate, sdcpp
+from atelier.ui.preview import step_frames
 
 
 class QwenCatalogTests(unittest.TestCase):
@@ -47,6 +50,22 @@ class QwenCatalogTests(unittest.TestCase):
 
 
 class QwenEngineTests(unittest.TestCase):
+    def test_numbered_previews_recover_every_step_after_a_polling_delay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            template = Path(tmp) / "preview_%03d.png"
+            for step in (0, 1, 2):
+                Image.new("RGBA", (2, 2), (step, 0, 0, 255)).save(
+                    str(template).replace("%03d", f"{step:03d}"))
+            frames = list(step_frames(template, 0))
+            self.assertEqual([idx for idx, _ in frames], [0, 1, 2])
+            self.assertEqual([frame.getpixel((0, 0))[0] for _, frame in frames],
+                             [0, 1, 2])
+            self.assertEqual(list(step_frames(template, 3)), [])
+            Image.new("RGBA", (2, 2), (3, 0, 0, 255)).save(
+                str(template).replace("%03d", "003"))
+            self.assertEqual([i for i, _ in step_frames(template, 3)],
+                             [3])
+
     def test_native_edit_command_uses_vision_and_all_references(self):
         with patch.object(sdcpp, "_require"), \
              patch.object(sdcpp, "supported_options", return_value=frozenset()):
@@ -83,13 +102,13 @@ class QwenEngineTests(unittest.TestCase):
                                        if method == "vae" else {})
                     req = sdcpp.GenRequest(
                         diffusion_model=Path("model.gguf"),
-                        preview_path=Path("preview.png"),
+                        preview_path=Path("preview_%03d.png"),
                         **preview_options)
                     cmd = sdcpp.build_gen_cmd(Path("sd-cli"), req,
                                               Path("output.png"))
                     self.assertEqual(cmd[cmd.index("--preview") + 1], method)
                     self.assertEqual(cmd[cmd.index("--preview-path") + 1],
-                                     "preview.png")
+                                     "preview_%03d.png")
                     self.assertEqual(cmd[cmd.index("--preview-interval") + 1],
                                      str(interval))
 
@@ -119,13 +138,13 @@ class QwenEngineTests(unittest.TestCase):
                                   save_prompt=False)
                 request = build.call_args.args[1]
                 self.assertIsNone(request.llm_vision)
-                self.assertEqual(request.preview_method, "vae")
-                self.assertEqual(request.preview_interval, 5)
+                self.assertEqual(request.preview_method, "proj")
+                self.assertEqual(request.preview_interval, 1)
                 generate.generate("qwen-image-2.1", "a cat", "", 3, 6.0,
                                   1024, 1024, 1, 1, prefs_override=prefs,
                                   preview_path=root / "preview.png",
                                   save_prompt=False)
-                self.assertEqual(build.call_args.args[1].preview_interval, 3)
+                self.assertEqual(build.call_args.args[1].preview_interval, 1)
                 with self.assertRaisesRegex(sdcpp.EngineError,
                                             "vision projector is missing"):
                     generate.generate("qwen-image-2.1", "edit", "", 40, 6.0,
@@ -144,6 +163,10 @@ class QwenEngineTests(unittest.TestCase):
                 generate._check_qwen_engine(model)
             manifest.write_text(json.dumps({"tag": "master-896-e112ab5"}))
             generate._check_qwen_engine(model)
+            with self.assertRaisesRegex(sdcpp.EngineError, "build 901"):
+                generate._check_qwen_engine(model, Path(tmp) / "preview.png")
+            manifest.write_text(json.dumps({"tag": "master-901-e112ab5"}))
+            generate._check_qwen_engine(model, Path(tmp) / "preview.png")
 
 
 if __name__ == "__main__":

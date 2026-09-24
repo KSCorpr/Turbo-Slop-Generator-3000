@@ -13,8 +13,13 @@ façons de se tromper : livrer « cuda » à une Pascal, ou « cuda12 » à une
 Turing. Les deux se téléchargent, s'installent, et échouent au premier noyau.
 """
 import sys
+import io
+import json
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import get_trellis  # noqa: E402
@@ -86,6 +91,88 @@ class AssetPickTests(unittest.TestCase):
     def test_the_studio_app_is_never_mistaken_for_the_engine(self):
         only_studio = [{"name": "trellis-studio-windows-x64-portable.zip"}]
         self.assertIsNone(get_trellis._pick_asset(only_studio, "cuda"))
+
+
+class BinaryUpdateTests(unittest.TestCase):
+    """An incomplete or failed release must leave the working engine intact."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        bin_dir = Path(self.temp.name) / "bin"
+        self.engine_dir = bin_dir / "trellis"
+        self.engine_dir.mkdir(parents=True)
+        self.old = self.engine_dir / "trellis-server.exe"
+        self.old.write_bytes(b"working old engine")
+        for name, value in (("BIN_DIR", bin_dir),
+                            ("TRELLIS_BIN_DIR", self.engine_dir)):
+            patcher = mock.patch.object(get_trellis, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(get_trellis.platform, "system",
+                                    return_value="Windows")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _release(assets=("trellis-cuda-windows-x64.zip",)):
+        return {"tag_name": "v0.8.0", "assets": [
+            {"name": name, "browser_download_url": "https://example.com/archive",
+             "size": 10} for name in assets]}
+
+    def test_missing_cuda_asset_keeps_installed_engine(self):
+        with mock.patch.object(get_trellis.get_sdcpp, "_fetch_json",
+                               return_value=self._release(
+                                   ("trellis-vulkan-windows-x64.zip",))), \
+                mock.patch.object(get_trellis.get_sdcpp, "_download") as download:
+            self.assertTrue(get_trellis.install_binary(update=True, backend="cuda",
+                                                        log=lambda *_: None))
+        download.assert_not_called()
+        self.assertEqual(self.old.read_bytes(), b"working old engine")
+
+    def test_failed_download_keeps_installed_engine(self):
+        with mock.patch.object(get_trellis.get_sdcpp, "_fetch_json",
+                               return_value=self._release()), \
+                mock.patch.object(get_trellis.get_sdcpp, "_download",
+                                  side_effect=RuntimeError("network error")):
+            self.assertFalse(get_trellis.install_binary(update=True, backend="cuda",
+                                                         log=lambda *_: None))
+        self.assertEqual(self.old.read_bytes(), b"working old engine")
+
+    def test_valid_update_swaps_engine_and_skips_repeat_download(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr("trellis-server.exe", b"new engine")
+        with mock.patch.object(get_trellis.get_sdcpp, "_fetch_json",
+                               return_value=self._release()), \
+                mock.patch.object(get_trellis.get_sdcpp, "_download",
+                                  return_value=archive.getvalue()) as download:
+            self.assertTrue(get_trellis.install_binary(update=True, backend="cuda",
+                                                        log=lambda *_: None))
+            self.assertTrue(get_trellis.install_binary(update=True, backend="cuda",
+                                                        log=lambda *_: None))
+        download.assert_called_once()
+        self.assertEqual(self.old.read_bytes(), b"new engine")
+        manifest = json.loads((self.engine_dir / get_trellis.MANIFEST).read_text())
+        self.assertEqual(manifest["tag"], "v0.8.0")
+
+    def test_invalid_archive_keeps_installed_engine(self):
+        with mock.patch.object(get_trellis.get_sdcpp, "_fetch_json",
+                               return_value=self._release()), \
+                mock.patch.object(get_trellis.get_sdcpp, "_download",
+                                  return_value=b"corrupt archive"):
+            self.assertFalse(get_trellis.install_binary(update=True, backend="cuda",
+                                                         log=lambda *_: None))
+        self.assertEqual(self.old.read_bytes(), b"working old engine")
+
+    def test_new_binary_is_used_even_if_old_copy_is_in_bin(self):
+        from atelier import settings
+        from atelier.engine import trellis
+        legacy = get_trellis.BIN_DIR / "trellis-server.exe"
+        legacy.write_bytes(b"old stray copy")
+        with mock.patch.object(settings, "BIN_DIR", get_trellis.BIN_DIR):
+            self.assertEqual(trellis.find_server(), self.old)
+        self.assertEqual(get_trellis._find_binary(), self.old)
 
 
 class DiagnosisTests(unittest.TestCase):

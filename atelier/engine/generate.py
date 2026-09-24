@@ -15,9 +15,11 @@ from .sdcpp import GenRequest
 # Official build 896 includes the Qwen 2.1 RGBA input fix; the supported CLI
 # flags alone cannot distinguish an older binary from one that loads the model.
 QWEN21_MIN_BUILD = 896
+QWEN21_PREVIEW_BUILD = 901
 
 
-def _check_qwen_engine(model: registry.BaseModel) -> None:
+def _check_qwen_engine(model: registry.BaseModel,
+                       preview_path: Path | None = None) -> None:
     if model.family != "qwen21":
         return
     manifest = settings.BIN_DIR / "engine-manifest.json"
@@ -32,6 +34,11 @@ def _check_qwen_engine(model: registry.BaseModel) -> None:
         raise sdcpp.EngineError(
             f"Qwen Image 2.1 needs sd.cpp build {QWEN21_MIN_BUILD} or newer. "
             "Run update.bat (or ./update.sh on Linux/Mac).")
+    if preview_path is not None and match and int(match.group(1)) < QWEN21_PREVIEW_BUILD:
+        raise sdcpp.EngineError(
+            "Qwen Image 2.1 live preview at every step needs sd.cpp build "
+            f"{QWEN21_PREVIEW_BUILD} or newer. Run update.bat (or ./update.sh "
+            "on Linux/Mac) to update the engine.")
 
 
 def cancel() -> str:
@@ -370,7 +377,7 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
-    _check_qwen_engine(model)
+    _check_qwen_engine(model, preview_path)
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image))
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
@@ -453,11 +460,9 @@ def generate(
         init_image=init_image, strength=strength, mask_image=mask_image,
         ref_image=ref_image,
         lora_dir=lora_dir, preview_path=preview_path,
-        # sd.cpp n'a pas de projection RGB pour les 64 canaux de Qwen 2.1 :
-        # "proj" ne crée aucun fichier d'aperçu. Son propre VAE sait les
-        # décoder ; on espace les décodages pour limiter le coût GPU/VRAM.
-        preview_method="vae" if model.family == "qwen21" else "proj",
-        preview_interval=min(5, max(1, steps)) if model.family == "qwen21" else 1,
+        # Depuis la build 901, sd.cpp projette aussi les 64 canaux RGBA de
+        # Qwen 2.1. La projection légère autorise l'aperçu à CHAQUE pas.
+        preview_method="proj", preview_interval=1,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         params_backend=params_backend,

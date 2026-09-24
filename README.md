@@ -332,12 +332,21 @@ starting with an `ImportError` naming the module but not the cause.
 **📚 Model Catalog** is the media library: nothing is downloaded at install
 time, everything is fetched on demand from here.
 
-Each entry shows what the model is, what it weighs, and **whether it is ready**
-(● installed · ○ to download). The **quantization is chosen for your machine**
-before the download starts — diffusion from VRAM, text encoder from RAM — and
-if the exact rung does not exist in the source repository the downloader takes
-the closest one **and says so**, rather than silently handing you a smaller
-model (see [Models & sources](#models--sources) for why that footnote exists).
+Each entry shows whether the model is ready (● installed · ○ to download).
+Click **Load GGUF versions and sizes** for the actual filenames and file sizes
+published by Hugging Face, then select the diffusion and text encoder weights
+for that model. The selections persist across restarts. With **Automatic**, the
+target quantization comes from VRAM (diffusion) and RAM (encoder); if that rung
+does not exist, the downloader chooses the nearest lower one and says so.
+An already installed compatible encoder is reused in Automatic mode even if
+the preferred quantization has changed, avoiding another multi-GB copy. An
+explicit weight choice always takes precedence.
+
+The four current image models require four distinct encoder checkpoints:
+Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1), Qwen3-VL-4B (Krea 2),
+and Qwen3-4B-Instruct-2507 (Z-Image). Similar names do not make their
+weights interchangeable. Compatible files from the *same* Hugging Face repo
+are stored only once and shared by any model that uses them.
 
 - **⬇️ Download** fetches every component the model needs (diffusion, VAE, text
   encoder, and the vision projector for edit models) into `models/`, with a
@@ -355,8 +364,8 @@ dependency set.
 ### Qwen Image 2.1
 
 Update the app and sd.cpp with **`update.bat`** (`./update.sh` on Linux/Mac).
-Qwen Image 2.1 needs official sd.cpp build **896 or
-newer** for transparent image inputs. Download **Qwen Image 2.1** in Model
+Qwen Image 2.1 needs official sd.cpp build **896 or newer** for transparent
+image inputs and build **901 or newer** for live preview at every step. Download **Qwen Image 2.1** in Model
 Catalog; the one-click download gets GGUF diffusion weights, the **Qwen Image
 2.1 VAE**, Qwen3-VL-8B encoder and its vision projector. Older Qwen Image and
 Wan VAEs are incompatible with this model. The projector is loaded only when
@@ -497,10 +506,10 @@ Qwen). Loading a reference image auto-fits width/height to its aspect.
 - **Images** — batch count (1–8).
 
 ### Output
-- **Live preview** — a preview image appears during generation; the final
-  images appear in the gallery when generation finishes. Qwen Image 2.1 uses
-  its VAE for the preview (every five steps, or sooner for shorter runs),
-  which takes longer than the lightweight preview used by other models.
+- **Live preview** — each sampling step writes its own lightweight preview
+  and updates the image above the gallery. Qwen Image 2.1 requires sd.cpp
+  build 901 or newer for its RGBA latent preview (`update.bat`). Final images
+  appear in the gallery when generation finishes.
 - **Seed** — the selected image's seed shows in a copy-button box; **Reuse this
   seed** drops it back into the seed field. Clearing the seed field resets it to -1.
 - **Send to Toolkit** — push the selected image straight into a Toolkit tool
@@ -897,7 +906,7 @@ reachable alone.
 |---|---|
 | `update.bat` | **everything**, in order: code, cleanup, sd.cpp, 3D |
 | `update.bat --engine` | **sd.cpp** only — checks the latest official prebuilt release and installs it if newer (images and video) |
-| `update.bat --trellis` | **trellis.cpp** only — latest official Windows CUDA build (Image → 3D), and only if already installed |
+| `update.bat --trellis` | **trellis.cpp** only — checks the latest official Windows build (Image → 3D), and only if already installed |
 
 The engine steps replace only the **engine binary**. sd.cpp updates are
 first validated outside `bin/`, then swapped atomically; the previous working
@@ -907,6 +916,11 @@ archive checksum and supported options. DLLs from two releases therefore never
 mix, while a broken download can never destroy the working install. **Models
 are never re-downloaded** — including the ~10 GB trellis 3D set; reinstall
 those from the **🧊 Text / Image → 3D** tab if ever needed.
+
+The trellis.cpp updater likewise extracts and checks the new archive before
+replacing the installed binary. It remembers the release and archive, skips
+an unchanged version, and keeps the working CUDA build if a new release has
+not yet published the archive for that card. The 3D model weights stay in place.
 
 **When do you need to update the engine?** When a tab tells you to, or when a
 new model arrives. The updater compares the installed build with the latest
