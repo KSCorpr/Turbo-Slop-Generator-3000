@@ -42,9 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 PREVIOUS_DIR = ROOT / ".engine-previous"
 ENGINE_MANIFEST = "engine-manifest.json"
-# Qwen Image 2.1 exige au moins la build 896 pour les entrées RGBA. La simple
-# détection des options de sd-cli ne peut pas vérifier le support du modèle.
-MIN_OFFICIAL_BUILD = 896
+# Ming Image est arrivé avec la build 924. Les flags de sd-cli ne suffisent
+# pas à vérifier le support d'une nouvelle architecture.
+MIN_OFFICIAL_BUILD = 924
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
 _UA = {"User-Agent": "atelier"}
 
@@ -243,13 +243,24 @@ def _find_cudart(assets: list[dict]) -> dict | None:
     return None
 
 
+def _official_build(tag: str | None) -> int | None:
+    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag or "", re.I)
+    return int(match.group(1)) if match else None
+
+
 def _latest_release_with_assets() -> dict:
     data = _fetch_json(RELEASES)
     if isinstance(data, dict):  # message d'erreur (rate limit, etc.)
         sys.exit(f"API GitHub : {data.get('message', data)}")
-    for rel in data:
-        if rel.get("assets"):
-            return rel
+    available = [rel for rel in data if rel.get("assets")]
+    if available:
+        # GitHub peut publier les builds CI hors ordre (922 publié APRES 924) :
+        # le dernier par date ou le tag « Latest » ne contient pas forcément
+        # le modèle le plus récent. Le numéro de build fait foi.
+        numbered = [rel for rel in available
+                    if _official_build(rel.get("tag_name")) is not None]
+        return (max(numbered, key=lambda r: _official_build(r.get("tag_name")))
+                if numbered else available[0])
     sys.exit("No release with archives was found.")
 
 
@@ -473,6 +484,13 @@ def _installed_release_is_current(release: dict, asset: dict) -> bool:
             encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return False
+    installed = _official_build(manifest.get("tag")) \
+        if isinstance(manifest, dict) else None
+    offered = _official_build(release.get("tag_name"))
+    if (manifest.get("source") == "official"
+            and installed is not None and offered is not None
+            and installed > offered):
+        return True  # l'API ne doit jamais faire rétrograder le moteur
     return (isinstance(manifest, dict)
             and manifest.get("source") == "official"
             and manifest.get("tag") == release.get("tag_name")
@@ -641,12 +659,11 @@ def main():
     print(f"Release : {rel.get('tag_name')}")
     # N'applique la borne qu'au format de build officiel connu. Un éventuel tag
     # sémantique futur (v1.2.3) ne doit pas être pris pour la build « 1 ».
-    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?",
-                         rel.get("tag_name") or "", re.IGNORECASE)
-    if match and int(match.group(1)) < MIN_OFFICIAL_BUILD:
+    offered = _official_build(rel.get("tag_name"))
+    if offered is not None and offered < MIN_OFFICIAL_BUILD:
         sys.exit(
             f"Release too old ({rel.get('tag_name')}) : build "
-            f"{MIN_OFFICIAL_BUILD}+ required for the VRAM fixes.")
+            f"{MIN_OFFICIAL_BUILD}+ required for Ming Image support.")
     if args.list:
         for a in assets:
             print(" ", a["name"])

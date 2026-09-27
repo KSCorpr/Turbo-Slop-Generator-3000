@@ -16,7 +16,7 @@ def _weight_menu(model: registry.BaseModel, role: str,
     if comp is None:
         return [], _AUTO
     auto_label = (f"Automatic (target: {comp.requested()})" if comp.token else
-                  "Automatic (Settings quantization)")
+                  f"Default ({comp.requested()})")
     menu = [(auto_label, _AUTO)]
     menu.extend(variants or [])
     if not variants and comp.token is None:
@@ -49,16 +49,16 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
 
 def build_library_tab():
     with gr.Tab("📚 Model Catalog"):
-        gr.Markdown("### Base models\nChoose the exact GGUF weights for each "
+        gr.Markdown("### Base models\nChoose the exact weights for each "
                     "model below, or keep the automatic VRAM/RAM choice. "
-                    "Click **Load GGUF versions and sizes** to see the real "
+                    "Click **Load weights and sizes** to see the real "
                     "file sizes before downloading.")
         gr.Markdown(
             "> ℹ️ The quantization shown (Settings) is a **target**. If the "
             "repo doesn't offer it, the closest available quant **below** it "
             "is downloaded (to fit your VRAM) — shown in the log and flagged "
             "after the download. Text encoders are reused when a compatible "
-            "weight is already installed. Flux, Qwen Image, Krea and Z-Image "
+            "weight is already installed. Flux, Qwen Image, Ming Image, Krea and Z-Image "
             "require different encoder weights, which cannot be combined.")
 
         prefs = settings.load_prefs()
@@ -74,18 +74,18 @@ def build_library_tab():
                 with gr.Column(scale=5):
                     card = gr.Markdown(_card_md(m, recos))
                     with gr.Group():
-                        gr.Markdown("**GGUF weights and file sizes**")
-                        scan_btn = gr.Button("Load GGUF versions and sizes",
+                        gr.Markdown("**Weights and file sizes**")
+                        scan_btn = gr.Button("Load weights and sizes",
                                              size="sm")
                         d_menu, d_selected = _weight_menu(m, "diffusion")
                         e_menu, e_selected = _weight_menu(m, "text_encoder")
                         diffusion_file = gr.Dropdown(
                             choices=d_menu, value=d_selected,
-                            label="Image model · GGUF",
+                            label="Image model · weights",
                             interactive=True)
                         encoder_file = gr.Dropdown(
                             choices=e_menu, value=e_selected,
-                            label="Text encoder · GGUF",
+                            label="Text encoder · weights",
                             interactive=True)
                 with gr.Column(scale=1, min_width=170):
                     btn = gr.Button("⬇️ Download", variant="primary")
@@ -96,20 +96,20 @@ def build_library_tab():
                 def scan():
                     model = registry.get_base_model(model_id, settings.load_prefs())
                     try:
-                        variants = downloader.gguf_choices(model)
+                        variants = downloader.weight_choices(model)
                     except Exception as exc:  # noqa: BLE001
                         return gr.update(), gr.update(), \
-                            f"Cannot read GGUF file sizes: {exc}"
+                            f"Cannot read weight file sizes: {exc}"
                     if not variants.get("diffusion"):
                         return gr.update(), gr.update(), \
-                            "No matching image-model GGUF was found in the repository."
+                            "No matching image-model weight was found in the repository."
                     d, ds = _weight_menu(model, "diffusion",
                                          variants.get("diffusion"))
                     e, es = _weight_menu(model, "text_encoder",
                                          variants.get("text_encoder"))
                     return (gr.update(choices=d, value=ds),
                             gr.update(choices=e, value=es),
-                            "Actual GGUF file sizes loaded. Pick the weights "
+                            "Actual file sizes loaded. Pick the weights "
                             "then click Download.")
                 return scan
 

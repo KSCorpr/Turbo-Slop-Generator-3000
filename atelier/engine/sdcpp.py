@@ -86,6 +86,7 @@ class GenRequest:
     vae: Path | None = None
     model_path: Path | None = None        # checkpoint complet -> -m
     text_encoder: Path | None = None       # --llm (modèles à encodeur LLM)
+    tokenizer: Path | None = None          # --tokenizer (Ling / Ming Image)
     # --llm_vision : projecteur vision (mmproj) de l'encodeur — permet à
     # Qwen3-VL de « voir » l'image de référence (Qwen 2.1 / Krea 2 Edit).
     llm_vision: Path | None = None
@@ -113,8 +114,8 @@ class GenRequest:
     ref_image: "Path | list[Path] | None" = None
     lora_dir: Path | None = None       # --lora-model-dir
     preview_path: Path | None = None   # aperçu temps réel (--preview-path)
-    preview_method: str = "proj"       # Qwen 2.1 (64 canaux) requiert "vae"
-    preview_interval: int = 1          # décodage VAE plus coûteux que proj
+    preview_method: str = "proj"       # Ming RGBA utilise "vae" si besoin
+    preview_interval: int = 1          # une image par pas
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
@@ -442,7 +443,8 @@ def stream_layers_possible(sd_cli: "Path | None", flags: dict,
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
-             req.llm_vision, req.t5xxl, req.clip_l, req.uncond_model,
+             req.tokenizer, req.llm_vision, req.t5xxl, req.clip_l,
+             req.uncond_model,
              req.init_image, req.mask_image, *refs)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
@@ -459,6 +461,8 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
             cmd += ["--vae", str(req.vae)]
         if req.text_encoder:
             cmd += ["--llm", str(req.text_encoder)]
+        if req.tokenizer:
+            cmd += ["--tokenizer", str(req.tokenizer)]
         if req.llm_vision:
             cmd += ["--llm_vision", str(req.llm_vision)]
         if req.t5xxl:

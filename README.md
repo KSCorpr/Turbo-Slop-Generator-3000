@@ -16,7 +16,7 @@
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
 CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1**,
-**Krea 2 Turbo** and **Z-Image Turbo**, with an
+**Ming Image 0.1 Design**, **Krea 2 Turbo** and **Z-Image Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
 editing, three upscalers, and a utility toolkit.
@@ -34,17 +34,18 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
-**Eight root tabs**, arranged by what they do rather than by what they are: what
+**Nine root tabs**, arranged by what they do rather than by what they are: what
 *produces* an image stays at the root, what *retouches* one lives under **Tools**,
 what administers the machine lives under **System**. (Eleven root tabs used to
 overflow into a `…` menu, which made Manage and Settings invisible at a glance —
-so the grouping is not decoration. Four of the eight are generation tabs, one
+so the grouping is not decoration. Five of the nine are generation tabs, one
 per model; adding a model adds a tab, never a setting.)
 
 | Tab | What it does |
 |---|---|
 | 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
 | **Qwen Image 2.1** | guided image generation & native multi-reference editing · PNG transparency · 2K formats |
+| **Ming Image** | text-rich designs and transparent PNGs · BF16 or INT8 convrot weights · Ling encoder |
 | ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
 | 🟢 **Z-Image Turbo** | 6B, 8 steps · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for the distilled engines |
@@ -52,10 +53,11 @@ per model; adding a model adds a tab, never a setting.)
 | 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
-The exact tab tree, since two of the eight are containers:
+The exact tab tree, since two of the nine are containers:
 
 ```
-🟣 Flux.2 Klein 9B   Qwen Image 2.1   ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
+🟣 Flux.2 Klein 9B   Qwen Image 2.1   Ming Image
+⚡ Krea 2 Turbo   🟢 Z-Image Turbo
 💊 Xanax   📚 Model Catalog
 🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
@@ -75,6 +77,7 @@ The exact tab tree, since two of the eight are containers:
 - [Quick start](#quick-start)
 - [Model catalog](#model-catalog)
 - [Qwen Image 2.1](#qwen-image-21)
+- [Ming Image 0.1 Design](#ming-image-01-design)
 - [Generation options](#generation-options)
 - [Xanax tab](#xanax-tab)
 - [Hardware & optimization](#hardware--optimization)
@@ -333,7 +336,7 @@ starting with an `ImportError` naming the module but not the cause.
 time, everything is fetched on demand from here.
 
 Each entry shows whether the model is ready (● installed · ○ to download).
-Click **Load GGUF versions and sizes** for the actual filenames and file sizes
+Click **Load weights and sizes** for the actual filenames and file sizes
 published by Hugging Face, then select the diffusion and text encoder weights
 for that model. The selections persist across restarts. With **Automatic**, the
 target quantization comes from VRAM (diffusion) and RAM (encoder); if that rung
@@ -342,9 +345,9 @@ An already installed compatible encoder is reused in Automatic mode even if
 the preferred quantization has changed, avoiding another multi-GB copy. An
 explicit weight choice always takes precedence.
 
-The four current image models require four distinct encoder checkpoints:
+The five current image models require five distinct encoder checkpoints:
 Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1), Qwen3-VL-4B (Krea 2),
-and Qwen3-4B-Instruct-2507 (Z-Image). Similar names do not make their
+Qwen3-4B-Instruct-2507 (Z-Image), and Ling-mini-2.0 (Ming Image). Similar names do not make their
 weights interchangeable. Compatible files from the *same* Hugging Face repo
 are stored only once and shared by any model that uses them.
 
@@ -380,11 +383,33 @@ A red flower. The image has alpha channel and the background is transparent.`
 and save as **PNG**. The weights carry the **Qwen Research** license; check its
 terms before commercial use.
 
+### Ming Image 0.1 Design
+
+Run **`update.bat`** (`./update.sh` on Linux/Mac) to install sd.cpp build
+**924 or newer**, then select **Ming Image 0.1 Design** in Model Catalog.
+**Load weights and sizes** shows two compatible DiT checkpoints: INT8 convrot
+(6.18 GB, selected by default) and BF16 (12.3 GB). Both need the dedicated
+Ling-mini-2.0 **BF16 text encoder (36.7 GB)**, Ming VAE (254 MB), and Ling
+`tokenizer.json`, which the Download button fetches from the original model
+repo. INT8 convrot has a native CUDA path on sm_75 or newer; other backends
+may fall back to CPU. These are safetensors weights; upstream has not listed
+a Ming GGUF checkpoint in its setup guide. Allow at least 44 GB disk space
+for the default selection. The upstream validated BF16 inference on an 80 GiB
+CUDA GPU; smaller cards and INT8 placement have not been validated here.
+
+The Ming tab starts at **1024×1024, Euler, CFG 1, 12 steps**. Dimensions use
+16-pixel increments. It generates from text; prompt for a transparent
+background and download the output PNG to keep its alpha channel. Its step
+previews use VAE decoding, so preview updates may take longer than with other
+models. The model weights are MIT licensed.
+
 ---
 
 ## Generation options
 
-Every generation tab exposes the same controls.
+Generation tabs share prompt, styles, size, sampler and preview controls.
+Ming Image currently supports text-to-image only; reference-image controls
+are hidden there.
 
 ### Prompt & system style
 - **Prompt** — your description. For **edit models** (Flux.2 Klein, Qwen 2.1) describe the
@@ -478,8 +503,8 @@ best on these):
   (2048², 2400×1792, 2752×1536…).
 
 Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
-height (256–2048, step 16 for the distilled tabs; 256–2816, step 32 for
-Qwen). Loading a reference image auto-fits width/height to its aspect.
+height (256–2048, step 16 for most tabs including Ming; 256–2816, step 32
+for Qwen). Loading a reference image auto-fits width/height to its aspect.
 
 ### Sampler / scheduler / steps
 - **Preset** — vetted combos per model (e.g. Flux.2 Klein → 4 steps / CFG 1.0 /
@@ -506,10 +531,11 @@ Qwen). Loading a reference image auto-fits width/height to its aspect.
 - **Images** — batch count (1–8).
 
 ### Output
-- **Live preview** — each sampling step writes its own lightweight preview
-  and updates the image above the gallery. Qwen Image 2.1 requires sd.cpp
-  build 901 or newer for its RGBA latent preview (`update.bat`). Final images
-  appear in the gallery when generation finishes.
+- **Live preview** — each sampling step writes its own preview and updates the
+  image above the gallery. Ming uses VAE decoding, which can take longer on
+  large images. Qwen Image 2.1 requires sd.cpp build 901 or newer for its
+  RGBA latent preview (`update.bat`). Final images appear in the gallery when
+  generation finishes.
 - **Seed** — the selected image's seed shows in a copy-button box; **Reuse this
   seed** drops it back into the seed field. Clearing the seed field resets it to -1.
 - **Send to Toolkit** — push the selected image straight into a Toolkit tool
@@ -1942,6 +1968,10 @@ resolved from your hardware; the downloader picks the closest matching file.
 - diffusion — [`leejet/Qwen-Image-2.1-GGUF`](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) (quantization picked for VRAM)
 - VAE — [`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) (`qwen_image_2.1_vae_bf16.safetensors`)
 - text encoder and optional editing projector — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (`--llm`, `--llm_vision`)
+
+**Ming Image 0.1 Design** (family `ming_image`, text-to-image)
+- diffusion, Ling BF16 text encoder, VAE — [`Comfy-Org/Ming-Image`](https://huggingface.co/Comfy-Org/Ming-Image) (12 steps, CFG 1; selectable BF16/INT8 convrot DiT)
+- tokenizer — [`inclusionAI/Ming-Image-0.1-Design`](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) (`mllm/tokenizer.json`, via `--tokenizer`)
 
 **Krea 2 Turbo** (family `krea2`, sd.cpp)
 - diffusion — [`vantagewithai/Krea-2-Turbo-GGUF`](https://huggingface.co/vantagewithai/Krea-2-Turbo-GGUF) (8 steps, CFG 1.0)

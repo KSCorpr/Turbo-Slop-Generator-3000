@@ -18,7 +18,7 @@ from . import hardware, quant, settings
 
 @dataclass
 class Component:
-    role: str            # diffusion | uncond | vae | text_encoder | text_encoder_vision
+    role: str            # diffusion | vae | text_encoder | tokenizer | ...
     repo: str
     template: str        # ex "*-{quant}.gguf" ou "vae/*.safetensors"
     quant: str | None    # quant résolu si le motif contient un token, sinon None
@@ -26,6 +26,7 @@ class Component:
     # avec le modèle, mais son absence ne rend PAS le modèle « non prêt ».
     optional: bool = False
     source_template: str | None = None  # motif de toutes les variantes GGUF
+    selectable: tuple[str, ...] = ()    # choix explicites non GGUF autorisés
 
     @property
     def token(self) -> str | None:
@@ -125,17 +126,22 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             # qu'elle reste dans le motif du composant et dans son dépôt :
             # le fichier peut aussi avoir disparu d'un catalogue distant.
             selected = overrides.get(role)
-            if (isinstance(selected, str) and q is not None
-                    and selected.lower().endswith(".gguf")
+            selectable = tuple(spec.get("selectable") or ())
+            valid_gguf = (q is not None
+                          and isinstance(selected, str)
+                          and selected.lower().endswith(".gguf")
+                          and fnmatch.fnmatch(
+                              selected, template.replace("{quant}", "*")
+                                                .replace("{enc_quant}", "*")))
+            if (isinstance(selected, str)
                     and not selected.startswith("/") and "\\" not in selected
                     and ".." not in selected.split("/")
-                    and fnmatch.fnmatch(selected,
-                                        template.replace("{quant}", "*")
-                                                .replace("{enc_quant}", "*"))):
+                    and (valid_gguf or selected in selectable)):
                 template, q = selected, None
             comps.append(Component(role, spec["repo"], template, q,
                                    optional=bool(spec.get("optional")),
-                                   source_template=source_template))
+                                   source_template=source_template,
+                                   selectable=selectable))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),

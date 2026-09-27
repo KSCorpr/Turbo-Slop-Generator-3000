@@ -306,7 +306,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "z_image", "qwen21")
+FAMILIES = ("flux2", "krea2", "z_image", "qwen21", "ming_image")
 
 
 def _family(model_family: str) -> str:
@@ -326,6 +326,10 @@ def level(kind: str, key: str, model_family: str) -> str:
         if key in ("lcm", "tcd"):
             return BAD
         return OK
+    if model_family == "ming_image":
+        if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
+            return BEST
+        return BAD if key in ("lcm", "tcd") else OK
     return entry[4].get(_family(model_family), OK)
 
 
@@ -402,6 +406,13 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "ming_image":
+        return ("**Ming Image 0.1 Design**: sd.cpp documents **Euler, "
+                "CFG 1.0 and 12 steps**, with the model's automatic "
+                "schedule. Ming uses its dedicated VAE and Ling tokenizer "
+                "to generate PNG images with an alpha channel. Other "
+                "samplers have not been calibrated here; LCM and TCD are "
+                "reserved for models trained for those samplers.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1** is a guided model: the sd.cpp example "
                 "uses **Euler, CFG 6.0** and the engine's automatic "

@@ -16,6 +16,7 @@ from .sdcpp import GenRequest
 # flags alone cannot distinguish an older binary from one that loads the model.
 QWEN21_MIN_BUILD = 896
 QWEN21_PREVIEW_BUILD = 901
+MING_MIN_BUILD = 924
 
 
 def _check_qwen_engine(model: registry.BaseModel,
@@ -39,6 +40,28 @@ def _check_qwen_engine(model: registry.BaseModel,
             "Qwen Image 2.1 live preview at every step needs sd.cpp build "
             f"{QWEN21_PREVIEW_BUILD} or newer. Run update.bat (or ./update.sh "
             "on Linux/Mac) to update the engine.")
+
+
+def _check_ming_engine(model: registry.BaseModel, sd_cli: Path) -> None:
+    if model.family != "ming_image":
+        return
+    manifest = settings.BIN_DIR / "engine-manifest.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        tag = data.get("tag") if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError):
+        tag = None  # moteur installé manuellement : vérifier au moins le flag
+    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
+        if isinstance(tag, str) else None
+    if match and int(match.group(1)) < MING_MIN_BUILD:
+        raise sdcpp.EngineError(
+            f"Ming Image needs sd.cpp build {MING_MIN_BUILD} or newer. "
+            "Run update.bat (or ./update.sh on Linux/Mac).")
+    known = sdcpp.supported_options(sd_cli)
+    if known and "--tokenizer" not in known:
+        raise sdcpp.EngineError(
+            "Ming Image needs an sd.cpp engine with --tokenizer. "
+            "Run update.bat (or ./update.sh on Linux/Mac).")
 
 
 def cancel() -> str:
@@ -207,7 +230,7 @@ def resolve_model_files(model: "registry.BaseModel",
         model_path = Path(diffusion_override) if diffusion_override \
             else _component(model, "model")
         vae = Path(vae_override) if vae_override else _component(model, "vae")
-        diffusion = enc = uncond = t5xxl = clip_l = llm_vision = None
+        diffusion = enc = uncond = t5xxl = clip_l = llm_vision = tokenizer = None
         if model_path is None or not Path(model_path).is_file():
             raise sdcpp.EngineError(
                 f"“{model.name}”: checkpoint missing. Download it "
@@ -217,6 +240,7 @@ def resolve_model_files(model: "registry.BaseModel",
         diffusion = Path(diffusion_override) if diffusion_override else _component(model, "diffusion")
         vae = Path(vae_override) if vae_override else _component(model, "vae")
         enc = Path(encoder_override) if encoder_override else _component(model, "text_encoder")
+        tokenizer = _component(model, "tokenizer")
         uncond = _component(model, "uncond")
         t5xxl = _component(model, "t5xxl")
         clip_l = _component(model, "clip_l")
@@ -238,6 +262,8 @@ def resolve_model_files(model: "registry.BaseModel",
             need["vae"] = vae
         if "text_encoder" in declared:
             need["text_encoder"] = enc
+        if "tokenizer" in declared:
+            need["tokenizer"] = tokenizer
         if "t5xxl" in declared:
             need["t5xxl"] = t5xxl
         if "clip_l" in declared:
@@ -252,7 +278,7 @@ def resolve_model_files(model: "registry.BaseModel",
 
     return {"model_path": model_path, "diffusion": diffusion, "vae": vae,
             "enc": enc, "uncond": uncond, "t5xxl": t5xxl, "clip_l": clip_l,
-            "llm_vision": llm_vision}
+            "llm_vision": llm_vision, "tokenizer": tokenizer}
 
 
 def adetailer_command(model_id: str, source: Path, output: Path,
@@ -378,6 +404,7 @@ def generate(
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     _check_qwen_engine(model, preview_path)
+    _check_ming_engine(model, sd_cli)
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image))
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
@@ -448,7 +475,7 @@ def generate(
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
-        text_encoder=enc, llm_vision=llm_vision,
+        text_encoder=enc, tokenizer=files["tokenizer"], llm_vision=llm_vision,
         t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
         extra_flags=list(model.defaults.get("extra_flags", [])),
         prompt=final_prompt, negative=negative,
@@ -462,7 +489,8 @@ def generate(
         lora_dir=lora_dir, preview_path=preview_path,
         # Depuis la build 901, sd.cpp projette aussi les 64 canaux RGBA de
         # Qwen 2.1. La projection légère autorise l'aperçu à CHAQUE pas.
-        preview_method="proj", preview_interval=1,
+        preview_method="vae" if model.family == "ming_image" else "proj",
+        preview_interval=1,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         params_backend=params_backend,

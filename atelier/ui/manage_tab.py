@@ -303,7 +303,7 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         gr.Markdown("---\n### 📖 Help — what does each option do?")
 
-        with gr.Accordion("🎨 Generation tabs (Flux.2 / Krea 2 / Z-Image)",
+        with gr.Accordion("🎨 Generation tabs (Flux.2 / Qwen / Ming / Krea / Z-Image)",
                           open=False):
             gr.Markdown(
                 "**Prompt** — your description. On an **editing model** "
@@ -314,7 +314,7 @@ def build_manage_tab():
                 "three banks, all **stackable**:\n· **🎭 Custom preset** — a "
                 "prefix you write and save, prepended to every\ngeneration; "
                 "“— None —” removes it. Presets are **global**: saved once, "
-                "they\nappear in all three tabs. Some **ship with the app** "
+                "they\nappear in all generation tabs. Some **ship with the app** "
                 "and survive updates; they\ncannot be deleted, but saving a "
                 "style under the same name creates your own\nversion, which "
                 "takes precedence — deleting yours restores the original.\n· "

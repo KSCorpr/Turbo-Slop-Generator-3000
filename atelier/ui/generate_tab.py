@@ -97,6 +97,8 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     if family == "qwen21":
         return RATIOS_QWEN21
+    if family == "ming_image":
+        return RATIOS_ZIMAGE  # multiples de 16, carré 1024/1536 et ratios usuels
     # startswith et non == : toute variante Krea à venir partagera
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
@@ -334,12 +336,26 @@ def build_generative_tab(model_id: str, title: str,
 
                         enh_inst.click(_install_enh, outputs=[enh_log])
 
-                _acc_title = ("🖼️ Reference images (image editing)" if is_edit
+                _acc_title = ("Transparent PNG (RGBA)" if family == "ming_image"
+                              else "🖼️ Reference images (image editing)" if is_edit
                               else "🖼️ Reference / starting image (image-to-image)")
                 # Ouvert par défaut sur un modèle d'édition (Flux.2) : l'édition
                 # est une capacité phare, on la met en avant.
                 with gr.Accordion(_acc_title, open=is_edit):
-                    if is_edit:
+                    if family == "ming_image":
+                        gr.Markdown(
+                            "Ming Image generates from text. To request a "
+                            "transparent background, include ‘transparent "
+                            "background’ in the prompt (e.g. ‘A cheerful "
+                            "orange cat sticker, transparent background’). "
+                            "The output is saved as PNG with its alpha channel.")
+                        init_image = gr.State(None)
+                        ref_image2 = gr.State(None)
+                        ref_image3 = gr.State(None)
+                        strength = gr.State(0.6)
+                        edit_mode = gr.State(False)
+                        outpaint = gr.State(1.0)
+                    elif is_edit:
                         gr.Markdown(
                             "**Edit an image**: load it and describe **the "
                             "change** in the prompt (e.g. *“change the car "
@@ -379,11 +395,12 @@ def build_generative_tab(model_id: str, title: str,
                                 "downscaled automatically, and the automatic "
                                 "quantization (Q4_K_M on 11–12 GB) leaves the "
                                 "headroom it needs.")
-                    init_image = gr.Image(
-                        label="Image to edit" if is_edit else "Starting image",
-                        type="pil", image_mode=("RGBA" if family == "qwen21"
-                                                else "RGB"),
-                        buttons=widgets.IMAGE_VIEW_ONLY)
+                    if family != "ming_image":
+                        init_image = gr.Image(
+                            label="Image to edit" if is_edit else "Starting image",
+                            type="pil", image_mode=("RGBA" if family == "qwen21"
+                                                    else "RGB"),
+                            buttons=widgets.IMAGE_VIEW_ONLY)
                     if is_edit:
                         with gr.Row():
                             ref_image2 = gr.Image(
@@ -396,12 +413,13 @@ def build_generative_tab(model_id: str, title: str,
                                 image_mode=("RGBA" if family == "qwen21"
                                             else "RGB"),
                                 buttons=widgets.IMAGE_VIEW_ONLY)
-                    else:
+                    elif family != "ming_image":
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
-                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
-                                         label="Transformation strength",
-                                         visible=not is_edit)
+                    if family != "ming_image":
+                        strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
+                                             label="Transformation strength",
+                                             visible=not is_edit)
                     if edit_optional:
                         edit_mode = gr.Checkbox(
                             value=False,
@@ -411,7 +429,7 @@ def build_generative_tab(model_id: str, title: str,
                                 "⬇️ Install the official editing LoRA (one click)",
                                 size="sm")
                             edit_lora_msg = gr.Markdown("")
-                    else:
+                    elif family != "ming_image":
                         edit_mode = gr.State(False)
                     if is_edit:
                         outpaint = gr.Slider(
@@ -423,7 +441,7 @@ def build_generative_tab(model_id: str, title: str,
                                  "directional outpaint "
                                  "(left/right/top/bottom), with no prompt and "
                                  "with any model, use the “🖼️ Outpaint” tab.")
-                    else:
+                    elif family != "ming_image":
                         outpaint = gr.State(1.0)
 
                 with gr.Accordion("🧩 LoRA", open=False):
@@ -855,8 +873,9 @@ def build_generative_tab(model_id: str, title: str,
             return (gr.update(value=w), gr.update(value=h),
                     gr.update(value=t(_CUSTOM_LABEL)))
 
-        init_image.upload(_fit_to_ref, inputs=[init_image],
-                          outputs=[width, height, ratio])
+        if family != "ming_image":
+            init_image.upload(_fit_to_ref, inputs=[init_image],
+                              outputs=[width, height, ratio])
 
         if preset_list:
             def apply_preset(name):

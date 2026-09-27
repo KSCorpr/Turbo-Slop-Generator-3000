@@ -160,11 +160,16 @@ class ReleaseCheckTests(unittest.TestCase):
             self.assertTrue(U._installed_release_is_current(release, asset))
             self.assertFalse(U._installed_release_is_current(
                 release, {**asset, "id": 901}))
+            manifest.write_text(json.dumps({
+                "source": "official", "tag": "master-925-newer",
+                "archive": "sd-master-925.zip", "asset_id": 925,
+            }), encoding="utf-8")
+            self.assertTrue(U._installed_release_is_current(release, asset))
 
     def test_update_installs_a_new_release_and_skips_the_current_one(self):
-        release = {"tag_name": "master-900", "assets": [{
-            "name": "sd-master-900-bin-win-cuda12-x64.zip",
-            "browser_download_url": "https://github.com/example/sd.zip", "id": 900,
+        release = {"tag_name": "master-924", "assets": [{
+            "name": "sd-master-924-bin-win-cuda12-x64.zip",
+            "browser_download_url": "https://github.com/example/sd.zip", "id": 924,
         }]}
         with patch.object(U.sys, "argv", ["get_sdcpp.py", "--update"]), \
              patch.object(U, "_force_ipv4"), \
@@ -185,6 +190,16 @@ class ReleaseCheckTests(unittest.TestCase):
              patch.object(U, "_download") as download:
             U.main()
             download.assert_not_called()
+
+    def test_out_of_order_ci_releases_choose_highest_build(self):
+        releases = [
+            {"tag_name": "master-922-later", "assets": [{"name": "old"}]},
+            {"tag_name": "master-924-ming", "assets": [{"name": "ming"}]},
+            {"tag_name": "master-923-empty", "assets": []},
+        ]
+        with patch.object(U, "_fetch_json", return_value=releases):
+            self.assertEqual(U._latest_release_with_assets()["tag_name"],
+                             "master-924-ming")
 
 
 if __name__ == "__main__":

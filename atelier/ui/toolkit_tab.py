@@ -821,7 +821,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 _hd_models = [(m.name, m.id)
                               for m in registry.load_base_models(
                                   settings.load_prefs())
-                              if registry.model_is_ready(m)]
+                              if registry.model_is_ready(m)
+                              and m.defaults.get("supports_img2img", True)]
                 if not _hd_models:
                     gr.Markdown(
                         "> ⚠️ **No generation model installed.** Download "
@@ -1161,7 +1162,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         _ad_models = [(m.name, m.id)
                                       for m in registry.load_base_models(
                                           settings.load_prefs())
-                                      if registry.model_is_ready(m)]
+                                      if registry.model_is_ready(m)
+                                      and m.defaults.get("supports_img2img", True)]
                         ad_model = gr.Dropdown(
                             choices=_ad_models,
                             value=(_ad_models[0][1] if _ad_models else None),

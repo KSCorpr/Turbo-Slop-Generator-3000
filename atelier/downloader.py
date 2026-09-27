@@ -111,8 +111,8 @@ def _pick_file(comp: Component, files: list[str]) -> str | None:
     return None
 
 
-def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
-    """GGUF du dépôt et leurs tailles réelles, chargés à la demande dans l'UI.
+def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
+    """Poids GGUF ou variantes safetensors et tailles réelles depuis le Hub.
 
     Les métadonnées d'un même dépôt sont demandées une seule fois. Une taille
     absente reste inconnue :
@@ -125,8 +125,9 @@ def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
     repos: dict[str, list] = {}
     result: dict[str, list[tuple[str, str]]] = {}
     for comp in model.components:
-        if comp.role not in ("diffusion", "text_encoder") or not \
-                comp.base_glob().lower().endswith(".gguf"):
+        if comp.role not in ("diffusion", "text_encoder") or not (
+                comp.base_glob().lower().endswith((".gguf", ".safetensors"))
+                or comp.selectable):
             continue
         if comp.repo not in repos:
             repos[comp.repo] = api.model_info(
@@ -137,7 +138,10 @@ def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
         options = []
         for sibling in repos[comp.repo]:
             name = sibling.rfilename
-            if not name.lower().endswith(".gguf") or not _fn(name, pattern):
+            if comp.selectable:
+                if name not in comp.selectable:
+                    continue
+            elif not _fn(name, pattern):
                 continue
             if comp.role == "text_encoder" and "mmproj" in name.lower():
                 continue
@@ -152,6 +156,11 @@ def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
             quant._idx(quant.find_quant(row[1])) or -1, row[1]))
         result[comp.role] = options
     return result
+
+
+def gguf_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
+    """Compatibilité avec les appels existants du catalogue GGUF."""
+    return weight_choices(model)
 
 
 def download_component(comp: Component,

@@ -114,6 +114,52 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: ming-image-design
+    name: "Ming Image 0.1 Design"
+    family: ming_image
+    tags: [design, transparence, texte]
+    description: >
+      Ming Image 0.1 Design : illustrations, affiches et compositions avec du
+      texte, sortie PNG RGBA sur demande. 12 pas, Euler, CFG 1. La diffusion
+      INT8 convrot (6,18 Go) est proposée par défaut ; BF16 (12,3 Go) reste
+      disponible. Encodeur Ling-mini-2.0 BF16 (36,7 Go), VAE dédié et
+      tokenizer.json sont indispensables. Prévoir au moins 44 Go sur disque
+      et beaucoup de RAM pour décharger l'encodeur. Le modèle BF16 a été
+      validé en amont sur 80 Gio de VRAM ; les petites cartes ne sont pas
+      garanties. INT8 convrot est accéléré sur CUDA sm_75+ ; autres backends
+      peuvent être nettement plus lents. Nécessite sd.cpp build 924+.
+      Licence MIT.
+    sources:
+      diffusion:
+        repo: Comfy-Org/Ming-Image
+        match: "diffusion_models/ming_image_0.1_design_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/ming_image_0.1_design_int8_convrot.safetensors"
+          - "diffusion_models/ming_image_0.1_design_bf16.safetensors"
+      text_encoder:
+        repo: Comfy-Org/Ming-Image
+        match: "text_encoders/ming_image_0.1_ling_mini_2.0_bf16.safetensors"
+      vae:
+        repo: Comfy-Org/Ming-Image
+        match: "vae/ming_image_vae_bf16.safetensors"
+      tokenizer:
+        repo: inclusionAI/Ming-Image-0.1-Design
+        match: "mllm/tokenizer.json"
+    defaults:
+      steps: 12
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: false
+      supports_img2img: false
+    presets:
+      - {name: "Recommandé (12 pas, doc)", sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - {name: "Essai rapide (8 pas)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+    vram_min_gb: 80
+
+  # --------------------------------------------------------------------------
   - id: krea2-turbo
     name: "Krea 2 Turbo"
     family: krea2

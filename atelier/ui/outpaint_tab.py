@@ -40,7 +40,8 @@ PRESETS = [
 
 
 def _models() -> list:
-    return registry.load_base_models(settings.load_prefs())
+    return [m for m in registry.load_base_models(settings.load_prefs())
+            if m.defaults.get("supports_img2img", True)]
 
 
 def _is_edit(m) -> bool:
