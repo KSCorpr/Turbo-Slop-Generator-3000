@@ -246,8 +246,9 @@ def _gen_gpu_index() -> int | None:
     """GPU de GÉNÉRATION d'images (Flux/Krea, upscale SDXL, depth/bg/SAM).
     Jamais le GPU secondaire dédié au texte."""
     prefs = settings.load_prefs()
-    if prefs.get("gpu_index") is not None:
-        return prefs["gpu_index"]
+    choice = settings.generation_gpu_index(prefs)
+    if choice is not None:
+        return choice
     prof = hardware.auto_profile()
     return prof.gpu.index if prof.gpu else None
 
@@ -887,12 +888,11 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     if preview_path:
         cmd += ["--preview-path", str(preview_path)]
     # VRAM serrée (< 12 Go) → offload CPU du modèle pour éviter l'OOM.
-    prof = hardware.auto_profile(settings.load_prefs().get("gpu_index"))
+    prof = hardware.auto_profile(settings.generation_gpu_index(settings.load_prefs()))
     if prof.gpu and prof.gpu.vram_gb < 12:
         cmd.append("--low-vram")
     # Upscale SDXL = génération d'IMAGES → GPU de génération (jamais le secondaire).
     _run_tool(cmd, log, "The creative SDXL upscale failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "usdu", stamp)
-
 

@@ -56,10 +56,16 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Pris en compte au REDÉMARRAGE de l'application.
     "models_dir": None,
     "gpu_index": None,          # None = auto (meilleure carte détectée)
+    "auto_gpu_index": None,     # choix facultatif, indépendant des anciens presets manuels
     # GPU secondaire dédié au TEXTE (améliorateur de prompt). None = même GPU
     # que la génération. Ex. : mettre la 1080 Ti ici. La génération d'images et
     # l'upscale SDXL restent TOUJOURS sur le GPU de génération.
     "text_gpu_index": None,
+    # Auto = profil système recalculé pour chaque modèle et ses poids installés
+    # au moment de la génération. Manual = réglages experts et profils mesurés.
+    # Les anciennes préférences restent intactes pour pouvoir revenir au manuel.
+    "system_mode": "auto",
+    "hardware_bias": "balanced",  # mémoire | balanced | qualité, même en auto
     # EXPÉRIMENTAL : GPU dédié à l'encodeur de texte dans sd.cpp (--backend te=).
     # None = comportement normal (encodeur sur le GPU principal / déchargé RAM).
     "encoder_gpu_index": None,
@@ -105,9 +111,9 @@ DEFAULT_PREFS: dict[str, Any] = {
     "cache_option": "",         # ex. "threshold=0.2" (easycache) — vide = défauts
     # Presets ciblés : contrairement au cache global ci-dessus, ils ne touchent
     # que le modèle nommé — { "<id>": {"mode": ..., "option": ...} }. Plus
-    # exposé dans l'interface : les modèles distillés en peu de pas en profitent
-    # peu, et appliquer un cache global au modèle Qwen à 40 pas change son
-    # comportement. Se règle à la main pour un modèle précis si nécessaire.
+    # exposé dans l'interface : sur les modèles distillés en 4 à 8 pas le
+    # cache aide peu ; sur Qwen (plus de pas), il peut changer le rendu.
+    # Le choix ciblé par modèle reste modifiable manuellement.
     "cache_by_model": {},
     # Exécution SEGMENTÉE (sd.cpp --max-vram) : autorise le moteur à découper
     # son graphe de calcul pour tenir dans un budget, au lieu d'allouer d'un
@@ -161,6 +167,12 @@ def load_prefs() -> dict[str, Any]:
 def save_prefs(prefs: dict[str, Any]) -> None:
     ensure_dirs()
     atomic_write_text(PREFS_FILE, json.dumps(prefs, indent=2))
+
+
+def generation_gpu_index(prefs: dict[str, Any]) -> int | None:
+    """Choix de carte actif ; l'ancien choix manuel ne fige pas l'auto."""
+    return (prefs.get("auto_gpu_index") if prefs.get("system_mode") == "auto"
+            else prefs.get("gpu_index"))
 
 
 # --- localisation du binaire stable-diffusion.cpp --------------------------

@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .. import hardware, registry, settings
+from .. import hardware, registry, settings, system_profile
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -155,6 +155,14 @@ def encoder_gpu_too_slow(enc_index: int | None,
 
 def _resolved_flags(prefs: dict) -> tuple[dict[str, bool], int | None]:
     """Flags d'optimisation effectifs + index GPU."""
+    if prefs.get("system_mode") == "auto":
+        prof = hardware.biased_profile(prefs.get("hardware_bias", "balanced"),
+                                       settings.generation_gpu_index(prefs))
+        flags = prof.flags()
+        gpu_index = prof.gpu.index if prof.gpu else None
+        flags["conv_direct_diffusion"] = False
+        flags["conv_direct_vae"] = False
+        return flags, gpu_index
     if prefs.get("auto_optimize", True):
         prof = hardware.auto_profile(prefs.get("gpu_index"))
         flags = prof.flags()
@@ -306,9 +314,15 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
     files = resolve_model_files(model)
-    flags, gpu_index = _resolved_flags(prefs)
     d = dict(model.defaults)
-
+    automatic = prefs.get("system_mode") == "auto"
+    plan = (system_profile.plan_for_model(model, files, prefs, sd_cli,
+                                          width=int(d.get("width", 1024)),
+                                          height=int(d.get("height", 1024)),
+                                          has_reference=True)
+            if automatic else None)
+    flags, gpu_index = ((plan.flags, plan.gpu_index) if plan else
+                        _resolved_flags(prefs))
     req = GenRequest(
         model_path=files["model_path"], diffusion_model=files["diffusion"],
         vae=files["vae"], text_encoder=files["enc"],
@@ -320,7 +334,13 @@ def adetailer_command(model_id: str, source: Path, output: Path,
         sampler=d.get("sampler", "euler"), schedule=d.get("schedule", ""),
         seed=int(seed), strength=float(denoise),
         flags=flags, gpu_index=gpu_index,
-        params_backend=(prefs.get("params_backend") or ""),
+        params_backend=(plan.params_backend if plan else
+                        (prefs.get("params_backend") or "")),
+        auto_fit=plan.auto_fit if plan else bool(prefs.get("auto_fit")),
+        max_vram=plan.max_vram if plan else sdcpp.max_vram_arg(
+            prefs.get("max_vram") or ""),
+        stream_layers=plan.stream_layers if plan else bool(
+            prefs.get("stream_layers")),
     )
 
     cmd = [str(sd_cli), "-M", "adetailer",
@@ -392,7 +412,10 @@ def generate(
     # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
     prefs_override: dict | None = None,
 ) -> list[Path]:
-    prefs = prefs_override if prefs_override is not None else settings.load_prefs()
+    # A benchmark supplies an in-memory placement deliberately. It must not
+    # inherit the saved automatic mode, which would erase the tested flags.
+    prefs = ({**prefs_override, "system_mode": "manual"}
+             if prefs_override is not None else settings.load_prefs())
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
@@ -413,7 +436,18 @@ def generate(
     t5xxl, clip_l, llm_vision = (files["t5xxl"], files["clip_l"],
                                  files["llm_vision"])
 
-    flags, gpu_index = _resolved_flags(prefs)
+    automatic = prefs_override is None and prefs.get("system_mode") == "auto"
+    plan = (system_profile.plan_for_model(
+        model, files, prefs, sd_cli, width=int(width), height=int(height),
+        has_reference=bool(ref_image or init_image)) if automatic else None)
+    flags, gpu_index = ((plan.flags, plan.gpu_index) if plan else
+                        _resolved_flags(prefs))
+    if plan and log:
+        log(f"System auto ({model.name}): {plan.placement}; "
+            f"{plan.image_gib:.1f} GiB image weights, "
+            f"{plan.available_gib:.1f} GiB free VRAM."
+            if plan.image_gib is not None and plan.available_gib is not None
+            else f"System auto ({model.name}): {plan.placement}.")
     loras = loras or []
 
     # Placement. auto-fit laisse sd.cpp planifier la résidence de chaque module
@@ -421,8 +455,8 @@ def generate(
     # deux rendent toutes les cartes visibles (all_gpus) avec l'ordre CUDA par
     # bus PCI — auto-fit parce que la RAM d'une autre carte est l'un de ses
     # paliers, pas parce qu'il calculerait sur plusieurs.
-    auto_fit = bool(prefs.get("auto_fit"))
-    enc_gpu = prefs.get("encoder_gpu_index")
+    auto_fit = plan.auto_fit if plan else bool(prefs.get("auto_fit"))
+    enc_gpu = None if plan else prefs.get("encoder_gpu_index")
     # La carte d'encodeur est écartée ICI, avant tout le reste : plusieurs
     # branches plus bas re-déduisent le split à partir de `enc_gpu`, et une
     # décision prise en aval leur échapperait. Le banc d'essai, lui, a le droit
@@ -446,7 +480,8 @@ def generate(
     final_prompt = _apply_loras(prompt, loras)
     lora_dir = settings.LORA_DIR if loras else None
 
-    raw_params_backend = prefs.get("params_backend") or ""
+    raw_params_backend = (plan.params_backend if plan else
+                          (prefs.get("params_backend") or ""))
     params_backend = "" if auto_fit else raw_params_backend
     if slow_encoder and not auto_fit:
         # La préférence enregistrée dit encore « te=cuda<Pascal> » : sans cette
@@ -464,11 +499,13 @@ def generate(
         g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
         params_backend = f"diffusion=cuda{g},vae=cuda{g},te=cuda{enc_gpu}"
 
-    stream_layers = (bool(prefs.get("stream_layers")) if stream_layers is None
-                     else bool(stream_layers))
-    cache_mode = prefs.get("cache_mode") or ""
-    cache_option = prefs.get("cache_option") or ""
-    targeted = (prefs.get("cache_by_model") or {}).get(model_id) or {}
+    stream_layers = ((plan.stream_layers if plan else
+                      bool(prefs.get("stream_layers")))
+                     if stream_layers is None else bool(stream_layers))
+    cache_mode = "" if plan else (prefs.get("cache_mode") or "")
+    cache_option = "" if plan else (prefs.get("cache_option") or "")
+    targeted = ((prefs.get("cache_by_model") or {}).get(model_id) or {}) \
+        if not plan else {}
     if not cache_mode and isinstance(targeted, dict):
         cache_mode = targeted.get("mode") or ""
         cache_option = targeted.get("option") or ""
@@ -497,8 +534,9 @@ def generate(
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=cache_mode, cache_option=cache_option,
         hires=hires,
-        max_vram=(max_vram if max_vram is not None
-                  else sdcpp.max_vram_arg(prefs.get("max_vram") or "")),
+        max_vram=(max_vram if max_vram is not None else
+                  (plan.max_vram if plan else sdcpp.max_vram_arg(
+                      prefs.get("max_vram") or ""))),
         stream_layers=stream_layers,
         circular=circular,
     )
@@ -613,7 +651,7 @@ def upscale_image(image, model_name: str, repeats: int = 1,
     w, h = im.size
 
     _, gpu_index = _resolved_flags(prefs)
-    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    prof = hardware.auto_profile(settings.generation_gpu_index(prefs))
     vram = prof.gpu.vram_gb if prof.gpu else None
     tile = sdcpp.upscale_tile_size(w, h, vram)
     out = sdcpp.unique_output("upscale")
@@ -818,7 +856,7 @@ def hd_upscale(model_id: str, image, scale: float = 2.0,
     #   2. le nombre de PIXELS que la VRAM peut porter — c'est celui qui mord en
     #      pratique, parce que le tampon du second débruitage s'ajoute aux poids.
     scale = float(scale)
-    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    prof = hardware.auto_profile(settings.generation_gpu_index(prefs))
     vram = prof.gpu.vram_gb if prof.gpu else None
     if max(bw, bh) * scale > HD_MAX_SIDE:
         scale = max(1.25, HD_MAX_SIDE / max(bw, bh))

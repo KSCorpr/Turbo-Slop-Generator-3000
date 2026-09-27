@@ -85,6 +85,10 @@ def _catalog() -> dict[str, Any]:
 
 def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
     """(quant diffusion, quant encodeur) après prise en compte des préférences."""
+    if prefs.get("system_mode") == "auto":
+        prof = hardware.biased_profile(prefs.get("hardware_bias", "balanced"),
+                                       settings.generation_gpu_index(prefs))
+        return prof.quant, prof.enc_quant
     prof = hardware.auto_profile(prefs.get("gpu_index"))
     q_diff = prefs.get("quant") or prof.quant
     q_enc = prefs.get("enc_quant") or prof.enc_quant
@@ -393,7 +397,7 @@ def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:
 # --------------------------------------------------------------------------- #
 def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
     """Retourne {model_id: [étiquettes de reco]} pour guider l'artiste."""
-    prof = hardware.auto_profile(prefs.get("gpu_index"))
+    prof = hardware.auto_profile(settings.generation_gpu_index(prefs))
     vram = prof.gpu.vram_gb if prof.gpu else 0.0
     out: dict[str, list[str]] = {}
     from .i18n import t

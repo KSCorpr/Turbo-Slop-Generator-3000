@@ -1,31 +1,10 @@
-"""Onglet Réglages.
+"""Réglages système : automatique par modèle, manuel explicite et diagnostic.
 
-CE QUE CET ONGLET REFUSE DE FAIRE : poser des questions auxquelles personne
-ne peut répondre. « Flash attention ? » « Convolution directe ? » « Budget
-VRAM du graphe ? » — une case qu'on ne sait pas cocher n'est pas un réglage,
-c'est une source de doute. Il y en avait une vingtaine, réparties sur quatre
-onglets ; on ne savait ni par où commencer ni ce qu'on risquait.
-
-Trois principes, dans cet ordre :
-
-1. **La machine décide ce que la machine sait.** Quantification, offload,
-   tiling, flash-attention : tout se déduit du matériel détecté. On l'affiche
-   en clair — non pour le faire régler, mais pour dire ce qui a été décidé, et
-   en CONSÉQUENCES observables plutôt qu'en noms d'options.
-2. **Il reste UNE question, et c'est un goût** : plus de marge mémoire, ou plus
-   de détail ? Le matériel ne peut pas y répondre à votre place. Un curseur à
-   trois crans, et c'est tout.
-3. **Quand on ne sait pas, on mesure.** Le placement multi-GPU ne se devine pas
-   (il dépend du lien PCIe autant que de la mémoire), donc un bouton le mesure
-   au lieu de demander de parier.
-
-Le reste — les options brutes de sd.cpp — vit sous un seul repli « Expert »,
-annoncé comme facultatif.
-
-Il n'y a PAS de bouton « Enregistrer » : chaque changement s'applique aussitôt
-et le dit. Un bouton d'enregistrement est une occasion de plus de se demander
-si ça a été pris en compte — et il n'existait déjà pas pour le thème, ce
-qui rendait le reste ambigu.
+Le placement automatique part du poids réellement installé et de la VRAM
+disponible au moment de générer. Un tableau explique le plan de chaque modèle.
+La priorité mémoire/qualité est facultative ; les paramètres sd.cpp restent
+accessibles sous Expert et basculent en manuel dès qu'on y touche. Aucun bouton
+Enregistrer : les changements sont appliqués immédiatement.
 """
 from __future__ import annotations
 
@@ -35,7 +14,7 @@ import threading
 
 import gradio as gr
 
-from .. import benchmark, diagnostics, hardware, settings
+from .. import benchmark, diagnostics, hardware, registry, settings, system_profile
 from ..i18n import t
 from . import widgets
 
@@ -99,6 +78,7 @@ def _apply_strategy_prefs(choice: str, gpu_idx) -> dict:
     other = next((g.index for g in gpus if g.index != sel), None)
     split = (choice == "encoder") and sel is not None and other is not None
     return _save(
+        system_mode="manual", auto_optimize=False,
         auto_fit=(choice == "autofit"),
         encoder_gpu_index=other if split else None,
         # Résidence explicite : le calcul ET les poids de l'encodeur vont sur
@@ -120,11 +100,11 @@ def _headline(prefs: dict | None = None) -> str:
     """
     prefs = prefs if prefs is not None else settings.load_prefs()
     bias = hardware.bias_from_prefs(prefs)
-    prof = hardware.biased_profile(bias, prefs.get("gpu_index"))
+    prof = hardware.biased_profile(bias, settings.generation_gpu_index(prefs))
     gpus = hardware.detect_gpus()
 
     if prof.gpu is None:
-        return t("### ⚠️ No NVIDIA card detected\nThe app will run on the "
+        return t("### ⚠️ No compatible GPU detected\nThe app will run on the "
                  "processor: that is **very slow** (minutes per image). Check "
                  "your drivers, or type `nvidia-smi` in a terminal.")
 
@@ -137,22 +117,60 @@ def _headline(prefs: dict | None = None) -> str:
         lines.append(t("Second card available: {other}.").format(
             other=others))
 
-    lines += ["", t("**What the app does with it, without asking you anything:**")]
-    lines.append(t("- the image model is loaded as `{quant}` — the best "
-                   "trade-off that fits in {vram} GB;").format(
-                       quant=prof.quant, vram=f"{prof.gpu.vram_gb:.0f}"))
-    lines.append(t("- your text is analysed as `{enc}`, **kept in RAM**: it "
-                   "takes no room on the card;").format(
-                       enc=prof.enc_quant))
+    if prefs.get("system_mode") == "auto":
+        lines += ["", t("**Automatic system setup, recalculated for each model:**")]
+        lines.append(t("- choose the image and text weights for this model "
+                       "from the hardware profile or your Model Catalog choice;"))
+        lines.append(t("- inspect the installed image weights and free VRAM "
+                       "at generation time, then place image and text weights "
+                       "separately when sd.cpp supports it;"))
+    else:
+        lines += ["", t("**Manual system setup active:** the saved expert "
+                         "flags, weight choices and GPU placement are used.")]
+        return "\n".join(lines)
     lines.append(
         t("- “flash attention” acceleration is on (your card supports it);") if prof.diffusion_fa else
         t("- “flash attention” stays off: your card lacks the units for it, "
           "turning it on would slow things down;"))
-    lines.append(
-        t("- the final image is assembled in pieces, so the card is not "
-          "saturated at the last moment.") if prof.vae_tiling else
-        t("- the final image is assembled in one piece: you have the room, so "
-          "no seams."))
+    lines.append(t("- image assembly uses memory-saving tiles when the "
+                   "model or output size needs them."))
+    return "\n".join(lines)
+
+
+def _system_table(prefs: dict | None = None) -> str:
+    """Preview by model; the engine recalculates from free VRAM on every run."""
+    prefs = prefs if prefs is not None else settings.load_prefs()
+    if prefs.get("system_mode") != "auto":
+        return ("**Manual mode:** your saved system settings are active. "
+                "Switch to Automatic to let each model choose its placement.")
+    from ..engine import sdcpp
+    sd_cli = settings.find_sd_cli()
+    gpu = hardware.auto_profile(settings.generation_gpu_index(prefs)).gpu
+    free = hardware.free_vram_gb(gpu.index) if gpu and not gpu.is_apple else None
+    lines = ["**System choices by model** — preview from installed weights. "
+             "The available memory is checked again for each generation.",
+             "", "| Model | Image weights | Text weights | Placement |",
+             "|---|---:|---:|---|"]
+    for model in registry.load_base_models(prefs):
+        by_role = {c.role: registry.resolve_component_path(c)
+                   for c in model.components if not c.optional}
+        image = by_role.get("diffusion") or by_role.get("model")
+        vae = by_role.get("vae")
+        if not registry.model_is_ready(model) or not image:
+            lines.append(f"| {model.name} | Download required | — | "
+                         "Computed after download |")
+            continue
+        files = {"diffusion": image, "vae": vae,
+                 "enc": by_role.get("text_encoder")}
+        plan = system_profile.plan_for_model(
+            model, files, prefs, sd_cli,
+            width=int(model.defaults.get("width", 1024)),
+            height=int(model.defaults.get("height", 1024)),
+            available_gib=free)
+        image_size = f"{plan.image_gib:.1f} GiB" if plan.image_gib else "—"
+        enc_size = f"{plan.encoder_gib:.1f} GiB" if plan.encoder_gib else "—"
+        lines.append(f"| {model.name} | {image_size} | {enc_size} | "
+                     f"{plan.placement} |")
     return "\n".join(lines)
 
 
@@ -160,15 +178,17 @@ def _bias_note(bias: str, prefs: dict | None = None) -> str:
     """Ce que le cran choisi change — une raison, puis un chiffre."""
     prefs = prefs if prefs is not None else settings.load_prefs()
     spec = hardware.BIASES.get(bias) or hardware.BIASES["balanced"]
-    idx = prefs.get("gpu_index")
+    idx = settings.generation_gpu_index(prefs)
     prof = hardware.biased_profile(bias, idx)
     ref = hardware.biased_profile("balanced", idx)
     detail = t(spec["why"])
     if prof.quant != ref.quant:
-        detail += t("  \n→ model loaded as `{quant}` instead of `{ref}`."
+        detail += t("  \n→ base GGUF target `{quant}` instead of `{ref}`."
                     ).format(quant=prof.quant, ref=ref.quant)
     else:
-        detail += t("  \n→ model loaded as `{quant}`.").format(quant=prof.quant)
+        detail += t("  \n→ base GGUF target `{quant}`.").format(quant=prof.quant)
+    detail += t(" Individual models can adjust this target; an explicit "
+                "Catalog weight always takes priority.")
     return detail
 
 
@@ -180,20 +200,32 @@ def build_settings_tab():
 
         headline = gr.Markdown(_headline(prefs))
         status = gr.Markdown("", elem_classes="feedback", visible=False)
+        mode = gr.Radio(
+            [("Automatic for each model (recommended)", "auto"),
+             ("Manual / measured configuration", "manual")],
+            value=prefs.get("system_mode", "auto"), label="System settings",
+            info="Automatic uses the installed model's actual weight sizes and "
+                 "free VRAM every time you generate. Manual keeps your saved "
+                 "expert settings.")
+        model_plans = gr.Markdown(_system_table(prefs))
+        refresh_plans = gr.Button("Refresh model system choices", size="sm")
 
         # ------------------------------------------------------------------ #
         #  LE réglage : marge mémoire ou détail
         # ------------------------------------------------------------------ #
-        gr.Markdown(t(
-            "---\n### The one question we ask you\nEverything else is "
-            "computed from your card. This one cannot be, because it is a "
-            "preference: do you want **headroom** (it always fits) or "
-            "**detail** (finer, but tighter on memory)?"))
+        gr.Markdown(t("Balanced automatically gives each model room to run. "
+                      "Adjust the priority only if you need more headroom or "
+                      "detail."))
+        show_bias = gr.Button("Change memory / detail priority (optional)",
+                              size="sm")
         _bias = hardware.bias_from_prefs(prefs)
         bias = gr.Radio(
             [(t(spec["label"]), key) for key, spec in hardware.BIASES.items()],
-            value=_bias, label="Priority", show_label=False)
-        bias_note = gr.Markdown(_bias_note(_bias, prefs))
+            value=_bias, label="Priority", show_label=False, visible=False)
+        bias_note = gr.Markdown(_bias_note(_bias, prefs), visible=False)
+        show_bias.click(lambda: (gr.update(visible=True),
+                                 gr.update(visible=True)),
+                        outputs=[bias, bias_note])
         # Le vrai mode d'emploi : partir du SYMPTÔME. C'est ainsi qu'on arrive
         # sur cette page — pas en se demandant « quelle quantification ? ».
         # Deux des trois réponses renvoient ailleurs, et c'est volontaire :
@@ -201,54 +233,43 @@ def build_settings_tab():
         gr.Markdown(t(
             "> **Something specific going wrong?**  \n> *“Out of memory / "
             "generation stops”* → pick **🪶 More memory headroom** above.  \n> "
-            "*“It is too slow”* → choose a smaller **image size** or a faster "
-            "model in the generation tab; steps are tuned to each model "
-            "automatically (Custom sampling lets you change them).  \n> "
-            "*“My images look dull”* → not here either: that is "
+            "*“It is too slow”* → not settled here but in the generation tab: "
+            "lower the **step count** and the **image size**, which weigh far "
+            "more.  \n> *“My images look dull”* → not here either: that is "
             "the **prompt** and the **styles**, not a hardware setting."))
 
         # ------------------------------------------------------------------ #
         #  Profils de MACHINE — un bouton par tour connue
         # ------------------------------------------------------------------ #
-        # Placés ICI et pas sous « Expert » : ce sont eux qui évitent d'aller
-        # y toucher. Un profil ne s'affiche que si SES cartes sont présentes —
-        # un bouton « profil bureau » sur une machine qui n'a pas la carte est
-        # un bouton qui ment.
         _presets = hardware.available_presets()
         preset_buttons = []
-        if _presets:
-            gr.Markdown(t(
-                "---\n### This machine is one we know\nOne click sets the "
-                "card assignment, the quantization and the memory options "
-                "that were **measured** on it — including the two things the "
-                "automatic profile cannot guess: never letting a Pascal card "
-                "encode text, and giving an 11 GB card a compute budget so it "
-                "does not run out mid-image."))
-            with gr.Row():
-                for _preset, _cards in _presets:
-                    preset_buttons.append(
-                        (_preset, gr.Button(t(_preset.label), size="sm")))
-            preset_status = gr.Markdown("", elem_classes="feedback",
-                                        visible=False)
-
         gpu = gr.Dropdown(
-            label="Card used for generating", choices=_gpu_choices(),
-            value=prefs.get("gpu_index"), visible=multi_gpu,
-            info=t("The most powerful one is used by default."))
+            label="Card used for generating",
+            choices=[("Automatic (best card)", None)] + _gpu_choices(),
+            value=settings.generation_gpu_index(prefs), visible=multi_gpu,
+            info=t("Automatic picks the largest card (preferring tensor cores "
+                   "when VRAM ties). Set a card here only to override it."))
+        with gr.Column(visible=prefs.get("system_mode", "auto") == "manual"
+                       and bool(_presets or multi_gpu)) as manual_controls:
+            gr.Markdown("**Manual placement overrides** — optional. Applying "
+                        "one turns on Manual mode.")
+            if _presets:
+                with gr.Row():
+                    for _preset, _cards in _presets:
+                        preset_buttons.append(
+                            (_preset, gr.Button(t(_preset.label), size="sm")))
+                preset_status = gr.Markdown("", elem_classes="feedback",
+                                            visible=False)
+            if multi_gpu:
+                strategy = gr.Radio(
+                    [(t("Everything on one card — the most reliable"), "single"),
+                     (t("The 2nd card handles the text — frees memory for the "
+                        "image"), "encoder"),
+                     (t("Let sd.cpp place the weights — measure before "
+                        "believing it"), "autofit")],
+                    value=_strategy_of(prefs), label="Manual split",
+                    show_label=False)
         if multi_gpu:
-            gr.Markdown(t(
-                "---\n### You have two cards\nThere is no universally right "
-                "answer: it depends as much on the second card's **PCIe "
-                "slot** as on its memory. Rather than make you guess, the app "
-                "can **measure**."))
-            strategy = gr.Radio(
-                [(t("Everything on one card — the most reliable"), "single"),
-                 (t("The 2nd card handles the text — frees memory for the "
-                    "image"), "encoder"),
-                 (t("Let sd.cpp place the weights — measure before believing "
-                    "it"), "autofit")],
-                value=_strategy_of(prefs), label="Split",
-                show_label=False)
             tools_gpu = gr.Dropdown(
                 label="Card for the prompt enhancer",
                 choices=[(t("The same one as for the image"), None)] + _gpu_choices(),
@@ -291,9 +312,8 @@ def build_settings_tab():
             gr.Markdown(t(
                 "⚠️ **Nothing here is required.** These options exist because "
                 "sd.cpp exposes them, not because you should touch them. They "
-                "are set by measuring, not by guessing — and the slider above "
-                "already covers the usual cases. Touching this section "
-                "**turns off automatic tuning**."))
+                "are set by measuring, not by guessing. Changing a control "
+                "switches to **Manual** and keeps your chosen values."))
 
             gr.Markdown(t("**Forced quantization** — “auto” = let the app "
                           "decide from the card."))
@@ -321,9 +341,9 @@ def build_settings_tab():
 
             gr.Markdown(t(
                 "---\n**Cache between steps** — reuses computations from one "
-                "diffusion step to the next. Only pays off above ~10 steps; "
-                "our models run 4 to 8, so **leave it off** unless a "
-                "measurement says otherwise."))
+                "diffusion step to the next. Off in Automatic mode: it can "
+                "change the output, including on models that run many steps. "
+                "Measure before enabling it manually."))
             with gr.Row():
                 cache_mode = gr.Dropdown(
                     [(t("Disabled (recommended)"), ""),
@@ -402,40 +422,58 @@ def build_settings_tab():
         # ================================================================== #
         #  Câblage — tout s'applique à la volée
         # ================================================================== #
-        def _apply_bias(choice, gpu_idx):
-            prof = hardware.biased_profile(choice, gpu_idx)
-            # « Équilibré » RESTE l'automatique : c'est exactement ce qu'il
-            # calcule. Les deux autres crans sont un choix explicite, donc ils
-            # figent quant et flags — sinon le profil automatique les
-            # réécrirait au prochain démarrage et le réglage aurait l'air de
-            # « ne pas tenir ».
-            p = _save(auto_optimize=(choice == "balanced"),
-                      quant=None if choice == "balanced" else prof.quant,
-                      enc_quant=None if choice == "balanced" else prof.enc_quant,
-                      flags=prof.flags())
+        def _apply_mode(choice):
+            p = _save(system_mode=choice,
+                      auto_optimize=(choice == "auto"))
+            priority = hardware.bias_from_prefs(p)
+            return (_headline(p), _system_table(p),
+                    gr.update(visible=choice == "manual" and
+                              bool(_presets or multi_gpu)),
+                    _said(_OK + ("Automatic system setup is active for every "
+                                 "model." if choice == "auto" else
+                                 "Saved manual system settings are active.")),
+                    gr.update(value=priority), _bias_note(priority, p),
+                    gr.update(value=settings.generation_gpu_index(p)))
+
+        mode.change(_apply_mode, inputs=[mode],
+                    outputs=[headline, model_plans, manual_controls, status,
+                             bias, bias_note, gpu])
+        refresh_plans.click(lambda: _system_table(), outputs=[model_plans])
+
+        def _apply_bias(choice):
+            p = _save(system_mode="auto", auto_optimize=True,
+                      hardware_bias=choice)
             return (_headline(p), _bias_note(choice, p),
                     _said(_OK + t("Priority applied: **{label}**.").format(
-                        label=t(hardware.BIASES[choice]["label"]))))
+                        label=t(hardware.BIASES[choice]["label"]))),
+                    gr.update(value="auto"), _system_table(p))
 
-        bias.change(_apply_bias, inputs=[bias, gpu],
-                    outputs=[headline, bias_note, status])
+        bias.input(_apply_bias, inputs=[bias],
+                   outputs=[headline, bias_note, status, mode, model_plans])
 
-        def _apply_gpu(idx, choice):
-            _save(gpu_index=idx)
-            p = _apply_strategy_prefs(choice, idx)
-            return _headline(p), _said(_OK + t(
-                "Generation card: #{idx}.").format(idx=idx))
+        def _apply_gpu(idx, choice, selected_mode):
+            if selected_mode == "manual":
+                p = _save(gpu_index=idx)
+                p = _apply_strategy_prefs(choice, idx)
+            else:
+                p = _save(auto_gpu_index=idx)
+            label = f"#{idx}" if idx is not None else "automatic"
+            return (_headline(p), _said(_OK + t(
+                "Generation card: {idx}.").format(idx=label)),
+                    _system_table(p))
 
-        gpu.change(_apply_gpu, inputs=[gpu, strategy],
-                   outputs=[headline, status])
+        gpu.input(_apply_gpu, inputs=[gpu, strategy, mode],
+                  outputs=[headline, status, model_plans])
 
         if multi_gpu:
             def _apply_strategy(choice, idx):
                 p = _apply_strategy_prefs(choice, idx)
-                return _headline(p), _said(_OK + t(_STRATEGY_SAID[choice]))
+                return (_headline(p),
+                        _said(_OK + t(_STRATEGY_SAID[choice])),
+                        _system_table(p))
 
             strategy.change(_apply_strategy, inputs=[strategy, gpu],
-                            outputs=[headline, status])
+                            outputs=[headline, status, model_plans])
 
             def _apply_tools_gpu(v):
                 _save(text_gpu_index=v)
@@ -447,7 +485,7 @@ def build_settings_tab():
         # ---- Expert : chaque contrôle s'applique seul --------------------- #
         def _apply_expert(q, eq, fa_, off, til, clip, vae, cm, co,
                           cd, cv, mv, sl):
-            p = _save(auto_optimize=False,
+            p = _save(system_mode="manual", auto_optimize=False,
                       quant=None if q == "auto" else q,
                       enc_quant=None if eq == "auto" else eq,
                       flags={"diffusion_fa": bool(fa_),
@@ -463,14 +501,16 @@ def build_settings_tab():
             return (_headline(p),
                     _bias_note(hardware.bias_from_prefs(p), p),
                     _said(_OK + t("Expert setting applied (automatic tuning "
-                                  "off).")))
+                                  "off).")),
+                    gr.update(value="manual"), _system_table(p))
 
         _expert = [quant, enc_quant, fa, offload, tiling, clip_cpu, vae_cpu,
                    cache_mode, cache_opt, conv_diff, conv_vae, max_vram,
                    stream_layers]
         for comp in _expert:
             comp.change(_apply_expert, inputs=_expert,
-                        outputs=[headline, bias_note, expert_status])
+                        outputs=[headline, bias_note, expert_status, mode,
+                                 model_plans])
 
         # ---- Theme, accounts ---------------------------------------------- #
         def _apply_theme(th):
@@ -561,17 +601,18 @@ def build_settings_tab():
 
         def _apply_report(raw):
             if not raw:
-                return gr.update(), _said(t("❌ Run the measurement first."))
+                return (gr.update(), _said(t("❌ Run the measurement first.")),
+                        gr.update(), gr.update())
             try:
                 mode = benchmark.apply_recommendation(getattr(raw, "name", raw))
             except Exception as exc:  # noqa: BLE001
-                return gr.update(), _said(f"❌ {exc}")
-            return _headline(), _said(_OK + t(
+                return gr.update(), _said(f"❌ {exc}"), gr.update(), gr.update()
+            return (_headline(), _said(_OK + t(
                 "Measured configuration applied: **{mode}**.").format(
-                    mode=mode))
+                    mode=mode)), gr.update(value="manual"), _system_table())
 
         apply_bench.click(_apply_report, inputs=[bench_file],
-                          outputs=[headline, status])
+                          outputs=[headline, status, mode, model_plans])
 
         def _system_report():
             return (diagnostics.summary_markdown(),
@@ -582,7 +623,7 @@ def build_settings_tab():
         def _apply_machine_preset(key: str, label: str, summary: str):
             def _run():
                 values = hardware.preset_prefs(key)
-                p = _save(**values)
+                p = _save(system_mode="manual", **values)
                 #  La stratégie affichée doit suivre ce que le profil a
                 #  RÉELLEMENT posé : un profil mono-carte qui laisserait le
                 #  sélecteur sur « encodeur sur la 2e carte » se contredirait
@@ -591,10 +632,12 @@ def build_settings_tab():
                         gr.update(value=values["gpu_index"]),
                         gr.update(value=_strategy_of(p)),
                         gr.update(value=_OK + t(label) + " — " + t(summary),
-                                  visible=True))
+                                  visible=True),
+                        gr.update(value="manual"), _system_table(p))
             return _run
 
         for _preset, _btn in preset_buttons:
             _btn.click(_apply_machine_preset(_preset.key, _preset.label,
                                              _preset.summary),
-                       outputs=[headline, gpu, strategy, preset_status])
+                       outputs=[headline, gpu, strategy, preset_status, mode,
+                                model_plans])

@@ -117,38 +117,6 @@ def _presets(model_id: str) -> list[dict]:
     return list(m.presets) if (m and m.presets) else []
 
 
-def _sampling_values(model_id: str, mode: str, steps: int, cfg: float,
-                     sampler: str, schedule: str,
-                     flow_shift: float) -> tuple[int, float, str, str, float]:
-    """Resolve the catalog recipe at click time, ignoring stale hidden sliders.
-
-    Each model tab retains its own widget values. Those values only become
-    effective after the user explicitly switches to Custom sampling.
-    """
-    if mode == "auto":
-        defaults = _defaults(model_id)
-        if not defaults:
-            raise ValueError(f"Unknown model: {model_id}")
-        return (int(defaults["steps"]), float(defaults["cfg_scale"]),
-                defaults.get("sampler", "euler"),
-                defaults.get("scheduler", "auto"),
-                float(defaults.get("flow_shift", 0.0)))
-    return (int(steps), float(cfg), sampler, schedule,
-            float(flow_shift or 0.0))
-
-
-def _sampling_summary(defaults: dict) -> str:
-    scheduler = defaults.get("scheduler", "auto")
-    shift = float(defaults.get("flow_shift", 0.0))
-    return (f"**Automatic for this model:** {defaults['steps']} steps · "
-            f"CFG {defaults['cfg_scale']:g} · "
-            f"{defaults.get('sampler', 'euler')} sampler · "
-            f"{'model default' if scheduler == 'auto' else scheduler} schedule · "
-            f"{'automatic' if not shift else f'{shift:g}'} flow shift. "
-            "The catalog recipe is applied when you click Generate; "
-            "image size and seed remain your choices.")
-
-
 def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
     for label, (rw, rh) in ratios.items():
         if rw == w and rh == h:
@@ -526,76 +494,74 @@ def build_generative_tab(model_id: str, title: str,
                     value=t(_ratio_label(ratios, d.get("width", 1024),
                                          d.get("height", 1024))),
                     label="Aspect ratio")
-                with gr.Accordion("Custom dimensions", open=False) as dimensions:
-                    with gr.Row():
-                        width = gr.Slider(256, size_max,
-                                          value=d.get("width", 1024),
-                                          step=size_step, label="Width")
-                        height = gr.Slider(256, size_max,
-                                           value=d.get("height", 1024),
-                                           step=size_step, label="Height")
-                sampling_mode = gr.Radio(
-                    [("Automatic (recommended)", "auto"),
-                     ("Custom", "custom")], value="auto", label="Sampling")
-                auto_recipe = gr.Markdown(_sampling_summary(d),
-                                          elem_classes="hint")
-                with gr.Accordion("Advanced sampling", open=False,
-                                  visible=False) as advanced_sampling:
-                    with gr.Row():
-                        steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
-                                          label="Steps")
-                        cfg = gr.Slider(0.0, 12.0,
-                                        value=d.get("cfg_scale", 1.0),
-                                        step=0.1, label="CFG",
-                                        info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
-                                              "example; negative prompts can work."
-                                              if family == "qwen21" else
-                                              "On sd.cpp, CFG disabled = 1.0 "
-                                              "(normal for distilled models). 0.0 "
-                                              "= pure unconditional: may IGNORE "
-                                              "the prompt (Krea's “cfg 0” is its "
-                                              "own convention, ≠ sd.cpp). >1 = "
-                                              "guidance."))
-                    preset_list = _presets(model_id)
-                    preset = gr.Dropdown(
-                        [t(p["name"]) for p in preset_list],
-                        value=(t(preset_list[0]["name"]) if preset_list else None),
-                        label="Preset (sampler/scheduler/steps)",
-                        visible=bool(preset_list))
-                    # Menus annotés et fiche de conseil propre au modèle.
-                    with gr.Row():
-                        sampler = gr.Dropdown(
-                            sampling.choices("sampler", family),
-                            value=d.get("sampler", "euler"), label="Sampler",
-                            info="⭐ recommended · △ poorly suited · ⚠️ "
-                                 "discouraged for THIS model")
-                        schedule = gr.Dropdown(
-                            sampling.choices("schedule", family),
-                            value=d.get("scheduler", "auto"),
-                            label="Scheduler (sigmas)",
-                            info="How the denoising steps are spread out")
-                    with gr.Row():
-                        sampler_doc = gr.Markdown(
-                            sampling.describe("sampler", d.get("sampler", "euler"),
-                                              family), elem_classes="hint")
-                        schedule_doc = gr.Markdown(
-                            sampling.describe("schedule",
-                                              d.get("scheduler", "auto"), family),
-                            elem_classes="hint")
-                    sampler.change(
-                        lambda k: sampling.describe("sampler", k, family),
-                        inputs=[sampler], outputs=[sampler_doc])
-                    schedule.change(
-                        lambda k: sampling.describe("schedule", k, family),
-                        inputs=[schedule], outputs=[schedule_doc])
+                with gr.Row():
+                    width = gr.Slider(256, size_max, value=d.get("width", 1024),
+                                      step=size_step,
+                                      label="Width")
+                    height = gr.Slider(256, size_max, value=d.get("height", 1024),
+                                       step=size_step,
+                                       label="Height")
+                with gr.Row():
+                    steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
+                                      label="Steps")
+                    cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
+                                    step=0.1, label="CFG",
+                                    info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
+                                          "example; negative prompts can work."
+                                          if family == "qwen21" else
+                                          "On sd.cpp, CFG disabled = 1.0 "
+                                          "(normal for distilled models). 0.0 "
+                                          "= pure unconditional: may IGNORE "
+                                          "the prompt (Krea's “cfg 0” is its "
+                                          "own convention, ≠ sd.cpp). >1 = "
+                                          "guidance."))
+                preset_list = _presets(model_id)
+                preset = gr.Dropdown(
+                    [t(p["name"]) for p in preset_list],
+                    value=(t(preset_list[0]["name"]) if preset_list else None),
+                    label="Preset (sampler/scheduler/steps)",
+                    visible=bool(preset_list))
+                # Menus ANNOTÉS (⭐ recommandé · △ peu adapté · ⚠️ déconseillé)
+                # et fiche qui suit la sélection. Le verdict dépend du MODÈLE :
+                # distillé à CFG 1.0, en flow matching, sur 4 à 8 pas — trois
+                # propriétés qui disqualifient la moitié du menu.
+                with gr.Row():
+                    sampler = gr.Dropdown(
+                        sampling.choices("sampler", family),
+                        value=d.get("sampler", "euler"), label="Sampler",
+                        info="⭐ recommended · △ poorly suited · ⚠️ "
+                             "discouraged for THIS model")
+                    schedule = gr.Dropdown(
+                        sampling.choices("schedule", family),
+                        value=d.get("scheduler", "auto"),
+                        label="Scheduler (sigmas)",
+                        info="How the denoising steps are spread out")
+                with gr.Row():
+                    sampler_doc = gr.Markdown(
+                        sampling.describe("sampler", d.get("sampler", "euler"),
+                                          family), elem_classes="hint")
+                    schedule_doc = gr.Markdown(
+                        sampling.describe("schedule",
+                                          d.get("scheduler", "auto"), family),
+                        elem_classes="hint")
+                sampler.change(
+                    lambda k: sampling.describe("sampler", k, family),
+                    inputs=[sampler], outputs=[sampler_doc])
+                schedule.change(
+                    lambda k: sampling.describe("schedule", k, family),
+                    inputs=[schedule], outputs=[schedule_doc])
+                with gr.Accordion(("📖 Why Euler and Auto for Qwen 2.1" if
+                                   family == "qwen21" else
+                                   "📖 Why half of this menu is useless here"),
+                                  open=False):
                     gr.Markdown(sampling.rationale(family))
-                    flow_shift = gr.Slider(
-                        0.0, 12.0, value=float(d.get("flow_shift", 0.0)),
-                        step=0.1, label="Flow shift",
-                        info="Leave at 0 (auto): the model picks the right value "
-                             "for the resolution. Too low (1–2) leaves "
-                             "GRAIN/noise at high resolution; ~3–4 reinforces "
-                             "structure.")
+                flow_shift = gr.Slider(
+                    0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
+                    label="Flow shift",
+                    info="Leave at 0 (auto): the model picks the right value "
+                         "for the resolution. Too low (1–2) leaves "
+                         "GRAIN/noise at high resolution; ~3–4 reinforces "
+                         "structure.")
                 with gr.Row():
                     seed = gr.Number(value=-1, label="Seed (-1 = random)",
                                      precision=0)
@@ -800,18 +766,10 @@ def build_generative_tab(model_id: str, title: str,
         def on_ratio(label):
             w, h = ratios.get(i18n.to_source(label), (0, 0))
             if not w:
-                return gr.update(), gr.update(), gr.update(open=True)
-            return (gr.update(value=w), gr.update(value=h),
-                    gr.update(open=False))
+                return gr.update(), gr.update()
+            return gr.update(value=w), gr.update(value=h)
 
-        ratio.change(on_ratio, inputs=[ratio],
-                     outputs=[width, height, dimensions])
-
-        sampling_mode.change(
-            lambda mode: (gr.update(visible=mode == "auto"),
-                          gr.update(visible=mode == "custom",
-                                    open=mode == "custom")),
-            inputs=[sampling_mode], outputs=[auto_recipe, advanced_sampling])
+        ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
 
         # --- Améliorateur de prompt (LLM) ---
         # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
@@ -932,11 +890,6 @@ def build_generative_tab(model_id: str, title: str,
 
             preset.change(apply_preset, inputs=[preset],
                           outputs=[sampler, schedule, steps, cfg])
-            # Manual edits are no longer described as the selected preset.
-            # `input` fires on user interaction, not on values filled by the
-            # preset callback itself.
-            for control in (sampler, schedule, steps, cfg):
-                control.input(lambda: gr.update(value=None), outputs=[preset])
 
         def do_generate(selected_model_id, system_prompt, prompt, negative,
                         photo_styles, art_styles,
@@ -944,7 +897,7 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc, sampling_mode):
+                        custom_diff, custom_vae, custom_enc):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
             # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
@@ -956,14 +909,6 @@ def build_generative_tab(model_id: str, title: str,
             if not (prompt or "").strip():
                 raise gr.Error(t("Enter a prompt (describe the image, or the "
                                  "change to apply)."))
-
-            effective_model_id = selected_model_id or model_id
-            try:
-                steps, cfg, sampler, schedule, flow_shift = _sampling_values(
-                    effective_model_id, sampling_mode, steps, cfg, sampler,
-                    schedule, flow_shift)
-            except ValueError as exc:
-                raise gr.Error(str(exc)) from exc
 
             full_prompt = prompt or ""
             if (system_prompt or "").strip():
@@ -1067,7 +1012,7 @@ def build_generative_tab(model_id: str, title: str,
             def worker():
                 try:
                     outs = gen_engine.generate(
-                        model_id=effective_model_id, prompt=full_prompt,
+                        model_id=selected_model_id or model_id, prompt=full_prompt,
                         negative=neg_text or "", steps=int(steps),
                         cfg_scale=float(cfg), width=int(width), height=int(height),
                         seed=base_seed, batch_count=int(batch), sampler=sampler,
@@ -1186,7 +1131,7 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     circular,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc, sampling_mode],
+                    custom_diff, custom_vae, custom_enc],
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )

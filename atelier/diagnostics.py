@@ -70,6 +70,7 @@ def system_report() -> dict[str, Any]:
     # Seulement les choix qui influencent l'exécution. Ne jamais exporter les
     # jetons de téléchargement ni d'autres secrets de preferences.json.
     safe_pref_keys = (
+        "system_mode", "hardware_bias", "auto_gpu_index",
         "gpu_index", "encoder_gpu_index", "text_gpu_index", "auto_fit",
         "split_mode", "params_backend", "auto_optimize", "quant",
         "enc_quant", "flags", "cache_mode", "cache_option",

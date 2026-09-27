@@ -296,5 +296,6 @@ def apply_recommendation(report_path: str | Path) -> str:
     if not isinstance(patch, dict) or not patch:
         raise RuntimeError("This report holds no valid profile to apply.")
     prefs = _merge_prefs(settings.load_prefs(), patch)
+    prefs["system_mode"] = "manual"  # explicit measured placement must take effect
     settings.save_prefs(prefs)
     return str(data.get("recommended_mode") or "measured profile")

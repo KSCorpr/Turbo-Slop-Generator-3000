@@ -479,7 +479,10 @@ def auto_profile(gpu_index: int | None = None) -> Profile:
         if gpu_index is not None:
             gpu = next((g for g in gpus if g.index == gpu_index), None)
         if gpu is None:
-            gpu = max(gpus, key=lambda g: g.vram_gb)  # par défaut : la plus grosse
+            # À VRAM égale, une RTX doit gagner face à une Pascal : choisir
+            # selon l'ordre retourné par nvidia-smi pouvait envoyer le calcul
+            # fp16 sur la GTX 1080 Ti alors qu'une RTX 2080 Ti était présente.
+            gpu = max(gpus, key=lambda g: (g.vram_gb, g.tensor_cores))
         if len(gpus) > 1:
             notes.append(
                 t("{n} GPUs detected — compute pinned to #{idx} ({name}). "
@@ -824,6 +827,9 @@ def biased_profile(bias: str, gpu_index: int | None = None) -> Profile:
 
 def bias_from_prefs(prefs: dict) -> str:
     """Retrouve le cran choisi en comparant la quant enregistrée à l'auto."""
+    if prefs.get("system_mode") == "auto":
+        choice = prefs.get("hardware_bias", "balanced")
+        return choice if choice in BIASES else "balanced"
     if prefs.get("auto_optimize", True):
         return "balanced"
     saved = prefs.get("quant")

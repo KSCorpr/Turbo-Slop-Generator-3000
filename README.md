@@ -407,13 +407,7 @@ models. The model weights are MIT licensed.
 
 ## Generation options
 
-Generation tabs share prompt, styles, size and preview controls. **Sampling is
-automatic by default**: the catalog supplies the correct steps, CFG, sampler,
-scheduler and flow shift for the selected model each time you generate. The
-recipe is shown below the Sampling selector; switch to **Custom** to reveal
-the manual controls. Changing models never requires copying settings from one
-tab to another. Automatic weight selection still follows the detected hardware
-and any explicit choice in the Model catalog.
+Generation tabs share prompt, styles, size, sampler and preview controls.
 Ming Image currently supports text-to-image only; reference-image controls
 are hidden there.
 
@@ -508,29 +502,23 @@ best on these):
 - **Qwen 2.1** — a 32-px grid with 1024-class presets and native 2K formats
   (2048², 2400×1792, 2752×1536…).
 
-Pick a ratio from the dropdown; **Custom (sliders)** opens the dimensions
-controls for free width / height (256–2048, step 16 for most tabs including
-Ming; 256–2816, step 32 for Qwen). Loading a reference image auto-fits
-width/height to its aspect.
+Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
+height (256–2048, step 16 for most tabs including Ming; 256–2816, step 32
+for Qwen). Loading a reference image auto-fits width/height to its aspect.
 
 ### Sampler / scheduler / steps
-**Automatic (recommended)** applies the model's catalog recipe at generation
-time, even if manual sliders were adjusted earlier in the tab. The controls
-below appear when **Custom** is selected:
 - **Preset** — vetted combos per model (e.g. Flux.2 Klein → 4 steps / CFG 1.0 /
-  Euler + the engine's model schedule). Selecting one fills sampler, scheduler,
-  steps and CFG.
+  euler + simple). Selecting one fills sampler, scheduler, steps and CFG.
 - **Sampler** — all samplers supported by sd.cpp (euler, dpm++2m, res_multistep…).
   Each entry is **annotated for the model of the current tab** — ⭐ recommended,
   no mark = usable, △ poorly suited, ⚠️ discouraged — and the card below the menu
   spells out what the selected one does, its ✅ upside and its ❌ downside.
 - **Scheduler (sigmas)** — auto (model default), karras, simple, exponential…
   Annotated and documented the same way.
-- **Sampler explanation** — shown below the controls in Custom mode, explains
-  the verdicts from the model's own properties. See
+- **📖 Why half of this menu is useless here** — a fold-out that explains the
+  verdicts from the model's own properties. See
   [Samplers & schedulers](#samplers--schedulers) for the full reasoning.
-- **Steps** — diffusion steps. Flux.2 uses 4, Ming 12, Qwen 2.1 uses 40 by
-  default; use Custom only when intentionally overriding the recipe.
+- **Steps** — diffusion steps. Distilled models need few (4–8).
 - **CFG** — guidance. **1.0 = no guidance** (normal for distilled Flux). Values
   other than 1.0 are experimental on distilled models.
 - **Flow shift** — leave at **0 (auto)**: the model picks the right value for the
@@ -625,7 +613,7 @@ the division and, below 300 MB/s, says plainly that the models sit on a
 mechanical drive and what that costs per image. The case that prompted it read
 8.2 GB at **105 MB/s** — 65 s lost on every single image.
 
-Multi-GPU: the largest card is used by default, changeable in **Settings**
+Multi-GPU: the largest card is used by default (tensor cores break ties), changeable in **Settings**
 (see [Multi-GPU](#multi-gpu)).
 
 These map to stable-diffusion.cpp flags: `--diffusion-fa` (CUDA: faster + less
@@ -635,24 +623,28 @@ engine the app also separates **where computation runs** (`--backend`) from
 a slow PCIe link: an encoder can keep its weights on that GPU instead of staging
 them from RAM. The old CLIP/VAE-on-CPU flags remain compatibility fallbacks.
 
-### One question, not twenty
-The Settings tab asks you **exactly one thing**, because it is the only thing
-your hardware cannot answer for you:
+### Automatic system settings by model
+**Settings → System settings** starts on **Automatic for each model**. At every
+generation, the app checks the selected model's installed image weights, the
+VRAM actually free, the output size and any reference image. When the image
+weights fit with compute headroom, it keeps diffusion and VAE on the GPU and
+keeps the text encoder's weights in RAM while its computation runs on the GPU.
+When they do not fit, it asks a recent sd.cpp to place the modules automatically
+with a VRAM budget. Older engines use RAM staging and layer streaming if the
+respective options exist. The system choices table shows a preview for every
+installed model; the available VRAM is measured again on each run. Installing
+a model or changing a GGUF weight can therefore change its system plan without
+touching Settings.
 
-> **More memory headroom · Balanced (recommended) · More detail**
-
-Everything else — quantization, offload, tiling, flash-attention — is derived
-from the detected card and simply *reported*, in consequences rather than flag
-names ("the final image is assembled in pieces, so the card is not saturated at
-the last moment" rather than `vae_tiling=True`). The three-notch choice shifts
-the diffusion quant one rung along `QUANT_LADDER` and tightens or relaxes the
-memory options with it; the line under the radio states the actual change
-("model loaded as `Q5_K_M` instead of `Q4_K_M`").
+**Balanced** needs no adjustment. The optional **More memory headroom / More
+detail** priority shifts the automatic GGUF target one notch. An explicit GGUF
+choice in the Model Catalog still wins. The app cannot make a model with
+insufficient RAM or disk space fit; automatic placement can be slower when
+weights have to leave VRAM.
 
 A short **"Something specific going wrong?"** block maps symptoms to actions,
-and two of its three answers deliberately point *elsewhere*: "too slow" calls
-for a smaller image or a faster model (or Custom sampling for fewer steps),
-"images look dull" is the
+and two of its three answers deliberately point *elsewhere*: "too slow" is the
+step count and image size in the generation tab, "images look dull" is the
 prompt and the styles. Pretending everything is solved in Settings is what sent
 people hunting through checkboxes in the first place.
 
@@ -661,16 +653,14 @@ to itself. A Save button is one more chance to wonder whether the change was
 taken into account — and the theme already saved itself, which made the rest
 ambiguous.
 
-**When the answer needs measuring, the app measures.** The multi-GPU placement
-depends on the second card's PCIe link as much as on its memory, so instead of
-asking you to bet there is a button that runs the comparison (see
+**Manual / measured configuration** restores saved expert flags, quantization
+and GPU placement. The benchmark still compares configurations without saving
+them and its **Apply the fastest** button switches to Manual (see
 [Measured hardware profile](#measured-hardware-profile)).
 
-Everything sd.cpp exposes and nobody needs to touch lives under a single folded
-**🔧 Expert** section, which says in its first line that nothing in it is
-required and that touching it turns automatic tuning off. `tests/test_ui_shape.py`
-keeps the shape honest: no tabs inside the tab, at most three folded sections,
-exactly one control visible up front on a single-GPU machine, and no Save button.
+Everything sd.cpp exposes for deliberate overrides lives under the folded
+**🔧 Expert** section. Changing any Expert control switches to Manual;
+returning to Automatic preserves the previous manual settings for later.
 
 ### Per-generation presets
 `hardware.GENERATIONS` still holds a curated profile per RTX generation (**GTX
@@ -678,12 +668,14 @@ exactly one control visible up front on a single-GPU machine, and no Save button
 speed/quality bias per generation, encoder quant from RAM, memory flags
 (flash-attention off on Pascal, VAE tiling / CPU offload on tighter cards). It is
 no longer a row of five buttons in the interface — the three-notch choice covers
-the same ground with one decision instead of five — but `generation_profile()`
-remains the reference used by the auto profile and the tests.
+the same ground with one decision instead of five. `generation_profile()`
+remains available for diagnosing and comparing older hardware presets;
+Automatic uses the detected GPU, RAM and the selected model's installed files.
 
-### Machine profiles — one button per known tower
-Two machines are described in the app, and each gets a button in **Settings**
-when its cards are actually present:
+### Machine profiles — manual overrides
+Two measured machine profiles remain available when **Manual** is selected and
+the corresponding cards are present. The new automatic mode does its placement
+per installed image model, without applying one fixed profile to every model:
 
 | Profile | Cards | What it sets that the automatic profile cannot guess |
 |---|---|---|
