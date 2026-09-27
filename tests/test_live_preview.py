@@ -28,7 +28,10 @@ class LivePreviewTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(settings, "TMP_DIR", Path(tmp)):
+            calls = []
+
             def fake_generate(**kw):
+                calls.append(kw)
                 for step in range(3):
                     name = str(kw["preview_path"]).replace("%03d",
                                                           f"{step:03d}")
@@ -47,6 +50,18 @@ class LivePreviewTests(unittest.TestCase):
             self.assertEqual([frame.getpixel((0, 0))[0] for frame in frames],
                              [1, 2, 3])
             self.assertFalse(list(Path(tmp).glob("preview_*.png")))
+            # A stale/manual steps slider cannot override Qwen's catalog recipe
+            # while automatic sampling is active (the UI starts in this mode).
+            self.assertEqual((calls[0]["steps"], calls[0]["cfg_scale"],
+                              calls[0]["sampler"], calls[0]["schedule"]),
+                             (40, 6.0, "euler", "auto"))
+
+            # The same visible controls become effective in Custom mode.
+            inputs[-1] = "custom"
+            with patch.object(generate_tab.gen_engine, "generate",
+                              side_effect=fake_generate):
+                list(handler(*inputs))
+            self.assertEqual(calls[1]["steps"], 3)
 
 
 if __name__ == "__main__":

@@ -201,9 +201,10 @@ def build_settings_tab():
         gr.Markdown(t(
             "> **Something specific going wrong?**  \n> *“Out of memory / "
             "generation stops”* → pick **🪶 More memory headroom** above.  \n> "
-            "*“It is too slow”* → not settled here but in the generation tab: "
-            "lower the **step count** and the **image size**, which weigh far "
-            "more.  \n> *“My images look dull”* → not here either: that is "
+            "*“It is too slow”* → choose a smaller **image size** or a faster "
+            "model in the generation tab; steps are tuned to each model "
+            "automatically (Custom sampling lets you change them).  \n> "
+            "*“My images look dull”* → not here either: that is "
             "the **prompt** and the **styles**, not a hardware setting."))
 
         # ------------------------------------------------------------------ #

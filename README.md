@@ -407,7 +407,13 @@ models. The model weights are MIT licensed.
 
 ## Generation options
 
-Generation tabs share prompt, styles, size, sampler and preview controls.
+Generation tabs share prompt, styles, size and preview controls. **Sampling is
+automatic by default**: the catalog supplies the correct steps, CFG, sampler,
+scheduler and flow shift for the selected model each time you generate. The
+recipe is shown below the Sampling selector; switch to **Custom** to reveal
+the manual controls. Changing models never requires copying settings from one
+tab to another. Automatic weight selection still follows the detected hardware
+and any explicit choice in the Model catalog.
 Ming Image currently supports text-to-image only; reference-image controls
 are hidden there.
 
@@ -502,23 +508,29 @@ best on these):
 - **Qwen 2.1** — a 32-px grid with 1024-class presets and native 2K formats
   (2048², 2400×1792, 2752×1536…).
 
-Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
-height (256–2048, step 16 for most tabs including Ming; 256–2816, step 32
-for Qwen). Loading a reference image auto-fits width/height to its aspect.
+Pick a ratio from the dropdown; **Custom (sliders)** opens the dimensions
+controls for free width / height (256–2048, step 16 for most tabs including
+Ming; 256–2816, step 32 for Qwen). Loading a reference image auto-fits
+width/height to its aspect.
 
 ### Sampler / scheduler / steps
+**Automatic (recommended)** applies the model's catalog recipe at generation
+time, even if manual sliders were adjusted earlier in the tab. The controls
+below appear when **Custom** is selected:
 - **Preset** — vetted combos per model (e.g. Flux.2 Klein → 4 steps / CFG 1.0 /
-  euler + simple). Selecting one fills sampler, scheduler, steps and CFG.
+  Euler + the engine's model schedule). Selecting one fills sampler, scheduler,
+  steps and CFG.
 - **Sampler** — all samplers supported by sd.cpp (euler, dpm++2m, res_multistep…).
   Each entry is **annotated for the model of the current tab** — ⭐ recommended,
   no mark = usable, △ poorly suited, ⚠️ discouraged — and the card below the menu
   spells out what the selected one does, its ✅ upside and its ❌ downside.
 - **Scheduler (sigmas)** — auto (model default), karras, simple, exponential…
   Annotated and documented the same way.
-- **📖 Why half of this menu is useless here** — a fold-out that explains the
-  verdicts from the model's own properties. See
+- **Sampler explanation** — shown below the controls in Custom mode, explains
+  the verdicts from the model's own properties. See
   [Samplers & schedulers](#samplers--schedulers) for the full reasoning.
-- **Steps** — diffusion steps. Distilled models need few (4–8).
+- **Steps** — diffusion steps. Flux.2 uses 4, Ming 12, Qwen 2.1 uses 40 by
+  default; use Custom only when intentionally overriding the recipe.
 - **CFG** — guidance. **1.0 = no guidance** (normal for distilled Flux). Values
   other than 1.0 are experimental on distilled models.
 - **Flow shift** — leave at **0 (auto)**: the model picks the right value for the
@@ -638,8 +650,9 @@ memory options with it; the line under the radio states the actual change
 ("model loaded as `Q5_K_M` instead of `Q4_K_M`").
 
 A short **"Something specific going wrong?"** block maps symptoms to actions,
-and two of its three answers deliberately point *elsewhere*: "too slow" is the
-step count and image size in the generation tab, "images look dull" is the
+and two of its three answers deliberately point *elsewhere*: "too slow" calls
+for a smaller image or a faster model (or Custom sampling for fewer steps),
+"images look dull" is the
 prompt and the styles. Pretending everything is solved in Settings is what sent
 people hunting through checkboxes in the first place.
 
