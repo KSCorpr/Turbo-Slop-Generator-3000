@@ -127,10 +127,9 @@ def items(prefs: dict | None = None) -> list[Item]:
                              "them removes them all. Downloadable again: "
                              "Model catalog.")
 
-    # Video lives outside the image catalog, but its three repositories take
-    # tens of GB and must remain visible in disk inventory / cleanup.
+    # Both video diffusion modes share an encoder and VAE; count all repositories.
     out.append(Item(
-        "model_minimax_h3_turbo", "Model — MiniMax H3 Turbo (video)", "Models",
+        "model_minimax_h3_turbo", "Model — MiniMax H3 Turbo / Ref2VA (video)", "Models",
         [settings.model_repo_dir(repo) for repo in
          (video.DIFFUSION_REPO, video.ENCODER_REPO, video.VAE_REPO)],
         note="Deletes all H3 weight variants in these repositories. "

@@ -1,4 +1,4 @@
-"""MiniMax H3 Turbo: three video-only weights, shared across all video modes."""
+"""MiniMax H3 video weights: separate Turbo and Ref2VA diffusion checkpoints."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +16,10 @@ DIFFUSION = {
     "minimax_h3_fl2v_turbo_4step_v1.0_768p_Q4_0.gguf": 11.4e9,
     "minimax_h3_fl2v_turbo_4step_v1.0_768p_Q8_0.gguf": 21.4e9,
 }
+REF_DIFFUSION = {
+    "minimax_h3_ref2va_pruned-Q2_K_M.gguf": 6.72e9,
+    "minimax_h3_ref2va_pruned-Q4_K_M.gguf": 11.4e9,
+}
 ENCODERS = {
     "qwen3vl_32b_minimax_h3-Q2_K_M.gguf": 13.1e9,
     "qwen3vl_32b_minimax_h3-Q4_K_M.gguf": 18.2e9,
@@ -23,37 +27,52 @@ ENCODERS = {
 VAE = "vae/minimax_h3_video_vae_fp16.safetensors"
 VAE_SIZE = 5.21e9
 DEFAULT_DIFFUSION = next(iter(DIFFUSION))
+DEFAULT_REF_DIFFUSION = next(iter(REF_DIFFUSION))
 DEFAULT_ENCODER = next(iter(ENCODERS))
 
 
-def selected(prefs: dict | None = None) -> tuple[str, str]:
+def _diffusions(mode: str) -> tuple[str, dict[str, float], str, str]:
+    if mode == "turbo":
+        return DIFFUSION_REPO, DIFFUSION, "diffusion", DEFAULT_DIFFUSION
+    if mode == "refs":
+        return ENCODER_REPO, REF_DIFFUSION, "ref_diffusion", DEFAULT_REF_DIFFUSION
+    raise ValueError("Unknown MiniMax H3 video mode.")
+
+
+def selected(prefs: dict | None = None, *, mode: str = "turbo") -> tuple[str, str]:
     prefs = prefs if prefs is not None else settings.load_prefs()
     choices = prefs.get("video_model_files") or {}
     if not isinstance(choices, dict):
         choices = {}
-    diffusion = choices.get("diffusion")
+    _, diffusions, key, default = _diffusions(mode)
+    diffusion = choices.get(key)
     encoder = choices.get("text_encoder")
-    return (diffusion if diffusion in DIFFUSION else DEFAULT_DIFFUSION,
+    return (diffusion if diffusion in diffusions else default,
             encoder if encoder in ENCODERS else DEFAULT_ENCODER)
 
 
-def weights(diffusion: str, encoder: str) -> tuple[Path, Path, Path]:
-    if diffusion not in DIFFUSION or encoder not in ENCODERS:
+def weights(diffusion: str, encoder: str, *, mode: str = "turbo") -> tuple[Path, Path, Path]:
+    repo, diffusions, _, _ = _diffusions(mode)
+    if diffusion not in diffusions or encoder not in ENCODERS:
         raise ValueError("Choose MiniMax H3 weights from the Model Catalog.")
-    return (settings.model_repo_dir(DIFFUSION_REPO) / diffusion,
+    return (settings.model_repo_dir(repo) / diffusion,
             settings.model_repo_dir(ENCODER_REPO) / encoder,
             settings.model_repo_dir(VAE_REPO) / VAE)
 
 
-def ready(diffusion: str, encoder: str) -> bool:
+def ready(diffusion: str, encoder: str, *, mode: str = "turbo") -> bool:
     return all(p.is_file() and p.stat().st_size > 0
-               for p in weights(diffusion, encoder))
+               for p in weights(diffusion, encoder, mode=mode))
 
 
 def choices(role: str, *, exact: bool = False) -> list[tuple[str, str]]:
-    """Offer only files that are known to run as standalone FL2VA GGUF weights."""
-    repo, names = ((DIFFUSION_REPO, DIFFUSION) if role == "diffusion"
-                   else (ENCODER_REPO, ENCODERS))
+    """Offer verified H3 files, showing their sizes and installed status."""
+    if role == "text_encoder":
+        repo, names = ENCODER_REPO, ENCODERS
+    elif role in ("diffusion", "ref_diffusion"):
+        repo, names, _, _ = _diffusions("turbo" if role == "diffusion" else "refs")
+    else:
+        raise ValueError("Unknown MiniMax H3 weight type.")
     sizes = dict(names)
     if exact:
         settings.configure_hf_env()
@@ -77,12 +96,14 @@ def choices(role: str, *, exact: bool = False) -> list[tuple[str, str]]:
 
 
 def download(diffusion: str, encoder: str,
-             log: Callable[[str], None] | None = None) -> Iterator[str]:
-    weights(diffusion, encoder)  # Reject arbitrary paths before downloading.
-    specs = (("diffusion", DIFFUSION_REPO, diffusion),
+             log: Callable[[str], None] | None = None, *,
+             mode: str = "turbo") -> Iterator[str]:
+    weights(diffusion, encoder, mode=mode)  # Reject arbitrary paths.
+    repo, _, _, _ = _diffusions(mode)
+    specs = (("diffusion", repo, diffusion),
              ("text_encoder", ENCODER_REPO, encoder),
              ("vae", VAE_REPO, VAE))
-    yield "Downloading MiniMax H3 Turbo video weights (no audio VAE)…"
+    yield f"Downloading MiniMax H3 {mode} video weights (no audio VAE)…"
     for role, repo, name in specs:
         yield f"  ↓ {role}: {repo}/{name}"
         comp = Component(role, repo, name, None)
@@ -90,15 +111,17 @@ def download(diffusion: str, encoder: str,
         yield f"  ✓ {role}: {name}"
 
 
-def delete(diffusion: str, encoder: str) -> int:
+def delete(diffusion: str, encoder: str, *, mode: str = "turbo") -> int:
     """Remove the chosen H3 weights only; never remove other models' files."""
     count = 0
-    dit, te, vae = weights(diffusion, encoder)
+    dit, te, vae = weights(diffusion, encoder, mode=mode)
+    repo, diffusions, _, _ = _diffusions(mode)
     other_diffusion = any(
-        (settings.model_repo_dir(DIFFUSION_REPO) / name).is_file()
-        for name in DIFFUSION if name != diffusion)
-    # All H3 diffusion quantizations share the same encoder and video VAE.
-    # Leave those components in place while another quantization is installed.
+        (settings.model_repo_dir(other_repo) / name).is_file()
+        for other_repo, names in ((DIFFUSION_REPO, DIFFUSION),
+                                  (ENCODER_REPO, REF_DIFFUSION))
+        for name in names if (other_repo, name) != (repo, diffusion))
+    # Both modes and all quantizations use the same encoder and video VAE.
     paths = (dit,) if other_diffusion else (dit, te, vae)
     for path in paths:
         if path.is_file():

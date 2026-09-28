@@ -50,7 +50,7 @@ per model; adding a model adds a tab, never a setting.)
 | 🟢 **Z-Image Turbo** | 6B, 8 steps · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for the distilled engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) · **MiniMax H3 Turbo** (video only) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) · **MiniMax H3 Turbo / Ref2VA** (video only) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
 The exact tab tree, since two of the nine are containers:
@@ -59,7 +59,7 @@ The exact tab tree, since two of the nine are containers:
 🟣 Flux.2 Klein 9B   Qwen Image 2.1   Ming Image
 ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
 💊 Xanax   📚 Model Catalog
-🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D  ·  🎬 Video · H3 Turbo
+🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D  ·  🎬 Video · MiniMax H3
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
 
 🧰 Toolkit  → 📝 Image → prompt · 🌐 Depth · ✂️ Background removal
@@ -403,9 +403,9 @@ background and download the output PNG to keep its alpha channel. Its step
 previews use VAE decoding, so preview updates may take longer than with other
 models. The model weights are MIT licensed.
 
-### MiniMax H3 Turbo · video only
+### MiniMax H3 Turbo and Ref2VA · video only
 
-In **Model Catalog → MiniMax H3 Turbo**, choose a standalone 4-step GGUF
+In **Model Catalog → MiniMax H3**, choose a standalone 4-step Turbo GGUF
 diffusion weight and an H3-specific Qwen3-VL encoder. Their sizes are displayed
 next to each option; **Load exact sizes** refreshes the repositories' file
 metadata. Download also installs the video VAE. The default files are the
@@ -413,7 +413,7 @@ metadata. Download also installs the video VAE. The default files are the
 VAE (about 30 GB on disk). There is **no audio VAE** download. The Turbo
 checkpoint is already merged; no separate base checkpoint or LoRA is needed.
 
-Use **Tools → Video · H3 Turbo** for text-to-video, image-to-video, or optional
+Use **Tools → Video · MiniMax H3 → Turbo** for text-to-video, image-to-video, or optional
 first/last-frame conditioning. The app fixes the model-specific parameters to
 **4 steps, Euler, CFG 1, flow shift 6, 24 fps**. Choose 22, 39 or 56 frames
 and a resolution; the default is 864×480 and 22 frames. Weight placement and
@@ -424,6 +424,20 @@ app installs it into its own Python on the first conversion. **Tools → Video
 → Convert a completed AVI** can convert an earlier video from `outputs/`
 without loading H3 or generating anything again. Download the clip from the
 video player. Update sd.cpp through `update.bat` / `./update.sh` first.
+
+For a video guided by **one, two or three reference images**, choose
+**References** in the video tab. Download a **Ref2VA** diffusion GGUF in
+**Model Catalog → MiniMax H3**: Q2_K_M is approximately 6.72 GB, Q4_K_M
+approximately 11.4 GB. The already selected H3 text encoder and video VAE
+are reused, so installing both modes does not duplicate them. Place images
+in Picture 1–3 without gaps, then describe their roles in the prompt, for
+example: `Use the person from <Picture 1>, the outfit from <Picture 2>,
+and the setting from <Picture 3> for a moving cinematic shot.` They guide
+appearance and identity; they are not keyframes at fixed times. Ref2VA uses
+**50 steps, Euler, CFG 1, flow shift 12 and 24 fps**; on a 12 GB GPU this
+will generally take much longer than the four-step Turbo mode. Ref2VA is a
+different diffusion checkpoint from the first/last-frame Turbo model. Both
+save silent MP4 video; the AVI recovery control also supports Ref2VA runs.
 
 The Q4_0 diffusion file alone uses almost all the VRAM of a standard
 RTX 2080 Ti, leaving too little room for computation; auto-fit may keep

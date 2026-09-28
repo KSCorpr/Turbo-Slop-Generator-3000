@@ -49,68 +49,101 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
 
 def _build_h3_catalog():
     """Keep video weights separate from image models and their encoder presets."""
-    gr.Markdown("---\n### 🎬 MiniMax H3 Turbo · video only\n"
-                "Standalone merged 4-step GGUF, one H3-specific text encoder "
-                "and a video VAE. No audio model is downloaded. The Q4_0 "
-                "diffusion weight alone is about 11.4 GB; a GPU with less "
-                "VRAM uses automatic placement and compute segmentation.")
+    gr.Markdown("---\n### 🎬 MiniMax H3 · video only\n"
+                "Turbo uses a merged 4-step GGUF for text and first/last "
+                "frames. Ref2VA uses a separate GGUF for 1–3 reference "
+                "images (50 steps). Both modes share the same H3 text "
+                "encoder and video VAE; no audio model is downloaded. "
+                "Weight placement and compute segmentation are automatic.")
     d, e = video.selected()
-    status = gr.Markdown("**Weights ready.**" if video.ready(d, e) else
-                         "**Weights missing.** Select and download the "
-                         "three files below.")
+    rd, _ = video.selected(mode="refs")
+
+    def _status():
+        td, te = video.selected()
+        refd, refe = video.selected(mode="refs")
+        turbo = "ready" if video.ready(td, te) else "missing weights"
+        refs = ("ready" if video.ready(refd, refe, mode="refs")
+                else "missing weights")
+        return f"**Turbo:** {turbo} · **References:** {refs}."
+
+    status = gr.Markdown(_status())
     with gr.Row():
         diffusion = gr.Dropdown(choices=video.choices("diffusion"), value=d,
                                 label="Turbo diffusion · GGUF")
+        ref_diffusion = gr.Dropdown(choices=video.choices("ref_diffusion"),
+                                    value=rd, label="Ref2VA diffusion · GGUF")
         encoder = gr.Dropdown(choices=video.choices("text_encoder"), value=e,
-                              label="H3 text encoder · GGUF")
+                              label="Shared H3 text encoder · GGUF")
     gr.Markdown(f"Video VAE · {video.VAE} — {video.VAE_SIZE / 1e9:.2f} GB "
-                "(downloaded with the weights above).")
+                "(shared across Turbo and Ref2VA).")
     with gr.Row():
         scan = gr.Button("Load exact sizes", size="sm")
-        download = gr.Button("⬇️ Download H3 Turbo", variant="primary")
-        delete = gr.Button("🗑️ Delete selected weights", size="sm")
+        download = gr.Button("⬇️ Download Turbo", variant="primary")
+        download_refs = gr.Button("⬇️ Download Ref2VA", variant="primary")
+    with gr.Row():
+        delete = gr.Button("🗑️ Delete selected Turbo weights", size="sm")
+        delete_refs = gr.Button("🗑️ Delete selected Ref2VA weights", size="sm")
     log = gr.Textbox(label="Video weight download log", lines=6,
                      autoscroll=True, elem_classes="log-box")
 
-    def _scan(current_d, current_e):
+    def _scan(current_d, current_rd, current_e):
         try:
             ds = video.choices("diffusion", exact=True)
+            rds = video.choices("ref_diffusion", exact=True)
             es = video.choices("text_encoder", exact=True)
             return (gr.update(choices=ds, value=current_d),
+                    gr.update(choices=rds, value=current_rd),
                     gr.update(choices=es, value=current_e),
                     "Exact file sizes loaded from the repositories.")
         except Exception as exc:  # noqa: BLE001
-            return gr.update(), gr.update(), f"Cannot load sizes: {exc}"
+            return gr.update(), gr.update(), gr.update(), f"Cannot load sizes: {exc}"
 
-    scan.click(_scan, inputs=[diffusion, encoder],
-               outputs=[diffusion, encoder, log])
+    scan.click(_scan, inputs=[diffusion, ref_diffusion, encoder],
+               outputs=[diffusion, ref_diffusion, encoder, log])
 
-    def _download(current_d, current_e):
+    def _download(current_d, current_e, mode):
         lines: list[str] = []
         try:
-            for message in video.download(current_d, current_e, log=lines.append):
+            for message in video.download(current_d, current_e, log=lines.append,
+                                          mode=mode):
                 lines.append(message)
                 yield "\n".join(lines), gr.update()
             prefs = settings.load_prefs()
-            prefs["video_model_files"] = {"diffusion": current_d,
-                                           "text_encoder": current_e}
+            chosen = prefs.get("video_model_files") or {}
+            if not isinstance(chosen, dict):
+                chosen = {}
+            chosen["diffusion" if mode == "turbo" else "ref_diffusion"] = current_d
+            chosen["text_encoder"] = current_e
+            prefs["video_model_files"] = chosen
             settings.save_prefs(prefs)
-            yield "\n".join(lines), "**Weights ready.**"
+            yield "\n".join(lines), _status()
         except Exception as exc:  # noqa: BLE001
             yield "\n".join(lines + [f"Download failed: {exc}"]), gr.update()
 
-    download.click(_download, inputs=[diffusion, encoder], outputs=[log, status])
+    def _download_turbo(d, e):
+        yield from _download(d, e, "turbo")
 
-    def _delete(current_d, current_e):
+    def _download_refs(d, e):
+        yield from _download(d, e, "refs")
+
+    download.click(_download_turbo,
+                   inputs=[diffusion, encoder], outputs=[log, status])
+    download_refs.click(_download_refs,
+                        inputs=[ref_diffusion, encoder], outputs=[log, status])
+
+    def _delete(current_d, current_e, mode):
         try:
-            count = video.delete(current_d, current_e)
+            count = video.delete(current_d, current_e, mode=mode)
             return (f"Deleted {count} selected file(s); shared weights "
                     "are kept while another H3 diffusion weight is installed.",
-                    "**Weights missing.** Download them to generate a video.")
+                    _status())
         except (ValueError, OSError) as exc:
             return f"Delete failed: {exc}", gr.update()
 
-    delete.click(_delete, inputs=[diffusion, encoder], outputs=[log, status])
+    delete.click(lambda d, e: _delete(d, e, "turbo"),
+                 inputs=[diffusion, encoder], outputs=[log, status])
+    delete_refs.click(lambda d, e: _delete(d, e, "refs"),
+                      inputs=[ref_diffusion, encoder], outputs=[log, status])
 
 
 def build_library_tab():

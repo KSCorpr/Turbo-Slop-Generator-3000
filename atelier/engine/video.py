@@ -1,4 +1,4 @@
-"""MiniMax H3 Turbo video-only inference with sd.cpp and local MP4 encoding."""
+"""MiniMax H3 Turbo and Ref2VA video inference with local MP4 encoding."""
 from __future__ import annotations
 
 import importlib
@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from .. import settings
 from . import sdcpp
@@ -14,27 +14,40 @@ from . import sdcpp
 FRAMES = (22, 39, 56)  # MiniMax H3 aligns video to 17k+5, at 24 fps.
 SIZES = ((640, 352), (864, 480), (960, 544))
 STEPS = 4
+REF_STEPS = 50
+OUTPUT_PREFIXES = ("minimax-h3-turbo-", "minimax-h3-ref2va-")
 
 
 def build_command(sd_cli: Path, diffusion: Path, encoder: Path, vae: Path,
                   prompt: str, output: Path, *, frames: int = 22,
                   width: int = 864, height: int = 480, seed: int = -1,
                   first: Path | None = None, last: Path | None = None,
-                  gpu_index: int | None = None) -> list[str]:
+                  gpu_index: int | None = None, mode: str = "turbo",
+                  refs: Sequence[Path] = ()) -> list[str]:
     if not prompt.strip():
         raise sdcpp.EngineError("Describe the video before generating it.")
     if (width, height) not in SIZES or frames not in FRAMES:
         raise sdcpp.EngineError("Choose a listed H3 resolution and duration.")
+    if mode not in ("turbo", "refs"):
+        raise sdcpp.EngineError("Choose a MiniMax H3 video mode.")
+    if mode == "refs" and (not 1 <= len(refs) <= 3 or first or last):
+        raise sdcpp.EngineError(
+            "Reference mode needs 1–3 images and cannot use first/last frames.")
+    if mode == "turbo" and refs:
+        raise sdcpp.EngineError("Reference images need the H3 Ref2VA mode.")
     if last and not first:
         raise sdcpp.EngineError("A last frame also requires a first frame.")
-    sdcpp._require(diffusion, encoder, vae, first, last)
+    sdcpp._require(diffusion, encoder, vae, first, last, *refs)
     known = sdcpp.supported_options(sd_cli)
     needed = {"--video-frames", "--diffusion-model", "--vae", "--llm",
               "--auto-fit", "--max-vram", "--flow-shift"}
-    if not needed.issubset(known) or (last and "--end-img" not in known):
+    if (not needed.issubset(known) or (last and "--end-img" not in known)
+            or (refs and "--ref-image" not in known)):
         raise sdcpp.EngineError(
-            "MiniMax H3 Turbo needs a recent sd.cpp video engine with auto-fit "
-            "and segmented compute. Run update.bat (or ./update.sh).")
+            "MiniMax H3 needs a recent sd.cpp video engine with auto-fit "
+            "and segmented compute"
+            f"{' and reference images' if refs else ''}. Run update.bat "
+            "(or ./update.sh).")
     request = sdcpp.GenRequest(
         auto_fit=True, max_vram=sdcpp.max_vram_arg("auto"),
         flags={"diffusion_fa": "--diffusion-fa" in known,
@@ -43,8 +56,9 @@ def build_command(sd_cli: Path, diffusion: Path, encoder: Path, vae: Path,
     cmd = [str(sd_cli), "-M", "vid_gen",
            "--diffusion-model", str(diffusion), "--vae", str(vae),
            "--llm", str(encoder), "-p", prompt,
-           "--steps", str(STEPS), "--cfg-scale", "1.0",
-           "--sampling-method", "euler", "--flow-shift", "6",
+           "--steps", str(REF_STEPS if mode == "refs" else STEPS),
+           "--cfg-scale", "1.0", "--sampling-method", "euler",
+           "--flow-shift", "12" if mode == "refs" else "6",
            "-W", str(width), "-H", str(height),
            "--video-frames", str(frames), "--fps", "24", "-s", str(seed)]
     if "--rng" in known:
@@ -53,6 +67,8 @@ def build_command(sd_cli: Path, diffusion: Path, encoder: Path, vae: Path,
         cmd += ["-i", str(first)]
     if last:
         cmd += ["--end-img", str(last)]
+    for ref in refs:
+        cmd += ["--ref-image", str(ref)]
     # No --audio-vae: sd.cpp skips audio decoding and writes video only.
     cmd += sdcpp.memory_args(sd_cli, request)
     cmd += ["-o", str(output), "-v"]
@@ -123,15 +139,16 @@ def encode_mp4(avi: Path, log: Callable[[str], None] | None = None) -> Path:
 def saved_avis() -> list[str]:
     """Offer only H3 videos generated in the app's output folder."""
     return [p.name for p in sorted(
-        settings.OUTPUT_DIR.glob("minimax-h3-turbo-*.avi"),
+        (p for prefix in OUTPUT_PREFIXES
+         for p in settings.OUTPUT_DIR.glob(f"{prefix}*.avi")),
         key=lambda p: p.stat().st_mtime, reverse=True) if p.is_file()]
 
 
 def convert_saved_avi(name: str,
                       log: Callable[[str], None] | None = None) -> Path:
     """Recover a completed H3 run without loading the model or using the GPU."""
-    if not name or "/" in name or "\\" in name or Path(name).name != name or not name.startswith(
-            "minimax-h3-turbo-") or not name.endswith(".avi"):
+    if (not name or "/" in name or "\\" in name or Path(name).name != name
+            or not name.startswith(OUTPUT_PREFIXES) or not name.endswith(".avi")):
         raise sdcpp.EngineError("Choose a saved H3 AVI from the video tab.")
     return encode_mp4(settings.OUTPUT_DIR / name, log=log)
 
@@ -139,16 +156,21 @@ def convert_saved_avi(name: str,
 def generate(diffusion: Path, encoder: Path, vae: Path, prompt: str, *,
              frames: int = 22, width: int = 864, height: int = 480,
              seed: int = -1, first: Path | None = None,
-             last: Path | None = None,
+             last: Path | None = None, mode: str = "turbo",
+             refs: Sequence[Path] = (),
              log: Callable[[str], None] | None = None) -> Path:
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError("sd-cli not found. Run install.bat or ./install.sh.")
     gpu_index = settings.generation_gpu_index(settings.load_prefs())
-    output = sdcpp.unique_output("minimax-h3-turbo", "avi")
+    if mode not in ("turbo", "refs"):
+        raise sdcpp.EngineError("Choose a MiniMax H3 video mode.")
+    output = sdcpp.unique_output("minimax-h3-ref2va" if mode == "refs"
+                                 else "minimax-h3-turbo", "avi")
     cmd = build_command(sd_cli, diffusion, encoder, vae, prompt, output,
                         frames=frames, width=width, height=height, seed=seed,
-                        first=first, last=last, gpu_index=gpu_index)
+                        first=first, last=last, gpu_index=gpu_index,
+                        mode=mode, refs=refs)
     try:
         sdcpp.run(cmd, log=log, gpu_index=gpu_index)
     except sdcpp.VramError:
@@ -160,7 +182,8 @@ def generate(diffusion: Path, encoder: Path, vae: Path, prompt: str, *,
         output.unlink(missing_ok=True)
         cmd = build_command(sd_cli, diffusion, encoder, vae, prompt, output,
                             frames=frames, width=640, height=352, seed=seed,
-                            first=first, last=last, gpu_index=gpu_index)
+                            first=first, last=last, gpu_index=gpu_index,
+                            mode=mode, refs=refs)
         sdcpp.run(cmd, log=log, gpu_index=gpu_index)
     if not output.is_file() or not output.stat().st_size:
         raise sdcpp.EngineError("sd-cli finished without a video file. Check the log.")
