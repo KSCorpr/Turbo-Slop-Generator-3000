@@ -86,34 +86,19 @@ REMOVED_FEATURES = [
      "files": ["update-engine-ci.bat",
                ".github/workflows/build-sdcpp.yml"],
      "dirs": []},
-    #  La génération vidéo (Wan 2.2 TI2V 5B), retirée à son tour. Elle
-    #  marchait — l'échantillonnage passait en 89 s sur une 2080 Ti — mais
-    #  personne n'en voulait, et un onglet dont on ne se sert pas coûte à
-    #  chaque lecture de cet écran.
+    #  Ancienne génération vidéo Wan 2.2, retirée. La nouvelle intégration
+    #  H3 Turbo réutilise les noms video.py/video_tab.py : ils sont vivants
+    #  et ne doivent jamais être effacés par la maintenance.
     #
     #  Les POIDS (~8,5 Go) ne sont pas déclarés ici : le catalogue ne les
     #  référence plus, donc le contrôle des modèles orphelins les signalera
     #  de lui-même, avec leur taille, et la purge demandera avant d'effacer.
     #  C'est le bon chemin pour des gigaoctets — celui-ci ne sert qu'au code.
     {"name": "Video generation (Wan 2.2)",
-     "files": ["atelier/engine/video.py", "atelier/ui/video_tab.py",
-               "tests/test_video.py"],
+     "files": ["tests/test_video.py"],
      "dirs": []},
-    #  L'ancienne génération vidéo (LTX-2.3, MiniMax-H3) était déclarée ici,
-    #  par les deux noms `atelier/ui/video_tab.py` et
-    #  `atelier/engine/video.py`. Ces deux fichiers EXISTENT à nouveau, pour
-    #  Wan 2.2 — c'est le cas de reprise de nom décrit en haut de ce fichier,
-    #  et cette fois il s'est produit à l'endroit exact où l'avertissement
-    #  l'annonçait.
-    #
-    #  `_still_in_service` aurait refusé de les supprimer, puisque le code
-    #  actuel les importe. Mais une entrée qui ne peut plus rien supprimer
-    #  n'est pas inoffensive : elle imprime à chaque passage un avertissement
-    #  disant qu'un fichier retiré est toujours utilisé, ce qui décrit une
-    #  erreur qui n'existe pas. On la retire.
-    # La sonde MiniMax-H3 a répondu à sa question (l'encodeur ne tient pas sur
-    # une carte de 12 Go) ; elle est retirée avec le reste de MiniMax. Déclarée
-    # ici pour que les copies déjà installées soient nettoyées à la maintenance.
+    # L'ancienne sonde H3 reste retirée. La génération H3 Turbo est assurée
+    # par atelier/engine/video.py, sans script de sonde séparé.
     {"name": "Sonde MiniMax-H3",
      "files": ["scripts/try_minimax.py", "try-minimax.bat", "try-minimax.sh",
                "tests/test_try_minimax.py"],
@@ -391,7 +376,7 @@ def clean_tmp() -> None:
 def _expected_model_dirs() -> set[str]:
     """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
     tous les composants des modèles + upscalers."""
-    from atelier import registry, settings
+    from atelier import registry, settings, video
     prefs = settings.load_prefs()
     repos: set[str] = set()
     for m in registry.load_base_models(prefs):
@@ -399,6 +384,7 @@ def _expected_model_dirs() -> set[str]:
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)
+    repos.update((video.DIFFUSION_REPO, video.ENCODER_REPO, video.VAE_REPO))
     # Installés depuis l'onglet 3D, hors du catalogue des modèles d'image.
     return {settings.model_repo_dir(r).name for r in repos if r} | {"trellis"}
 

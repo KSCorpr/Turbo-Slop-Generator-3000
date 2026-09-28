@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings
+from .. import downloader, registry, settings, video
 from ..i18n import t
 
 _AUTO = "__auto__"
@@ -45,6 +45,72 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
     return (f"<div class='model-card'><h3>{model.name} &nbsp; {status}</h3>"
             f"{tags}<p>{model.description}</p>"
             f"<small>{reco}</small>{shared}</div>")
+
+
+def _build_h3_catalog():
+    """Keep video weights separate from image models and their encoder presets."""
+    gr.Markdown("---\n### 🎬 MiniMax H3 Turbo · video only\n"
+                "Standalone merged 4-step GGUF, one H3-specific text encoder "
+                "and a video VAE. No audio model is downloaded. The Q4_0 "
+                "diffusion weight alone is about 11.4 GB; a GPU with less "
+                "VRAM uses automatic placement and compute segmentation.")
+    d, e = video.selected()
+    status = gr.Markdown("**Weights ready.**" if video.ready(d, e) else
+                         "**Weights missing.** Select and download the "
+                         "three files below.")
+    with gr.Row():
+        diffusion = gr.Dropdown(choices=video.choices("diffusion"), value=d,
+                                label="Turbo diffusion · GGUF")
+        encoder = gr.Dropdown(choices=video.choices("text_encoder"), value=e,
+                              label="H3 text encoder · GGUF")
+    gr.Markdown(f"Video VAE · {video.VAE} — {video.VAE_SIZE / 1e9:.2f} GB "
+                "(downloaded with the weights above).")
+    with gr.Row():
+        scan = gr.Button("Load exact sizes", size="sm")
+        download = gr.Button("⬇️ Download H3 Turbo", variant="primary")
+        delete = gr.Button("🗑️ Delete selected weights", size="sm")
+    log = gr.Textbox(label="Video weight download log", lines=6,
+                     autoscroll=True, elem_classes="log-box")
+
+    def _scan(current_d, current_e):
+        try:
+            ds = video.choices("diffusion", exact=True)
+            es = video.choices("text_encoder", exact=True)
+            return (gr.update(choices=ds, value=current_d),
+                    gr.update(choices=es, value=current_e),
+                    "Exact file sizes loaded from the repositories.")
+        except Exception as exc:  # noqa: BLE001
+            return gr.update(), gr.update(), f"Cannot load sizes: {exc}"
+
+    scan.click(_scan, inputs=[diffusion, encoder],
+               outputs=[diffusion, encoder, log])
+
+    def _download(current_d, current_e):
+        lines: list[str] = []
+        try:
+            for message in video.download(current_d, current_e, log=lines.append):
+                lines.append(message)
+                yield "\n".join(lines), gr.update()
+            prefs = settings.load_prefs()
+            prefs["video_model_files"] = {"diffusion": current_d,
+                                           "text_encoder": current_e}
+            settings.save_prefs(prefs)
+            yield "\n".join(lines), "**Weights ready.**"
+        except Exception as exc:  # noqa: BLE001
+            yield "\n".join(lines + [f"Download failed: {exc}"]), gr.update()
+
+    download.click(_download, inputs=[diffusion, encoder], outputs=[log, status])
+
+    def _delete(current_d, current_e):
+        try:
+            count = video.delete(current_d, current_e)
+            return (f"Deleted {count} selected file(s); shared weights "
+                    "are kept while another H3 diffusion weight is installed.",
+                    "**Weights missing.** Download them to generate a video.")
+        except (ValueError, OSError) as exc:
+            return f"Delete failed: {exc}", gr.update()
+
+    delete.click(_delete, inputs=[diffusion, encoder], outputs=[log, status])
 
 
 def build_library_tab():
@@ -175,6 +241,8 @@ def build_library_tab():
             return ups[0] if len(ups) == 1 else ups
 
         refresh.click(refresh_cards, outputs=cards)
+
+        _build_h3_catalog()
 
         gr.Markdown(
             "---\n*The tools (depth, background removal, SAM, prompt "

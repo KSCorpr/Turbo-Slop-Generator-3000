@@ -50,7 +50,7 @@ per model; adding a model adds a tab, never a setting.)
 | 🟢 **Z-Image Turbo** | 6B, 8 steps · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
 | 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for the distilled engines |
 | 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) |
+| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) · **MiniMax H3 Turbo** (video only) |
 | ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
 
 The exact tab tree, since two of the nine are containers:
@@ -59,7 +59,7 @@ The exact tab tree, since two of the nine are containers:
 🟣 Flux.2 Klein 9B   Qwen Image 2.1   Ming Image
 ⚡ Krea 2 Turbo   🟢 Z-Image Turbo
 💊 Xanax   📚 Model Catalog
-🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D
+🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D  ·  🎬 Video · H3 Turbo
 ⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
 
 🧰 Toolkit  → 📝 Image → prompt · 🌐 Depth · ✂️ Background removal
@@ -357,8 +357,8 @@ are stored only once and shared by any model that uses them.
 - **🗑️ Delete** removes a model's own files and **keeps shared ones**: an
   encoder or VAE used by another installed model is never taken out from under
   it.
-- The catalog itself is `config/models.yaml` — the single source of truth for
-  sources, defaults and presets.
+- The image catalog is `config/models.yaml` (sources, defaults and presets).
+  MiniMax H3 Turbo video weights are defined separately in `atelier/video.py`.
 
 The tools that live under 🧰 Toolkit are **not** here: each one carries its own
 one-click installer in its own tab, because each pulls a different Python
@@ -402,6 +402,31 @@ The Ming tab starts at **1024×1024, Euler, CFG 1, 12 steps**. Dimensions use
 background and download the output PNG to keep its alpha channel. Its step
 previews use VAE decoding, so preview updates may take longer than with other
 models. The model weights are MIT licensed.
+
+### MiniMax H3 Turbo · video only
+
+In **Model Catalog → MiniMax H3 Turbo**, choose a standalone 4-step GGUF
+diffusion weight and an H3-specific Qwen3-VL encoder. Their sizes are displayed
+next to each option; **Load exact sizes** refreshes the repositories' file
+metadata. Download also installs the video VAE. The default files are the
+11.4 GB Q4_0 Turbo diffusion weight, 13.1 GB Q2_K_M encoder and 5.21 GB video
+VAE (about 30 GB on disk). There is **no audio VAE** download. The Turbo
+checkpoint is already merged; no separate base checkpoint or LoRA is needed.
+
+Use **Tools → Video · H3 Turbo** for text-to-video, image-to-video, or optional
+first/last-frame conditioning. The app fixes the model-specific parameters to
+**4 steps, Euler, CFG 1, flow shift 6, 24 fps**. Choose 22, 39 or 56 frames
+and a resolution; the default is 864×480 and 22 frames. Weight placement and
+the VRAM compute budget are automatic, with a 640×352 retry if generation
+runs out of GPU memory. The result is a silent MP4; `imageio-ffmpeg` supplies
+the local AVI-to-MP4 converter. Download the clip directly from the video
+player. Update sd.cpp through `update.bat` / `./update.sh` first.
+
+The Q4_0 diffusion file alone uses almost all the VRAM of a standard
+RTX 2080 Ti, leaving too little room for computation; auto-fit may keep
+weights in RAM. Expect potentially long generation times. Turbo support with
+sd.cpp on that card has not been measured. The model uses the MiniMax H3
+Community License Agreement.
 
 ---
 

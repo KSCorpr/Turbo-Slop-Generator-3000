@@ -18,6 +18,8 @@ hf_xet
 PyYAML>=6.0
 Pillow>=10.2
 requests>=2.31
+# sd.cpp writes AVI; the bundled FFmpeg converts H3 clips to browser-ready MP4.
+imageio-ffmpeg>=0.6,<1
 
 # ---------------------------------------------------------------------------
 # PyTorch n'est PAS listé ici : la génération (Flux.2 Klein) passe par
