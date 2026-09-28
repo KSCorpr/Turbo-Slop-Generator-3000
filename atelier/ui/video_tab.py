@@ -56,6 +56,15 @@ def build_video_tab() -> None:
             with gr.Column(scale=3):
                 result = gr.Video(label="Generated video (MP4)", format="mp4",
                                   interactive=False)
+                gr.Markdown("**Convert a completed AVI** · uses no model or GPU. "
+                            "Select the file left by an earlier H3 run.")
+                saved = video_engine.saved_avis()
+                existing_avi = gr.Dropdown(
+                    choices=saved, value=saved[0] if saved else None,
+                    label="Saved H3 AVI in outputs/")
+                with gr.Row():
+                    refresh_avi = gr.Button("↻ Refresh AVI list", size="sm")
+                    convert_avi = gr.Button("Convert AVI to MP4", size="sm")
 
         def refresh():
             d, e = video.selected()
@@ -65,6 +74,23 @@ def build_video_tab() -> None:
 
         gr.Button("↻ Refresh model status", size="sm").click(
             refresh, outputs=[availability])
+
+        def avi_choices():
+            names = video_engine.saved_avis()
+            return gr.update(choices=names, value=names[0] if names else None)
+
+        refresh_avi.click(avi_choices, outputs=[existing_avi])
+
+        def recover(name):
+            yield "Converting the saved AVI to MP4…", gr.update(), gr.update()
+            try:
+                mp4 = video_engine.convert_saved_avi(name)
+                yield f"Video recovered: {mp4.name}", str(mp4), avi_choices()
+            except sdcpp.EngineError as exc:
+                yield f"Conversion failed: {exc}", gr.update(), gr.update()
+
+        convert_avi.click(recover, inputs=[existing_avi],
+                          outputs=[status, result, existing_avi])
 
         def run(prompt_text, first_file, last_file, size, frame_count, chosen_seed):
             q: queue.Queue[str | None] = queue.Queue()

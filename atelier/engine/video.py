@@ -1,7 +1,10 @@
 """MiniMax H3 Turbo video-only inference with sd.cpp and local MP4 encoding."""
 from __future__ import annotations
 
+import importlib
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -56,15 +59,50 @@ def build_command(sd_cli: Path, diffusion: Path, encoder: Path, vae: Path,
     return cmd
 
 
-def encode_mp4(avi: Path) -> Path:
-    """sd-cli writes AVI; browser playback needs an H.264 MP4 with no audio."""
+def _ffmpeg_exe(log: Callable[[str], None] | None = None) -> str:
+    """Find a converter, repairing the portable Python when only it is missing.
+
+    Code updates don't install newly added requirements. The first H3 video
+    generated after an update must be able to install its converter without
+    asking the user to reinstall the whole application and its engines.
+    """
     try:
         import imageio_ffmpeg
-        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    except (ImportError, OSError) as exc:
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, OSError, RuntimeError):
+        pass
+
+    existing = shutil.which("ffmpeg")
+    if existing:
+        return existing
+
+    if log:
+        log("Installing the MP4 converter in the application Python (one time)…")
+    try:
+        installed = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-input",
+             "--disable-pip-version-check", "imageio-ffmpeg>=0.6,<1"],
+            capture_output=True, text=True, errors="replace", timeout=300)
+        if installed.returncode:
+            raise RuntimeError((installed.stderr or installed.stdout)[-400:])
+        importlib.invalidate_caches()
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (OSError, RuntimeError, ImportError, subprocess.TimeoutExpired) as exc:
         raise sdcpp.EngineError(
-            f"Video saved as {avi}, but the bundled FFmpeg is missing. "
-            "Run install.bat (or ./install.sh) to install dependencies.") from exc
+            "The MP4 converter could not be installed in the application "
+            f"Python: {exc}. Run install.bat (or ./install.sh) and then "
+            "convert the saved AVI from the H3 video tab.") from exc
+
+
+def encode_mp4(avi: Path, log: Callable[[str], None] | None = None) -> Path:
+    """sd-cli writes AVI; browser playback needs an H.264 MP4 with no audio."""
+    if not avi.is_file() or not avi.stat().st_size:
+        raise sdcpp.EngineError(f"Video file not found: {avi}")
+    try:
+        ffmpeg = _ffmpeg_exe(log=log)
+    except sdcpp.EngineError as exc:
+        raise sdcpp.EngineError(f"Video saved as {avi}. {exc}") from exc
     mp4 = avi.with_suffix(".mp4")
     try:
         result = subprocess.run(
@@ -80,6 +118,22 @@ def encode_mp4(avi: Path) -> Path:
         raise sdcpp.EngineError(f"Video saved as {avi}; MP4 encoding failed: {exc}") from exc
     avi.unlink()  # Keep only the playable result after a successful conversion.
     return mp4
+
+
+def saved_avis() -> list[str]:
+    """Offer only H3 videos generated in the app's output folder."""
+    return [p.name for p in sorted(
+        settings.OUTPUT_DIR.glob("minimax-h3-turbo-*.avi"),
+        key=lambda p: p.stat().st_mtime, reverse=True) if p.is_file()]
+
+
+def convert_saved_avi(name: str,
+                      log: Callable[[str], None] | None = None) -> Path:
+    """Recover a completed H3 run without loading the model or using the GPU."""
+    if not name or "/" in name or "\\" in name or Path(name).name != name or not name.startswith(
+            "minimax-h3-turbo-") or not name.endswith(".avi"):
+        raise sdcpp.EngineError("Choose a saved H3 AVI from the video tab.")
+    return encode_mp4(settings.OUTPUT_DIR / name, log=log)
 
 
 def generate(diffusion: Path, encoder: Path, vae: Path, prompt: str, *,
@@ -110,4 +164,4 @@ def generate(diffusion: Path, encoder: Path, vae: Path, prompt: str, *,
         sdcpp.run(cmd, log=log, gpu_index=gpu_index)
     if not output.is_file() or not output.stat().st_size:
         raise sdcpp.EngineError("sd-cli finished without a video file. Check the log.")
-    return encode_mp4(output)
+    return encode_mp4(output, log=log)

@@ -419,8 +419,11 @@ first/last-frame conditioning. The app fixes the model-specific parameters to
 and a resolution; the default is 864×480 and 22 frames. Weight placement and
 the VRAM compute budget are automatic, with a 640×352 retry if generation
 runs out of GPU memory. The result is a silent MP4; `imageio-ffmpeg` supplies
-the local AVI-to-MP4 converter. Download the clip directly from the video
-player. Update sd.cpp through `update.bat` / `./update.sh` first.
+the local AVI-to-MP4 converter. If it was added after your last install, the
+app installs it into its own Python on the first conversion. **Tools → Video
+→ Convert a completed AVI** can convert an earlier video from `outputs/`
+without loading H3 or generating anything again. Download the clip from the
+video player. Update sd.cpp through `update.bat` / `./update.sh` first.
 
 The Q4_0 diffusion file alone uses almost all the VRAM of a standard
 RTX 2080 Ti, leaving too little room for computation; auto-fit may keep
