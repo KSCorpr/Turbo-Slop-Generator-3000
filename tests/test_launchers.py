@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
 
 class UpdateBranchTests(unittest.TestCase):
-    """Le bouton de mise à jour du produit suit toujours main."""
+    """Stable defaults to main; preview builds explicitly declare a channel."""
 
     @staticmethod
     def _module():
@@ -126,11 +126,14 @@ class UpdateBranchTests(unittest.TestCase):
         import update_app
         return update_app
 
-    def test_code_and_commit_requests_always_target_main(self):
+    def test_code_and_commit_requests_default_to_main(self):
+        import tempfile
+        from unittest.mock import patch
         u = self._module()
         self.assertEqual(u.DEFAULT_BRANCH, "main")
-        self.assertTrue(u.archive_url().endswith("/refs/heads/main"))
-        self.assertTrue(u.commits_url().endswith("/commits/main"))
+        with tempfile.TemporaryDirectory() as directory, patch.object(u, "ROOT", Path(directory)):
+            self.assertTrue(u.archive_url().endswith("/refs/heads/main"))
+            self.assertTrue(u.commits_url().endswith("/commits/main"))
 
     def test_the_launcher_forwards_its_arguments(self):
         """Sans `%*`, `--engine` et `--rollback` n'arriveraient jamais."""

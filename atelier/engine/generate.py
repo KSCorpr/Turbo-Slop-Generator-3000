@@ -199,6 +199,7 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
     """Écrit un .txt (style A1111) à côté de chaque image, pour retrouver le
     prompt et les réglages directement dans le dossier outputs/."""
     import time
+    from ..fileio import atomic_write_text
     date = time.strftime("%Y-%m-%d %H:%M:%S")
     for i, p in enumerate(paths):
         seed = base_seed + i if (base_seed is not None and base_seed >= 0) \
@@ -215,8 +216,16 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             lines.append(f"img2img strength: {req.strength}")
         lines.append(f"Date: {date}")
         try:
-            Path(p).with_suffix(".txt").write_text("\n".join(lines),
-                                                   encoding="utf-8")
+            atomic_write_text(Path(p).with_suffix(".txt"), "\n".join(lines))
+            atomic_write_text(Path(p).with_suffix(".json"), json.dumps({
+                "schema_version": 1, "model_id": model.id,
+                "model_name": model.name, "prompt": req.prompt or "",
+                "negative": req.negative or "", "seed": seed,
+                "steps": req.steps, "cfg_scale": req.cfg_scale,
+                "width": req.width, "height": req.height,
+                "sampler": req.sampler, "schedule": req.schedule or "auto",
+                "flow_shift": req.flow_shift, "date": date,
+            }, ensure_ascii=False, indent=2))
         except OSError:
             pass
 

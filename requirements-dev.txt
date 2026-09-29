@@ -1,0 +1,3 @@
+-r requirements.txt
+# Browser verification only; never installed by the normal launchers.
+playwright==1.51.0

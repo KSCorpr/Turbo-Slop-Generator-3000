@@ -156,10 +156,14 @@ class StopButtonsTests(unittest.TestCase):
         captured = {}
 
         class FakeButton:
-            def click(self, fn, inputs=None, outputs=None, cancels=None):
+            def click(self, fn, inputs=None, outputs=None, cancels=None, **kwargs):
                 captured["fn"] = fn
+                captured["queue"] = kwargs.get("queue")
+                captured["cancels"] = cancels
 
         widgets.stop_into_log(FakeButton(), lambda: "⏹️ annulé", None, [])
+        self.assertIs(captured["queue"], False)
+        self.assertIsNone(captured["cancels"], "Keep the slot until the worker has stopped")
         self.assertEqual(captured["fn"]("ligne 1\nligne 2"),
                          "ligne 1\nligne 2\n⏹️ annulé")
         self.assertEqual(captured["fn"](""), "⏹️ annulé")

@@ -319,8 +319,8 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                    "\n".join(logs[-400:]))
 
         evt = run.click(do_xanax, inputs=[model_pick, prompt, enhance, seed],
-                        outputs=[status, result, used_md, log])
+                        outputs=[status, result, used_md, log], **widgets.GPU_QUEUE)
         # QOL : Ctrl+Entrée depuis le champ de saisie lance la génération.
-        prompt.submit(do_xanax, inputs=[model_pick, prompt, enhance, seed],
-                      outputs=[status, result, used_md, log])
-        widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])
+        submit_evt = prompt.submit(do_xanax, inputs=[model_pick, prompt, enhance, seed],
+                      outputs=[status, result, used_md, log], **widgets.GPU_QUEUE)
+        widgets.stop_into_status(stop, gen_engine.cancel, status, [evt, submit_evt])

@@ -28,6 +28,10 @@ GALLERY_BUTTONS: list[str] = ["download", "fullscreen"]
 # Champs texte : le bouton « copier » quand le contenu est fait pour être repris.
 TEXT_COPY: list[str] = ["copy"]
 
+# All inference callbacks share one slot. Gradio's default only serializes
+# calls to the SAME function, so two model tabs otherwise compete for VRAM.
+GPU_QUEUE = {"concurrency_id": "studio-gpu", "concurrency_limit": 1}
+
 
 # --------------------------------------------------------------------------- #
 #  Bouton « Stop »
@@ -42,7 +46,11 @@ TEXT_COPY: list[str] = ["copy"]
 
 def stop_into_status(button, cancel_fn, status, cancels) -> None:
     """Arrêt dont la confirmation va dans une zone d'état (elle est remplacée)."""
-    button.click(lambda: cancel_fn(), outputs=[status], cancels=cancels)
+    # Let the consumer finish after terminating its engine. Cancelling the
+    # Gradio generator itself releases the GPU slot while its worker thread
+    # can still be running, and skips preview/temporary-file cleanup.
+    button.click(lambda: cancel_fn(), outputs=[status],
+                 queue=False, show_progress="hidden")
 
 
 def stop_into_log(button, cancel_fn, log, cancels) -> None:
@@ -57,4 +65,43 @@ def stop_into_log(button, cancel_fn, log, cancels) -> None:
         msg = cancel_fn()
         return f"{current}\n{msg}" if current else msg
 
-    button.click(_append, inputs=[log], outputs=[log], cancels=cancels)
+    button.click(_append, inputs=[log], outputs=[log],
+                 queue=False, show_progress="hidden")
+
+
+class ImageHandoff:
+    """Wire a source to a destination built later, using one UI transaction.
+
+    Gradio 6 can lose a lazily mounted Image's loading state when a queued
+    State.change callback updates it while switching nested tabs. A direct,
+    unqueued callback also keeps navigation responsive during inference.
+    """
+
+    def __init__(self):
+        self._receiver = None
+        self._senders = []
+
+    def send(self, trigger, prepare, inputs, outputs):
+        sender = (trigger, prepare, inputs, outputs)
+        if self._receiver is None:
+            self._senders.append(sender)
+        else:
+            self._bind(sender)
+
+    def receive(self, consume, outputs):
+        self._receiver = (consume, outputs)
+        for sender in self._senders:
+            self._bind(sender)
+        self._senders.clear()
+
+    def _bind(self, sender):
+        trigger, prepare, inputs, source_outputs = sender
+        consume, target_outputs = self._receiver
+
+        def transfer_image(*args):
+            payload, *source_values = prepare(*args)
+            return source_values + list(consume(payload))
+
+        trigger(transfer_image, inputs=inputs,
+                outputs=[*source_outputs, *target_outputs],
+                queue=False, show_progress="hidden")

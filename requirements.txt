@@ -1,3 +1,6 @@
+# UI versions verified together for this release.
+-c requirements-ui.lock
+
 # Interface web moderne
 # Gradio 6 : thème custom, exécution locale. Le plancher est ferme — la 6.0 a
 # supprimé des paramètres qu'on utilisait (`show_download_button`,

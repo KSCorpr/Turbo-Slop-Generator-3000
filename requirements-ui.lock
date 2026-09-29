@@ -1,0 +1,4 @@
+# Deliberately limited to the web interface: optional GPU tools have their own
+# environments. Update these two pins together and run tests/browser_smoke.py.
+gradio==6.17.3
+gradio-client==2.5.0
