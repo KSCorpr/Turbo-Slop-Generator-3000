@@ -11,7 +11,6 @@ import os
 import re
 import tempfile
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,16 +47,10 @@ def resolve(name: str) -> Path:
 def scan() -> tuple[Output, ...]:
     global _cached, _entries
     root = settings.OUTPUT_DIR
-    try:
-        stamp = root.stat().st_mtime_ns
-    except OSError:
-        return ()
-    # Directory mtime detects arrivals/deletions. The short TTL also notices
-    # in-place edits, which do not change a directory's mtime.
-    key = (str(root.resolve()), stamp, int(time.monotonic() // 2))
+    # Directory timestamps can lag on Windows and ignore in-place edits.
+    # Inspect cheap entry metadata on gallery requests; reuse the sorted
+    # snapshot and cached thumbnails while the actual files are unchanged.
     with _lock:
-        if key == _cached:
-            return _entries
         found = []
         try:
             with os.scandir(root) as entries:
@@ -73,6 +66,9 @@ def scan() -> tuple[Output, ...]:
                         continue
         except OSError:
             return ()
+        key = (str(root.resolve()), tuple(found))
+        if key == _cached:
+            return _entries
         _entries = tuple(sorted(found, key=lambda e: (e.modified_ns, e.name), reverse=True))
         _cached = key
         return _entries

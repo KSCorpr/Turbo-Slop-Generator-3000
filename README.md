@@ -1,15 +1,15 @@
 # Turbo Slop Generator 3000 · Studio
 
-**Studio preview — `codex/studio-performance-release`.** A calmer, responsive
+**Studio — available on `main`.** A calmer, responsive
 workspace with six navigation tabs, a local image gallery, lighter previews,
 and one shared GPU queue. [Release notes and verification](docs/STUDIO_RELEASE.md).
 
-[Download this branch](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/codex/studio-performance-release.zip)
-and extract it into a separate folder, then use the normal installers below.
+[Download Studio](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/main.zip)
+and extract it into a folder, then use the normal installers below.
 With Git:
 
 ```bash
-git clone --branch codex/studio-performance-release --single-branch https://github.com/KSCorpr/Turbo-Slop-Generator-3000.git turbo-slop-studio
+git clone --branch main --single-branch https://github.com/KSCorpr/Turbo-Slop-Generator-3000.git turbo-slop-studio
 cd turbo-slop-studio
 ```
 
@@ -160,8 +160,8 @@ each via its own one-click installer.
 
 **`update.bat` is the way** (`./update.sh` on Linux/Mac). It downloads the
 current code from the release channel in `config/update-channel.json` and applies
-it in place. This preview stays on **codex/studio-performance-release**; releases
-without that file use **main**. In a Git checkout, use `git pull --ff-only`
+it in place. Studio follows **main**; releases without that file also use
+**main**. In a Git checkout, use `git pull --ff-only`
 instead: the ZIP updater refuses to overwrite tracked or uncommitted work. The code step leaves
 your models, outputs, settings, portable Python and installed engines alone;
 the later engine step updates sd.cpp in `bin/` with a rollback copy.

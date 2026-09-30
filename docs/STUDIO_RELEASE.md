@@ -1,8 +1,7 @@
-# Studio preview · 1.2.0rc1
+# Studio · 1.2.0rc1
 
-This release lives only on `codex/studio-performance-release`. The original
-`main` branch remains unchanged. Install this branch in its own folder using
-the launchers documented in the README.
+The Studio interface is promoted from `codex/studio-performance-release` to
+`main`. Use the installers and main-branch download documented in the README.
 
 ## What changed
 
@@ -14,6 +13,8 @@ the launchers documented in the README.
 - Ctrl/Cmd+Enter launches the visible image workspace exactly once.
 - Gallery reads existing `outputs/` images, pages 24 at a time, caches small
   thumbnails, downloads full originals and reuses saved prompts.
+- Gallery refresh checks actual file metadata, so additions, deletions and
+  replacements are detected even when Windows directory timestamps lag.
 - New generations also save structured JSON parameters beside the existing
   text sidecar, so prompts can be recovered without parsing display text.
 - Styles and disk inventory load on demand; preferences are cached with file
@@ -33,8 +34,10 @@ The serialized UI configuration fell from **1,928,875 bytes to approximately
 1,335,113 bytes (31% smaller)** on the same empty installation and dependency
 versions. This measures configuration payload, not GPU generation throughput.
 
-The unit suite contains **562 tests: 561 passed, one platform-dependent skip**
-on Python 3.12/Linux. It includes regression checks for original-image
+The original Studio preview passed **561 of 562 tests, with one
+platform-dependent skip**, on Python 3.12/Linux. Promotion adds a regression
+check for replaced gallery images and makes the file-arrival test reproduce
+unchanged directory timestamps. The suite also checks original-image
 preservation, thumbnail transparency, path boundaries, cached preferences,
 worker cleanup, shared concurrency, lazy styles and startup work.
 
@@ -60,13 +63,12 @@ require a compatible local machine and have not been benchmarked in this
 workspace. Use the existing hardware benchmark in System before choosing
 production settings. No GPU speedup is claimed from these UI measurements.
 
-## Updates and promotion
+## Updates
 
-ZIP installs follow `config/update-channel.json`, which explicitly names this
-preview branch. They will not silently replace the preview with `main`.
+ZIP installs follow `config/update-channel.json`, which now explicitly names
+`main`. An existing Studio preview ZIP installation moves to this channel on
+its next code update; subsequent updates follow `main`.
 Git checkouts update with `git pull --ff-only`; the ZIP code updater refuses to
 overwrite them. Engine-only maintenance commands are still available.
 
-Before deliberately promoting this release to `main`, remove the preview
-channel file or change its branch to `main`, and update the README download
-link. This task does not merge or deploy the branch.
+The README download and clone commands also point to `main`.

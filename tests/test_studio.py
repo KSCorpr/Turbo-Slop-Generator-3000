@@ -50,11 +50,30 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(history.page("absent")[1:], (0, 1))
 
     def test_new_and_deleted_files_invalidate_the_snapshot(self):
-        self.assertEqual(history.page()[1], 0)
+        # Windows can report an unchanged directory timestamp after a write.
+        # Reproduce that deterministically without waiting for a cache TTL.
+        stamp = self.output.stat()
+        with patch("time.monotonic", return_value=100):
+            self.assertEqual(history.page()[1], 0)
+            path = self.image()
+            os.utime(self.output, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            self.assertEqual(history.page()[1], 1)
+            path.unlink()
+            os.utime(self.output, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            self.assertEqual(history.page()[1], 0)
+
+    def test_replaced_image_invalidates_its_thumbnail(self):
         path = self.image()
-        self.assertEqual(history.page()[1], 1)
-        path.unlink()
-        self.assertEqual(history.page()[1], 0)
+        with patch("time.monotonic", return_value=100):
+            original = history.page()[0][0]
+            old_thumb = history.thumbnail(original)
+            self.image(size=(80, 40))
+            os.utime(path, ns=(original.modified_ns, original.modified_ns))
+            replacement = history.page()[0][0]
+            new_thumb = history.thumbnail(replacement)
+        self.assertNotEqual(old_thumb, new_thumb)
+        with Image.open(new_thumb) as image:
+            self.assertEqual(image.size, (80, 40))
 
     def test_thumbnail_keeps_alpha_and_does_not_modify_original(self):
         path = self.image("été & portrait.png", (1600, 800))
