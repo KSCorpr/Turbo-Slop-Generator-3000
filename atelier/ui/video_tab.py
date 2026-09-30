@@ -15,7 +15,7 @@ from . import widgets
 
 
 def build_video_tab() -> None:
-    with gr.Tab("🎬 Video · MiniMax H3", id="h3-video"):
+    with gr.Tab("Video", id="h3-video"):
         gr.Markdown("### MiniMax H3 · video only\n"
                     "Turbo uses four steps and optional first/last frames. "
                     "Reference mode uses 1–3 images and 50 steps. Choose and "
@@ -186,5 +186,5 @@ def build_video_tab() -> None:
         event = generate.click(run, inputs=[mode, prompt, first, last,
                                             ref1, ref2, ref3, resolution,
                                             frames, seed],
-                               outputs=[status, result, log])
+                               outputs=[status, result, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, sdcpp.cancel_active, status, [event])

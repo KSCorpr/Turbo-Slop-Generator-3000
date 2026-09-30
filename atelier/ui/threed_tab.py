@@ -707,7 +707,7 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
                     box_uv, gpu_pick, require_gpu, f32, no_fa, webp,
                     mesh_scale, extend_pixel, extra],
             outputs=[status, model3d, glb_file, log, res_status, seed_used,
-                     image])
+                     image], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, sdcpp.cancel_active, status, [gen_evt])
 
         def _reuse_seed(v):
@@ -740,13 +740,9 @@ def build_threed_tab(tab_id="threed", pending_3d=None, tabs=None,
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_3d is not None and tabs is not None:
             def _consume3d(pend):
-                if not pend:
-                    return gr.update(), None, gr.update()
                 top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
                        else gr.update())
-                return gr.update(value=pend), None, top
+                return top, pend
 
-            tabs.select(_consume3d, inputs=[pending_3d],
-                        outputs=[image, pending_3d,
-                                 parent_tabs if parent_tabs is not None
-                                 else image])
+            pending_3d.receive(_consume3d,
+                outputs=[parent_tabs if parent_tabs is not None else tabs, image])

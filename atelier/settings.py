@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import platform
 import shutil
+from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -150,23 +152,32 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
+@lru_cache(maxsize=4)
+def _read_preferences(path: Path, mtime_ns: int, size: int) -> dict:
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        return saved if isinstance(saved, dict) else {}
+    except (ValueError, OSError, UnicodeError):
+        return {}
+
+
 def load_prefs() -> dict[str, Any]:
-    ensure_dirs()
-    prefs = json.loads(json.dumps(DEFAULT_PREFS))  # copie profonde
-    if PREFS_FILE.is_file():
-        try:
-            saved = json.loads(PREFS_FILE.read_text(encoding="utf-8"))
-            prefs.update({k: v for k, v in saved.items() if k != "flags"})
-            if isinstance(saved.get("flags"), dict):
-                prefs["flags"].update(saved["flags"])
-        except (json.JSONDecodeError, OSError):
-            pass
+    prefs = deepcopy(DEFAULT_PREFS)
+    try:
+        st = PREFS_FILE.stat()
+        saved = deepcopy(_read_preferences(PREFS_FILE, st.st_mtime_ns, st.st_size))
+        prefs.update({k: v for k, v in saved.items() if k != "flags"})
+        if isinstance(saved.get("flags"), dict):
+            prefs["flags"].update(saved["flags"])
+    except OSError:
+        pass
     return prefs
 
 
 def save_prefs(prefs: dict[str, Any]) -> None:
     ensure_dirs()
     atomic_write_text(PREFS_FILE, json.dumps(prefs, indent=2))
+    _read_preferences.cache_clear()
 
 
 def generation_gpu_index(prefs: dict[str, Any]) -> int | None:

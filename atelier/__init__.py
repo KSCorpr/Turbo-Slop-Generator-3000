@@ -6,6 +6,6 @@ automatiques selon le GPU et la RAM, support LoRA, résolutions natives par
 modèle, améliorateur de prompt (IA), et outils (profondeur, détourage, SAM).
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0rc1"
 APP_NAME = "Turbo Slop Generator 3000"
 ACCENT = "#00ccff"

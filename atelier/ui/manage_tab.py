@@ -62,7 +62,7 @@ def _move_choices() -> list[tuple[str, str]]:
 
 
 def build_manage_tab():
-    with gr.Tab("🧹 Manage & help"):
+    with gr.Tab("🧹 Manage & help") as manage_tab:
         # ------------------------------------------------------------------ #
         #  Inventaire & suppression
         # ------------------------------------------------------------------ #
@@ -73,9 +73,8 @@ def build_manage_tab():
             "creations) — think twice. Everything else can be **downloaded "
             "again** from inside the app.")
 
-        _choices, _summary = _choices_and_summary()
-        summary_md = gr.Markdown(_summary)
-        picks = gr.CheckboxGroup(choices=_choices, value=[],
+        summary_md = gr.Markdown("Open this tab to measure disk usage.")
+        picks = gr.CheckboxGroup(choices=[], value=[],
                                  label="Items to delete")
         with gr.Row():
             confirm = gr.Checkbox(
@@ -92,6 +91,7 @@ def build_manage_tab():
 
         refresh.click(_refresh,
                       outputs=[picks, summary_md, confirm, result])
+        manage_tab.select(_refresh, outputs=[picks, summary_md, confirm, result])
 
         def _delete(keys, ok):
             if not keys:
@@ -182,7 +182,7 @@ def build_manage_tab():
 
             reset_btn.click(_do_reset, outputs=[loc_now, loc_log, dest_box])
 
-        with gr.Accordion("Move ONLY some items (e.g. the 16 GB of 3D models)", open=False):
+        with gr.Accordion("Move ONLY some items (e.g. the 16 GB of 3D models)", open=False) as move_panel:
             gr.Markdown(
                 "Moves **the ticked items** to another drive and leaves a "
                 "**link** in their place: the application still finds them, "
@@ -191,7 +191,7 @@ def build_manage_tab():
                 "models on the NVMe.\n\n⚠️ The destination drive must stay "
                 "**connected** — otherwise the moved items become "
                 "unreachable.")
-            sel_picks = gr.CheckboxGroup(choices=_move_choices(), value=[],
+            sel_picks = gr.CheckboxGroup(choices=[], value=[],
                                          label="Items to move out / bring back")
             sel_dest = gr.Textbox(
                 label="Destination folder (absolute path)",
@@ -203,6 +203,8 @@ def build_manage_tab():
                 sel_refresh = gr.Button("↻ Refresh", size="sm")
             sel_log = gr.Textbox(label="Log", lines=10, autoscroll=True,
                                  elem_classes="log-box")
+            move_panel.expand(lambda: gr.update(choices=_move_choices()),
+                              outputs=[sel_picks])
 
             def _sel_paths(keys):
                 out = []

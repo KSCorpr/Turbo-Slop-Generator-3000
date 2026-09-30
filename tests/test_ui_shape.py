@@ -84,6 +84,10 @@ class AccordionBudgetTests(unittest.TestCase):
         node, outermost = block.parent, None
         while node is not None:
             if isinstance(node, gr.Tab):
+                # Images now groups the model workspaces. Only one model's
+                # controls is displayed at a time; keep the per-screen gate.
+                if node.label in self.generative:
+                    return node.label
                 outermost = node
             node = node.parent
         return outermost.label if outermost is not None else ""

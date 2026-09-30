@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from .. import settings
+from ..processes import close_worker
 
 
 class EngineError(RuntimeError):
@@ -699,8 +700,11 @@ def run(cmd: list[str], log: Callable[[str], None] | None = None,
                     log(note)
         code = proc.wait()
     finally:
-        with _LOCK:
-            _ACTIVE.discard(proc)
+        try:
+            close_worker(proc)
+        finally:
+            with _LOCK:
+                _ACTIVE.discard(proc)
     if _CANCELLED:
         raise EngineError("Interrupted by the user.")
     if code != 0:

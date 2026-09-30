@@ -8,6 +8,7 @@ chemin hors du dossier du projet n'est jamais listé ni supprimé.
 from __future__ import annotations
 
 import shutil
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,7 +40,25 @@ def path_size(p: Path) -> int:
         if p.is_file():
             return p.stat().st_size
         if p.is_dir():
-            return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+            total = 0
+            pending = [p]
+            while pending:
+                folder = pending.pop()
+                try:
+                    with os.scandir(folder) as entries:
+                        for entry in entries:
+                            try:
+                                if entry.is_dir(follow_symlinks=False):
+                                    # Windows junctions can lead back to a parent.
+                                    if not getattr(os.path, "isjunction", lambda _: False)(entry.path):
+                                        pending.append(entry.path)
+                                elif entry.is_file(follow_symlinks=False):
+                                    total += entry.stat(follow_symlinks=False).st_size
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+            return total
     except OSError:
         pass
     return 0

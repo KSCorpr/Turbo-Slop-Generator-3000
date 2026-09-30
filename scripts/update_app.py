@@ -52,6 +52,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -67,17 +68,29 @@ except Exception:  # noqa: BLE001
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "KSCorpr/Turbo-Slop-Generator-3000"
 
-#  Canal unique de mise à jour : une ancienne valeur « branch » conservée dans
-#  userdata/app-update.json ne doit plus détourner l'installation de main.
+# Legacy userdata manifests never choose the channel. A release may ship an
+# explicit channel so a preview ZIP does not silently replace itself by main.
 DEFAULT_BRANCH = "main"
 
 
+def update_branch() -> str:
+    try:
+        data = json.loads((ROOT / "config" / "update-channel.json").read_text(encoding="utf-8"))
+        branch = data.get("branch") if isinstance(data, dict) else None
+        if (isinstance(branch, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+                and ".." not in branch and "//" not in branch and not branch.endswith("/")):
+            return branch
+    except (OSError, ValueError, UnicodeError):
+        pass
+    return DEFAULT_BRANCH
+
+
 def archive_url() -> str:
-    return f"https://codeload.github.com/{REPO}/zip/refs/heads/{DEFAULT_BRANCH}"
+    return f"https://codeload.github.com/{REPO}/zip/refs/heads/{update_branch()}"
 
 
 def commits_url() -> str:
-    return f"https://api.github.com/repos/{REPO}/commits/{DEFAULT_BRANCH}"
+    return f"https://api.github.com/repos/{REPO}/commits/{update_branch()}"
 
 MANIFEST = ROOT / "userdata" / "app-update.json"
 BACKUP_DIR = ROOT / ".update-backup"
@@ -296,7 +309,7 @@ def _save_manifest(files: dict[str, bytes], commit: dict) -> None:
         "schema": 1,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "commit": commit,
-        "branch": DEFAULT_BRANCH,
+        "branch": update_branch(),
         "files": sorted(files),
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -338,12 +351,17 @@ def _rollback() -> int:
 
 
 def update(check_only: bool = False) -> int:
+    if (ROOT / ".git").exists() and not check_only:
+        _say(ERR + "This is a Git checkout. Update the current branch with git pull --ff-only.")
+        _say(INFO + "The ZIP updater will not overwrite tracked or uncommitted work. "
+             "update.bat --engine / --trellis remain available.")
+        return 1
     _say("=" * 60)
     _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
 
     manifest = _load_manifest()
-    _say(f"{INFO}branch: {DEFAULT_BRANCH}")
+    _say(f"{INFO}branch: {update_branch()}")
 
     commit = _latest_commit()
     if commit:
@@ -357,7 +375,7 @@ def update(check_only: bool = False) -> int:
         _say(ERR + f"download failed: {exc}")
         _say("    On a corporate network, set HTTPS_PROXY before running")
         _say("    update.bat, or fetch the archive by hand:")
-        _say(f"    https://github.com/{REPO}/archive/refs/heads/main.zip")
+        _say(f"    https://github.com/{REPO}/archive/refs/heads/{update_branch()}.zip")
         return 1
     _say(OK + f"archive read: {len(files)} files, "
          f"fingerprint {_sha(blob)[:12]}.")

@@ -325,7 +325,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             do_outpaint,
             inputs=[image, direction, amount, model, prompt, fill, strength,
                     feather, tone, steps, seed],
-            outputs=[status, result, log])
+            outputs=[status, result, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])
 
         # Enchaîner : le résultat redevient l'image d'entrée (extensions
@@ -342,18 +342,14 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         # Réception d'une image envoyée depuis un onglet de génération.
         if pending_outpaint is not None and tabs is not None:
             def _consume(pend):
-                if not pend:
-                    return gr.update(), None, gr.update(), gr.update()
-                from PIL import Image as _PI
-                im = _PI.open(pend)
                 top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
                        else gr.update())
-                return gr.update(value=im), None, gr.update(value=""), top
+                return top, pend, ""
 
-            tabs.select(_consume, inputs=[pending_outpaint],
-                        outputs=[image, pending_outpaint, status,
-                                 parent_tabs if parent_tabs is not None
-                                 else status])
+            pending_outpaint.receive(_consume,
+                outputs=[parent_tabs if parent_tabs is not None else tabs,
+                         image, status])
+
 
 
 def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,

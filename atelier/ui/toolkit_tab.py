@@ -132,7 +132,7 @@ def _installer_block(title: str, note: str, stream_fn, installed: bool):
 
 
 def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
-                      parent_tabs=None, prompt_boxes=None):
+                      parent_tabs=None, prompt_boxes=None, generation_tabs=None):
     """`parent_tabs` : le groupe « 🧰 Outils » qui contient cet onglet.
 
     Depuis le regroupement des onglets, atteindre un outil demande DEUX
@@ -256,7 +256,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     yield state["out"][0], "\n".join(logs[-500:])
 
                 p_evt = p_run.click(do_describe, inputs=[p_image, p_mode],
-                                    outputs=[p_out, p_log])
+                                    outputs=[p_out, p_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(p_stop, tools.cancel, p_log, [p_evt])
 
                 # Envoi vers un onglet de génération. On écrit DIRECTEMENT
@@ -273,9 +273,16 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     def _go(text):
                         if not (text or "").strip():
                             raise gr.Error(t("Read an image first."))
+                        if generation_tabs is not None:
+                            return (text.strip(), gr.Tabs(selected="create"),
+                                    gr.Tabs(selected=model_id))
                         return text.strip(), gr.Tabs(selected=model_id)
 
-                    button.click(_go, inputs=[p_out], outputs=[box, tabs])
+                    targets = [box, tabs]
+                    if generation_tabs is not None:
+                        targets.append(generation_tabs)
+                    button.click(_go, inputs=[p_out], outputs=targets,
+                                 queue=False, show_progress="hidden")
 
                 _send_to("krea2-turbo", p_to_krea)
                 _send_to("flux2-klein-9b", p_to_flux)
@@ -317,7 +324,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
 
-                d_run.click(do_depth, inputs=[d_image], outputs=[d_result, d_log])
+                d_run.click(do_depth, inputs=[d_image], outputs=[d_result, d_log], **widgets.GPU_QUEUE)
 
             # ---------- Suppression d'arrière-plan ----------
             with gr.Tab("✂️ Background removal", id="bg"):
@@ -358,7 +365,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     progress(1.0, desc="Done")
                     return str(out), "\n".join(logs)
 
-                b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log])
+                b_run.click(do_bg, inputs=[b_image], outputs=[b_result, b_log], **widgets.GPU_QUEUE)
 
             # ---------- Segment Anything (clic) ----------
             with gr.Tab("🪄 Cut out (SAM)", id="sam"):
@@ -410,7 +417,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                               "or re-click elsewhere.").format(x=x, y=y))
 
                 s_image.select(_on_click, inputs=[s_image],
-                               outputs=[s_overlay, s_cut, s_info])
+                               outputs=[s_overlay, s_cut, s_info], **widgets.GPU_QUEUE)
 
                 # Aperçu de secours : si la vignette du composant reste une
                 # icône cassée, l'image est quand même visible ici — les
@@ -585,7 +592,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 u_evt = u_run.click(do_upscale,
                                     inputs=[u_image, u_model, u_repeats],
-                                    outputs=[u_result, u_log])
+                                    outputs=[u_result, u_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(u_stop, gen_engine.cancel, u_log,
                                       [u_evt])
 
@@ -744,7 +751,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 lay_image.select(_lay_click,
                                  inputs=[lay_image, lay_mode, lay_masks],
-                                 outputs=[lay_masks, lay_preview, lay_list])
+                                 outputs=[lay_masks, lay_preview, lay_list], **widgets.GPU_QUEUE)
 
                 def _lay_undo(img, masks):
                     new = list(masks)[:-1]
@@ -792,7 +799,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     do_layers,
                     inputs=[lay_image, lay_mode, lay_masks, lay_points,
                             lay_minarea, lay_max, lay_psd, lay_png],
-                    outputs=[lay_files, lay_log])
+                    outputs=[lay_files, lay_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(lay_stop, tools.cancel, lay_log,
                                       [lay_evt])
 
@@ -918,7 +925,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     do_hd,
                     inputs=[hd_image, hd_model, hd_scale, hd_denoise,
                             hd_upscaler, hd_prompt, hd_seed],
-                    outputs=[hd_result, hd_log])
+                    outputs=[hd_result, hd_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(hd_stop, gen_engine.cancel, hd_log,
                                       [hd_evt])
 
@@ -1021,7 +1028,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     do_highres,
                     inputs=[hr_image, hr_model, hr_factor, hr_strength,
                             hr_prompt, hr_colors],
-                    outputs=[hr_result, hr_log])
+                    outputs=[hr_result, hr_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(hr_stop, gen_engine.cancel, hr_log,
                                       [hr_evt])
 
@@ -1102,7 +1109,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 f_run.click(do_face,
                             inputs=[f_image, f_model, f_fidelity, f_center],
-                            outputs=[f_result, f_log])
+                            outputs=[f_result, f_log], **widgets.GPU_QUEUE)
 
             # Agrandir puis réparer les visages est LA suite d'opérations
             # normale. Sans ce relais il faudrait retrouver le fichier dans
@@ -1254,7 +1261,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     inputs=[ad_image, ad_model, ad_detector, ad_prompt,
                             ad_denoise, ad_conf, ad_pad, ad_blur, ad_largest,
                             ad_seed],
-                    outputs=[ad_result, ad_log])
+                    outputs=[ad_result, ad_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(ad_stop, gen_engine.cancel, ad_log,
                                       [ad_evt])
 
@@ -1543,7 +1550,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     inputs=[c_image, c_prompt, c_negative, c_scale, c_denoise,
                             c_steps, c_cfg, c_tile, c_controlnet, c_cnscale,
                             c_model, c_vae, c_esrgan],
-                    outputs=[c_result, c_log])
+                    outputs=[c_result, c_log], **widgets.GPU_QUEUE)
                 widgets.stop_into_log(c_stop, tools.cancel, c_log, [c_evt])
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
@@ -1552,19 +1559,17 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
             def _consume(pend):
                 # +2 sorties fixes : le groupe parent et le sélecteur d'outil.
-                if not pend:
-                    return tuple([gr.update()] * (len(_keys) + 2) + [None])
                 path, dest = pend
                 sub = gr.Tabs(selected=dest) if dest in _keys else gr.update()
                 # Remonter le groupe « Outils » : sans ça l'outil est bien
                 # sélectionné, mais dans un onglet que personne n'affiche.
                 top = (gr.Tabs(selected=tab_id) if parent_tabs is not None
                        else gr.update())
-                img_upd = [gr.update(value=path) if k == dest else gr.update()
+                img_upd = [path if k == dest else gr.update()
                            for k in _keys]
-                return tuple([top, sub] + img_upd + [None])
+                return tuple([top, sub] + img_upd)
 
             _outs = [parent_tabs if parent_tabs is not None else sub_tabs,
                      sub_tabs, d_image, b_image, s_image, u_image,
-                     c_image, pending_toolkit]
-            tabs.select(_consume, inputs=[pending_toolkit], outputs=_outs)
+                     c_image]
+            pending_toolkit.receive(_consume, outputs=_outs)

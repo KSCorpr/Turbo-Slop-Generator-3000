@@ -37,6 +37,24 @@ SANE = {"app.py": "print('v2')\n",
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_preview_channel_is_explicit_and_validated(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(U, "ROOT", Path(directory)):
+            config = Path(directory) / "config" / "update-channel.json"
+            config.parent.mkdir()
+            config.write_text(json.dumps({"branch": "codex/studio-performance-release"}))
+            self.assertTrue(U.archive_url().endswith("/refs/heads/codex/studio-performance-release"))
+            self.assertTrue(U.commits_url().endswith("/commits/codex/studio-performance-release"))
+            for value in ("../../bad", "branch?token=x", "branch\nmain", "//host", None):
+                config.write_text(json.dumps({"branch": value}))
+                self.assertEqual(U.update_branch(), "main")
+
+    def test_zip_updater_never_overwrites_a_git_checkout(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(U, "ROOT", Path(directory)), \
+             patch.object(U, "_fetch") as fetch:
+            (Path(directory) / ".git").mkdir()
+            self.assertEqual(U.update(), 1)
+            fetch.assert_not_called()
+
     def test_a_normal_archive_is_read_without_its_root_folder(self):
         files = U._archive_files(archive(SANE))
         self.assertEqual(set(files), set(SANE))
@@ -70,7 +88,7 @@ class ArchiveTests(unittest.TestCase):
              patch.object(U, "missing_files", return_value=[]), \
              patch.object(U, "_fetch", return_value=archive(SANE)) as fetch:
             self.assertEqual(U.update(check_only=True), 0)
-        fetch.assert_called_once_with(U.archive_url())
+            fetch.assert_called_once_with(U.archive_url())
         self.assertIn("/refs/heads/main", fetch.call_args.args[0])
 
     def test_a_noop_update_replaces_legacy_branch_but_check_changes_nothing(self):

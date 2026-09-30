@@ -137,7 +137,7 @@ def build_generative_tab(model_id: str, title: str,
     # `id` EXPLICITE : « 📝 Image → prompt » renvoie son texte vers un onglet
     # nommé. Sans identifiant stable, la cible serait le libellé affiché, qui
     # change avec la langue — le retour tomberait à côté en anglais.
-    with gr.Tab(title, id=model_id):
+    with gr.Tab(title, id=model_id, elem_classes="generation-workspace") as model_tab:
         m = registry.get_base_model(model_id, settings.load_prefs())
         ready = m is not None and registry.model_is_ready(m)
         family = m.family if m else "flux2"
@@ -154,11 +154,20 @@ def build_generative_tab(model_id: str, title: str,
         is_edit = _edit_kind in (True, "full")
         edit_optional = _edit_kind == "optional"
         status = (f"<span class='status-ok'>{t('● model ready')}</span>" if ready
-                  else "<span class='status-missing'>"
-                       f"{t('○ to download (Model catalog tab)')}</span>")
+                  else "<span class='status-missing'>Download weights in Models to start</span>")
         _mode = t("image editing") if is_edit else t("image-to-image")
-        gr.Markdown(t("### {title} — text-to-image & {mode}  ·  {status}").format(
-            title=title, mode=_mode, status=status))
+        model_status = gr.Markdown(
+            f"**{title}** · text to image & {_mode} · {status}",
+            elem_classes="model-summary")
+
+        def refresh_model_status():
+            current = registry.get_base_model(model_id, settings.load_prefs())
+            available = current is not None and registry.model_is_ready(current)
+            label = "Weights ready" if available else "Download weights in Models to start"
+            return f"**{title}** · text to image & {_mode} · {label}"
+
+        model_tab.select(refresh_model_status, outputs=[model_status],
+                         queue=False, show_progress="hidden")
 
         # `variant_model` a existé pour proposer une seconde forme du même
         # modèle (l'INT8 ConvRot de Krea 2, retiré). L'état reste : c'est ce
@@ -168,7 +177,7 @@ def build_generative_tab(model_id: str, title: str,
 
         with gr.Row():
             # ----- Entrées -----
-            with gr.Column(scale=3):
+            with gr.Column(scale=3, min_width=340, elem_classes="studio-controls"):
                 # Le PROMPT d'abord : c'est le champ principal, il ne doit pas
                 # être enterré sous des accordéons. Tout le reste (styles,
                 # réglages de l'améliorateur) est replié en dessous, groupé par
@@ -176,21 +185,37 @@ def build_generative_tab(model_id: str, title: str,
                 # l'autre. Les explications longues vivent dans l'onglet
                 # « 🧹 Gestion & aide » ; ici on s'en tient à une ligne par bloc.
                 prompt = gr.Textbox(label="Prompt", lines=3,
-                                    placeholder="Describe the image…")
+                                    placeholder="Describe your image, or the change to make…",
+                                    elem_classes="studio-prompt")
                 negative = gr.Textbox(label="Negative prompt", lines=1,
                                       visible=d.get("supports_negative", False))
 
+                ratio = gr.Dropdown(
+                    [t(k) for k in ratios],
+                    value=t(_ratio_label(ratios, d.get("width", 1024),
+                                         d.get("height", 1024))),
+                    label="Aspect ratio")
+                preset_list = _presets(model_id)
+                preset = gr.Dropdown(
+                    [t(p["name"]) for p in preset_list],
+                    value=(t(preset_list[0]["name"]) if preset_list else None),
+                    label="Quality preset",
+                    visible=bool(preset_list))
+                with gr.Row():
+                    seed = gr.Number(value=-1, label="Seed (-1 = random)",
+                                     precision=0)
+                    batch = gr.Slider(1, 8, value=1, step=1, label="Images")
                 # GÉNÉRER juste sous le prompt : c'est l'action principale, elle
                 # ne doit pas être au bout d'une colonne de réglages.
                 with gr.Row(elem_classes="go-row"):
                     # Libellé court : le modèle est déjà écrit sur l'onglet.
-                    run = gr.Button("🎨 Generate", variant="primary", size="lg",
+                    run = gr.Button("Generate", variant="primary", size="lg",
                                     scale=4)
-                    stop = gr.Button("⏹️ Stop", variant="stop", scale=1,
+                    stop = gr.Button("Stop", variant="stop", scale=1,
                                      min_width=90)
-                    clear_prompt = gr.Button("🗑️ Effacer", scale=1,
+                    clear_prompt = gr.Button("Clear", scale=1,
                                              min_width=110)
-                status_md = gr.Markdown("")
+                status_md = gr.Markdown("Ready when you are. Ctrl / ⌘ + Enter to generate.", elem_classes="studio-status")
 
                 # ----- ✨ Amélioration du prompt -----
                 with gr.Row():
@@ -227,7 +252,7 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Accordion(
                         t("🎨 Styles — presets, photo, artistic ({n} styles)").format(
                               n=len(_photo_labels) + len(_art_labels)),
-                        open=False):
+                        open=False) as styles_panel:
                     gr.Markdown(
                         "All three **stack**: the preset is prepended, the "
                         "photo and artistic styles dress up your subject. "
@@ -272,7 +297,7 @@ def build_generative_tab(model_id: str, title: str,
                         # sont repris que si le modèle en tient compte (CFG > 1).
                         with gr.Tab(t("📷 Photo ({n})").format(n=len(_photo_labels))):
                             photo_pick = gr.Dropdown(
-                                _photo_labels, value=[], multiselect=True,
+                                [], value=[], multiselect=True,
                                 label="Styles to combine (by category)",
                                 info="Quality, light, lens, film stock, mood… "
                                      "Your subject is inserted into every "
@@ -284,7 +309,7 @@ def build_generative_tab(model_id: str, title: str,
                         # est simplement ajoutée après le sujet. 🎲 = wildcard.
                         with gr.Tab(t("🖍️ Artistic ({n})").format(n=len(_art_labels))):
                             art_pick = gr.Dropdown(
-                                _art_labels, value=[], multiselect=True,
+                                [], value=[], multiselect=True,
                                 label="Styles to combine (by category)",
                                 info="Anime, cartoon, comics, drawing, "
                                      "design, painting… Appended after your "
@@ -293,13 +318,25 @@ def build_generative_tab(model_id: str, title: str,
                                 allow_custom_value=False)
                             art_dice = gr.Button("🎲 Random (wildcard)", size="sm")
 
+                styles_loaded = gr.State(False)
+
+                def load_style_choices(loaded):
+                    if loaded:
+                        return gr.update(), gr.update(), True
+                    return (gr.update(choices=styles.photo_style_labels()),
+                            gr.update(choices=styles.bank_labels(styles.ART_STYLES_FILE)), True)
+
+                styles_panel.expand(load_style_choices, inputs=[styles_loaded],
+                                    outputs=[photo_pick, art_pick, styles_loaded],
+                                    queue=False, show_progress="hidden")
+
                 # ----- ✨ Améliorateur : réglages ET installation ensemble -----
                 # C'était éclaté en deux accordéons séparés par le champ négatif.
                 # Ouvert d'office tant que l'add-on n'est pas installé.
                 _enh_ready = tools.enhance_is_installed()
                 with gr.Accordion("✨ Prompt improver — settings"
                                   + ("" if _enh_ready else " & installation"),
-                                  open=not _enh_ready):
+                                  open=False):
                     gr.Markdown(
                         "The grey line under the menus **says plainly what "
                         "the button will do**.")
@@ -341,7 +378,7 @@ def build_generative_tab(model_id: str, title: str,
                               else "🖼️ Reference / starting image (image-to-image)")
                 # Ouvert par défaut sur un modèle d'édition (Flux.2) : l'édition
                 # est une capacité phare, on la met en avant.
-                with gr.Accordion(_acc_title, open=is_edit):
+                with gr.Accordion(_acc_title, open=False):
                     if family == "ming_image":
                         gr.Markdown(
                             "Ming Image generates from text. To request a "
@@ -489,87 +526,68 @@ def build_generative_tab(model_id: str, title: str,
                         clear_custom = gr.Button("✖ Clear custom fields",
                                                  size="sm")
 
-                ratio = gr.Dropdown(
-                    [t(k) for k in ratios],
-                    value=t(_ratio_label(ratios, d.get("width", 1024),
-                                         d.get("height", 1024))),
-                    label="Aspect ratio")
-                with gr.Row():
-                    width = gr.Slider(256, size_max, value=d.get("width", 1024),
-                                      step=size_step,
-                                      label="Width")
-                    height = gr.Slider(256, size_max, value=d.get("height", 1024),
-                                       step=size_step,
-                                       label="Height")
-                with gr.Row():
-                    steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
-                                      label="Steps")
-                    cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
-                                    step=0.1, label="CFG",
-                                    info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
-                                          "example; negative prompts can work."
-                                          if family == "qwen21" else
-                                          "On sd.cpp, CFG disabled = 1.0 "
-                                          "(normal for distilled models). 0.0 "
-                                          "= pure unconditional: may IGNORE "
-                                          "the prompt (Krea's “cfg 0” is its "
-                                          "own convention, ≠ sd.cpp). >1 = "
-                                          "guidance."))
-                preset_list = _presets(model_id)
-                preset = gr.Dropdown(
-                    [t(p["name"]) for p in preset_list],
-                    value=(t(preset_list[0]["name"]) if preset_list else None),
-                    label="Preset (sampler/scheduler/steps)",
-                    visible=bool(preset_list))
-                # Menus ANNOTÉS (⭐ recommandé · △ peu adapté · ⚠️ déconseillé)
-                # et fiche qui suit la sélection. Le verdict dépend du MODÈLE :
-                # distillé à CFG 1.0, en flow matching, sur 4 à 8 pas — trois
-                # propriétés qui disqualifient la moitié du menu.
-                with gr.Row():
-                    sampler = gr.Dropdown(
-                        sampling.choices("sampler", family),
-                        value=d.get("sampler", "euler"), label="Sampler",
-                        info="⭐ recommended · △ poorly suited · ⚠️ "
-                             "discouraged for THIS model")
-                    schedule = gr.Dropdown(
-                        sampling.choices("schedule", family),
-                        value=d.get("scheduler", "auto"),
-                        label="Scheduler (sigmas)",
-                        info="How the denoising steps are spread out")
-                with gr.Row():
-                    sampler_doc = gr.Markdown(
-                        sampling.describe("sampler", d.get("sampler", "euler"),
-                                          family), elem_classes="hint")
-                    schedule_doc = gr.Markdown(
-                        sampling.describe("schedule",
-                                          d.get("scheduler", "auto"), family),
-                        elem_classes="hint")
-                sampler.change(
-                    lambda k: sampling.describe("sampler", k, family),
-                    inputs=[sampler], outputs=[sampler_doc])
-                schedule.change(
-                    lambda k: sampling.describe("schedule", k, family),
-                    inputs=[schedule], outputs=[schedule_doc])
-                with gr.Accordion(("📖 Why Euler and Auto for Qwen 2.1" if
-                                   family == "qwen21" else
-                                   "📖 Why half of this menu is useless here"),
-                                  open=False):
-                    gr.Markdown(sampling.rationale(family))
-                flow_shift = gr.Slider(
-                    0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
-                    label="Flow shift",
-                    info="Leave at 0 (auto): the model picks the right value "
-                         "for the resolution. Too low (1–2) leaves "
-                         "GRAIN/noise at high resolution; ~3–4 reinforces "
-                         "structure.")
-                with gr.Row():
-                    seed = gr.Number(value=-1, label="Seed (-1 = random)",
-                                     precision=0)
-                    batch = gr.Slider(1, 8, value=1, step=1, label="Images")
-                circular = gr.Checkbox(
-                    value=False,
-                    label="Seamless pattern (circular)",
-                    info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
+                with gr.Accordion("Resolution & sampling · advanced", open=False):
+                    with gr.Row():
+                        width = gr.Slider(256, size_max, value=d.get("width", 1024),
+                                          step=size_step,
+                                          label="Width")
+                        height = gr.Slider(256, size_max, value=d.get("height", 1024),
+                                           step=size_step,
+                                           label="Height")
+                    with gr.Row():
+                        steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
+                                          label="Steps")
+                        cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
+                                        step=0.1, label="CFG",
+                                        info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
+                                              "example; negative prompts can work."
+                                              if family == "qwen21" else
+                                              "On sd.cpp, CFG disabled = 1.0 "
+                                              "(normal for distilled models). 0.0 "
+                                              "= pure unconditional: may IGNORE "
+                                              "the prompt (Krea's “cfg 0” is its "
+                                              "own convention, ≠ sd.cpp). >1 = "
+                                              "guidance."))
+                    # Menus ANNOTÉS (⭐ recommandé · △ peu adapté · ⚠️ déconseillé)
+                    # et fiche qui suit la sélection. Le verdict dépend du MODÈLE :
+                    # distillé à CFG 1.0, en flow matching, sur 4 à 8 pas — trois
+                    # propriétés qui disqualifient la moitié du menu.
+                    with gr.Row():
+                        sampler = gr.Dropdown(
+                            sampling.choices("sampler", family),
+                            value=d.get("sampler", "euler"), label="Sampler",
+                            info="⭐ recommended · △ poorly suited · ⚠️ "
+                                 "discouraged for THIS model")
+                        schedule = gr.Dropdown(
+                            sampling.choices("schedule", family),
+                            value=d.get("scheduler", "auto"),
+                            label="Scheduler (sigmas)",
+                            info="How the denoising steps are spread out")
+                    with gr.Row():
+                        sampler_doc = gr.Markdown(
+                            sampling.describe("sampler", d.get("sampler", "euler"),
+                                              family), elem_classes="hint")
+                        schedule_doc = gr.Markdown(
+                            sampling.describe("schedule",
+                                              d.get("scheduler", "auto"), family),
+                            elem_classes="hint")
+                    sampler.change(
+                        lambda k: sampling.describe("sampler", k, family),
+                        inputs=[sampler], outputs=[sampler_doc])
+                    schedule.change(
+                        lambda k: sampling.describe("schedule", k, family),
+                        inputs=[schedule], outputs=[schedule_doc])
+                    flow_shift = gr.Slider(
+                        0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
+                        label="Flow shift",
+                        info="Leave at 0 (auto): the model picks the right value "
+                             "for the resolution. Too low (1–2) leaves "
+                             "GRAIN/noise at high resolution; ~3–4 reinforces "
+                             "structure.")
+                    circular = gr.Checkbox(
+                        value=False,
+                        label="Seamless pattern (circular)",
+                        info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
 
                 # (« Générer » / « Annuler » sont en haut, sous le prompt.)
 
@@ -577,7 +595,7 @@ def build_generative_tab(model_id: str, title: str,
             # L'aperçu est une gr.Image SÉPARÉE (un seul <img> mis à jour sur
             # place) et non fusionné dans la galerie : mettre à jour une Gallery
             # à chaque frame reconstruit toute la grille et fait « clignoter ».
-            with gr.Column(scale=4):
+            with gr.Column(scale=5, min_width=360, elem_classes="studio-canvas"):
                 # (La ligne de statut est sous le bouton Générer, à gauche : la
                 # progression se lit là où on vient de cliquer. Elle reste une
                 # mise à jour « valeur seule », donc AUCUN overlay sur l'aperçu —
@@ -611,8 +629,9 @@ def build_generative_tab(model_id: str, title: str,
                 send_op = gr.Button("🖼️ Send the selection to Outpaint",
                                     size="sm",
                                     visible=pending_outpaint is not None)
-                logbox = gr.Textbox(label="Log", lines=10, max_lines=24,
-                                    autoscroll=True, elem_classes="log-box")
+                with gr.Accordion("Generation log", open=False):
+                    logbox = gr.Textbox(label="Log", lines=8, max_lines=24,
+                                        autoscroll=True, elem_classes="log-box")
 
         last_paths = gr.State([])
         last_seeds = gr.State([])
@@ -813,7 +832,8 @@ def build_generative_tab(model_id: str, title: str,
         enhance_btn.click(
             _enhance,
             inputs=[system_prompt, prompt, enh_level, enh_variants],
-            outputs=[prompt, enh_props, enh_msg, prompt_before, enh_undo])
+            outputs=[prompt, enh_props, enh_msg, prompt_before, enh_undo],
+            **widgets.GPU_QUEUE)
 
         # --- Récapitulatif VIVANT : ce que « Améliorer » va faire ---------
         # On traduit les réglages en une phrase lisible, sinon impossible de
@@ -906,6 +926,8 @@ def build_generative_tab(model_id: str, title: str,
             import threading
             import time
 
+            started = time.monotonic()
+            job_id = time.time_ns()
             if not (prompt or "").strip():
                 raise gr.Error(t("Enter a prompt (describe the image, or the "
                                  "change to apply)."))
@@ -961,7 +983,7 @@ def build_generative_tab(model_id: str, title: str,
                 bg = bg.filter(_IF.GaussianBlur(28))
                 bg.paste(init_image.convert(mode),
                          ((nw - ow) // 2, (nh - oh) // 2))
-                rp = settings.TMP_DIR / "outpaint_ref.png"
+                rp = settings.TMP_DIR / f"outpaint_ref_{job_id}.png"
                 bg.save(rp)
                 ref_paths.append(rp)
                 width, height = nw, nh
@@ -972,7 +994,7 @@ def build_generative_tab(model_id: str, title: str,
                 # Édition multi-référence : jusqu'à 3 images (-r répété).
                 for i, im in enumerate((init_image, ref_image2, ref_image3)):
                     if im is not None:
-                        rp = settings.TMP_DIR / f"edit_ref{i + 1}.png"
+                        rp = settings.TMP_DIR / f"edit_ref_{job_id}_{i + 1}.png"
                         im.save(rp)
                         ref_paths.append(rp)
             elif edit_mode and init_image is not None:
@@ -992,11 +1014,11 @@ def build_generative_tab(model_id: str, title: str,
                     nw = max(64, int(round(im.width * sc / 16)) * 16)
                     nh = max(64, int(round(im.height * sc / 16)) * 16)
                     im = im.convert("RGB").resize((nw, nh), _PI.LANCZOS)
-                rp = settings.TMP_DIR / "edit_ref1.png"
+                rp = settings.TMP_DIR / f"edit_ref_{job_id}_1.png"
                 im.save(rp)
                 ref_paths.append(rp)
             elif init_image is not None:
-                init_path = settings.TMP_DIR / "i2i_init.png"
+                init_path = settings.TMP_DIR / f"i2i_init_{job_id}.png"
                 init_image.save(init_path)
 
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
@@ -1033,6 +1055,7 @@ def build_generative_tab(model_id: str, title: str,
             threading.Thread(target=worker, daemon=True).start()
             logs: list[str] = []
             next_preview = 0
+            next_preview_check = 0.0
             last_emit = 0.0
             last_log_len = 0
             status = t("⏳ Loading the model…")
@@ -1067,21 +1090,26 @@ def build_generative_tab(model_id: str, title: str,
                                 c=lm.group(1), t=lm.group(2))
                     if not is_bar:
                         logs.append(line)
+                        if len(logs) > 800:
+                            del logs[:-400]
                 # sd.cpp écrit preview_000.png, preview_001.png, etc. Chaque
                 # pas reste lisible même si plusieurs images arrivent entre
                 # deux rafraîchissements de l'interface.
-                for idx, frame in preview.step_frames(preview_path, next_preview):
-                    next_preview = idx + 1
-                    last_emit = time.time()
-                    last_log_len = len(logs)
-                    last_status = status
-                    yield (status, gr.update(value=frame), gr.update(),
-                           "\n".join(logs[-400:]), gr.update(), gr.update())
+                now = time.monotonic()
+                if done or now >= next_preview_check:
+                    next_preview_check = now + 0.05
+                    for idx, frame in preview.step_frames(preview_path, next_preview):
+                        next_preview = idx + 1
+                        last_emit = time.monotonic()
+                        last_log_len = len(logs)
+                        last_status = status
+                        yield (status, gr.update(value=frame), gr.update(),
+                               "\n".join(logs[-400:]), gr.update(), gr.update())
                 if done:
                     break
                 # Les autres mises à jour concernent le statut (≤4x/s) ou le
                 # journal (≤1x/s). Les images sont émises ci-dessus sans délai.
-                now = time.time()
+                now = time.monotonic()
                 log_changed = len(logs) != last_log_len
                 status_changed = status != last_status
                 if (status_changed and now - last_emit >= 0.25) \
@@ -1097,6 +1125,12 @@ def build_generative_tab(model_id: str, title: str,
             for path in settings.TMP_DIR.glob(preview_path.name.replace("%03d", "*")):
                 try:
                     path.unlink()
+                except OSError:
+                    pass
+
+            for path in ref_paths + ([init_path] if init_path else []):
+                try:
+                    path.unlink(missing_ok=True)
                 except OSError:
                     pass
 
@@ -1117,7 +1151,8 @@ def build_generative_tab(model_id: str, title: str,
             items = [(p, f"seed {s}") for p, s in zip(paths, seeds)]
             # Fin : on masque l'aperçu et on RÉAFFICHE la galerie avec les résultats
             # (elle avait été masquée au début → il FAUT visible=True ici).
-            yield (t("✅ Done — {n} image(s).").format(n=len(paths)),
+            yield (t("✅ Done — {n} image(s).").format(n=len(paths))
+                   + f" · {time.monotonic() - started:.1f} s",
                    gr.update(visible=False, value=None),
                    gr.update(value=items, visible=True),
                    "\n".join(logs), paths, seeds)
@@ -1135,14 +1170,16 @@ def build_generative_tab(model_id: str, title: str,
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )
+        _gen_io.update(widgets.GPU_QUEUE, show_progress="minimal",
+                       show_progress_on=[status_md], stream_every=0.15)
         gen_evt = run.click(**_gen_io)
         # QOL : Ctrl+Entrée (ou Cmd+Entrée) depuis le prompt lance la
         # génération. Un champ multiligne n'a pas de « validation » naturelle,
         # et faire l'aller-retour jusqu'au bouton à chaque essai est le geste
         # qu'on répète le plus dans cette application.
-        prompt.submit(**_gen_io)
+        submit_evt = prompt.submit(**_gen_io)
         widgets.stop_into_status(stop, gen_engine.cancel, status_md,
-                                 [gen_evt])
+                                 [gen_evt, submit_evt])
 
         # --- Seed : vidé -> -1 ; sélection -> affichage copiable ; réutiliser ---
         def _seed_default(v):
@@ -1174,9 +1211,9 @@ def build_generative_tab(model_id: str, title: str,
                 return ((paths[i], dest), gr.Tabs(selected=toolkit_tab_id),
                         gr.update(value=None))
 
-            send_tool.change(
+            pending_toolkit.send(send_tool.input,
                 _send_toolkit, inputs=[last_paths, sel_index, send_tool],
-                outputs=[pending_toolkit, tabs, send_tool])
+                outputs=[tabs, send_tool])
 
         # Envoi de l'image sélectionnée vers l'onglet « Image → 3D ».
         if pending_3d is not None and tabs is not None:
@@ -1186,8 +1223,8 @@ def build_generative_tab(model_id: str, title: str,
                 i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
                 return paths[i], gr.Tabs(selected=threed_tab_id)
 
-            send_3d.click(_send_3d, inputs=[last_paths, sel_index],
-                          outputs=[pending_3d, tabs])
+            pending_3d.send(send_3d.click, _send_3d,
+                            inputs=[last_paths, sel_index], outputs=[tabs])
 
         # Envoi de l'image sélectionnée vers l'onglet « Outpaint ».
         if pending_outpaint is not None and tabs is not None:
@@ -1197,8 +1234,8 @@ def build_generative_tab(model_id: str, title: str,
                 i = idx if isinstance(idx, int) and 0 <= idx < len(paths) else 0
                 return paths[i], gr.Tabs(selected=outpaint_tab_id)
 
-            send_op.click(_send_outpaint, inputs=[last_paths, sel_index],
-                          outputs=[pending_outpaint, tabs])
+            pending_outpaint.send(send_op.click, _send_outpaint,
+                                  inputs=[last_paths, sel_index], outputs=[tabs])
 
         # Le champ Prompt est RENVOYÉ à l'appelant. C'est ce qui permet à
         # « 📝 Image → prompt » d'y déposer son texte directement, au clic,

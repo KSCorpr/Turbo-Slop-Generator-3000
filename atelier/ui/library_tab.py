@@ -147,7 +147,7 @@ def _build_h3_catalog():
 
 
 def build_library_tab():
-    with gr.Tab("📚 Model Catalog"):
+    with gr.Tab("Models", id="models"):
         gr.Markdown("### Base models\nChoose the exact weights for each "
                     "model below, or keep the automatic VRAM/RAM choice. "
                     "Click **Load weights and sizes** to see the real "

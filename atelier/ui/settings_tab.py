@@ -16,6 +16,7 @@ import gradio as gr
 
 from .. import benchmark, diagnostics, hardware, registry, settings, system_profile
 from ..i18n import t
+from .theme import THEME_JS
 from . import widgets
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
@@ -515,8 +516,7 @@ def build_settings_tab():
         # ---- Theme, accounts ---------------------------------------------- #
         def _apply_theme(th):
             _save(theme="dark" if th == "dark" else "light")
-            return _said(_OK + t("Theme saved. **Restart the app** to apply "
-                                 "it."))
+            return _said(_OK + t("Theme applied and saved."))
 
         def _apply_endpoint(v):
             _save(hf_endpoint=v or "https://huggingface.co")
@@ -526,7 +526,8 @@ def build_settings_tab():
             _save(civitai_token=(v or "").strip())
             return _said(_OK + t("Civitai token saved."))
 
-        theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status])
+        theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status],
+                        js=THEME_JS, queue=False)
         hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[account_status])
         civitai_tok.change(_apply_token, inputs=[civitai_tok],
                            outputs=[account_status])
@@ -587,7 +588,7 @@ def build_settings_tab():
                    str(path), tail)
 
         _bench_evt = bench_btn.click(
-            _do_bench, outputs=[bench_status, bench_file, bench_log])
+            _do_bench, outputs=[bench_status, bench_file, bench_log], **widgets.GPU_QUEUE)
 
         def _cancel_bench() -> str:
             # On POSE le drapeau au lieu de tuer le fil : la génération en

@@ -50,6 +50,9 @@ def step_frames(template, first: int):
         try:
             with Image.open(path) as image:
                 frame = image.copy()
+                # Preview pixels only. The downloadable result stays full size.
+                frame.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS,
+                                reducing_gap=3)
         except (OSError, ValueError):
             return
         yield idx, frame

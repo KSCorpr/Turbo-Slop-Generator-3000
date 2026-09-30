@@ -1,4 +1,17 @@
-# 🟢 Turbo Slop Generator 3000
+# Turbo Slop Generator 3000 · Studio
+
+**Studio — available on `main`.** A calmer, responsive
+workspace with six navigation tabs, a local image gallery, lighter previews,
+and one shared GPU queue. [Release notes and verification](docs/STUDIO_RELEASE.md).
+
+[Download Studio](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/main.zip)
+and extract it into a folder, then use the normal installers below.
+With Git:
+
+```bash
+git clone --branch main --single-branch https://github.com/KSCorpr/Turbo-Slop-Generator-3000.git turbo-slop-studio
+cd turbo-slop-studio
+```
 
 > **It adapts to your hardware.** By default the app uses the **best NVIDIA card
 > it detects** (or the **Apple Silicon GPU** on a Mac) and tunes itself to it:
@@ -34,38 +47,19 @@ No ComfyUI, no node spaghetti — just a clean web UI.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
-**Nine root tabs**, arranged by what they do rather than by what they are: what
-*produces* an image stays at the root, what *retouches* one lives under **Tools**,
-what administers the machine lives under **System**. (Eleven root tabs used to
-overflow into a `…` menu, which made Manage and Settings invisible at a glance —
-so the grouping is not decoration. Five of the nine are generation tabs, one
-per model; adding a model adds a tab, never a setting.)
+**Six main tabs** keep the core workflow visible. Choose a model inside
+**Images**, write a prompt, then press **Generate** or **Ctrl/Cmd+Enter**. Size,
+quality, seed and batch stay close to the prompt; detailed sampling, styles and
+LoRA settings expand when needed.
 
 | Tab | What it does |
 |---|---|
-| 🟣 **Flux.2 Klein** | fast (4 steps) · text-to-image & **multi-reference image editing** · presets, styles, LoRA |
-| **Qwen Image 2.1** | guided image generation & native multi-reference editing · PNG transparency · 2K formats |
-| **Ming Image** | text-rich designs and transparent PNGs · BF16 or INT8 convrot weights · Ling encoder |
-| ⚡ **Krea 2 Turbo** | fast photorealism (8 steps, GGUF, Qwen3-VL encoder, WAN 2.1 VAE) |
-| 🟢 **Z-Image Turbo** | 6B, 8 steps · **Apache-2.0 end to end** · runs at Q8_0 on 12 GB |
-| 💊 **Xanax** | one sentence → **one photo** · style **hard-wired**, nothing to configure · model picker for the distilled engines |
-| 📚 **Model Catalog** | hardware-aware recommendations, on-demand download / delete |
-| 🧰 **Tools** | **Toolkit** (**image → prompt** · depth · background removal · click-to-cutout (SAM) · layers → PSD · ESRGAN · **HD**, the native sd.cpp highres fix with no tiles · **high resolution** (Flux.2 as its own upscaler) · **face restoration** · creative SDXL upscale) · **Outpaint** · **Text / Image → 3D** (textured GLB via **trellis.cpp**, native CUDA, no PyTorch) · **MiniMax H3 Turbo / Ref2VA** (video only) |
-| ⚙️ **System** | **Settings** (detected hardware, quantization, optimizations) · **Manage & help** (disk inventory with sizes, selective uninstall, models location, image-display diagnostic, in-app documentation of every option) · **Convert to GGUF** |
-
-The exact tab tree, since two of the nine are containers:
-
-```
-🟣 Flux.2 Klein 9B   Qwen Image 2.1   Ming Image
-⚡ Krea 2 Turbo   🟢 Z-Image Turbo
-💊 Xanax   📚 Model Catalog
-🧰 Tools    → 🧰 Toolkit  ·  🖼️ Outpaint  ·  🧊 Text / Image → 3D  ·  🎬 Video · MiniMax H3
-⚙️ System   → ⚙️ Settings ·  🧹 Manage & help  ·  🔧 Convert to GGUF
-
-🧰 Toolkit  → 📝 Image → prompt · 🌐 Depth · ✂️ Background removal
-              🪄 Cut out (SAM)  · 🧩 Layers · 🔼 Upscale · 🚀 HD
-              🔍 High resolution · 🌱 Restore · 🙂 Faces · ✨ SDXL upscale
-```
+| **Images** | Flux.2 Klein, Qwen Image 2.1, Ming Image, Krea 2 Turbo, Z-Image Turbo and Xanax; all existing model controls remain available. |
+| **Video** | MiniMax H3 Turbo / Ref2VA video generation. |
+| **Tools & 3D** | Image-to-prompt, depth, cutouts, layers, upscaling, restoration, Outpaint and textured 3D. |
+| **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
+| **Models** | Hardware-aware model catalog and on-demand downloads. |
+| **System** | Settings, disk management, help and GGUF conversion. |
 
 ---
 
@@ -165,7 +159,10 @@ each via its own one-click installer.
 ### Updating the app itself
 
 **`update.bat` is the way** (`./update.sh` on Linux/Mac). It downloads the
-current code from GitHub **main** and applies it in place. The code step leaves
+current code from the release channel in `config/update-channel.json` and applies
+it in place. Studio follows **main**; releases without that file also use
+**main**. In a Git checkout, use `git pull --ff-only`
+instead: the ZIP updater refuses to overwrite tracked or uncommitted work. The code step leaves
 your models, outputs, settings, portable Python and installed engines alone;
 the later engine step updates sd.cpp in `bin/` with a rollback copy.
 

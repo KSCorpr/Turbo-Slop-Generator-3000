@@ -5,6 +5,8 @@ verrouiller les DLL de torch dans le process Gradio.
 """
 from __future__ import annotations
 
+from ..processes import close_worker
+
 import json
 import subprocess
 import sys
@@ -292,8 +294,11 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
                 log(line.rstrip("\n"))
         code = proc.wait()
     finally:
-        with _LOCK:
-            _ACTIVE.discard(proc)
+        try:
+            close_worker(proc)
+        finally:
+            with _LOCK:
+                _ACTIVE.discard(proc)
     if _CANCELLED:
         raise ToolError("Cancelled by the user.")
     if code != 0:
@@ -895,4 +900,3 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     _run_tool(cmd, log, "The creative SDXL upscale failed (see the log).",
               gpu_index=_gen_gpu_index())
     return _collect(out_dir, "usdu", stamp)
-

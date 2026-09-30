@@ -10,6 +10,7 @@ Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · R�
 from __future__ import annotations
 
 import argparse
+import html
 import os
 import sys
 import warnings
@@ -214,7 +215,9 @@ from atelier.ui.manage_tab import build_manage_tab
 from atelier.ui.outpaint_tab import build_outpaint_tab
 from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
-from atelier.ui.theme import CSS, theme
+from atelier.ui.theme import CSS, SHORTCUTS, theme
+from atelier.ui.history_tab import build_history_tab
+from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.video_tab import build_video_tab
 from atelier.ui.xanax_tab import build_xanax_tab
@@ -228,7 +231,7 @@ def _head_for(mode: str) -> str:
         "const u=new URL(window.location);"
         f"u.searchParams.set('__theme','{mode}');"
         "window.location.replace(u);}"
-        "</script>")
+        "</script>" + SHORTCUTS)
 
 
 def presentation() -> dict:
@@ -250,7 +253,8 @@ def build_app() -> gr.Blocks:
     sd_cli = settings.find_sd_cli()
     # Thème / CSS / <head> ne se posent plus ici : voir presentation(),
     # passé à launch().
-    with gr.Blocks(title=f"{APP_NAME} {__version__}") as demo:
+    with gr.Blocks(title=f"{APP_NAME} {__version__}", analytics_enabled=False,
+                   fill_width=True) as demo:
         # En-tête sur une ligne : titre, sous-titre, puis une pastille qui dit
         # sur QUOI ça tourne. C'est l'information qu'on veut avoir sous les yeux
         # en permanence quand on choisit une résolution ou un facteur d'upscale
@@ -258,14 +262,16 @@ def build_app() -> gr.Blocks:
         _subtitle = i18n.t("Local image generation")
         if gpus:
             _best = max(gpus, key=lambda g: g.vram_gb)
-            _chip = (f"<span class='chip ok'>{_best.name} · "
+            _chip = (f"<span class='chip ok'>{html.escape(_best.name)} · "
                      f"{_best.vram_gb:.0f} GB</span>")
         else:
             _chip = (f"<span class='chip warn'>{i18n.t('mode CPU')}</span>")
         gr.HTML(
-            f"<div id='atelier-header'><h1>🎨 {APP_NAME}</h1>"
-            f"<span class='sub'>{_subtitle} · v{__version__}</span>"
-            f"{_chip}</div>")
+            "<div id='atelier-header'><div class='studio-brand'>"
+            "<span class='studio-mark' aria-hidden='true'>TS</span>"
+            "<div><h1>TURBO SLOP <span>3000</span></h1>"
+            f"<p class='sub'>{_subtitle} · v{__version__}</p></div></div>"
+            f"<div class='studio-hardware'><span class='local-label'>LOCAL STUDIO</span>{_chip}</div></div>")
 
         # Alertes de démarrage : UN bandeau compact, pas un empilement. Deux
         # blocs Markdown pleine largeur coûtaient une centaine de pixels du
@@ -283,15 +289,15 @@ def build_app() -> gr.Blocks:
                 "**No GPU detected** — CPU mode (very slow). Check your "
                 "NVIDIA drivers / `nvidia-smi`."))
         if alerts:
-            gr.Markdown("⚠️ " + "  ·  ".join(alerts),
+            gr.Markdown("  ·  ".join(alerts),
                         elem_id="atelier-alerts")
 
-        # Image en attente d'envoi vers le Toolkit : (chemin, destination).
-        pending_toolkit = gr.State(None)
+        # Relais directs entre les sources et les outils construits plus bas.
+        pending_toolkit = ImageHandoff()
         # Image en attente d'envoi vers l'onglet « Image → 3D » (chemin).
-        pending_3d = gr.State(None)
+        pending_3d = ImageHandoff()
         # Image en attente d'envoi vers l'onglet « Outpaint » (chemin).
-        pending_outpaint = gr.State(None)
+        pending_outpaint = ImageHandoff()
         # Champs « Prompt » des onglets de génération, indexés par modèle.
         # « 📝 Image → prompt » y écrit DIRECTEMENT : c'est le seul flux qui
         # remonte des Outils vers la génération, et il ne peut pas passer par
@@ -303,53 +309,58 @@ def build_app() -> gr.Blocks:
         # étaient littéralement invisibles au premier coup d'œil. Le regroupement
         # n'est donc pas cosmétique — il rend deux fonctions atteignables.
         #
-        # La règle de rangement : ce qui PRODUIT une image reste à la racine ;
-        # ce qui la RETOUCHE va dans « Outils » ; ce qui administre la machine
-        # va dans « Système ».
-        with gr.Tabs() as tabs:
-            prompt_boxes["flux2-klein-9b"] = build_generative_tab(
-                "flux2-klein-9b", "🟣 Flux.2 Klein 9B",
-                pending_toolkit=pending_toolkit, tabs=tabs,
-                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-            prompt_boxes["qwen-image-2.1"] = build_generative_tab(
-                "qwen-image-2.1", "Qwen Image 2.1",
-                pending_toolkit=pending_toolkit, tabs=tabs,
-                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-            prompt_boxes["ming-image-design"] = build_generative_tab(
-                "ming-image-design", "Ming Image",
-                pending_toolkit=pending_toolkit, tabs=tabs,
-                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-            prompt_boxes["krea2-turbo"] = build_generative_tab(
-                "krea2-turbo", "⚡ Krea 2 Turbo",
-                pending_toolkit=pending_toolkit, tabs=tabs,
-                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-            # Z-Image Turbo : 6B distillé, le plus léger du catalogue et le
-            # seul dont TOUTE la chaîne (modèle, encodeur, VAE) soit en
-            # Apache-2.0 — donc sans réserve pour un usage commercial.
-            prompt_boxes["z-image-turbo"] = build_generative_tab(
-                "z-image-turbo", "🟢 Z-Image Turbo",
-                pending_toolkit=pending_toolkit, tabs=tabs,
-                pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-            # « Xanax » : style figé, aucun réglage de style exposé. Un seul
-            # onglet pour les deux modèles — ils partagent tout sauf le moteur.
-            build_xanax_tab("💊 Xanax")
-            build_library_tab()
+        # Six espaces : création, vidéo, outils, historique, modèles, système.
+        with gr.Tabs(elem_id="studio-nav") as tabs:
+            with gr.Tab("Images", id="create"):
+                with gr.Tabs(elem_id="model-nav") as generation_tabs:
+                    prompt_boxes["flux2-klein-9b"] = build_generative_tab(
+                        "flux2-klein-9b", "Flux.2 Klein",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["qwen-image-2.1"] = build_generative_tab(
+                        "qwen-image-2.1", "Qwen Image 2.1",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["ming-image-design"] = build_generative_tab(
+                        "ming-image-design", "Ming Image",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["krea2-turbo"] = build_generative_tab(
+                        "krea2-turbo", "Krea 2 Turbo",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    # Z-Image Turbo : 6B distillé, le plus léger du catalogue et le
+                    # seul dont TOUTE la chaîne (modèle, encodeur, VAE) soit en
+                    # Apache-2.0 — donc sans réserve pour un usage commercial.
+                    prompt_boxes["z-image-turbo"] = build_generative_tab(
+                        "z-image-turbo", "Z-Image Turbo",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    # « Xanax » : style figé, aucun réglage de style exposé. Un seul
+                    # onglet pour les deux modèles — ils partagent tout sauf le moteur.
+                    build_xanax_tab("Xanax")
+
+            build_video_tab()
 
             # « Outils » : tout ce qui part d'une image existante. Les envois
             # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
             # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
-            with gr.Tab("🧰 Tools", id="tools"):
+            with gr.Tab("Tools & 3D", id="tools"):
                 with gr.Tabs() as tool_tabs:
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
                                       tabs=tabs, parent_tabs=tool_tabs,
-                                      prompt_boxes=prompt_boxes)
+                                      prompt_boxes=prompt_boxes,
+                                      generation_tabs=generation_tabs)
                     build_outpaint_tab(pending_outpaint=pending_outpaint,
                                        tabs=tabs, parent_tabs=tool_tabs)
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,
                                      parent_tabs=tool_tabs)
-                    build_video_tab()
 
-            with gr.Tab("⚙️ System", id="system"):
+            build_history_tab(tabs=tabs, generation_tabs=generation_tabs,
+                              prompt_boxes=prompt_boxes, pending_toolkit=pending_toolkit)
+            build_library_tab()
+
+            with gr.Tab("System", id="system"):
                 with gr.Tabs():
                     build_settings_tab()
                     build_manage_tab()
@@ -375,13 +386,13 @@ def main():
     ap.add_argument("--port", type=int, default=7860)
     args = ap.parse_args()
 
-    demo = build_app().queue()
+    demo = build_app().queue(max_size=16)
     port = net.find_free_port(args.port, host=HOST)
 
     # `show_api` n'existe plus dans Gradio 6 : la visibilité de la page d'API
     # se règle écouteur par écouteur (`api_visibility`). Sans intérêt ici —
     # l'application est locale et ne publie rien.
-    demo.launch(server_name=HOST, server_port=port, inbrowser=True,
+    demo.launch(server_name=HOST, server_port=port, inbrowser=True, ssr_mode=False,
                 allowed_paths=settings.served_paths(), **presentation())
 
 
