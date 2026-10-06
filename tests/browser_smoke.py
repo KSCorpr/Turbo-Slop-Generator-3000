@@ -73,10 +73,11 @@ def main():
                     if cancelled.wait(0.25):
                         interrupted.set()
                         raise RuntimeError("Interrupted by the user.")
-                    sample.save(str(kwargs["preview_path"]).replace("%03d", f"{step:03d}"))
+                    if kwargs.get("preview_path"):
+                        sample.save(str(kwargs["preview_path"]).replace("%03d", f"{step:03d}"))
                     kwargs["log"](f"{step + 1}/{kwargs['steps']}")
                 path = settings.OUTPUT_DIR / f"simulated-{len(calls)}.png"
-                sample.save(path)
+                sample.resize((kwargs["width"], kwargs["height"])).save(path)
                 path.with_suffix(".txt").write_text(
                     kwargs["prompt"] + "\nModel: Flux (flux2-klein-9b)\nSteps: 4, Seed: 42", encoding="utf-8")
                 return [path]
@@ -185,6 +186,39 @@ def main():
                 expect(page.locator(".studio-status:visible").first).to_contain_text(re.compile("cancelled|Error"))
                 assert interrupted.wait(5), "Stop did not interrupt the worker"
                 assert active == 0 and peak == 1, (active, peak)
+
+                # A full ten-view batch must stream, download and convert in
+                # the real browser using the same simulated image engine.
+                page.get_by_role("tab", name="Tools & 3D", exact=True).click()
+                page.get_by_role("tab", name="10 views / 360°", exact=True).click()
+                page.get_by_role("button", name="Generate 10 views", exact=True).click()
+                expect(page.get_by_text("Failed: Import a source image first.", exact=True)).to_be_visible()
+                expect(page.get_by_text("Also create an equirectangular 360×180 panorama", exact=True)).not_to_be_visible()
+                page.get_by_text("360 scene — camera rotates in place", exact=True).click()
+                expect(page.get_by_text("Also create an equirectangular 360×180 panorama", exact=True)).to_be_visible()
+                source_file = folder / "input.png"
+                sample.save(source_file)
+                page.locator("#views-source input[type=file]").set_input_files(str(source_file))
+                expect(page.locator("#views-source img")).to_be_visible()
+                start_calls = len(calls)
+                page.get_by_role("button", name="Generate 10 views", exact=True).click()
+                expect(page.get_by_text("Completed.", exact=True)).to_be_visible(timeout=30000)
+                assert len(calls) == start_calls + 10, calls
+                assert active == 0 and peak == 1, (active, peak)
+                batches = list(settings.OUTPUT_DIR.glob("views-scene-*"))
+                directory = next(p for p in batches if p.is_dir())
+                assert len(list(directory.glob("[0-9][0-9]-*.png"))) == 10
+                page.screenshot(path=str(screenshots / "studio-multiview.png"))
+                page.get_by_text("Advanced and conversion tools", exact=True).click()
+                page.locator("#views-import input[type=file]").set_input_files(
+                    [str(p) for p in sorted(directory.glob("[0-9][0-9]-*.png"))])
+                expect(page.get_by_text("10-nadir.png", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Convert views to 360 PNG", exact=True).click()
+                expect(page.locator("#views-log textarea")).to_have_value(re.compile("Reprojecting the fixed-camera views"))
+                expect(page.get_by_text("Completed.", exact=True)).to_be_visible(timeout=30000)
+                assert len(calls) == start_calls + 10, "Conversion launched image generation"
+                assert list(settings.OUTPUT_DIR.glob("views-converted-*/equirectangular-360.png"))
+                page.screenshot(path=str(screenshots / "studio-panorama.png"))
 
                 for title in ("Video", "Tools & 3D", "Models", "System", "Images"):
                     page.get_by_role("tab", name=title, exact=True).click()
