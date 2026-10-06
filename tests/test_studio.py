@@ -225,7 +225,8 @@ class StudioWiringTests(unittest.TestCase):
         names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_generate3d", "do_depth", "do_bg",
                  "do_describe", "do_upscale", "do_layers", "do_hd", "do_highres", "do_face",
                  "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
-                 "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat"}
+                 "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
+                 "run_views", "convert_panorama", "install_view_caption"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:
@@ -252,7 +253,9 @@ class StudioWiringTests(unittest.TestCase):
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))
 
     def test_payload_stays_below_the_original_1_9_mb(self):
-        self.assertLess(len(json.dumps(self.demo.config, default=str)), 1_450_000)
+        # Budget includes the additional multiview workspace (~49 KB), while
+        # retaining the substantial reduction from the original 1.9 MB UI.
+        self.assertLess(len(json.dumps(self.demo.config, default=str)), 1_520_000)
 
 
 if __name__ == "__main__":

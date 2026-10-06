@@ -1,5 +1,9 @@
 # Turbo Slop Generator 3000 · Studio
 
+**10 views / 360°:** generate ten object angles or fixed-camera scene views
+from one image using any image engine in the catalogue. Scene views can be
+reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](docs/multiview-360.md).
+
 **Local media engines:** SeedVR2, LTX 2.5 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See
 [the setup guide and GPU validation limits](docs/media-engines.md).
