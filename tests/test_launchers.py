@@ -78,6 +78,7 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
 
     # Scripts internes, appelés par le code et jamais à la main.
     INTERNAL = {"get_sdcpp.py", "get_trellis.py", "setup_tools.py",
+                "setup_media.py",  # invoked by the three media install buttons
                 "setup_adetailer.py",  # idem, onglet « Détails »
                 # La maintenance a PERDU son lanceur, et c'est le but : elle
                 # ne faisait qu'un quart du travail, et son bouton séparé

@@ -15,7 +15,7 @@ from . import widgets
 
 
 def build_video_tab() -> None:
-    with gr.Tab("Video", id="h3-video"):
+    with gr.Tab("MiniMax H3", id="minimax-h3"):
         gr.Markdown("### MiniMax H3 · video only\n"
                     "Turbo uses four steps and optional first/last frames. "
                     "Reference mode uses 1–3 images and 50 steps. Choose and "

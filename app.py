@@ -220,6 +220,7 @@ from atelier.ui.history_tab import build_history_tab
 from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.video_tab import build_video_tab
+from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
 from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
@@ -340,13 +341,18 @@ def build_app() -> gr.Blocks:
                     # onglet pour les deux modèles — ils partagent tout sauf le moteur.
                     build_xanax_tab("Xanax")
 
-            build_video_tab()
+            with gr.Tab("Video", id="h3-video"):
+                with gr.Tabs():
+                    build_video_tab()
+                    build_ltx25_tab()
 
             # « Outils » : tout ce qui part d'une image existante. Les envois
             # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
             # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
             with gr.Tab("Tools & 3D", id="tools"):
                 with gr.Tabs() as tool_tabs:
+                    build_seedvr2_tab()
+                    build_splat_tab()
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
                                       tabs=tabs, parent_tabs=tool_tabs,
                                       prompt_boxes=prompt_boxes,

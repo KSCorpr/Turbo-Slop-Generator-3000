@@ -15,7 +15,7 @@ FRAMES = (22, 39, 56)  # MiniMax H3 aligns video to 17k+5, at 24 fps.
 SIZES = ((640, 352), (864, 480), (960, 544))
 STEPS = 4
 REF_STEPS = 50
-OUTPUT_PREFIXES = ("minimax-h3-turbo-", "minimax-h3-ref2va-")
+OUTPUT_PREFIXES = ("minimax-h3-turbo-", "minimax-h3-ref2va-", "ltx-2.5-")
 
 
 def build_command(sd_cli: Path, diffusion: Path, encoder: Path, vae: Path,

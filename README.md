@@ -1,5 +1,9 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Local media engines:** SeedVR2, LTX 2.5 and COLMAP + Brush are available on
+`main` and included in the Studio download below. See
+[the setup guide and GPU validation limits](docs/media-engines.md).
+
 **Studio — available on `main`.** A calmer, responsive
 workspace with six navigation tabs, a local image gallery, lighter previews,
 and one shared GPU queue. [Release notes and verification](docs/STUDIO_RELEASE.md).
@@ -2447,3 +2451,13 @@ authors. Please read and respect each model's own license on its page.
 This is an independent, non-commercial hobby project, **not affiliated with or
 endorsed by** any of the above. If you are an author and want a credit corrected
 or removed, please open an issue.
+# New media tools: SeedVR2, LTX 2.5 and Gaussian Splatting
+
+**Tools & 3D → SeedVR2 upscale** restores images and videos locally.
+**Video → LTX 2.5** generates video from text or first/last frames.
+**Tools & 3D → Capture → splats** reconstructs static objects and scenes from
+overlapping photographs or video, with a PLY download and interactive preview.
+Each workspace has its own installation button. SeedVR2 and COLMAP use isolated
+Python environments. Start with the small presets on 11–12 GB GPUs.
+
+See [installation, capture guidance and validation limits](docs/media-engines.md).
