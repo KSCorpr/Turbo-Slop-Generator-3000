@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -55,6 +56,105 @@ class CommandTests(unittest.TestCase):
         self.assertIn("--total-steps", cmd)
         self.assertNotIn("--total-train-iters", cmd)
         self.assertEqual(cmd[cmd.index("--max-splats") + 1], "1000000")
+
+
+class SeedInputTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.output = self.root / "result.png"
+        self.scratch = self.root / "scratch"
+        self.scratch.mkdir()
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.job = LocalJob()
+        self.stack.enter_context(patch.object(seedvr2, "JOB", self.job))
+        self.stack.enter_context(patch.object(settings, "TMP_DIR", self.scratch))
+        self.stack.enter_context(patch.object(addons, "ready", return_value=True))
+        self.stack.enter_context(patch.object(addons, "root", return_value=self.root))
+        self.stack.enter_context(patch.object(seedvr2.sdcpp, "unique_output", return_value=self.output))
+
+    def test_unicode_jpeg_and_transparent_png_are_snapshotted_without_recompression(self):
+        for extension, mode in ((".jpg", "RGB"), (".PNG", "RGBA")):
+            with self.subTest(extension=extension):
+                source = self.root / ("Abandoned_concrete_str…_é_日本" + extension)
+                Image.new(mode, (53, 37), (17, 92, 154, 80) if mode == "RGBA"
+                          else (17, 92, 154)).save(source)
+                original = source.read_bytes()
+                seen = []
+
+                def run(command, log, **kwargs):
+                    staged = Path(command[3])
+                    target = Path(command[command.index("--output") + 1])
+                    self.assertTrue(staged.name.isascii())
+                    self.assertTrue(target.name.isascii())
+                    self.assertEqual(staged.read_bytes(), original)
+                    self.assertNotEqual(staged, source)
+                    seen.append(staged)
+                    with Image.open(staged) as image:
+                        image.save(target)
+
+                with patch.object(self.job, "run", side_effect=run):
+                    result = seedvr2.restore(source, log=lambda line: None)
+                self.assertEqual(result, self.output)
+                self.assertEqual(source.read_bytes(), original)
+                with Image.open(result) as image:
+                    self.assertEqual(image.size, (53, 37))
+                    self.assertEqual(image.mode, mode)
+                    if mode == "RGBA":
+                        self.assertEqual(image.getpixel((0, 0))[3], 80)
+                self.assertFalse(seen[0].exists())
+                self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_failure_and_cancellation_clean_up_snapshot_and_publish_no_output(self):
+        source = self.root / "entrée…jpg.jpg"
+        Image.new("RGB", (16, 16)).save(source)
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel):
+                def run(command, log, **kwargs):
+                    self.assertTrue(Path(command[3]).is_file())
+                    if cancel:
+                        self.job.cancel()
+                        self.job.check()
+                    raise RuntimeError("engine failed")
+
+                with patch.object(self.job, "run", side_effect=run):
+                    with self.assertRaisesRegex(RuntimeError, "cancelled" if cancel else "engine failed"):
+                        seedvr2.restore(source, log=lambda line: None)
+                self.assertFalse(self.output.exists())
+                self.assertTrue(source.exists())
+                self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_video_audio_uses_snapshot_even_if_cached_upload_disappears(self):
+        source = self.root / "vidéo…mp4.mp4"
+        source.write_bytes(b"original video and audio")
+        self.output = self.root / "result.mp4"
+        binary = self.root / "ffmpeg-bundled"
+        binary.write_bytes(b"executable")
+        commands = []
+
+        def run(command, log, **kwargs):
+            commands.append(command)
+            if len(commands) == 1:
+                staged = Path(command[3])
+                self.assertEqual(staged.read_bytes(), b"original video and audio")
+                source.unlink()  # mimic Gradio evicting its cached upload
+                Path(command[command.index("--output") + 1]).write_bytes(b"restored video")
+            else:
+                audio = Path(command[command.index("-i", command.index("-i") + 1) + 1])
+                self.assertEqual(audio.read_bytes(), b"original video and audio")
+                self.assertTrue(audio.name.isascii())
+                self.assertEqual(command[command.index("-c:v") + 1], "copy")
+                Path(command[-1]).write_bytes(b"restored video with audio")
+
+        with patch.object(seedvr2.sdcpp, "unique_output", return_value=self.output), \
+             patch.object(seedvr2.video, "_ffmpeg_exe", return_value=str(binary)), \
+             patch.object(self.job, "run", side_effect=run):
+            result = seedvr2.restore(source, log=lambda line: None)
+        self.assertEqual(result.read_bytes(), b"restored video with audio")
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(list(self.scratch.iterdir()), [])
 
 
 class CaptureTests(unittest.TestCase):

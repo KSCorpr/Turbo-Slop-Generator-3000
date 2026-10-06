@@ -31,6 +31,7 @@ from playwright.sync_api import expect, sync_playwright
 import app
 from atelier import settings
 from atelier.engine import generate as engine
+from atelier.engine import seedvr2
 
 
 def main():
@@ -39,8 +40,10 @@ def main():
     args = parser.parse_args()
     expect.set_options(timeout=15000)
     calls = []
+    seed_calls = []
     cancelled = threading.Event()
     interrupted = threading.Event()
+    engine_started = threading.Event()
     active, peak = 0, 0
     with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
         folder = Path(directory)
@@ -68,7 +71,15 @@ def main():
             active += 1
             peak = max(peak, active)
             calls.append(kwargs["prompt"])
+            engine_started.set()
             try:
+                if "Cancel request" in kwargs["prompt"] and kwargs.get("preview_path"):
+                    # Keep this simulated inference alive until Stop. A 750 ms
+                    # normal fixture can finish before a slow CI browser clicks.
+                    if not cancelled.wait(15):
+                        raise RuntimeError("The browser did not request cancellation.")
+                    interrupted.set()
+                    raise RuntimeError("Interrupted by the user.")
                 for step in range(3):
                     if cancelled.wait(0.25):
                         interrupted.set()
@@ -88,8 +99,19 @@ def main():
             cancelled.set()
             return "Generation cancelled."
 
+        def restore_seed(source, model, resolution, seed, log):
+            if not source:
+                raise ValueError("Import an image or a video first.")
+            seed_calls.append(str(source))
+            path = settings.OUTPUT_DIR / "seedvr2-simulated.png"
+            with Image.open(source) as im:
+                im.convert("RGB").resize((1536, 1152)).save(path)
+            log("Simulated SeedVR2 restoration completed.")
+            return path
+
         stack.enter_context(patch.object(engine, "generate", generate))
         stack.enter_context(patch.object(engine, "cancel", cancel))
+        stack.enter_context(patch.object(seedvr2, "restore", restore_seed))
         start = time.perf_counter()
         demo = app.build_app().queue(max_size=16)
         build_seconds = time.perf_counter() - start
@@ -121,6 +143,18 @@ def main():
                 expect(page.get_by_role("button", name="Install / repair SeedVR2", exact=True)).to_be_visible()
                 page.get_by_role("button", name="Restore", exact=True).click()
                 expect(page.get_by_text("Failed: Import an image or a video first.", exact=True)).to_be_visible()
+                seed_source = folder / "brutalisme…é_日本.jpg"
+                sample.convert("RGB").save(seed_source)
+                page.locator("#seedvr2-source-file input[type=file]").set_input_files(str(seed_source))
+                expect(page.locator("#seedvr2-source-preview img")).to_be_visible()
+                expect(page.locator("#seedvr2-source-info")).to_contain_text("1024 × 768")
+                page.wait_for_function("document.querySelector('#seedvr2-source-preview img')?.naturalWidth > 0")
+                assert not seed_calls, "Upload triggered restoration instead of preview"
+                page.get_by_role("button", name="Restore", exact=True).click()
+                expect(page.locator("#seedvr2-status")).to_contain_text("Completed.")
+                expect(page.locator("#seedvr2-restored-image img")).to_be_visible()
+                page.wait_for_function("document.querySelector('#seedvr2-restored-image img')?.naturalWidth === 1536")
+                assert len(seed_calls) == 1, seed_calls
                 page.screenshot(path=str(screenshots / "studio-seedvr2.png"))
 
                 page.get_by_role("tab", name="Capture → splats", exact=True).click()
@@ -152,7 +186,7 @@ def main():
                 page.get_by_role("tab", name="Gallery", exact=True).click()
                 expect(page.locator("#history-grid img")).to_have_count(24)
                 page.get_by_role("button", name="Next", exact=True).click()
-                expect(page.locator("#history-grid img")).to_have_count(7)
+                expect(page.locator("#history-grid img")).to_have_count(8)
                 page.locator("#history-grid img").first.click()
                 expect(page.locator("#history-prompt textarea")).to_have_value("A studio browser test")
                 page.screenshot(path=str(screenshots / "studio-gallery.png"))
@@ -179,9 +213,11 @@ def main():
                     expect(prompt).to_be_visible()
 
                 # Stop executes outside the inference queue.
+                engine_started.clear()
                 prompt.fill("Cancel request")
                 page.get_by_role("button", name="Generate", exact=True).click()
                 expect(page.locator(".studio-status:visible").first).to_contain_text("Loading")
+                assert engine_started.wait(10), "Simulated inference never started"
                 page.get_by_role("button", name="Stop", exact=True).click()
                 expect(page.locator(".studio-status:visible").first).to_contain_text(re.compile("cancelled|Error"))
                 assert interrupted.wait(5), "Stop did not interrupt the worker"
@@ -202,7 +238,7 @@ def main():
                 expect(page.locator("#views-source img")).to_be_visible()
                 start_calls = len(calls)
                 page.get_by_role("button", name="Generate 10 views", exact=True).click()
-                expect(page.get_by_text("Completed.", exact=True)).to_be_visible(timeout=30000)
+                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=30000)
                 assert len(calls) == start_calls + 10, calls
                 assert active == 0 and peak == 1, (active, peak)
                 batches = list(settings.OUTPUT_DIR.glob("views-scene-*"))
@@ -212,10 +248,12 @@ def main():
                 page.get_by_text("Advanced and conversion tools", exact=True).click()
                 page.locator("#views-import input[type=file]").set_input_files(
                     [str(p) for p in sorted(directory.glob("[0-9][0-9]-*.png"))])
-                expect(page.get_by_text("10-nadir.png", exact=True)).to_be_visible()
+                # Gradio may collapse the tail of a multi-file list. Wait for
+                # its first entry; successful conversion verifies all ten.
+                expect(page.locator("#views-import")).to_contain_text("01-yaw-000.png", timeout=30000)
                 page.get_by_role("button", name="Convert views to 360 PNG", exact=True).click()
                 expect(page.locator("#views-log textarea")).to_have_value(re.compile("Reprojecting the fixed-camera views"))
-                expect(page.get_by_text("Completed.", exact=True)).to_be_visible(timeout=30000)
+                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=60000)
                 assert len(calls) == start_calls + 10, "Conversion launched image generation"
                 assert list(settings.OUTPUT_DIR.glob("views-converted-*/equirectangular-360.png"))
                 page.screenshot(path=str(screenshots / "studio-panorama.png"))
@@ -236,6 +274,7 @@ def main():
             print(json.dumps({"build_seconds": round(build_seconds, 3), "browser_ready_seconds": round(ready_seconds, 3),
                               "config_bytes": len(json.dumps(demo.config, default=str)), "page_errors": errors,
                               "simulated_generations": len(calls), "peak_concurrent_generations": peak,
+                              "simulated_seedvr2_restorations": len(seed_calls),
                               "screenshots": str(screenshots)}, indent=2))
         finally:
             demo.close()

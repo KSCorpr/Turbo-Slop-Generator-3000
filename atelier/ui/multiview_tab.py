@@ -111,7 +111,7 @@ def build_multiview_tab():
                 with gr.Row():
                     run = gr.Button("Generate 10 views", variant="primary")
                     stop = gr.Button("Stop views", variant="stop")
-                status = gr.Markdown()
+                status = gr.Markdown(elem_id="views-status")
             with gr.Column():
                 gallery = gr.Gallery(label="Generated angles", columns=5, height=390,
                                      type="filepath", buttons=widgets.GALLERY_BUTTONS)

@@ -10,6 +10,14 @@ Le canal de mise à jour suit `main`.
 Ouvrir **Tools & 3D → SeedVR2 upscale**, puis **Install / repair SeedVR2**.
 Importer une image ou une vidéo, choisir 3B (Q8) ou 7B (Q4), puis **Restore**.
 Le premier traitement télécharge automatiquement le DiT choisi et le VAE.
+Les fichiers importés sont copiés sans recompression sous un nom temporaire
+simple, pour contourner les problèmes OpenCV avec les noms Unicode sous
+Windows et conserver l'entrée pendant les traitements longs. Cette copie
+est supprimée à la fin, même en cas d'échec ou d'annulation.
+L'image source s'affiche dès l'import, avec ses dimensions. Cet aperçu est
+réduit uniquement pour l'affichage ; l'entrée du moteur reste intacte.
+L'image restaurée et son téléchargement apparaissent à la fin du traitement.
+La CLI SeedVR2 utilisée ici ne produit pas d'aperçu intermédiaire à chaque pas.
 La résolution est celle du petit côté : pour une image 1024×768 agrandie ×4,
 entrer 3072. L'upscaler conserve le rapport d'aspect, sous réserve de l'alignement
 des dimensions imposé par le modèle.
