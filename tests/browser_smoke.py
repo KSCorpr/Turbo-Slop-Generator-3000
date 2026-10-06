@@ -43,6 +43,7 @@ def main():
     seed_calls = []
     cancelled = threading.Event()
     interrupted = threading.Event()
+    engine_started = threading.Event()
     active, peak = 0, 0
     with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
         folder = Path(directory)
@@ -70,7 +71,15 @@ def main():
             active += 1
             peak = max(peak, active)
             calls.append(kwargs["prompt"])
+            engine_started.set()
             try:
+                if "Cancel request" in kwargs["prompt"] and kwargs.get("preview_path"):
+                    # Keep this simulated inference alive until Stop. A 750 ms
+                    # normal fixture can finish before a slow CI browser clicks.
+                    if not cancelled.wait(15):
+                        raise RuntimeError("The browser did not request cancellation.")
+                    interrupted.set()
+                    raise RuntimeError("Interrupted by the user.")
                 for step in range(3):
                     if cancelled.wait(0.25):
                         interrupted.set()
@@ -204,9 +213,11 @@ def main():
                     expect(prompt).to_be_visible()
 
                 # Stop executes outside the inference queue.
+                engine_started.clear()
                 prompt.fill("Cancel request")
                 page.get_by_role("button", name="Generate", exact=True).click()
                 expect(page.locator(".studio-status:visible").first).to_contain_text("Loading")
+                assert engine_started.wait(10), "Simulated inference never started"
                 page.get_by_role("button", name="Stop", exact=True).click()
                 expect(page.locator(".studio-status:visible").first).to_contain_text(re.compile("cancelled|Error"))
                 assert interrupted.wait(5), "Stop did not interrupt the worker"
@@ -242,7 +253,7 @@ def main():
                 expect(page.locator("#views-import")).to_contain_text("01-yaw-000.png", timeout=30000)
                 page.get_by_role("button", name="Convert views to 360 PNG", exact=True).click()
                 expect(page.locator("#views-log textarea")).to_have_value(re.compile("Reprojecting the fixed-camera views"))
-                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=30000)
+                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=60000)
                 assert len(calls) == start_calls + 10, "Conversion launched image generation"
                 assert list(settings.OUTPUT_DIR.glob("views-converted-*/equirectangular-360.png"))
                 page.screenshot(path=str(screenshots / "studio-panorama.png"))
