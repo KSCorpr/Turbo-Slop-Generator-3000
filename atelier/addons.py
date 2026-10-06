@@ -25,9 +25,12 @@ def python(name: str) -> Path:
 
 def brush() -> Path | None:
     folder = root("splat") / "brush"
-    names = ("brush-app.exe", "brush.exe") if os.name == "nt" else ("brush-app", "brush")
+    # The pinned v0.3.0 archive uses an underscore, despite its hyphenated
+    # package/archive name. Keep the other spellings for existing installs.
+    names = (("brush_app.exe", "brush-app.exe", "brush.exe") if os.name == "nt"
+             else ("brush_app", "brush-app", "brush"))
     for name in names:
-        found = sorted(folder.rglob(name)) if folder.exists() else []
+        found = sorted(p for p in folder.rglob(name) if p.is_file()) if folder.exists() else []
         if found:
             return found[0]
     return None

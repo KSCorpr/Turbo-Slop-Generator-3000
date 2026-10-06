@@ -121,7 +121,9 @@ def install_splat():
         unpack(archive, target / "brush")
     binary = addons.brush()
     if binary is None:
-        raise RuntimeError("Brush executable missing from release archive.")
+        raise RuntimeError(f"Brush executable missing after extraction in {target / 'brush'}. "
+                           "Expected brush_app.exe on Windows or brush_app on Linux/macOS. "
+                           "Run Install / repair COLMAP + Brush again.")
     if os.name != "nt":
         binary.chmod(binary.stat().st_mode | 0o111)
     run(binary, "--help")
