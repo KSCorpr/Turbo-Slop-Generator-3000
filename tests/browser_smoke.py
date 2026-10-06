@@ -113,6 +113,28 @@ def main():
                 ready_seconds = time.perf_counter() - started
                 page.screenshot(path=str(screenshots / "studio-light.png"))
 
+                # Optional media workspaces must mount correctly and report
+                # missing inputs without launching installers or GPU engines.
+                page.get_by_role("tab", name="Tools & 3D", exact=True).click()
+                page.get_by_role("tab", name="SeedVR2 upscale", exact=True).click()
+                expect(page.get_by_role("button", name="Install / repair SeedVR2", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Restore", exact=True).click()
+                expect(page.get_by_text("Failed: Import an image or a video first.", exact=True)).to_be_visible()
+                page.screenshot(path=str(screenshots / "studio-seedvr2.png"))
+
+                page.get_by_role("tab", name="Capture → splats", exact=True).click()
+                page.get_by_role("button", name="Reconstruct", exact=True).click()
+                expect(page.get_by_text("Failed: Import either photographs or one video, then clear the other input.", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Refresh saved captures", exact=True).click()
+                page.screenshot(path=str(screenshots / "studio-capture.png"))
+
+                page.get_by_role("tab", name="Video", exact=True).click()
+                page.get_by_role("tab", name="LTX 2.5", exact=True).click()
+                expect(page.get_by_role("button", name="Generate LTX video", exact=True)).to_be_visible()
+                expect(page.get_by_role("button", name="Download / prepare LTX 2.5", exact=True)).to_be_visible()
+                page.screenshot(path=str(screenshots / "studio-ltx25.png"))
+                page.get_by_role("tab", name="Images", exact=True).click()
+
                 # Keyboard generation must produce exactly one request.
                 prompt.fill("Shortcut request")
                 prompt.press("Control+Enter")

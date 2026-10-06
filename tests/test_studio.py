@@ -224,7 +224,8 @@ class StudioWiringTests(unittest.TestCase):
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
         names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_generate3d", "do_depth", "do_bg",
                  "do_describe", "do_upscale", "do_layers", "do_hd", "do_highres", "do_face",
-                 "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click"}
+                 "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
+                 "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:
