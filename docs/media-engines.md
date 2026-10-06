@@ -55,6 +55,10 @@ dans l'onglet MiniMax H3.
 ### Capture 3D
 
 Ouvrir **Tools & 3D → Capture → splats**, puis **Install / repair COLMAP + Brush**.
+Le binaire de Brush 0.3 porte le nom `brush_app.exe` sous Windows et `brush_app`
+sous Linux/macOS. Si une installation précédente a affiché « Brush executable
+missing from release archive », mettre le code à jour, relancer TurboSlop puis
+cliquer de nouveau sur **Install / repair COLMAP + Brush**.
 Importer **soit** 8–300 photos, **soit** une vidéo. Pour un objet, tourner autour
 d'un sujet immobile ; pour une scène, déplacer la caméra avec beaucoup de
 recouvrement. Éviter reflets, surfaces uniformes, flou, zoom variable et objets
