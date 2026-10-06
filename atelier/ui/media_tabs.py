@@ -5,8 +5,10 @@ import queue
 import sys
 import threading
 from collections import deque
+from pathlib import Path
 
 import gradio as gr
+from PIL import Image, ImageOps
 
 from .. import addons, settings
 from ..engine import seedvr2, ltx25, splat
@@ -67,19 +69,53 @@ def install_action(name, job, log, quant=None):
         job.run(command, log)
 
 
+def seed_source_preview(path):
+    """Read uploaded images with Pillow, which accepts Windows Unicode paths.
+
+    Keep the original upload for restoration; only downsize the display copy.
+    Videos remain files and do not trigger a transcode on upload.
+    """
+    hidden = gr.update(value=None, visible=False)
+    if not path:
+        return hidden, ""
+    source = Path(path)
+    if source.suffix.lower() in seedvr2.VIDEOS:
+        return hidden, "Video selected. The restored video appears after processing."
+    if not source.is_file() or source.suffix.lower() not in seedvr2.IMAGES:
+        return hidden, "Source image unavailable. Import the file again."
+    try:
+        with Image.open(source) as uploaded:
+            preview = ImageOps.exif_transpose(uploaded)
+            width, height = preview.size
+            preview.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            preview = preview.convert("RGBA" if "A" in preview.getbands()
+                                      or "transparency" in preview.info else "RGB")
+        return gr.update(value=preview, visible=True), f"Source: {width} × {height} px."
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        return hidden, f"Source preview unavailable: {exc}"
+
+
 def build_seedvr2_tab():
     with gr.Tab("SeedVR2 upscale", id="seedvr2"):
         gr.Markdown("### Restore images and videos\n"
                     "AI restoration with a memory-saving 11–12 GB preset. "
                     "Details can be reconstructed or changed. Compare fine structures at 100%. "
-                    "The first run downloads the selected model and VAE.")
+                    "The first run downloads the selected model and VAE. "
+                    "The source preview appears on import; the restored result appears "
+                    "after processing. SeedVR2 does not provide a per-step image preview.")
         with gr.Row():
             install = gr.Button("Install / repair SeedVR2", size="sm")
             gr.Markdown("Installed." if addons.ready("seedvr2") else "Installation required once.")
         with gr.Row():
             with gr.Column():
                 source = gr.File(label="Image or video", type="filepath",
-                                 file_types=sorted(seedvr2.IMAGES | seedvr2.VIDEOS))
+                                 file_types=sorted(seedvr2.IMAGES | seedvr2.VIDEOS),
+                                 elem_id="seedvr2-source-file")
+                source_preview = gr.Image(label="Source image preview", interactive=False,
+                                          visible=False, height=260, format="png",
+                                          buttons=widgets.IMAGE_VIEW_ONLY,
+                                          elem_id="seedvr2-source-preview")
+                source_info = gr.Markdown(elem_id="seedvr2-source-info")
                 model = gr.Dropdown([("3B · balanced · Q8", "3b"),
                                      ("7B · quality · Q4 · slower", "7b")],
                                     value="3b", label="Restoration model")
@@ -94,11 +130,15 @@ def build_seedvr2_tab():
                     stop = gr.Button("Stop")
             with gr.Column():
                 image = gr.Image(label="Restored image", interactive=False,
-                                 buttons=widgets.IMAGE_BUTTONS)
+                                 format="png", height=400,
+                                 buttons=widgets.IMAGE_BUTTONS,
+                                 elem_id="seedvr2-restored-image")
                 clip = gr.Video(label="Restored video", interactive=False)
                 download = gr.File(label="Download result", interactive=False)
-        status = gr.Markdown()
+        status = gr.Markdown(elem_id="seedvr2-status")
         log = gr.Textbox(label="Progress", lines=8, autoscroll=True)
+        source.change(seed_source_preview, inputs=source,
+                      outputs=[source_preview, source_info], queue=False)
 
         def install_seed():
             for state, _, text in stream_task(lambda report: install_action("seedvr2", seedvr2.JOB, report)):
