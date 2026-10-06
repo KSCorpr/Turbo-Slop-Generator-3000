@@ -1,9 +1,8 @@
 # Turbo Slop Generator 3000 · Studio
 
-**Media preview branch:** SeedVR2, LTX 2.5 and COLMAP + Brush are available in
-`codex/seedvr2-splat-ltx25`. [Download this branch](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/codex/seedvr2-splat-ltx25.zip)
-and see [the setup guide and GPU validation limits](docs/media-engines.md).
-The Studio download below is the stable release and does not yet include these additions.
+**Local media engines:** SeedVR2, LTX 2.5 and COLMAP + Brush are available on
+`main` and included in the Studio download below. See
+[the setup guide and GPU validation limits](docs/media-engines.md).
 
 **Studio — available on `main`.** A calmer, responsive
 workspace with six navigation tabs, a local image gallery, lighter previews,

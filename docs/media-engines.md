@@ -1,8 +1,7 @@
 # SeedVR2, LTX 2.5 et capture Gaussian Splatting
 
-Ces trois fonctions sont dans la branche `codex/seedvr2-splat-ltx25`.
-Son canal de mise à jour reste sur cette branche pour qu'une réparation du moteur
-ne remplace pas l'interface par celle de `main`.
+Ces trois fonctions sont disponibles dans `main` et dans le téléchargement Studio.
+Le canal de mise à jour suit `main`.
 
 ## Utilisation
 
