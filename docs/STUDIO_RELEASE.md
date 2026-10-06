@@ -68,7 +68,12 @@ production settings. No GPU speedup is claimed from these UI measurements.
 ZIP installs follow `config/update-channel.json`, which now explicitly names
 `main`. An existing Studio preview ZIP installation moves to this channel on
 its next code update; subsequent updates follow `main`.
-Git checkouts update with `git pull --ff-only`; the ZIP code updater refuses to
-overwrite them. Engine-only maintenance commands are still available.
+Git checkouts use the same update launcher: it fetches and fast-forwards the
+current upstream branch, without ZIP extraction or a branch switch. Local code
+blocking the update can be saved in a Git stash after confirmation, or with
+`--backup-local-code`. Models, outputs, settings and unrelated untracked files
+are excluded. The stash remains available; it is never automatically reapplied.
+Engine-only maintenance commands remain available. Git `--check` compares cached
+refs without fetching; ZIP rollback does not operate on Git checkouts.
 
 The README download and clone commands also point to `main`.

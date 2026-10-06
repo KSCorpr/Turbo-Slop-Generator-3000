@@ -11,6 +11,10 @@ court — ce qui marche sur la machine du développeur et échoue chez tout le
 monde.
 """
 import re
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -141,3 +145,26 @@ class UpdateBranchTests(unittest.TestCase):
         text = (ROOT / "update.bat").read_text(encoding="utf-8",
                                                errors="replace")
         self.assertIn("%*", text)
+
+
+@unittest.skipUnless(os.name == "nt", "The batch launcher runs on Windows")
+class UpdateBatchExecutionTests(unittest.TestCase):
+    def test_exit_code_survives_self_replacement_and_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            launcher = folder / "update.bat"
+            text = (ROOT / "update.bat").read_text(encoding="utf-8")
+            text = text.replace('set "PY=python"', f'set "PY={sys.executable}"')
+            launcher.write_text(text, encoding="utf-8")
+            scripts = folder / "scripts"
+            scripts.mkdir()
+            (scripts / "update_app.py").write_text(
+                "from pathlib import Path\nimport sys\n"
+                "Path('update.bat').write_text('this replaced the running launcher\\n')\n"
+                "sys.exit(7)\n", encoding="utf-8")
+            result = subprocess.run(["cmd.exe", "/d", "/c", str(launcher)],
+                                    cwd=folder, input="\n", capture_output=True,
+                                    text=True, timeout=30)
+            self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+            self.assertIn("La mise a jour a ete interrompue", result.stdout)
+            self.assertIn("this replaced", launcher.read_text())
