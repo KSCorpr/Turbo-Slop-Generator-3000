@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from PIL import Image
@@ -45,8 +46,9 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print):
         raise RuntimeError("Install SeedVR2 using the button in this tab first.")
     is_video = source.suffix.lower() in VIDEOS
     output = sdcpp.unique_output("seedvr2", "mp4" if is_video else "png")
-    command = build_command(source, output, model, int(resolution),
-                            is_video=is_video, seed=int(seed))
+    # Validate controls before copying a potentially large video.
+    build_command(source, output, model, int(resolution),
+                  is_video=is_video, seed=int(seed))
     env = settings.child_env(settings.generation_gpu_index(settings.load_prefs()))
     # imageio's bundled executable has a versioned name; upstream invokes 'ffmpeg'.
     if is_video:
@@ -57,20 +59,34 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print):
             shutil.copy2(video._ffmpeg_exe(log), binary)
             binary.chmod(binary.stat().st_mode | 0o111)
         env["PATH"] = str(binary_dir) + os.pathsep + env.get("PATH", "")
-    with JOB.session():
+    with JOB.session(), tempfile.TemporaryDirectory(
+            prefix="seedvr2-", dir=settings.TMP_DIR) as temporary:
+        # OpenCV's Windows imread/imwrite cannot reliably open Unicode names.
+        # Keep the user's file untouched and snapshot Gradio's cached upload
+        # before the model loads. Copy bytes; never recompress the input image.
+        staged_source = Path(temporary) / ("input" + source.suffix.lower())
+        staged_output = Path(temporary) / ("restored.mp4" if is_video else "restored.png")
+        JOB.check()
+        shutil.copyfile(source, staged_source)
+        JOB.check()
+        log("SeedVR2: using a temporary input with a simple filename.")
+        command = build_command(staged_source, staged_output, model, int(resolution),
+                                is_video=is_video, seed=int(seed))
         JOB.run(command, log, cwd=addons.root("seedvr2") / "source", env=env)
-        if not output.is_file() or not output.stat().st_size:
+        if not staged_output.is_file() or not staged_output.stat().st_size:
             raise RuntimeError("SeedVR2 finished without an output file.")
         if not is_video:
-            with Image.open(output) as image:
+            with Image.open(staged_output) as image:
                 image.verify()
         else:
-            # Upstream writes video only. Reattach optional source audio without
-            # re-encoding the restored frames; AAC keeps browser playback portable.
-            muxed = output.with_name(output.stem + "-audio.mp4")
-            JOB.run([video._ffmpeg_exe(log), "-y", "-nostdin", "-i", output,
-                     "-i", source, "-map", "0:v:0", "-map", "1:a:0?",
+            # Reuse the snapshot for audio too: Gradio may evict the original
+            # cached upload while a long restoration is running.
+            muxed = Path(temporary) / "restored-audio.mp4"
+            JOB.run([video._ffmpeg_exe(log), "-y", "-nostdin", "-i", staged_output,
+                     "-i", staged_source, "-map", "0:v:0", "-map", "1:a:0?",
                      "-c:v", "copy", "-c:a", "aac", "-shortest",
                      "-movflags", "+faststart", muxed], log)
-            muxed.replace(output)
+            muxed.replace(staged_output)
+        JOB.check()
+        shutil.move(staged_output, output)
     return output
