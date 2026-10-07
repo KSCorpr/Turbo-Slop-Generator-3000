@@ -44,10 +44,9 @@ vraiment l'une sans les autres.
     update.bat --code       le code seul
     update.bat --check      dit ce que le code changerait, n'écrit rien
     update.bat --rollback   annule la dernière mise à jour du code
-    update.bat --backup-local-code  sauvegarde le code local Git puis met à jour
 
 Une installation Git utilise fetch puis fast-forward sur sa branche actuelle.
-Si du code local bloque la mise à jour, une sauvegarde Git est proposée avant
+Si du code local bloque la mise à jour, une sauvegarde Git est faite avant
 de continuer. Une installation ZIP garde son canal et sa sauvegarde de fichiers.
 """
 from __future__ import annotations
@@ -355,7 +354,7 @@ def _git_data_path(path: str) -> bool:
     return top in PROTECTED_TOP or top.startswith(".engine-stage-")
 
 
-def _update_git(check_only: bool, backup_local_code: bool) -> int:
+def _update_git(check_only: bool) -> int:
     """Fetch and fast-forward the current branch; never use ZIP over Git.
 
     A portable ZIP over an old checkout leaves modified tracked files and
@@ -424,19 +423,8 @@ def _update_git(check_only: bool, backup_local_code: bool) -> int:
                 _say("    - " + name)
             if len(local_code) > 12:
                 _say(f"    … and {len(local_code) - 12} more")
-            _say(INFO + "Only this code will be saved in a Git stash. Models, images and settings "
+            _say(INFO + "Automatically saving this code in a Git stash. Models, images and settings "
                  "stay in their folders. The old code is not reapplied after updating.")
-            accepted = backup_local_code
-            if not accepted and sys.stdin.isatty():
-                try:
-                    accepted = input("Save this local code and continue? [y/o/N] ").strip().lower() in (
-                        "y", "yes", "o", "oui")
-                except EOFError:
-                    pass
-            if not accepted:
-                _say(INFO + "Nothing was overwritten. To save this code and update, run:")
-                _say("    update.bat --backup-local-code")
-                return 1
             before = _git("rev-parse", "--verify", "refs/stash", required=False).stdout.strip()
             label = "TurboSlop code backup " + time.strftime("%Y%m%d-%H%M%S")
             _git("stash", "push", "--include-untracked", "--message", label,
@@ -492,9 +480,9 @@ def _rollback() -> int:
     return 0
 
 
-def update(check_only: bool = False, backup_local_code: bool = False) -> int:
+def update(check_only: bool = False) -> int:
     if (ROOT / ".git").exists():
-        return _update_git(check_only, backup_local_code)
+        return _update_git(check_only)
     _say("=" * 60)
     _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
@@ -683,9 +671,6 @@ def main() -> int:
                          "nothing, run nothing else")
     ap.add_argument("--rollback", action="store_true",
                     help="undo the last ZIP code update")
-    ap.add_argument("--backup-local-code", action="store_true",
-                    help="save conflicting local Git code in a stash before updating; "
-                         "never includes models, outputs or userdata")
     steps = ap.add_argument_group(
         "one step only (default: all four, in order)")
     steps.add_argument("--code", action="store_true",
@@ -704,7 +689,7 @@ def main() -> int:
     want = selected_steps(args)
     code = 0
     if want["code"]:
-        code = update(check_only=args.check, backup_local_code=args.backup_local_code)
+        code = update(check_only=args.check)
         #  La suite porte sur le code POSÉ. S'il ne l'a pas été — échec de
         #  téléchargement, retour en arrière automatique, ou `--check` qui
         #  n'écrit rien par définition — il n'y a rien à ranger, et lancer la

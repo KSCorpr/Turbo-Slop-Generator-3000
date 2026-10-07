@@ -149,6 +149,27 @@ class UpdateBranchTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "nt", "The batch launcher runs on Windows")
 class UpdateBatchExecutionTests(unittest.TestCase):
+    def test_existing_project_venv_is_selected_even_in_a_path_with_exclamation_marks(self):
+        import venv
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "Turbo!Slop"
+            folder.mkdir()
+            project_python = folder / ".venv"
+            venv.EnvBuilder(with_pip=False).create(project_python)
+            launcher = folder / "update.bat"
+            launcher.write_bytes((ROOT / "update.bat").read_bytes())
+            scripts = folder / "scripts"
+            scripts.mkdir()
+            (scripts / "update_app.py").write_text(
+                "import sys\nprint('PYTHON_PREFIX=' + sys.prefix)\n", encoding="utf-8")
+            run = subprocess.run(["cmd.exe", "/d", "/c", str(launcher)], cwd=folder,
+                                 input="\n", capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            selected = next(line.removeprefix("PYTHON_PREFIX=") for line in run.stdout.splitlines()
+                            if line.startswith("PYTHON_PREFIX="))
+            self.assertEqual(Path(selected).resolve(), project_python.resolve())
+
     def test_exit_code_survives_self_replacement_and_pause(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)

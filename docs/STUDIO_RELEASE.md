@@ -70,8 +70,9 @@ ZIP installs follow `config/update-channel.json`, which now explicitly names
 its next code update; subsequent updates follow `main`.
 Git checkouts use the same update launcher: it fetches and fast-forwards the
 current upstream branch, without ZIP extraction or a branch switch. Local code
-blocking the update can be saved in a Git stash after confirmation, or with
-`--backup-local-code`. Models, outputs, settings and unrelated untracked files
+blocking the update is saved automatically in a Git stash before continuing.
+No Git command or extra flag is required. The launcher detects portable Python,
+an existing project venv, or Python from PATH. Models, outputs, settings and unrelated untracked files
 are excluded. The stash remains available; it is never automatically reapplied.
 Engine-only maintenance commands remain available. Git `--check` compares cached
 refs without fetching; ZIP rollback does not operate on Git checkouts.

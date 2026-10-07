@@ -92,7 +92,7 @@ class GitUpdateTests(unittest.TestCase):
                 "runtime/file": "runtime", "tmp/cache": "cache", "my-notes.txt": "unrelated"}
         for path, content in data.items():
             self.write(self.local, path, content)
-        self.assertEqual(self.update(backup_local_code=True), 0, self.messages.getvalue())
+        self.assertEqual(self.update(), 0, self.messages.getvalue())
         self.assertEqual((self.local / "app.py").read_text(), "print('new')\n")
         self.assertEqual((self.local / "atelier/[new]…日本.py").read_text(), "NEW = 2\n")
         for path, content in data.items():
@@ -110,37 +110,29 @@ class GitUpdateTests(unittest.TestCase):
         self.assertEqual(untracked_saved, "atelier/[new]…日本.py\0")
         self.assertIn(saved, self.messages.getvalue())
 
-    def test_noninteractive_dirty_checkout_stops_with_recovery_command(self):
+    def test_local_code_is_backed_up_without_a_prompt_in_any_installation(self):
         self.dirty()
-        self.assertEqual(self.update(), 1)
-        self.assert_old_head()
-        self.assert_no_stash()
-        self.assertEqual((self.local / "app.py").read_text(), "print('local staged')\n")
-        self.assertIn("update.bat --backup-local-code", self.messages.getvalue())
-
-    def test_interactive_yes_saves_code_and_continues(self):
-        self.dirty()
-        with patch.object(U, "ROOT", self.local), patch.dict(os.environ, self.env), \
-             patch.object(U.sys.stdin, "isatty", return_value=True), \
-             patch("builtins.input", return_value="oui") as prompt, redirect_stdout(io.StringIO()):
-            self.assertEqual(U.update(), 0)
-        prompt.assert_called_once()
+        with patch("builtins.input", side_effect=AssertionError("No Git prompt expected")):
+            self.assertEqual(self.update(), 0, self.messages.getvalue())
         self.assertEqual(self.git(self.local, "rev-parse", "HEAD").stdout.strip(), self.target)
+        self.assertEqual(self.git(self.local, "show", "refs/stash:app.py").stdout,
+                         "print('local staged')\n")
+        self.assertIn("Automatically saving", self.messages.getvalue())
 
-    def test_interactive_no_keeps_local_code_and_head(self):
+    def test_up_to_date_checkout_leaves_local_code_and_existing_backups_in_place(self):
+        self.assertEqual(self.update(), 0)
         self.dirty()
-        with patch.object(U, "ROOT", self.local), patch.dict(os.environ, self.env), \
-             patch.object(U.sys.stdin, "isatty", return_value=True), \
-             patch("builtins.input", return_value="non"), redirect_stdout(io.StringIO()):
-            self.assertEqual(U.update(), 1)
-        self.assert_old_head()
+        with patch.object(U, "_git", wraps=U._git) as commands:
+            self.assertEqual(self.update(), 0)
+        self.assertFalse(any(c.args[0] in ("stash", "merge") for c in commands.call_args_list))
+        self.assertEqual((self.local / "app.py").read_text(), "print('local staged')\n")
         self.assert_no_stash()
 
-    def test_check_never_fetches_stashes_or_merges_even_with_backup_flag(self):
+    def test_check_never_fetches_stashes_or_merges(self):
         self.dirty()
         cached = self.git(self.local, "rev-parse", "origin/main").stdout
         with patch.object(U, "_git", wraps=U._git) as commands, patch.object(U, "_fetch") as fetch:
-            self.assertEqual(self.update(check_only=True, backup_local_code=True), 0)
+            self.assertEqual(self.update(check_only=True), 0)
         self.assertFalse(any(c.args[0] in ("fetch", "stash", "merge") for c in commands.call_args_list))
         fetch.assert_not_called()
         self.assert_old_head()
@@ -154,7 +146,7 @@ class GitUpdateTests(unittest.TestCase):
         self.git(self.local, "commit", "-m", "local commit")
         current = self.git(self.local, "rev-parse", "HEAD").stdout
         self.write(self.local, "atelier/__init__.py", "VERSION = 99\n")
-        self.assertEqual(self.update(backup_local_code=True), 1)
+        self.assertEqual(self.update(), 1)
         self.assertEqual(self.git(self.local, "rev-parse", "HEAD").stdout, current)
         self.assert_no_stash()
         self.assertIn("diverged", self.messages.getvalue())
@@ -172,7 +164,7 @@ class GitUpdateTests(unittest.TestCase):
     def test_failed_fetch_keeps_local_changes_and_creates_no_stash(self):
         self.dirty()
         self.git(self.local, "remote", "set-url", "origin", str(self.folder / "missing.git"))
-        self.assertEqual(self.update(backup_local_code=True), 1)
+        self.assertEqual(self.update(), 1)
         self.assert_old_head()
         self.assert_no_stash()
         self.assertEqual((self.local / "app.py").read_text(), "print('local staged')\n")
@@ -187,7 +179,7 @@ class GitUpdateTests(unittest.TestCase):
             return original(*args, **kwargs)
 
         with patch.object(U, "_git", side_effect=git):
-            self.assertEqual(self.update(backup_local_code=True), 1)
+            self.assertEqual(self.update(), 1)
         self.assert_old_head()
         self.assert_no_stash()
         self.assertEqual((self.local / "app.py").read_text(), "print('local staged')\n")
@@ -202,7 +194,7 @@ class GitUpdateTests(unittest.TestCase):
             return original(*args, **kwargs)
 
         with patch.object(U, "_git", side_effect=git):
-            self.assertEqual(self.update(backup_local_code=True), 1)
+            self.assertEqual(self.update(), 1)
         self.assert_old_head()
         self.assertEqual(self.git(self.local, "show", "refs/stash:app.py").stdout,
                          "print('local staged')\n")
@@ -215,7 +207,7 @@ class GitUpdateTests(unittest.TestCase):
         self.git(self.source, "push")
         self.dirty()
         self.write(self.local, "outputs/image.png", "my image")
-        self.assertEqual(self.update(backup_local_code=True), 1)
+        self.assertEqual(self.update(), 1)
         self.assert_old_head()
         self.assert_no_stash()
         self.assertEqual((self.local / "outputs/image.png").read_text(), "my image")
@@ -232,7 +224,7 @@ class GitUpdateTests(unittest.TestCase):
     def test_unfinished_operation_missing_git_and_zip_rollback_do_not_mutate(self):
         merge = self.local / ".git" / "MERGE_HEAD"
         merge.write_text(self.original)
-        self.assertEqual(self.update(backup_local_code=True), 1)
+        self.assertEqual(self.update(), 1)
         self.assertIn("unfinished", self.messages.getvalue())
         merge.unlink()
         with patch.object(U.shutil, "which", return_value=None):

@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 REM ===========================================================================
 REM  LE bouton de mise a jour. Il n'y en a plus qu'un, et il fait les QUATRE
 REM  etapes, dans l'ordre :
@@ -22,17 +22,18 @@ REM    update.bat --trellis         le moteur 3D seul
 REM    update.bat --code            le code seul
 REM    update.bat --check           dit ce que le code changerait, n'ecrit rien
 REM    update.bat --rollback        annule la derniere mise a jour du code
-REM    update.bat --backup-local-code sauvegarde le code local Git puis met a jour
 REM
 REM  Git : met a jour la branche actuelle par fast-forward, sans changer de branche.
 REM  ZIP : telecharge le canal defini dans config\update-channel.json (main par defaut).
-REM  Si du code local bloque Git, propose une sauvegarde avant de continuer.
+REM  Le code local qui bloque Git est sauvegarde automatiquement avant la mise a jour.
 REM
 REM  FERMEZ l'application avant de lancer ce script (un fichier ouvert ne peut
 REM  pas etre remplace sous Windows).
 REM ===========================================================================
 cd /d "%~dp0"
 set "PY=%~dp0python\python.exe"
+if not exist "%PY%" if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+if not exist "%PY%" if exist "%~dp0venv\Scripts\python.exe" set "PY=%~dp0venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
 
 REM Le bloc est charge avant Python : la mise a jour peut remplacer ce .bat

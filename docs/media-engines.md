@@ -8,8 +8,10 @@ Le canal de mise à jour suit `main`.
 ### SeedVR2
 
 Ouvrir **Tools & 3D → SeedVR2 upscale**, puis **Install / repair SeedVR2**.
-Importer une image ou une vidéo, choisir 3B (Q8) ou 7B (Q4), puis **Restore**.
-Le premier traitement télécharge automatiquement le DiT choisi et le VAE.
+Importer une image ou une vidéo, choisir 3B (Q8) ou 7B (Q4), sélectionner **×2**
+ou **×4**, régler **Added detail strength (%)**, puis **Restore**.
+Le premier traitement avec une force supérieure à 0 télécharge automatiquement
+le DiT choisi et le VAE.
 Les fichiers importés sont copiés sans recompression sous un nom temporaire
 simple, pour contourner les problèmes OpenCV avec les noms Unicode sous
 Windows et conserver l'entrée pendant les traitements longs. Cette copie
@@ -18,9 +20,28 @@ L'image source s'affiche dès l'import, avec ses dimensions. Cet aperçu est
 réduit uniquement pour l'affichage ; l'entrée du moteur reste intacte.
 L'image restaurée et son téléchargement apparaissent à la fin du traitement.
 La CLI SeedVR2 utilisée ici ne produit pas d'aperçu intermédiaire à chaque pas.
-La résolution est celle du petit côté : pour une image 1024×768 agrandie ×4,
-entrer 3072. L'upscaler conserve le rapport d'aspect, sous réserve de l'alignement
-des dimensions imposé par le modèle.
+**×2 / ×4** calcule automatiquement la résolution depuis les dimensions de
+l'image ou des images de la vidéo. Exemple : 1024×768 → ×2 : 2048×1536 ;
+×4 : 4096×3072. La taille cible s'affiche dès l'import d'une image ; les dimensions
+d'une vidéo sont lues au lancement, sans transcodage pendant l'import.
+**Custom** affiche le champ de résolution du petit côté (256–8192 pixels).
+Si un facteur dépasse cette plage, le programme demande une taille personnalisée
+au lieu de réduire le facteur silencieusement. Le rapport d'aspect est conservé,
+sous réserve de l'alignement des dimensions imposé par le modèle et l'encodage vidéo.
+
+Le curseur **Added detail strength (%)** dose le résultat de façon explicite :
+- **0 %** : agrandissement Lanczos de la source, sans charger SeedVR2 ;
+- **100 %** : résultat complet du moteur, comme avant ;
+- **entre les deux** : mélange de la source agrandie et du résultat restauré.
+  Par exemple, 25 % conserve 25 % du résultat SeedVR2 et 75 % de la source agrandie.
+
+Ce réglage réduit aussi les autres modifications de la restauration (couleurs,
+textures et formes) ; il ne compte pas les détails inventés et ne garantit pas
+la fidélité géométrique. Les paramètres de bruit natifs restent à zéro : ce bruit
+sert à varier ou adoucir la reconstruction, pas à régler précisément sa force.
+À 100 %, les images restent les PNG du moteur et la vidéo n'est pas réencodée
+pour ce réglage. Les vidéos à force intermédiaire passent par un mélange FFmpeg
+encodé en H.264, puis la piste audio éventuelle est réattachée en AAC.
 
 Le profil utilise le déchargement CPU, BlockSwap, l'attention PyTorch SDPA et des
 tuiles VAE de 512 pixels. Les vidéos passent par lots de 5 images et segments de

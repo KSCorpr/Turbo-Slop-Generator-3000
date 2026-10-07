@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from atelier.ui.media_tabs import seed_source_preview
+from atelier.ui.media_tabs import seed_source_preview, seed_size_controls
 
 
 class SourcePreviewTests(unittest.TestCase):
@@ -44,6 +44,30 @@ class SourcePreviewTests(unittest.TestCase):
             update, info = seed_source_preview(path)
             self.assertFalse(update["visible"])
             self.assertIn("preview unavailable", info)
+
+
+class ScalePreviewTests(unittest.TestCase):
+    def test_x2_x4_and_custom_show_sizes_and_only_custom_shows_the_field(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source…é_日本.jpg"
+            Image.new("RGB", (1024, 768)).save(path)
+            for scale, size, visible in (("2", "2048 × 1536", False),
+                                         ("4", "4096 × 3072", False),
+                                         ("custom", "1440 × 1080", True)):
+                with self.subTest(scale=scale):
+                    field, info = seed_size_controls(path, scale, 1080)
+                    self.assertEqual(field["visible"], visible)
+                    self.assertIn(size, info)
+
+    def test_preview_does_not_transcode_videos_and_reports_excessive_factors(self):
+        field, info = seed_size_controls("missing-video.mp4", "4", 1080)
+        self.assertFalse(field["visible"])
+        self.assertIn("when restoration starts", info)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large.png"
+            Image.new("RGB", (2400, 2100)).save(path)
+            _, info = seed_size_controls(path, "4", 1080)
+            self.assertIn("8400", info)
 
 
 if __name__ == "__main__":

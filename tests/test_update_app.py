@@ -379,12 +379,6 @@ class OneButtonTests(unittest.TestCase):
         self.assertIsNone(calls.get("subprocess"))
         self.assertEqual(calls["exit"], 1)
 
-    def test_backup_option_reaches_code_updater_and_keeps_default_tail_steps(self):
-        calls = self._main(["--backup-local-code"])
-        self.assertTrue(calls["update"]["backup_local_code"])
-        self.assertIn("--update-engine", calls["subprocess"][0])
-        self.assertFalse(self._main([])["update"]["backup_local_code"])
-
     def test_a_missing_maintenance_script_is_said_not_crashed(self):
         """Une extraction partielle laisse un dossier incomplet. Le code, lui,
         est posé : l'utilisateur doit l'apprendre, pas voir une trace."""

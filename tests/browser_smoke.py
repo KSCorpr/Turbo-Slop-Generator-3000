@@ -99,13 +99,15 @@ def main():
             cancelled.set()
             return "Generation cancelled."
 
-        def restore_seed(source, model, resolution, seed, log):
+        def restore_seed(source, model, resolution, seed, log, *, scale=None, detail_strength=100):
             if not source:
                 raise ValueError("Import an image or a video first.")
-            seed_calls.append(str(source))
+            seed_calls.append({"source": str(source), "scale": scale, "details": detail_strength})
             path = settings.OUTPUT_DIR / "seedvr2-simulated.png"
             with Image.open(source) as im:
-                im.convert("RGB").resize((1536, 1152)).save(path)
+                target = seedvr2.output_resolution(Path(source), resolution, scale)
+                ratio = target / min(im.size)
+                im.convert("RGB").resize(tuple(int(edge * ratio) for edge in im.size)).save(path)
             log("Simulated SeedVR2 restoration completed.")
             return path
 
@@ -148,13 +150,23 @@ def main():
                 page.locator("#seedvr2-source-file input[type=file]").set_input_files(str(seed_source))
                 expect(page.locator("#seedvr2-source-preview img")).to_be_visible()
                 expect(page.locator("#seedvr2-source-info")).to_contain_text("1024 × 768")
+                expect(page.locator("#seedvr2-size-info")).to_contain_text("2048 × 1536")
+                page.locator("#seedvr2-scale").get_by_role("radio", name="Custom", exact=True).check()
+                expect(page.locator("#seedvr2-resolution input")).to_be_visible()
+                expect(page.locator("#seedvr2-size-info")).to_contain_text("1440 × 1080")
+                page.locator("#seedvr2-scale").get_by_role("radio", name="×4", exact=True).check()
+                expect(page.locator("#seedvr2-resolution input")).not_to_be_visible()
+                expect(page.locator("#seedvr2-size-info")).to_contain_text("4096 × 3072")
+                page.locator("#seedvr2-detail-strength input[type=number]").fill("35")
+                page.locator("#seedvr2-detail-strength input[type=number]").press("Tab")
                 page.wait_for_function("document.querySelector('#seedvr2-source-preview img')?.naturalWidth > 0")
                 assert not seed_calls, "Upload triggered restoration instead of preview"
                 page.get_by_role("button", name="Restore", exact=True).click()
                 expect(page.locator("#seedvr2-status")).to_contain_text("Completed.")
                 expect(page.locator("#seedvr2-restored-image img")).to_be_visible()
-                page.wait_for_function("document.querySelector('#seedvr2-restored-image img')?.naturalWidth === 1536")
+                page.wait_for_function("document.querySelector('#seedvr2-restored-image img')?.naturalWidth === 4096")
                 assert len(seed_calls) == 1, seed_calls
+                assert seed_calls[0]["scale"] == 4 and seed_calls[0]["details"] == 35, seed_calls
                 page.screenshot(path=str(screenshots / "studio-seedvr2.png"))
 
                 page.get_by_role("tab", name="Capture → splats", exact=True).click()
