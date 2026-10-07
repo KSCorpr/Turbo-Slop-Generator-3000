@@ -44,6 +44,24 @@ jobs:
       - name: Vérifier les dépendances
         run: python -m pip check
 
+  seedvr2-wheels:
+    name: SeedVR2 Windows wheel imports
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pinned SeedVR2 Torch runtime
+        run: python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+      - name: Install attention Python dependencies
+        run: python -m pip install "uv>=0.8,<1" einops packaging numpy
+      - name: Verify prebuilt Windows wheels without a GPU
+        run: python tests/verify_seedvr2_wheels.py
+      - name: Verify dependencies
+        run: python -m pip check
+
   browser:
     name: Studio browser journeys
     runs-on: ubuntu-latest

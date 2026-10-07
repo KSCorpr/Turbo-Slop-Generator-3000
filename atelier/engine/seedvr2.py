@@ -1,6 +1,7 @@
 """SeedVR2 standalone image/video restoration with bounded memory presets."""
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -10,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from PIL import Image
-from .. import addons, settings
+from .. import addons, settings, seedvr2_acceleration as acceleration
 from . import sdcpp, video
 from .local_jobs import LocalJob
 
@@ -106,9 +107,11 @@ def _video_detail(source: Path, output: Path, strength: float, log,
 
 
 def build_command(source: Path, output: Path, model: str, resolution: int,
-                  *, is_video: bool, seed: int = 42) -> list[str]:
+                  *, is_video: bool, seed: int = 42, attention: str = "sdpa") -> list[str]:
     if model not in addons.SEED_MODELS or not 256 <= resolution <= 8192:
         raise ValueError("Choose a SeedVR2 model and a short edge between 256 and 8192 px.")
+    if attention not in ("sdpa", *acceleration.BACKENDS):
+        raise ValueError("Choose SDPA, SageAttention 2 or FlashAttention 2.")
     return [str(addons.python("seedvr2")), "-u",
             str(addons.root("seedvr2") / "source" / "inference_cli.py"),
             str(source), "--output", str(output),
@@ -120,15 +123,37 @@ def build_command(source: Path, output: Path, model: str, resolution: int,
             "--swap_io_components", "--dit_offload_device", "cpu",
             "--vae_offload_device", "cpu", "--vae_encode_tiled", "--vae_decode_tiled",
             "--vae_encode_tile_size", "512", "--vae_decode_tile_size", "512",
-            "--attention_mode", "sdpa", "--color_correction", "lab",
+            "--attention_mode", attention, "--color_correction", "lab",
             "--input_noise_scale", "0", "--latent_noise_scale", "0",
             *(["--chunk_size", "33", "--temporal_overlap", "1", "--uniform_batch_size",
                "--video_backend", "ffmpeg", "--output_format", "mp4"]
               if is_video else ["--output_format", "png"])]
 
 
+def select_attention(requested, directory: Path, env, log=print):
+    if requested == "sdpa" or (requested == "auto" and not
+            (addons.root("seedvr2") / acceleration.MARKER).is_file()):
+        log("SeedVR2 attention: SDPA. Optional optimizations can be installed from this tab.")
+        return "sdpa"
+    report_path = directory / "attention-check.json"
+    try:
+        log("SeedVR2: checking optional attention kernels on the selected GPU…")
+        JOB.run([addons.python("seedvr2"), "-u", Path(acceleration.__file__),
+                 "--output", report_path, "--mode", "all" if requested == "auto" else requested],
+                log, env=env)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        log("SeedVR2 selected GPU: " + report.get("gpu", {}).get("name", "unavailable"))
+        selected = acceleration.choose_mode(requested, report, log)
+    except (OSError, ValueError, RuntimeError) as exc:
+        JOB.check()  # Cancellation must never start an SDPA inference.
+        log(f"SeedVR2 optimization check failed: {exc}. Using SDPA.")
+        selected = "sdpa"
+    log("SeedVR2 attention: " + selected)
+    return selected
+
+
 def restore(source, model="3b", resolution=1080, seed=42, log=print,
-            *, scale: int | None = None, detail_strength: float = 100):
+            *, scale: int | None = None, detail_strength: float = 100, attention: str = "auto"):
     source = Path(source or "")
     if not source.is_file() or source.suffix.lower() not in IMAGES | VIDEOS:
         raise ValueError("Import an image or a video first.")
@@ -137,6 +162,8 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
         raise ValueError("Choose an added detail strength between 0 and 100%.")
     if scale is not None and (type(scale) is not int or scale not in (2, 4)):
         raise ValueError("Choose ×2, ×4 or a custom short edge.")
+    if attention not in acceleration.MODES:
+        raise ValueError("Choose Auto, SDPA, SageAttention 2 or FlashAttention 2.")
     if strength > 0 and not addons.ready("seedvr2"):
         raise RuntimeError("Install SeedVR2 using the button in this tab first.")
     is_video = source.suffix.lower() in VIDEOS
@@ -175,8 +202,12 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
             else:
                 _image_detail(staged_source, staged_output, 0, resolution=target)
         else:
+            selected = select_attention(attention, Path(temporary), env, log)
+            # Our GPU check replaces upstream's generic pip suggestion, which
+            # neither targets SeedVR2's Python nor checks Windows/GPU compatibility.
+            env["SEEDVR2_OPTIMIZATIONS_LOGGED"] = "1"
             command = build_command(staged_source, staged_output, model, target,
-                                    is_video=is_video, seed=int(seed))
+                                    is_video=is_video, seed=int(seed), attention=selected)
             JOB.run(command, log, cwd=addons.root("seedvr2") / "source", env=env)
         if not staged_output.is_file() or not staged_output.stat().st_size:
             raise RuntimeError("SeedVR2 finished without an output file.")
