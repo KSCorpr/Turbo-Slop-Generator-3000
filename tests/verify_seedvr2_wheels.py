@@ -73,7 +73,10 @@ def verify_varlen_ptx(profile):
         constants = {"H": 4, "num_kv_groups": 1, "HEAD_DIM": head_dim,
                      "BLOCK_M": 128, "BLOCK_N": 64, "STAGE": 1}
         for arch, dtype, succeeds in cases:
-            signature = {name: "i32" for name in _attn_fwd.arg_names if name not in constants}
+            # Triton 3.3 indexes constexpr arguments in the complete signature;
+            # omitting them works in 3.2 but breaks its newer ASTSource API.
+            signature = {name: "constexpr" if name in constants else "i32"
+                         for name in _attn_fwd.arg_names}
             for name in ("Q", "K"):
                 signature[name] = "*i8"
             signature["V"] = "*fp16"
