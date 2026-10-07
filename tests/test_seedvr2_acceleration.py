@@ -8,7 +8,8 @@ import unittest
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from PIL import Image
 from atelier import addons, settings, seedvr2_acceleration as acceleration
@@ -21,6 +22,7 @@ from scripts import setup_media
 def hardware(capability=(8, 6), **overrides):
     return {"system": "Windows", "machine": "AMD64", "python": [3, 12],
             "torch": "2.7.1+cu126", "cuda": "12.6",
+            "compute_dtype": "bfloat16",
             "gpu": {"name": "Selected GPU", "capability": list(capability)}, **overrides}
 
 
@@ -56,12 +58,47 @@ class CompatibilityTests(unittest.TestCase):
             with patch.object(acceleration.platform, "system", return_value="Linux"):
                 self.assertEqual(acceleration.triton_env(env, Path(temporary)), env)
 
-    def test_ampere_and_turing_receive_different_triton_and_flash_support(self):
+    def test_turing_bf16_keeps_sdpa_and_fp16_requires_an_experimental_probe(self):
         self.assertEqual(acceleration.wheel_plan(hardware())[0],
                          [acceleration.TRITON, acceleration.SAGE, acceleration.FLASH])
         wheels, message = acceleration.wheel_plan(hardware((7, 5)))
+        self.assertEqual(wheels, [])
+        self.assertIn("BF16", message)
+        self.assertIn("SDPA", message)
+        wheels, message = acceleration.wheel_plan(hardware((7, 5), compute_dtype="float16"))
         self.assertEqual(wheels, [acceleration.TRITON_TURING, acceleration.SAGE])
         self.assertIn("experimental", message)
+
+    def test_compute_precision_matches_seedvr2_cublas_probe_instead_of_gpu_generation(self):
+        torch = SimpleNamespace(bfloat16="BF16", randn=Mock(return_value="matrix"), matmul=Mock())
+        self.assertEqual(acceleration._compute_dtype(torch), "bfloat16")
+        torch.randn.assert_called_once_with(8, 8, dtype="BF16", device="cuda:0")
+        torch.matmul.assert_called_once_with("matrix", "matrix")
+        torch.matmul.side_effect = RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED")
+        self.assertEqual(acceleration._compute_dtype(torch), "float16")
+        torch.matmul.side_effect = RuntimeError("CUDA out of memory")
+        with self.assertRaisesRegex(RuntimeError, "out of memory"):
+            acceleration._compute_dtype(torch)
+
+    def test_turing_bf16_rejects_an_old_positive_report_for_auto_and_explicit_attention(self):
+        report = {**hardware((7, 5)), "backends": {
+            mode: {"ok": True} for mode in acceleration.BACKENDS}}
+        for dtype in ("bfloat16", None):
+            if dtype is None:
+                report.pop("compute_dtype")  # Old reports did not record precision.
+            for mode in ("auto", *acceleration.BACKENDS):
+                with self.subTest(dtype=dtype, mode=mode):
+                    self.assertEqual(acceleration.choose_mode(mode, report, lambda line: None), "sdpa")
+        with self.assertRaisesRegex(RuntimeError, "BF16.*sm_75"):
+            acceleration._test_kernel("sageattn_2", (7, 5), "bfloat16")
+
+    def test_probe_passes_the_actual_precision_to_the_varlen_test(self):
+        for dtype in ("bfloat16", "float16"):
+            with self.subTest(dtype=dtype), \
+                 patch.object(acceleration, "hardware_info", return_value=hardware(compute_dtype=dtype)), \
+                 patch.object(acceleration, "_test_kernel") as kernel:
+                acceleration.probe(("sageattn_2",))
+                kernel.assert_called_once_with("sageattn_2", (8, 6), dtype)
 
     def test_unsupported_gpu_python_os_or_torch_is_rejected_before_installation(self):
         cases = [hardware((6, 1)), hardware((7, 0)), hardware((12, 0)),
@@ -93,6 +130,27 @@ class CompatibilityTests(unittest.TestCase):
 
 
 class InstallerTests(unittest.TestCase):
+    def test_turing_bf16_does_not_download_incompatible_wheels_or_change_torch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            installed = root / "installed.json"
+            installed.write_text('{"commit":"unchanged"}')
+
+            def run(*command):
+                path = Path(command[command.index("--output") + 1])
+                path.write_text(json.dumps(hardware((7, 5))))
+
+            with patch.object(addons, "root", return_value=root), \
+                 patch.object(addons, "ready", return_value=True), \
+                 patch.object(setup_media, "run", side_effect=run), \
+                 patch.object(setup_media, "download") as download, \
+                 patch.object(setup_media, "pip") as pip, patch("builtins.print") as log:
+                setup_media.install_seed_optimizations()
+            download.assert_not_called()
+            pip.assert_not_called()
+            self.assertEqual(installed.read_text(), '{"commit":"unchanged"}')
+            self.assertIn("SeedVR2 remains ready with SDPA", "\n".join(c.args[0] for c in log.call_args_list))
+
     def exercise_install(self, *, bad_checksum=False, broken=False, info=None):
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
             root = Path(temporary)
@@ -267,6 +325,88 @@ class RuntimeTests(unittest.TestCase):
                 seedvr2.restore(self.source, log=lambda line: None)
         run.assert_called_once()
         self.assertFalse(self.output.exists())
+
+    def test_ptx_failure_before_the_shutdown_footer_retries_once_with_the_same_settings(self):
+        commands, logs = [], []
+
+        def run(command, log, **kwargs):
+            commands.append((list(command), kwargs))
+            output = Path(command[command.index("--output") + 1])
+            if len(commands) == 1:
+                output.write_bytes(b"incomplete output")
+                log("ptxas fatal : Ptx assembly aborted due to errors")
+                for _ in range(20):
+                    log("upstream shutdown footer")
+                raise RuntimeError("Python exited with code 1. upstream shutdown footer")
+            self.assertFalse(output.exists())
+            Image.open(self.source).save(output)
+
+        with patch.object(seedvr2, "select_attention", return_value="sageattn_2"), \
+             patch.object(self.job, "run", side_effect=run):
+            output = seedvr2.restore(self.source, scale=2, seed=1234, log=logs.append)
+        self.assertEqual(output, self.output)
+        self.assertEqual(len(commands), 2)
+        expected = list(commands[0][0])
+        expected[expected.index("--attention_mode") + 1] = "sdpa"
+        self.assertEqual(commands[1][0], expected)
+        self.assertEqual(commands[0][1], commands[1][1])
+        self.assertTrue(any("Retrying once" in line for line in logs))
+
+    def test_ptx_error_in_the_exception_also_retries_but_sdpa_failure_is_propagated(self):
+        for backend in acceleration.BACKENDS:
+            with self.subTest(backend=backend), \
+                 patch.object(seedvr2, "select_attention", return_value=backend), \
+                 patch.object(self.job, "run", side_effect=[
+                     RuntimeError("ptxas fatal : Ptx assembly aborted due to errors"),
+                     RuntimeError("SDPA failure")]) as run:
+                with self.assertRaisesRegex(RuntimeError, "SDPA failure"):
+                    seedvr2.restore(self.source, log=lambda line: None)
+            self.assertEqual(run.call_count, 2)
+            self.assertFalse(self.output.exists())
+
+    def test_ptx_failure_in_sdpa_is_not_retried(self):
+        with patch.object(seedvr2, "select_attention", return_value="sdpa"), \
+             patch.object(self.job, "run", side_effect=RuntimeError("ptxas fatal : error")) as run:
+            with self.assertRaisesRegex(RuntimeError, "ptxas fatal"):
+                seedvr2.restore(self.source, log=lambda line: None)
+        run.assert_called_once()
+
+    def test_stop_after_an_optional_compiler_failure_never_launches_a_retry(self):
+        def run(command, log, **kwargs):
+            log("ptxas fatal : Ptx assembly aborted due to errors")
+            self.job.cancel()
+            raise RuntimeError("ptxas fatal : Ptx assembly aborted due to errors")
+
+        with patch.object(seedvr2, "select_attention", return_value="sageattn_2"), \
+             patch.object(self.job, "run", side_effect=run) as runner:
+            with self.assertRaisesRegex(RuntimeError, "cancelled"):
+                seedvr2.restore(self.source, log=lambda line: None)
+        runner.assert_called_once()
+        self.assertFalse(self.output.exists())
+
+    def test_real_process_preserves_the_compiler_error_before_a_long_shutdown_footer(self):
+        directory = self.root / "source"
+        directory.mkdir()
+        script = directory / "fixture_backend.py"
+        script.write_text(
+            "import pathlib, sys\n"
+            "output = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])\n"
+            "attention = sys.argv[sys.argv.index('--attention_mode') + 1]\n"
+            "if attention != 'sdpa':\n"
+            "    output.write_bytes(b'incomplete video')\n"
+            "    print('ptxas fatal : Ptx assembly aborted due to errors', flush=True)\n"
+            "    for i in range(20): print('shutdown footer', flush=True)\n"
+            "    sys.exit(1)\n"
+            "assert not output.exists(), 'partial output was not removed'\n"
+            "output.write_bytes(b'complete video')\n", encoding="utf-8")
+        logs = []
+        with self.job.session():
+            seedvr2._run_inference(
+                [sys.executable, script, "--output", self.output, "--attention_mode", "sageattn_2"],
+                self.output, settings.child_env(), logs.append)
+        self.assertEqual(self.output.read_bytes(), b"complete video")
+        self.assertEqual(sum(line.startswith("$") for line in logs), 2)
+        self.assertIn("ptxas fatal : Ptx assembly aborted due to errors", logs)
 
 
 if __name__ == "__main__":

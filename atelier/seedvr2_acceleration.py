@@ -66,8 +66,13 @@ def wheel_plan(info: dict) -> tuple[list[Wheel], str]:
                            "Use Install / repair SeedVR2 first; no Torch version was changed.")
     capability = tuple(info.get("gpu", {}).get("capability", (0, 0)))
     if capability == (7, 5):
+        if info.get("compute_dtype", "bfloat16") == "bfloat16":
+            return [], (
+                "Turing / sm_75: SeedVR2 uses BF16, but SageAttention's varlen BF16 kernel "
+                "requires sm_80 or newer. Keeping SDPA; no optional wheels are installed.")
         return [TRITON_TURING, SAGE], (
-            "Turing: trying SageAttention with Triton 3.2. FlashAttention 2 requires Ampere or newer. "
+            "Turing with FP16 compute: trying SageAttention with Triton 3.2. "
+            "FlashAttention 2 requires Ampere or newer. "
             "Triton 3.2 with Torch 2.7 is experimental; activation requires a successful GPU test.")
     if capability in ((8, 0), (8, 6), (8, 9), (9, 0)):
         return [TRITON, SAGE, FLASH], "Installing prebuilt Windows attention wheels in SeedVR2 only."
@@ -106,6 +111,7 @@ def hardware_info() -> dict:
         if torch.cuda.is_available():
             info["gpu"] = {"name": torch.cuda.get_device_name(0),
                            "capability": list(torch.cuda.get_device_capability(0))}
+            info["compute_dtype"] = _compute_dtype(torch)
         else:
             info["error"] = "No CUDA GPU available in the selected environment."
     except Exception as exc:
@@ -113,28 +119,55 @@ def hardware_info() -> dict:
     return info
 
 
-def _test_kernel(mode: str, capability: tuple) -> None:
-    """Exercise the varlen API used by SeedVR2, including both head sizes."""
+def _compute_dtype(torch) -> str:
+    """Match the pinned SeedVR2 CUBLAS probe, including emulated BF16 on Turing.
+
+    Compute capability and is_bf16_supported() do not describe this pipeline:
+    SeedVR2 chooses BF16 whenever its small matrix multiplication succeeds.
+    """
+    try:
+        matrix = torch.randn(8, 8, dtype=torch.bfloat16, device="cuda:0")
+        torch.matmul(matrix, matrix)
+    except RuntimeError as exc:
+        if "CUBLAS_STATUS_NOT_SUPPORTED" in str(exc):
+            return "float16"
+        raise
+    return "bfloat16"
+
+
+def _attention_reason(mode: str, capability: tuple, compute_dtype: str) -> str:
+    if mode == "sageattn_2":
+        if capability == (7, 5):
+            if compute_dtype == "bfloat16":
+                return ("SeedVR2 computes in BF16 on this Turing / sm_75 GPU. "
+                        "SageAttention's varlen BF16 kernel requires sm_80 or newer; using SDPA.")
+        elif capability not in ((8, 0), (8, 6), (8, 9), (9, 0)):
+            return "SageAttention needs a supported Turing or newer GPU."
+    elif mode == "flash_attn_2" and capability not in ((8, 0), (8, 6), (8, 9), (9, 0)):
+        return "FlashAttention 2 requires an Ampere, Ada or Hopper GPU."
+    return ""
+
+
+def _test_kernel(mode: str, capability: tuple, compute_dtype: str = "bfloat16") -> None:
+    """Exercise SeedVR2's varlen API with its actual precision and both head sizes."""
+    reason = _attention_reason(mode, capability, compute_dtype)
+    if reason:
+        raise RuntimeError(reason)
     import torch
     from torch.nn import functional as F
 
     if mode == "sageattn_2":
-        if capability != (7, 5) and capability not in ((8, 0), (8, 6), (8, 9), (9, 0)):
-            raise RuntimeError("SageAttention needs a supported Turing or newer GPU.")
         import triton
         major_minor = tuple(int(v) for v in triton.__version__.split(".")[:2])
         if capability == (7, 5) and major_minor > (3, 2):
             raise RuntimeError("Turing requires Triton <= 3.2; reinstall optimizations on this GPU.")
         from sageattention import sageattn_varlen as kernel
     else:
-        if capability not in ((8, 0), (8, 6), (8, 9), (9, 0)):
-            raise RuntimeError("FlashAttention 2 requires an Ampere, Ada or Hopper GPU.")
         import flash_attn_2_cuda  # noqa: F401
         from flash_attn import flash_attn_varlen_func as kernel
 
     torch.cuda.set_device(0)
-    # BF16 is the upstream DiT default on Ampere+, FP16 on Turing.
-    dtype = torch.bfloat16 if capability >= (8, 0) else torch.float16
+    dtype = torch.bfloat16 if compute_dtype == "bfloat16" else torch.float16
     torch.manual_seed(42)
     offsets = (0, 128, 224)
     lengths = torch.tensor(offsets, device="cuda", dtype=torch.int32)
@@ -170,8 +203,8 @@ def probe(backends=BACKENDS) -> dict:
         try:
             if info.get("error"):
                 raise RuntimeError(info["error"])
-            _test_kernel(mode, capability)
-            results[mode] = {"ok": True, "reason": "GPU varlen test passed."}
+            _test_kernel(mode, capability, info["compute_dtype"])
+            results[mode] = {"ok": True, "reason": "GPU varlen test passed with SeedVR2's compute dtype."}
         except Exception as exc:
             results[mode] = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:1800]}
     return info
@@ -181,14 +214,25 @@ def choose_mode(requested: str, report: dict, log=print) -> str:
     if requested not in MODES:
         raise ValueError("Choose Auto, SDPA, SageAttention 2 or FlashAttention 2.")
     modes = BACKENDS if requested == "auto" else (requested,)
+    capability = tuple(report.get("gpu", {}).get("capability", (0, 0)))
     for mode in modes:
         if mode == "sdpa":
             return mode
         result = report.get("backends", {}).get(mode, {})
-        if result.get("ok") is True:
+        reason = _attention_reason(mode, capability, report.get("compute_dtype", "bfloat16"))
+        if not reason and result.get("ok") is True:
             return mode
-        log(f"SeedVR2 {mode} unavailable: {result.get('reason', 'GPU check unavailable.')}")
+        log(f"SeedVR2 {mode} unavailable: {reason or result.get('reason', 'GPU check unavailable.')}")
     return "sdpa"
+
+
+def kernel_compile_failed(message: str) -> bool:
+    """Recognize optional kernel compiler failures, not generic CUDA/inference errors."""
+    message = message.lower()
+    return any(part in message for part in (
+        "ptxas fatal", "ptx assembly aborted", "ptx assembly failed",
+        "internal triton ptx codegen error", "triton.compiler.errors.compilationerror",
+        "triton.compiler.errors.unsupportedlanguageconstruct"))
 
 
 if __name__ == "__main__":
