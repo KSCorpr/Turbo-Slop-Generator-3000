@@ -1096,6 +1096,16 @@ creative pass
 restores, SDXL hallucinates.
 
 ### 🔼 Simple (ESRGAN, native sd.cpp)
+Modern `.pth` / `.safetensors` models (HAT, DAT, SPAN…) run through Spandrel.
+The backend is checked and installed automatically on first use, in the same
+Python as TurboSlop. This also covers SDXL pre-enlargement and existing models
+restored from another installation. Face models are not required. Installation
+progress appears in the upscale log; existing Torch builds are constrained
+while installing Spandrel. A ready backend works offline without another pip
+installation. To prepare or repair it before starting the app, run
+`python/python.exe scripts/setup_tools.py spandrel` on a portable Windows install
+(or `venv/bin/python scripts/setup_tools.py spandrel` on Linux/macOS).
+
 Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
 no prompt**. One-click downloads **all** models from
 [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf)

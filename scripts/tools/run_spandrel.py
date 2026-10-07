@@ -26,7 +26,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from _device import pick_device                                  # noqa: E402
-from atelier.engine.tiling import tile_for_vram, upscale_tiled   # noqa: E402
 
 
 def _load_source(path: Path):
@@ -83,6 +82,13 @@ def main() -> int:
     ap.add_argument("--full-precision", action="store_true",
                     help="force fp32 (slower, more memory, always exact)")
     args = ap.parse_args()
+
+    # The weights can exist without their Python backend (ZIP updates, restored
+    # models, or tools installed independently). Bootstrap before importing
+    # Torch here so pip never has to replace DLLs locked by this worker.
+    from scripts.setup_tools import ensure_spandrel
+    ensure_spandrel()
+    from atelier.engine.tiling import tile_for_vram, upscale_tiled
 
     import numpy as np
     import torch
