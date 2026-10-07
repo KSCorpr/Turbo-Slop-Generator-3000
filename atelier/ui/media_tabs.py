@@ -95,17 +95,38 @@ def seed_source_preview(path):
         return hidden, f"Source preview unavailable: {exc}"
 
 
+def seed_size_controls(path, scale, resolution):
+    custom = scale == "custom"
+    field = gr.update(visible=custom)
+    if not path:
+        return field, "Import a source to see the target size. Higher sizes take more memory and time."
+    source = Path(path)
+    if source.suffix.lower() in seedvr2.VIDEOS:
+        return field, "Video dimensions are read when restoration starts; ×2 / ×4 applies to each frame."
+    try:
+        target = seedvr2.output_resolution(source, resolution, None if custom else int(scale))
+        with Image.open(source) as original:
+            width, height = original.size
+            if original.getexif().get(274) in (5, 6, 7, 8):
+                width, height = height, width
+        ratio = target / min(width, height)
+        return field, (f"Target: approximately {int(width * ratio)} × {int(height * ratio)} px "
+                       f"(short edge {target} px). Higher sizes take more memory and time.")
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        return field, str(exc)
+
+
 def build_seedvr2_tab():
     with gr.Tab("SeedVR2 upscale", id="seedvr2"):
         gr.Markdown("### Restore images and videos\n"
                     "AI restoration with a memory-saving 11–12 GB preset. "
                     "Details can be reconstructed or changed. Compare fine structures at 100%. "
-                    "The first run downloads the selected model and VAE. "
+                    "The first AI restoration downloads the selected model and VAE. "
                     "The source preview appears on import; the restored result appears "
                     "after processing. SeedVR2 does not provide a per-step image preview.")
         with gr.Row():
             install = gr.Button("Install / repair SeedVR2", size="sm")
-            gr.Markdown("Installed." if addons.ready("seedvr2") else "Installation required once.")
+            gr.Markdown("Installed." if addons.ready("seedvr2") else "AI restoration requires installation once.")
         with gr.Row():
             with gr.Column():
                 source = gr.File(label="Image or video", type="filepath",
@@ -119,11 +140,19 @@ def build_seedvr2_tab():
                 model = gr.Dropdown([("3B · balanced · Q8", "3b"),
                                      ("7B · quality · Q4 · slower", "7b")],
                                     value="3b", label="Restoration model")
-                resolution = gr.Number(value=1080, minimum=256, maximum=8192,
-                                       precision=0, label="Output short edge (px)")
-                gr.Markdown("For ×4, enter four times the source's shortest edge. "
-                            "Example: 1024×768 → short edge 3072 → 4096×3072. "
-                            "Higher resolutions increase memory use and processing time.")
+                scale = gr.Radio([("×2", "2"), ("×4", "4"), ("Custom", "custom")],
+                                 value="2", label="Upscale size", elem_id="seedvr2-scale")
+                with gr.Group(visible=False, elem_id="seedvr2-custom-size") as custom_size:
+                    resolution = gr.Number(value=1080, minimum=256, maximum=8192,
+                                           precision=0, label="Output short edge (px)",
+                                           elem_id="seedvr2-resolution")
+                size_info = gr.Markdown("Import a source to see the target size.",
+                                        elem_id="seedvr2-size-info")
+                detail = gr.Slider(minimum=0, maximum=100, step=5, value=100,
+                                   label="Added detail strength (%)",
+                                   info="0 = simple upscale; 100 = full SeedVR2. Lower values "
+                                        "reduce reconstructed details and other restoration changes.",
+                                   elem_id="seedvr2-detail-strength")
                 seed = gr.Number(value=42, precision=0, label="Seed")
                 with gr.Row():
                     start = gr.Button("Restore", variant="primary")
@@ -139,6 +168,12 @@ def build_seedvr2_tab():
         log = gr.Textbox(label="Progress", lines=8, autoscroll=True)
         source.change(seed_source_preview, inputs=source,
                       outputs=[source_preview, source_info], queue=False)
+        source.change(seed_size_controls, inputs=[source, scale, resolution],
+                      outputs=[custom_size, size_info], queue=False)
+        scale.change(seed_size_controls, inputs=[source, scale, resolution],
+                     outputs=[custom_size, size_info], queue=False)
+        resolution.change(lambda path, scale, pixels: seed_size_controls(path, scale, pixels)[1],
+                          inputs=[source, scale, resolution], outputs=size_info, queue=False)
 
         def install_seed():
             for state, _, text in stream_task(lambda report: install_action("seedvr2", seedvr2.JOB, report)):
@@ -146,13 +181,15 @@ def build_seedvr2_tab():
 
         install.click(install_seed, outputs=[status, log], **widgets.GPU_QUEUE)
 
-        def run_seed(source, model, resolution, seed):
+        def run_seed(source, model, resolution, seed, scale, detail):
             for state, path, text in stream_task(
-                    lambda report: seedvr2.restore(source, model, resolution, seed, report)):
+                    lambda report: seedvr2.restore(source, model, resolution, seed, report,
+                                                  scale=None if scale == "custom" else int(scale),
+                                                  detail_strength=detail)):
                 is_image = path and path.endswith(".png")
                 yield state, path if is_image else None, path if path and not is_image else None, path, text
 
-        start.click(run_seed, inputs=[source, model, resolution, seed],
+        start.click(run_seed, inputs=[source, model, resolution, seed, scale, detail],
                     outputs=[status, image, clip, download, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, seedvr2.JOB.cancel, status, [])
 

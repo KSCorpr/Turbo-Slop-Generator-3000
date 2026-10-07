@@ -1,8 +1,11 @@
 """SeedVR2 standalone image/video restoration with bounded memory presets."""
 from __future__ import annotations
 
+import math
 import os
+import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -14,6 +17,92 @@ from .local_jobs import LocalJob
 JOB = LocalJob()
 IMAGES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp"}
 VIDEOS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+
+
+def source_size(source: Path, log=print) -> tuple[int, int]:
+    """Read dimensions without loading a full video or importing OpenCV."""
+    if source.suffix.lower() in IMAGES:
+        with Image.open(source) as image:
+            return image.size
+    try:
+        result = subprocess.run(
+            [video._ffmpeg_exe(log), "-hide_banner", "-nostdin", "-i", str(source),
+             "-map", "0:v:0", "-frames:v", "0", "-an", "-f", "null", "-"],
+            capture_output=True, text=True, errors="replace", timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"Cannot read video dimensions: {exc}") from exc
+    sizes = re.findall(r"Video:[^\n]*?\b([1-9]\d*)x([1-9]\d*)\b", result.stderr)
+    if result.returncode or not sizes:
+        raise ValueError("Cannot read video dimensions. Import a playable video again. "
+                         + result.stderr[-400:])
+    return tuple(map(int, sizes[-1]))
+
+
+def output_resolution(source: Path, resolution: int, scale: int | None = None,
+                      log=print) -> int:
+    if scale is not None and (type(scale) is not int or scale not in (2, 4)):
+        raise ValueError("Choose ×2, ×4 or a custom short edge.")
+    if scale is None:
+        try:
+            target = int(resolution)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Enter a custom short edge between 256 and 8192 px.") from exc
+    else:
+        target = min(source_size(source, log)) * scale
+    if not 256 <= target <= 8192:
+        raise ValueError(f"The requested short edge is {target} px. Choose a custom "
+                         "short edge between 256 and 8192 px.")
+    return target
+
+
+def _target_size(size: tuple[int, int], resolution: int, *, even=False) -> tuple[int, int]:
+    short = min(size)
+    width, height = (max(1, int(edge * resolution / short)) for edge in size)
+    if even:  # H.264 yuv420p requires even dimensions.
+        width, height = max(2, width // 2 * 2), max(2, height // 2 * 2)
+    return width, height
+
+
+def _image_detail(source: Path, output: Path, strength: float,
+                  resolution: int | None = None) -> None:
+    """Blend the resized source and AI output; zero skips AI entirely."""
+    if resolution is None:
+        with Image.open(output) as restored:
+            mode = "RGBA" if "A" in restored.getbands() else "RGB"
+            detail = restored.convert(mode)
+        size = detail.size
+    with Image.open(source) as original:
+        if resolution is not None:
+            mode = "RGBA" if "A" in original.getbands() or "transparency" in original.info else "RGB"
+            size = _target_size(original.size, resolution)
+        # Match upstream's IMREAD_UNCHANGED pixel orientation, without changing
+        # the uploaded image or baking its display-only EXIF preview into it.
+        baseline = original.convert(mode).resize(size, Image.Resampling.LANCZOS)
+    result = baseline if resolution is not None else Image.blend(baseline, detail, strength / 100)
+    result.save(output)  # All input handles are closed before replacing a PNG on Windows.
+
+
+def _video_detail(source: Path, output: Path, strength: float, log,
+                  resolution: int | None = None) -> None:
+    ffmpeg = video._ffmpeg_exe(log)
+    encoding = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    if resolution is not None:
+        width, height = _target_size(source_size(source, log), resolution, even=True)
+        JOB.run([ffmpeg, "-y", "-nostdin", "-i", source,
+                 "-map", "0:v:0", "-vf", f"scale={width}:{height}:flags=lanczos,setsar=1",
+                 *encoding, output], log)
+        return
+    width, height = source_size(output, log)
+    amount = strength / 100
+    mixed = output.with_name("restored-detail.mp4")
+    filters = (f"[1:v:0]scale={width}:{height}:flags=lanczos,setsar=1,setpts=PTS-STARTPTS[base];"
+               "[0:v:0]setsar=1,setpts=PTS-STARTPTS[ai];"
+               f"[base][ai]blend=all_expr='A*{1-amount:.6f}+B*{amount:.6f}':shortest=1[v]")
+    JOB.run([ffmpeg, "-y", "-nostdin", "-i", output, "-i", source,
+             "-filter_complex", filters, "-map", "[v]", *encoding, mixed], log)
+    JOB.check()
+    mixed.replace(output)
 
 
 def build_command(source: Path, output: Path, model: str, resolution: int,
@@ -38,20 +127,26 @@ def build_command(source: Path, output: Path, model: str, resolution: int,
               if is_video else ["--output_format", "png"])]
 
 
-def restore(source, model="3b", resolution=1080, seed=42, log=print):
+def restore(source, model="3b", resolution=1080, seed=42, log=print,
+            *, scale: int | None = None, detail_strength: float = 100):
     source = Path(source or "")
     if not source.is_file() or source.suffix.lower() not in IMAGES | VIDEOS:
         raise ValueError("Import an image or a video first.")
-    if not addons.ready("seedvr2"):
+    strength = float(detail_strength)
+    if not math.isfinite(strength) or not 0 <= strength <= 100:
+        raise ValueError("Choose an added detail strength between 0 and 100%.")
+    if scale is not None and (type(scale) is not int or scale not in (2, 4)):
+        raise ValueError("Choose ×2, ×4 or a custom short edge.")
+    if strength > 0 and not addons.ready("seedvr2"):
         raise RuntimeError("Install SeedVR2 using the button in this tab first.")
     is_video = source.suffix.lower() in VIDEOS
     output = sdcpp.unique_output("seedvr2", "mp4" if is_video else "png")
     # Validate controls before copying a potentially large video.
-    build_command(source, output, model, int(resolution),
+    build_command(source, output, model, output_resolution(source, resolution) if scale is None else 256,
                   is_video=is_video, seed=int(seed))
     env = settings.child_env(settings.generation_gpu_index(settings.load_prefs()))
     # imageio's bundled executable has a versioned name; upstream invokes 'ffmpeg'.
-    if is_video:
+    if is_video and strength > 0:
         binary_dir = addons.root("seedvr2") / "ffmpeg"
         binary_dir.mkdir(parents=True, exist_ok=True)
         binary = binary_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
@@ -70,15 +165,31 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print):
         shutil.copyfile(source, staged_source)
         JOB.check()
         log("SeedVR2: using a temporary input with a simple filename.")
-        command = build_command(staged_source, staged_output, model, int(resolution),
-                                is_video=is_video, seed=int(seed))
-        JOB.run(command, log, cwd=addons.root("seedvr2") / "source", env=env)
+        target = output_resolution(staged_source, resolution, scale, log)
+        log(f"SeedVR2: {'×' + str(scale) if scale else 'custom size'}, "
+            f"short edge {target} px; added detail strength {strength:g}%.")
+        if strength == 0:
+            log("Simple Lanczos upscale; the SeedVR2 model is not loaded.")
+            if is_video:
+                _video_detail(staged_source, staged_output, 0, log, resolution=target)
+            else:
+                _image_detail(staged_source, staged_output, 0, resolution=target)
+        else:
+            command = build_command(staged_source, staged_output, model, target,
+                                    is_video=is_video, seed=int(seed))
+            JOB.run(command, log, cwd=addons.root("seedvr2") / "source", env=env)
         if not staged_output.is_file() or not staged_output.stat().st_size:
             raise RuntimeError("SeedVR2 finished without an output file.")
         if not is_video:
             with Image.open(staged_output) as image:
                 image.verify()
+            if 0 < strength < 100:
+                JOB.check()
+                _image_detail(staged_source, staged_output, strength)
         else:
+            if 0 < strength < 100:
+                JOB.check()
+                _video_detail(staged_source, staged_output, strength, log)
             # Reuse the snapshot for audio too: Gradio may evict the original
             # cached upload while a long restoration is running.
             muxed = Path(temporary) / "restored-audio.mp4"

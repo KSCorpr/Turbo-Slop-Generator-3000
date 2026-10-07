@@ -44,6 +44,10 @@ vraiment l'une sans les autres.
     update.bat --code       le code seul
     update.bat --check      dit ce que le code changerait, n'écrit rien
     update.bat --rollback   annule la dernière mise à jour du code
+
+Une installation Git utilise fetch puis fast-forward sur sa branche actuelle.
+Si du code local bloque la mise à jour, une sauvegarde Git est faite avant
+de continuer. Une installation ZIP garde son canal et sa sauvegarde de fichiers.
 """
 from __future__ import annotations
 
@@ -54,6 +58,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -101,6 +106,8 @@ BACKUP_DIR = ROOT / ".update-backup"
 PROTECTED_TOP = {
     "models", "loras", "outputs", "userdata", "tools_repo", "bin", "python",
     "tmp", ".git", ".update-backup", "venv", ".venv",
+    "runtime", "vendor", "hf_cache", ".cache", ".engine-previous",
+    ".engine-broken", ".engine-swap",
 }
 # Fichiers d'un dépôt qui n'ont rien à faire dans une installation.
 SKIP_NAMES = {".gitignore", ".gitattributes"}
@@ -328,7 +335,130 @@ def missing_files() -> list[str]:
 # --------------------------------------------------------------------------- #
 #  Commandes
 # --------------------------------------------------------------------------- #
+def _git(*args: str, input_data: str | None = None, required: bool = True):
+    result = subprocess.run(["git", *args], cwd=ROOT, input=input_data,
+                            capture_output=True, text=True, encoding="utf-8",
+                            errors="surrogateescape")
+    if required and result.returncode:
+        raise RuntimeError((result.stderr or result.stdout).strip()
+                           or f"Git failed (exit {result.returncode}).")
+    return result
+
+
+def _git_paths(*args: str) -> set[str]:
+    return set(filter(None, _git(*args).stdout.split("\0")))
+
+
+def _git_data_path(path: str) -> bool:
+    top = path.split("/", 1)[0].lower()
+    return top in PROTECTED_TOP or top.startswith(".engine-stage-")
+
+
+def _update_git(check_only: bool) -> int:
+    """Fetch and fast-forward the current branch; never use ZIP over Git.
+
+    A portable ZIP over an old checkout leaves modified tracked files and
+    untracked files now present upstream. Back up only code changes and those
+    collisions, keeping unrelated untracked work and user data in place.
+    """
+    _say("=" * 60)
+    _say("  Updating TurboSlop with Git")
+    _say("=" * 60)
+    try:
+        if shutil.which("git") is None:
+            raise RuntimeError("Git is not available in PATH. Install Git for Windows, "
+                               "then reopen update.bat.")
+        root = Path(_git("rev-parse", "--show-toplevel").stdout.strip()).resolve()
+        if root != ROOT.resolve():
+            raise RuntimeError("The Git repository root is not the TurboSlop folder.")
+        branch = _git("symbolic-ref", "--quiet", "--short", "HEAD", required=False).stdout.strip()
+        if not branch:
+            raise RuntimeError("Git is on a detached commit. Select a branch before updating.")
+        for name in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"):
+            path = Path(_git("rev-parse", "--git-path", name).stdout.strip())
+            if (ROOT / path).exists():
+                raise RuntimeError("A Git merge/rebase operation is unfinished. Finish it before updating.")
+        upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",
+                        required=False).stdout.strip()
+        if not upstream:
+            raise RuntimeError(f"Branch {branch} has no upstream. Configure its tracking branch first.")
+        _say(INFO + f"branch: {branch}; upstream: {upstream} (no branch switch).")
+        if not check_only:
+            remote = _git("config", "--get", f"branch.{branch}.remote").stdout.strip()
+            if remote != ".":
+                _say("Fetching updates from Git…")
+                _git("fetch", "--", remote)
+        else:
+            _say(INFO + "--check: comparing cached Git refs; no fetch and no file changes.")
+        head = _git("rev-parse", "HEAD").stdout.strip()
+        target = _git("rev-parse", "@{upstream}").stdout.strip()
+        ahead, behind = map(int, _git("rev-list", "--left-right", "--count",
+                                     f"{head}...{target}").stdout.split())
+        _say(INFO + f"{behind} incoming commit(s); {ahead} local commit(s).")
+        if ahead and behind:
+            raise RuntimeError("Local and upstream histories have diverged. No stash, reset or merge "
+                               "was performed. Resolve this Git divergence first.")
+        tracked = _git_paths("diff", "--no-renames", "--name-only", "-z", "HEAD", "--")
+        untracked = _git_paths("ls-files", "--others", "--exclude-standard", "-z")
+        incoming = _git_paths("diff", "--no-renames", "--name-only", "-z", head, target, "--")
+        if any(_git_data_path(p) for p in incoming):
+            raise RuntimeError("The incoming Git changes include a protected data folder. "
+                               "The update was stopped to keep your data in place.")
+        # A previously untracked directory can collide with an incoming file,
+        # or a previously untracked file with an incoming directory.
+        collisions = {p for p in untracked if any(
+            p == new or p.startswith(new + "/") or new.startswith(p + "/") for new in incoming)}
+        local_code = sorted(p for p in tracked | collisions if not _git_data_path(p))
+        if check_only:
+            if local_code:
+                _say(WARN + f"{len(local_code)} local code file(s) need a backup before updating.")
+            return 0
+        if not behind:
+            _say(OK + "The current Git branch is already up to date. Local files were left in place.")
+            return 0
+        if local_code:
+            _say(WARN + "Local code differs from Git, or untracked code collides with the update.")
+            _say(INFO + "This can happen after ZIP updates over a Git checkout.")
+            for name in local_code[:12]:
+                _say("    - " + name)
+            if len(local_code) > 12:
+                _say(f"    … and {len(local_code) - 12} more")
+            _say(INFO + "Automatically saving this code in a Git stash. Models, images and settings "
+                 "stay in their folders. The old code is not reapplied after updating.")
+            before = _git("rev-parse", "--verify", "refs/stash", required=False).stdout.strip()
+            label = "TurboSlop code backup " + time.strftime("%Y%m%d-%H%M%S")
+            _git("stash", "push", "--include-untracked", "--message", label,
+                 "--pathspec-from-file=-", "--pathspec-file-nul",
+                 input_data="".join(":(literal)" + name + "\0" for name in local_code))
+            saved = _git("rev-parse", "--verify", "refs/stash").stdout.strip()
+            if saved == before:
+                raise RuntimeError("Git did not create a new code backup. The update was stopped.")
+            _say(OK + f"Local code saved in Git stash {saved}.")
+            _say(INFO + f"Inspect it with: git stash show --stat --include-untracked {saved}")
+            _say(INFO + "Do not run git stash pop after this update: it would reapply the old code.")
+        _say("Applying the fetched version with a fast-forward…")
+        # Use the exact commit inspected above, avoiding another network pull
+        # between planning the backup and applying the update.
+        result = _git("merge", "--ff-only", target)
+        if result.stdout.strip():
+            _say(result.stdout.strip())
+        _purge_pycache()
+        problem = _compiles()
+        if problem:
+            raise RuntimeError("The updated code does not compile: " + problem
+                               + f". Previous Git commit: {head}. Engines were not updated.")
+        _say(OK + f"Git code updated to {target[:12]}.")
+        return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        _say(ERR + str(exc))
+        _say(INFO + "No forced reset or branch switch. Any code stash created above is retained.")
+        return 1
+
+
 def _rollback() -> int:
+    if (ROOT / ".git").exists():
+        _say(ERR + "ZIP rollback is unavailable in a Git checkout. Inspect saved code with git stash list.")
+        return 1
     if not BACKUP_DIR.is_dir():
         _say(ERR + "no backup: nothing to undo.")
         return 1
@@ -351,11 +481,8 @@ def _rollback() -> int:
 
 
 def update(check_only: bool = False) -> int:
-    if (ROOT / ".git").exists() and not check_only:
-        _say(ERR + "This is a Git checkout. Update the current branch with git pull --ff-only.")
-        _say(INFO + "The ZIP updater will not overwrite tracked or uncommitted work. "
-             "update.bat --engine / --trellis remain available.")
-        return 1
+    if (ROOT / ".git").exists():
+        return _update_git(check_only)
     _say("=" * 60)
     _say("  Updating Turbo Slop Generator 3000")
     _say("=" * 60)
@@ -543,7 +670,7 @@ def main() -> int:
                     help="show what the code update would change, write "
                          "nothing, run nothing else")
     ap.add_argument("--rollback", action="store_true",
-                    help="undo the last code update")
+                    help="undo the last ZIP code update")
     steps = ap.add_argument_group(
         "one step only (default: all four, in order)")
     steps.add_argument("--code", action="store_true",

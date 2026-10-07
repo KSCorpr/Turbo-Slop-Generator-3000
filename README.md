@@ -169,8 +169,18 @@ each via its own one-click installer.
 **`update.bat` is the way** (`./update.sh` on Linux/Mac). It downloads the
 current code from the release channel in `config/update-channel.json` and applies
 it in place. Studio follows **main**; releases without that file also use
-**main**. In a Git checkout, use `git pull --ff-only`
-instead: the ZIP updater refuses to overwrite tracked or uncommitted work. The code step leaves
+**main**. In a Git checkout, the same launcher fetches and fast-forwards the
+current tracking branch without switching branches or using ZIP extraction.
+If local code blocks the update (for example after ZIP updates over a clone),
+it automatically saves that code in a Git stash before continuing. Only modified
+code and untracked files colliding with the incoming version are saved;
+unrelated untracked files and data folders stay in place. Double-click the same
+launcher for Git and ZIP installs; no manual `git pull` or stash command is needed.
+The launcher uses portable Python when present, then an existing project venv,
+then Python from PATH.
+Do not run `git stash pop` afterwards: it would reapply the old code.
+Diverged histories, detached commits and unfinished Git operations require
+manual resolution; the updater never forces a reset. The code step leaves
 your models, outputs, settings, portable Python and installed engines alone;
 the later engine step updates sd.cpp in `bin/` with a rollback copy.
 
@@ -213,6 +223,10 @@ update.bat --rollback   ::  undo the last code update
 
 Those four flags are what replaced the three separate launchers: doing one part
 without the others is a real need, it just did not deserve four files.
+
+In a Git checkout, `--check` compares cached refs without fetching or changing
+files. `--rollback` is reserved for ZIP installs; Git code backups remain in
+`git stash list` for inspection and manual recovery.
 
 Steps 2–4 run in **one fresh process**, not an import — `update.bat` has just
 rewritten `maintenance.py` on disk, and an import would run the version it just
@@ -2458,6 +2472,10 @@ or removed, please open an issue.
 # New media tools: SeedVR2, LTX 2.5 and Gaussian Splatting
 
 **Tools & 3D → SeedVR2 upscale** restores images and videos locally.
+Choose **×2 / ×4** to calculate the size from the source, or **Custom** to set
+the short edge manually. **Added detail strength** mixes the resized original
+with the AI result: 0% is a simple upscale without loading SeedVR2, 100% keeps
+the full restoration, and intermediate values reduce the restoration changes.
 **Video → LTX 2.5** generates video from text or first/last frames.
 **Tools & 3D → Capture → splats** reconstructs static objects and scenes from
 overlapping photographs or video, with a PLY download and interactive preview.

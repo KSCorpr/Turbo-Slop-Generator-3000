@@ -1,4 +1,5 @@
 @echo off
+setlocal DisableDelayedExpansion
 REM ===========================================================================
 REM  LE bouton de mise a jour. Il n'y en a plus qu'un, et il fait les QUATRE
 REM  etapes, dans l'ordre :
@@ -22,15 +23,27 @@ REM    update.bat --code            le code seul
 REM    update.bat --check           dit ce que le code changerait, n'ecrit rien
 REM    update.bat --rollback        annule la derniere mise a jour du code
 REM
-REM  Le code est toujours telecharge depuis main. Pas de changement de branche.
+REM  Git : met a jour la branche actuelle par fast-forward, sans changer de branche.
+REM  ZIP : telecharge le canal defini dans config\update-channel.json (main par defaut).
+REM  Le code local qui bloque Git est sauvegarde automatiquement avant la mise a jour.
 REM
 REM  FERMEZ l'application avant de lancer ce script (un fichier ouvert ne peut
 REM  pas etre remplace sous Windows).
 REM ===========================================================================
 cd /d "%~dp0"
 set "PY=%~dp0python\python.exe"
+if not exist "%PY%" if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+if not exist "%PY%" if exist "%~dp0venv\Scripts\python.exe" set "PY=%~dp0venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
 
-"%PY%" scripts\update_app.py %*
-echo.
-pause
+REM Le bloc est charge avant Python : la mise a jour peut remplacer ce .bat
+REM pendant son execution sans casser les commandes de fin.
+setlocal EnableDelayedExpansion
+(
+    "!PY!" scripts\update_app.py %*
+    set "UPDATE_RESULT=!ERRORLEVEL!"
+    echo.
+    if not "!UPDATE_RESULT!"=="0" echo La mise a jour a ete interrompue. Consultez le message ci-dessus.
+    pause
+    exit /b !UPDATE_RESULT!
+)

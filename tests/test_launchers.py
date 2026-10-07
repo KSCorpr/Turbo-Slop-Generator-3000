@@ -11,6 +11,10 @@ court — ce qui marche sur la machine du développeur et échoue chez tout le
 monde.
 """
 import re
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -141,3 +145,47 @@ class UpdateBranchTests(unittest.TestCase):
         text = (ROOT / "update.bat").read_text(encoding="utf-8",
                                                errors="replace")
         self.assertIn("%*", text)
+
+
+@unittest.skipUnless(os.name == "nt", "The batch launcher runs on Windows")
+class UpdateBatchExecutionTests(unittest.TestCase):
+    def test_existing_project_venv_is_selected_even_in_a_path_with_exclamation_marks(self):
+        import venv
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "Turbo!Slop"
+            folder.mkdir()
+            project_python = folder / ".venv"
+            venv.EnvBuilder(with_pip=False).create(project_python)
+            launcher = folder / "update.bat"
+            launcher.write_bytes((ROOT / "update.bat").read_bytes())
+            scripts = folder / "scripts"
+            scripts.mkdir()
+            (scripts / "update_app.py").write_text(
+                "import sys\nprint('PYTHON_PREFIX=' + sys.prefix)\n", encoding="utf-8")
+            run = subprocess.run(["cmd.exe", "/d", "/c", str(launcher)], cwd=folder,
+                                 input="\n", capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            selected = next(line.removeprefix("PYTHON_PREFIX=") for line in run.stdout.splitlines()
+                            if line.startswith("PYTHON_PREFIX="))
+            self.assertEqual(Path(selected).resolve(), project_python.resolve())
+
+    def test_exit_code_survives_self_replacement_and_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            launcher = folder / "update.bat"
+            text = (ROOT / "update.bat").read_text(encoding="utf-8")
+            text = text.replace('set "PY=python"', f'set "PY={sys.executable}"')
+            launcher.write_text(text, encoding="utf-8")
+            scripts = folder / "scripts"
+            scripts.mkdir()
+            (scripts / "update_app.py").write_text(
+                "from pathlib import Path\nimport sys\n"
+                "Path('update.bat').write_text('this replaced the running launcher\\n')\n"
+                "sys.exit(7)\n", encoding="utf-8")
+            result = subprocess.run(["cmd.exe", "/d", "/c", str(launcher)],
+                                    cwd=folder, input="\n", capture_output=True,
+                                    text=True, timeout=30)
+            self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+            self.assertIn("La mise a jour a ete interrompue", result.stdout)
+            self.assertIn("this replaced", launcher.read_text())
