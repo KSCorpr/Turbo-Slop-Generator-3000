@@ -74,12 +74,23 @@ relancer, puis réessayer **Install optimizations**. On peut aussi sélectionner
 | GPU sélectionné | Installation proposée |
 | --- | --- |
 | RTX 30xx / 40xx, A100, H100 | Triton Windows 3.3.1.post21, SageAttention 2.2.0, FlashAttention 2.8.3 |
-| RTX 20xx / GTX 16xx (Turing) | Essai de SageAttention avec Triton Windows 3.2.0.post21 ; FlashAttention 2 exclu |
+| RTX 20xx / GTX 16xx (Turing), calcul BF16 | SDPA ; aucun téléchargement d'optimisation incompatible |
+| Turing, calcul FP16 détecté par SeedVR2 | Essai de SageAttention avec Triton Windows 3.2.0.post21 ; FlashAttention 2 exclu |
 | GTX 10xx (Pascal) / GPU non pris en charge | Aucune installation automatique ; SDPA conservé |
 
-Triton 3.3 a supprimé la prise en charge de Turing. La combinaison Triton 3.2 /
-Torch 2.7 n'est pas garantie par ses mainteneurs : l'essai sur une 2080 Ti reste
-expérimental. Il n'est activé que si le calcul de vérification réussit.
+SeedVR2 choisit sa précision par un petit calcul CUBLAS, et non par la génération
+du GPU. Ce calcul peut accepter BF16 sur une RTX 2080 Ti alors que les conversions
+BF16 du kernel Triton de SageAttention nécessitent `sm_80` ou supérieur.
+TurboSlop utilise le même test de précision et conserve **SDPA** sur Turing
+(`sm_75`) dans ce cas, même si SageAttention et Triton sont déjà installés ou
+qu'un ancien rapport les indiquait disponibles. Aucune réinstallation du moteur
+ni suppression de paquets n'est nécessaire. Après une erreur `ptxas fatal`,
+mettre TurboSlop à jour puis relancer l'application ; **Attention → SDPA** permet
+aussi de relancer le traitement directement.
+
+Triton 3.3 a supprimé la prise en charge de Turing. Si SeedVR2 détecte FP16,
+la combinaison Triton 3.2 / Torch 2.7 reste expérimentale et n'est activée
+qu'après un calcul de vérification réussi avec cette précision.
 Les wheels Windows SageAttention et FlashAttention sont des builds communautaires
 des projets libres ; leurs versions CUDA 12.8 peuvent cohabiter avec le runtime
 Torch CUDA 12.6, sous réserve du pilote et du test réel sur la machine.
@@ -88,8 +99,9 @@ se fait par version majeure/mineure de Torch, puis nous vérifions le calcul sur
 le runtime 2.7.1. Aucun changement de Torch ne compense un test échoué.
 
 **Auto** reteste les API d'attention à longueurs variables utilisées par SeedVR2
-sur le GPU sélectionné avant chaque restauration IA. Le test calcule de petits
-tenseurs, vérifie leurs valeurs et les compare à SDPA ; un simple import ne
+sur le GPU sélectionné avant chaque restauration IA. Le test utilise la précision
+réelle de SeedVR2, calcule de petits tenseurs, vérifie leurs valeurs et les compare
+à SDPA ; un simple import ne
 suffit pas. Il choisit SageAttention si disponible, sinon FlashAttention, sinon
 SDPA. Le journal indique le GPU, le backend choisi et les raisons d'un repli.
 Les choix explicites **SageAttention 2 / FlashAttention 2** effectuent aussi ce
@@ -100,6 +112,11 @@ Ces backends sont des alternatives, leurs gains ne s'additionnent pas.
 Installer Triton n'active pas `torch.compile` : la compilation du modèle reste
 désactivée dans le profil avec BlockSwap. Les tests d'attention ne garantissent
 ni un gain chronométré ni la compatibilité de toutes les tailles d'image.
+Si un backend optionnel échoue pendant la restauration avec une erreur de
+compilation PTX/Triton reconnue, TurboSlop supprime sa sortie incomplète et
+relance **une seule fois** dans un nouveau processus avec SDPA, en conservant
+la source, la seed et les réglages. Une annulation, un manque de VRAM ou une
+autre erreur de traitement ne déclenche pas ce repli ; un échec SDPA reste visible.
 Le message amont « optimizations check » indique des paquets optionnels absents,
 pas une erreur bloquante ; TurboSlop le remplace par le résultat de sa vérification.
 
@@ -184,6 +201,10 @@ Tests automatisés : commandes, fichiers incompatibles, préparation des photos,
 chemins des exports, interruption de processus réels et isolation de la file GPU.
 La wheel Windows de pycolmap 3.12.0/Python 3.12 a été vérifiée disponible.
 Extraction SIFT et correspondances COLMAP ont été exécutées sur CPU.
+Pour SeedVR2, la CI Windows vérifie les DLL, la compilation TinyCC et la
+compilation PTX du véritable kernel SageAttention à deux tailles de tête :
+FP16 sur `sm_75`, refus BF16 attendu sur `sm_75`, et BF16 sur `sm_80`.
+Ces vérifications compilent le code sans charger ni exécuter de kernel GPU.
 Les tests d'interface avec moteurs simulés vérifient le câblage, pas la qualité
 des modèles. Les inférences SeedVR2/LTX et l'entraînement Brush sur GPU Windows
 nécessitent encore une validation sur matériel réel.
@@ -194,6 +215,7 @@ Sources des interfaces :
 - https://github.com/triton-lang/triton-windows
 - https://github.com/kingbri1/flash-attention/releases/tag/v2.8.3
 - https://github.com/Dao-AILab/flash-attention
+- https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cvt
 - https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/ltx2.md
 - https://github.com/ArthurBrussee/brush/releases/tag/v0.3.0
 - https://github.com/colmap/colmap

@@ -1,4 +1,4 @@
-"""Windows CI: check wheels and real TinyCC extension compilation without a GPU.
+"""Windows CI: check wheels, TinyCC and actual Sage varlen PTX without a GPU.
 
 Run only in a disposable Python 3.12 / Torch 2.7.1+cu126 environment.
 """
@@ -57,6 +57,49 @@ PyMODINIT_FUNC PyInit_turbo_cc_check(void) {
                                    [str(backend / "include")], ["cuda"])
         assert Path(cuda_binary).is_file()
     print("TinyCC compiled and loaded a Python extension, and compiled Triton's real CUDA helper.")
+
+
+def verify_varlen_ptx(profile):
+    """Compile the checksum-verified Sage wheel's kernel; never load or launch it."""
+    import triton
+    from triton.compiler import ASTSource
+    from triton.backends.compiler import GPUTarget
+    from sageattention.triton.attn_qk_int8_block_varlen import _attn_fwd
+
+    cases = [(80, "bf16", True)]
+    if profile == "turing":
+        cases = [(75, "fp16", True), (75, "bf16", False), *cases]
+    for head_dim in (64, 128):
+        constants = {"H": 4, "num_kv_groups": 1, "HEAD_DIM": head_dim,
+                     "BLOCK_M": 128, "BLOCK_N": 64, "STAGE": 1}
+        for arch, dtype, succeeds in cases:
+            # Triton 3.3 indexes constexpr arguments in the complete signature;
+            # omitting them works in 3.2 but breaks its newer ASTSource API.
+            signature = {name: "constexpr" if name in constants else "i32"
+                         for name in _attn_fwd.arg_names}
+            for name in ("Q", "K"):
+                signature[name] = "*i8"
+            signature["V"] = "*fp16"
+            signature["Out"] = "*" + dtype
+            for name in ("cu_seqlens_q", "cu_seqlens_k", "cu_seqlens_q_scale", "cu_seqlens_k_scale"):
+                signature[name] = "*i32"
+            for name in ("Q_scale", "K_scale"):
+                signature[name] = "*fp32"
+            try:
+                compiled = triton.compile(
+                    ASTSource(_attn_fwd, signature, constants), target=GPUTarget("cuda", arch, 32),
+                    options={"num_warps": 4 if head_dim == 64 else 8,
+                             "num_stages": 3 if head_dim == 64 else 4})
+            except RuntimeError as exc:
+                assert not succeeds, str(exc)
+                diagnostic = str(exc)
+                assert acceleration.kernel_compile_failed(diagnostic), diagnostic
+                assert "bf16" in diagnostic and "sm_80" in diagnostic, diagnostic
+                print(f"Sage varlen head={head_dim}: sm_{arch} BF16 rejected by ptxas as expected.")
+            else:
+                assert succeeds, "Turing BF16 unexpectedly compiled; review the compatibility guard."
+                assert compiled.asm["cubin"]
+                print(f"Sage varlen head={head_dim}: sm_{arch} {dtype} compiled without a GPU.")
 
 
 def managed_checks():
@@ -118,7 +161,8 @@ def main(argv=None):
     assert callable(flash_attn_varlen_func) and callable(sageattn_varlen)
     assert torch.__version__ == before
     assert triton.__version__.split(".")[:2] == ["3", "2" if args.profile == "turing" else "3"]
-    print(f"Windows {args.profile} checks passed: wheels, DLL imports, TinyCC compilation, unchanged Torch.")
+    verify_varlen_ptx(args.profile)
+    print(f"Windows {args.profile} checks passed: wheels, DLL imports, TinyCC, varlen PTX, unchanged Torch.")
 
 
 if __name__ == "__main__":

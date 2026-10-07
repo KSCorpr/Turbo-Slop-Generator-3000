@@ -143,6 +143,7 @@ def select_attention(requested, directory: Path, env, log=print):
                 log, env=env)
         report = json.loads(report_path.read_text(encoding="utf-8"))
         log("SeedVR2 selected GPU: " + report.get("gpu", {}).get("name", "unavailable"))
+        log("SeedVR2 compute precision: " + report.get("compute_dtype", "unavailable"))
         selected = acceleration.choose_mode(requested, report, log)
     except (OSError, ValueError, RuntimeError) as exc:
         JOB.check()  # Cancellation must never start an SDPA inference.
@@ -150,6 +151,33 @@ def select_attention(requested, directory: Path, env, log=print):
         selected = "sdpa"
     log("SeedVR2 attention: " + selected)
     return selected
+
+
+def _run_inference(command, output: Path, env: dict, log) -> None:
+    """Retry an optional kernel compilation failure once, in a fresh SDPA process."""
+    compile_failed = False
+
+    def inference_log(line):
+        nonlocal compile_failed
+        # LocalJob's short exception tail may contain only upstream's shutdown
+        # footer. Remember the compiler diagnostic while forwarding the full log.
+        compile_failed |= acceleration.kernel_compile_failed(line)
+        log(line)
+
+    try:
+        JOB.run(command, inference_log, cwd=addons.root("seedvr2") / "source", env=env)
+    except RuntimeError as exc:
+        JOB.check()  # Stop must never launch another GPU process.
+        attention_index = command.index("--attention_mode") + 1
+        if command[attention_index] == "sdpa" or not (
+                compile_failed or acceleration.kernel_compile_failed(str(exc))):
+            raise
+        output.unlink(missing_ok=True)  # Discard incomplete images/videos from the failed process.
+        log("SeedVR2: optional attention kernel compilation failed. "
+            "Retrying once with SDPA, the same source, seed and restoration settings.")
+        fallback = list(command)
+        fallback[attention_index] = "sdpa"
+        JOB.run(fallback, log, cwd=addons.root("seedvr2") / "source", env=env)
 
 
 def restore(source, model="3b", resolution=1080, seed=42, log=print,
@@ -210,7 +238,7 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
             env["SEEDVR2_OPTIMIZATIONS_LOGGED"] = "1"
             command = build_command(staged_source, staged_output, model, target,
                                     is_video=is_video, seed=int(seed), attention=selected)
-            JOB.run(command, log, cwd=addons.root("seedvr2") / "source", env=env)
+            _run_inference(command, staged_output, env, log)
         if not staged_output.is_file() or not staged_output.stat().st_size:
             raise RuntimeError("SeedVR2 finished without an output file.")
         if not is_video:
