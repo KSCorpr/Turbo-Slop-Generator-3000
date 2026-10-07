@@ -66,7 +66,8 @@ def managed_checks():
         managed_dir = Path(temporary) / "Managed Python"
         setup_media.run(sys.executable, "-m", "uv", "python", "install", "3.12",
                         "--install-dir", managed_dir, "--no-bin", "--no-registry")
-        interpreters = list(managed_dir.glob("cpython-3.12*/python.exe"))
+        # uv also creates a cpython-3.12 alias; select the versioned install.
+        interpreters = list(managed_dir.glob("cpython-3.12.*/python.exe"))
         assert len(interpreters) == 1, interpreters
         for profile in ("turing", "ampere"):
             env_dir = Path(temporary) / (profile + " Python env")
