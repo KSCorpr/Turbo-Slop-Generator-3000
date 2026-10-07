@@ -32,6 +32,7 @@ import app
 from atelier import settings
 from atelier.engine import generate as engine
 from atelier.engine import seedvr2
+from atelier.ui import media_tabs
 
 
 def main():
@@ -41,6 +42,7 @@ def main():
     expect.set_options(timeout=15000)
     calls = []
     seed_calls = []
+    seed_installs = []
     cancelled = threading.Event()
     interrupted = threading.Event()
     engine_started = threading.Event()
@@ -99,10 +101,11 @@ def main():
             cancelled.set()
             return "Generation cancelled."
 
-        def restore_seed(source, model, resolution, seed, log, *, scale=None, detail_strength=100):
+        def restore_seed(source, model, resolution, seed, log, *, scale=None, detail_strength=100, attention="auto"):
             if not source:
                 raise ValueError("Import an image or a video first.")
-            seed_calls.append({"source": str(source), "scale": scale, "details": detail_strength})
+            seed_calls.append({"source": str(source), "scale": scale, "details": detail_strength,
+                               "attention": attention})
             path = settings.OUTPUT_DIR / "seedvr2-simulated.png"
             with Image.open(source) as im:
                 target = seedvr2.output_resolution(Path(source), resolution, scale)
@@ -114,6 +117,11 @@ def main():
         stack.enter_context(patch.object(engine, "generate", generate))
         stack.enter_context(patch.object(engine, "cancel", cancel))
         stack.enter_context(patch.object(seedvr2, "restore", restore_seed))
+        def install_seed(name, job, log, quant=None, *, optimizations=False):
+            seed_installs.append((name, optimizations))
+            log("Simulated optimization installation completed.")
+
+        stack.enter_context(patch.object(media_tabs, "install_action", install_seed))
         start = time.perf_counter()
         demo = app.build_app().queue(max_size=16)
         build_seconds = time.perf_counter() - start
@@ -143,6 +151,10 @@ def main():
                 page.get_by_role("tab", name="Tools & 3D", exact=True).click()
                 page.get_by_role("tab", name="SeedVR2 upscale", exact=True).click()
                 expect(page.get_by_role("button", name="Install / repair SeedVR2", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Install optimizations", exact=True).click()
+                expect(page.locator("#seedvr2-status")).to_contain_text("Completed.")
+                assert seed_installs == [("seedvr2", True)], seed_installs
+                expect(page.locator("#seedvr2-attention")).to_be_visible()
                 page.get_by_role("button", name="Restore", exact=True).click()
                 expect(page.get_by_text("Failed: Import an image or a video first.", exact=True)).to_be_visible()
                 seed_source = folder / "brutalisme…é_日本.jpg"
@@ -167,6 +179,7 @@ def main():
                 page.wait_for_function("document.querySelector('#seedvr2-restored-image img')?.naturalWidth === 4096")
                 assert len(seed_calls) == 1, seed_calls
                 assert seed_calls[0]["scale"] == 4 and seed_calls[0]["details"] == 35, seed_calls
+                assert seed_calls[0]["attention"] == "auto", seed_calls
                 page.screenshot(path=str(screenshots / "studio-seedvr2.png"))
 
                 page.get_by_role("tab", name="Capture → splats", exact=True).click()

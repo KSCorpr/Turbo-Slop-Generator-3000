@@ -61,12 +61,15 @@ def stream_task(action):
         yield "Completed.", path, "\n".join(lines)
 
 
-def install_action(name, job, log, quant=None):
+def install_action(name, job, log, quant=None, *, optimizations=False):
     command = [sys.executable, "-u", str(settings.ROOT / "scripts" / "setup_media.py"), name]
     if quant:
         command += ["--quant", quant]
+    if optimizations:
+        command += ["--optimizations"]
+    env = settings.child_env(settings.generation_gpu_index(settings.load_prefs())) if name == "seedvr2" else None
     with job.session():
-        job.run(command, log)
+        job.run(command, log, env=env)
 
 
 def seed_source_preview(path):
@@ -126,7 +129,11 @@ def build_seedvr2_tab():
                     "after processing. SeedVR2 does not provide a per-step image preview.")
         with gr.Row():
             install = gr.Button("Install / repair SeedVR2", size="sm")
+            optimize = gr.Button("Install optimizations", size="sm")
             gr.Markdown("Installed." if addons.ready("seedvr2") else "AI restoration requires installation once.")
+        gr.Markdown("Optional Windows acceleration: installs attention packages for the selected GPU. "
+                    "Auto tests them before use and falls back to SDPA if unavailable. "
+                    "Turing support is experimental; GTX 10xx uses SDPA.")
         with gr.Row():
             with gr.Column():
                 source = gr.File(label="Image or video", type="filepath",
@@ -140,6 +147,11 @@ def build_seedvr2_tab():
                 model = gr.Dropdown([("3B · balanced · Q8", "3b"),
                                      ("7B · quality · Q4 · slower", "7b")],
                                     value="3b", label="Restoration model")
+                attention = gr.Dropdown([("Auto · check selected GPU", "auto"),
+                                         ("SDPA · PyTorch", "sdpa"),
+                                         ("SageAttention 2", "sageattn_2"),
+                                         ("FlashAttention 2", "flash_attn_2")],
+                                        value="auto", label="Attention", elem_id="seedvr2-attention")
                 scale = gr.Radio([("×2", "2"), ("×4", "4"), ("Custom", "custom")],
                                  value="2", label="Upscale size", elem_id="seedvr2-scale")
                 with gr.Group(visible=False, elem_id="seedvr2-custom-size") as custom_size:
@@ -181,15 +193,22 @@ def build_seedvr2_tab():
 
         install.click(install_seed, outputs=[status, log], **widgets.GPU_QUEUE)
 
-        def run_seed(source, model, resolution, seed, scale, detail):
+        def install_optimizations():
+            for state, _, text in stream_task(lambda report: install_action(
+                    "seedvr2", seedvr2.JOB, report, optimizations=True)):
+                yield state, text
+
+        optimize.click(install_optimizations, outputs=[status, log], **widgets.GPU_QUEUE)
+
+        def run_seed(source, model, resolution, seed, scale, detail, attention):
             for state, path, text in stream_task(
                     lambda report: seedvr2.restore(source, model, resolution, seed, report,
                                                   scale=None if scale == "custom" else int(scale),
-                                                  detail_strength=detail)):
+                                                  detail_strength=detail, attention=attention)):
                 is_image = path and path.endswith(".png")
                 yield state, path if is_image else None, path if path and not is_image else None, path, text
 
-        start.click(run_seed, inputs=[source, model, resolution, seed, scale, detail],
+        start.click(run_seed, inputs=[source, model, resolution, seed, scale, detail, attention],
                     outputs=[status, image, clip, download, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, seedvr2.JOB.cancel, status, [])
 

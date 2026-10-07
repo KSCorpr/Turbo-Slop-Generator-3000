@@ -13,12 +13,13 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from urllib.parse import unquote, urlsplit
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from atelier import addons, settings
+from atelier import addons, settings, seedvr2_acceleration as acceleration
 
 
 def run(*args):
@@ -89,6 +90,52 @@ def install_seed():
     run(py, target / "source" / "inference_cli.py", "--help")
     (target / "installed.json").write_text(json.dumps({"commit": addons.SEED_COMMIT}))
     print("SeedVR2 installed. The selected DiT and VAE download on first use.", flush=True)
+
+
+def install_seed_optimizations():
+    if not addons.ready("seedvr2"):
+        raise RuntimeError("Use Install / repair SeedVR2 first.")
+    target = addons.root("seedvr2")
+    py = addons.python("seedvr2")
+    with tempfile.TemporaryDirectory(dir=target) as temporary:
+        stage = Path(temporary)
+        report_path = stage / "probe.json"
+        command = [py, "-u", Path(acceleration.__file__), "--output", report_path]
+        run(*command, "--mode", "info")
+        info = json.loads(report_path.read_text(encoding="utf-8"))
+        wheels, message = acceleration.wheel_plan(info)
+        print("Selected GPU: " + info["gpu"]["name"], flush=True)
+        print(message, flush=True)
+        failures = []
+        for wheel in wheels:
+            try:
+                filename = unquote(Path(urlsplit(wheel.url).path).name)
+                archive = stage / filename
+                print("Installing " + wheel.name, flush=True)
+                download(wheel.url, archive)
+                with archive.open("rb") as stream:
+                    actual = hashlib.file_digest(stream, "sha256").hexdigest()
+                if actual != wheel.sha256:
+                    raise RuntimeError(wheel.name + " wheel checksum mismatch.")
+                # No compilation, dependency resolution or Torch replacement.
+                pip(py, "--no-deps", "--only-binary", ":all:", archive)
+            except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+                failure = f"{wheel.name}: {exc}"
+                failures.append(failure)
+                print("Optional installation failed: " + failure, flush=True)
+        run(*command, "--mode", "all")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["installation_failures"] = failures
+        marker = target / acceleration.MARKER
+        partial = marker.with_suffix(".json.part")
+        partial.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        partial.replace(marker)
+        selected = acceleration.choose_mode("auto", report)
+        if selected == "sdpa":
+            raise RuntimeError("No optional attention backend passed the GPU test. "
+                               "SeedVR2 remains usable with SDPA; see the progress log.")
+        print(f"SeedVR2 optimizations ready: {selected}. Auto rechecks the selected GPU before use.",
+              flush=True)
 
 
 def install_splat():
@@ -162,10 +209,18 @@ def install_ltx(quant):
     print("LTX 2.5 weights ready. The original encoder is kept for other precisions.", flush=True)
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("tool", choices=["seedvr2", "splat", "ltx25"])
     parser.add_argument("--quant", choices=["Q3_K_M", "Q4_K_M"], default="Q3_K_M")
-    args = parser.parse_args()
-    {"seedvr2": install_seed, "splat": install_splat,
+    parser.add_argument("--optimizations", action="store_true",
+                        help="Install and test optional SeedVR2 Windows attention wheels.")
+    args = parser.parse_args(argv)
+    if args.optimizations and args.tool != "seedvr2":
+        parser.error("--optimizations is available for seedvr2 only")
+    {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "ltx25": lambda: install_ltx(args.quant)}[args.tool]()
+
+
+if __name__ == "__main__":
+    main()

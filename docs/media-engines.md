@@ -43,12 +43,55 @@ sert à varier ou adoucir la reconstruction, pas à régler précisément sa for
 pour ce réglage. Les vidéos à force intermédiaire passent par un mélange FFmpeg
 encodé en H.264, puis la piste audio éventuelle est réattachée en AAC.
 
-Le profil utilise le déchargement CPU, BlockSwap, l'attention PyTorch SDPA et des
-tuiles VAE de 512 pixels. Les vidéos passent par lots de 5 images et segments de
+Le profil utilise le déchargement CPU, BlockSwap et des tuiles VAE de 512 pixels.
+Sans optimisation installée, **Attention → Auto** utilise l'attention PyTorch
+SDPA. Les vidéos passent par lots de 5 images et segments de
 33 images, avec recouvrement temporel. La piste audio éventuelle est réattachée
 en AAC ; les images restaurées ne sont pas réencodées pendant ce raccord.
 Un modèle génératif peut modifier les petits détails : comparer les résultats
 sur les sources professionnelles, notamment typographie et architecture.
+
+#### Optimisations Windows
+
+Après l'installation de SeedVR2, cliquer sur **Install optimizations** dans le
+même onglet. Le bouton utilise le GPU choisi dans les réglages du studio et
+installe uniquement dans l'environnement Python de SeedVR2. Il conserve Torch
+2.7.1 / CUDA 12.6, vérifie les empreintes SHA-256 des wheels et ne lance aucune
+compilation de paquet ni installation de Visual Studio / CUDA Toolkit.
+Triton compile néanmoins ses petits kernels au premier usage ; cette première
+vérification peut prendre du temps. **Stop** interrompt aussi l'installation.
+
+| GPU sélectionné | Installation proposée |
+| --- | --- |
+| RTX 30xx / 40xx, A100, H100 | Triton Windows 3.3.1.post21, SageAttention 2.2.0, FlashAttention 2.8.3 |
+| RTX 20xx / GTX 16xx (Turing) | Essai de SageAttention avec Triton Windows 3.2.0.post21 ; FlashAttention 2 exclu |
+| GTX 10xx (Pascal) / GPU non pris en charge | Aucune installation automatique ; SDPA conservé |
+
+Triton 3.3 a supprimé la prise en charge de Turing. La combinaison Triton 3.2 /
+Torch 2.7 n'est pas garantie par ses mainteneurs : l'essai sur une 2080 Ti reste
+expérimental. Il n'est activé que si le calcul de vérification réussit.
+Les wheels Windows SageAttention et FlashAttention sont des builds communautaires
+des projets libres ; leurs versions CUDA 12.8 peuvent cohabiter avec le runtime
+Torch CUDA 12.6, sous réserve du pilote et du test réel sur la machine.
+La wheel FlashAttention est construite pour Torch 2.7.0 : le choix de wheel amont
+se fait par version majeure/mineure de Torch, puis nous vérifions le calcul sur
+le runtime 2.7.1. Aucun changement de Torch ne compense un test échoué.
+
+**Auto** reteste les API d'attention à longueurs variables utilisées par SeedVR2
+sur le GPU sélectionné avant chaque restauration IA. Le test calcule de petits
+tenseurs, vérifie leurs valeurs et les compare à SDPA ; un simple import ne
+suffit pas. Il choisit SageAttention si disponible, sinon FlashAttention, sinon
+SDPA. Le journal indique le GPU, le backend choisi et les raisons d'un repli.
+Les choix explicites **SageAttention 2 / FlashAttention 2** effectuent aussi ce
+test ; **SDPA** permet d'éviter les modules optionnels. À 0 % de détails ajoutés,
+aucun de ces tests GPU ni modèle IA n'est chargé.
+
+Ces backends sont des alternatives, leurs gains ne s'additionnent pas.
+Installer Triton n'active pas `torch.compile` : la compilation du modèle reste
+désactivée dans le profil avec BlockSwap. Les tests d'attention ne garantissent
+ni un gain chronométré ni la compatibilité de toutes les tailles d'image.
+Le message amont « optimizations check » indique des paquets optionnels absents,
+pas une erreur bloquante ; TurboSlop le remplace par le résultat de sa vérification.
 
 ### LTX 2.5
 
@@ -137,6 +180,10 @@ nécessitent encore une validation sur matériel réel.
 
 Sources des interfaces :
 - https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
+- https://github.com/woct0rdho/SageAttention/releases/tag/v2.2.0-windows
+- https://github.com/triton-lang/triton-windows
+- https://github.com/kingbri1/flash-attention/releases/tag/v2.8.3
+- https://github.com/Dao-AILab/flash-attention
 - https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/ltx2.md
 - https://github.com/ArthurBrussee/brush/releases/tag/v0.3.0
 - https://github.com/colmap/colmap
