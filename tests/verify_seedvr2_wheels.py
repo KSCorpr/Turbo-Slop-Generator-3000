@@ -62,12 +62,24 @@ PyMODINIT_FUNC PyInit_turbo_cc_check(void) {
 def managed_checks():
     if platform.system() != "Windows":
         raise RuntimeError("These compilation checks require Windows.")
-    for profile in ("turing", "ampere"):
-        with tempfile.TemporaryDirectory(prefix="seedvr2 managed ") as temporary:
-            env_dir = Path(temporary) / "Python env"
-            setup_media.run(sys.executable, "-m", "uv", "venv", "--python", "3.12",
-                            "--managed-python", env_dir)
+    with tempfile.TemporaryDirectory(prefix="seedvr2 managed ") as temporary:
+        managed_dir = Path(temporary) / "Managed Python"
+        setup_media.run(sys.executable, "-m", "uv", "python", "install", "3.12",
+                        "--install-dir", managed_dir, "--no-bin", "--no-registry")
+        interpreters = list(managed_dir.glob("cpython-3.12*/python.exe"))
+        assert len(interpreters) == 1, interpreters
+        for profile in ("turing", "ampere"):
+            env_dir = Path(temporary) / (profile + " Python env")
+            # python -m uv can prefer its parent interpreter despite
+            # --managed-python. An explicit path and base-prefix assertion
+            # ensure this tests uv's downloaded Python, as in the user's setup.
+            setup_media.run(sys.executable, "-m", "uv", "venv", "--python",
+                            interpreters[0], env_dir)
             py = env_dir / "Scripts" / "python.exe"
+            setup_media.run(py, "-c",
+                            "import sys; from pathlib import Path; "
+                            "assert Path(sys.base_prefix).is_relative_to(Path(sys.argv[1])), sys.base_prefix; "
+                            "print('Managed Python base:', sys.base_prefix)", managed_dir)
             setup_media.pip(py, "torch==2.7.1", "--index-url", "https://download.pytorch.org/whl/cu126")
             # The verifier installs wheels from its own disposable interpreter.
             setup_media.pip(py, "einops", "packaging", "numpy", "uv>=0.8,<1")
