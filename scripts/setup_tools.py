@@ -17,9 +17,11 @@ sans verrouiller de DLL). Lançable depuis l'interface ou en ligne :
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -128,6 +130,7 @@ DIFFUSERS_PIN = "diffusers==0.33.1"
 # puis qu'on casse sa dependance en redescendant numpy. On ne devine plus la
 # borne d'opencv — pip la trouve.
 NUMPY_PIN = "numpy>=1.24,<2"
+SPANDREL_PIN = "spandrel>=0.4,<0.5"
 
 # transformers : borne BASSE pour les quatre add-ons qui l'utilisent
 # (profondeur, detourage, SAM, ameliorateur), borne HAUTE dictee par torch.
@@ -350,9 +353,51 @@ def install_face():
     print("     CodeFormer (S-Lab 1.0, NON COMMERCIAL).")
 
 
+def install_spandrel():
+    """Install the modern upscaler runtime without downloading face models."""
+    torch_probe = subprocess.run(
+        [sys.executable, "-c", "import torch"], stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, timeout=120)
+    if torch_probe.returncode != 0:
+        ensure_torch_cuda()
+    # Keep the working GPU build: torchvision/timm resolution must not replace
+    # Torch with a newer build that drops support for the user's card.
+    with tempfile.TemporaryDirectory(prefix="spandrel setup ") as temporary:
+        constraints = Path(temporary) / "constraints.txt"
+        pins = []
+        for package in ("torch", "torchvision"):
+            try:
+                pins.append(f"{package}=={importlib.metadata.version(package)}")
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        constraints.write_text("\n".join(pins) + "\n", encoding="utf-8")
+        print("Installing the modern upscaler runtime (Spandrel)…", flush=True)
+        sh([sys.executable, "-m", "pip", "install", "-c", str(constraints),
+            SPANDREL_PIN, NUMPY_PIN, "pillow"])
+    sh([sys.executable, "-c",
+        "from spandrel import ImageModelDescriptor, ModelLoader; "
+        "import torch,numpy as np; torch.from_numpy(np.zeros((1,),dtype=np.float32)); "
+        "print('Spandrel ready; Torch '+torch.__version__)"])
+
+
+def ensure_spandrel():
+    """Probe in a child before installation so Torch DLLs stay unlocked."""
+    probe = subprocess.run(
+        [sys.executable, "-c", "from spandrel import ImageModelDescriptor, ModelLoader; "
+         "import torch,numpy as np; torch.from_numpy(np.zeros((1,),dtype=np.float32))"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        encoding="utf-8", errors="replace", timeout=120)
+    if probe.returncode == 0:
+        return
+    print("Modern upscaler dependencies missing or unavailable; preparing Spandrel…", flush=True)
+    print(probe.stdout.strip(), flush=True)
+    install_spandrel()
+
+
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
     ensure_torch_cuda()
+    install_spandrel()
     print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
     sh([sys.executable, "-m", "pip", "install", *_PINS.values(),
         "accelerate", "safetensors", "omegaconf", "pillow"])
@@ -419,7 +464,7 @@ def install_upscale():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tool", choices=["depth", "bg", "sam", "clip", "enhance",
-                                     "describe", "face", "upscale"])
+                                     "describe", "face", "upscale", "spandrel"])
     args = ap.parse_args()
     settings.configure_hf_env()
     if args.tool == "depth":
@@ -438,6 +483,8 @@ def main():
         install_face()
     elif args.tool == "upscale":
         install_upscale()
+    elif args.tool == "spandrel":
+        install_spandrel()
 
 
 if __name__ == "__main__":

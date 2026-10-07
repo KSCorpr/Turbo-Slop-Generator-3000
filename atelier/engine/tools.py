@@ -439,13 +439,6 @@ def modern_upscale(image, model_name: str,
     du suréchantillonnage) ; un ×2 étiré jusqu'à ×3 est exactement
     l'interpolation qu'on cherche à fuir.
     """
-    if not face_is_installed():
-        # spandrel arrive avec la restauration de visages : c'est le même
-        # paquet, donc rien de plus à installer une fois celle-ci en place.
-        raise ToolError(
-            "Modern upscalers need the “🙂 Faces” add-on installed — they "
-            "share the same spandrel package. Install it once from the "
-            "Toolkit, and no further download is needed.")
     from .. import registry
     weights = registry.upscaler_path(model_name)
     if weights is None:
@@ -863,6 +856,8 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
                 inp = gen_engine.upscale_image(src, esrgan_model, repeats=1,
                                                log=log)
         except Exception as exc:  # noqa: BLE001
+            if _CANCELLED:
+                raise
             if log:
                 log(f"[usdu] pre-enlargement failed ({exc}) → Lanczos "
                     "fallback.")

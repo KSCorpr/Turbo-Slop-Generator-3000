@@ -477,8 +477,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         "RealPLKSR, ATD, SPAN, Compact, SwinIR), ~450 MB "
                         "total, by Philip Hofmann, all **CC-BY-4.0 so "
                         "commercial use is allowed with attribution**. They "
-                        "need no new environment: spandrel already comes with "
-                        "the **🙂 Faces** add-on. Start with the SPAN 2x — it "
+                        "install their dependencies automatically on first use; "
+                        "progress appears in the upscale log. Start with the SPAN 2x — it "
                         "is 9 MB and the fastest way to see the difference on "
                         "your own images.")
                     u_inst_log = gr.Textbox(label="Download log",
