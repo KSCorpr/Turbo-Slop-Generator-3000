@@ -45,7 +45,7 @@ jobs:
         run: python -m pip check
 
   seedvr2-wheels:
-    name: SeedVR2 Windows wheel imports
+    name: SeedVR2 Windows wheels and compiler
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -53,12 +53,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install pinned SeedVR2 Torch runtime
-        run: python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126
-      - name: Install attention Python dependencies
-        run: python -m pip install "uv>=0.8,<1" einops packaging numpy
-      - name: Verify prebuilt Windows wheels without a GPU
-        run: python tests/verify_seedvr2_wheels.py
+      - name: Install managed Python provisioner
+        run: python -m pip install "uv>=0.8,<1"
+      - name: Verify Triton 3.2 and 3.3 in isolated managed Python environments
+        run: python tests/verify_seedvr2_wheels.py --managed-python
       - name: Verify dependencies
         run: python -m pip check
 

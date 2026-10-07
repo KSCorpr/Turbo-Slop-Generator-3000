@@ -105,6 +105,8 @@ def install_seed_optimizations():
         info = json.loads(report_path.read_text(encoding="utf-8"))
         wheels, message = acceleration.wheel_plan(info)
         print("Selected GPU: " + info["gpu"]["name"], flush=True)
+        if info.get("compiler"):
+            print("SeedVR2 compiler: " + info["compiler"], flush=True)
         print(message, flush=True)
         failures = []
         for wheel in wheels:
@@ -132,8 +134,10 @@ def install_seed_optimizations():
         partial.replace(marker)
         selected = acceleration.choose_mode("auto", report)
         if selected == "sdpa":
-            raise RuntimeError("No optional attention backend passed the GPU test. "
-                               "SeedVR2 remains usable with SDPA; see the progress log.")
+            print("Optional acceleration unavailable: no attention backend passed the GPU test. "
+                  "SeedVR2 remains ready with SDPA. See the diagnostics above; "
+                  "use Attention > SDPA to skip optional checks.", flush=True)
+            return
         print(f"SeedVR2 optimizations ready: {selected}. Auto rechecks the selected GPU before use.",
               flush=True)
 

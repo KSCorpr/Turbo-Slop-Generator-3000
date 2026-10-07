@@ -7,8 +7,10 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import os
 import platform
 import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,9 +75,31 @@ def wheel_plan(info: dict) -> tuple[list[Wheel], str]:
                        "(Pascal / GTX 10xx is unsupported). SDPA remains available.")
 
 
+def triton_env(env, site_packages: Path | None = None) -> dict:
+    """Use the wheel's compiler in SeedVR2 children, without changing Windows."""
+    child = dict(env)
+    if platform.system() == "Windows":
+        packages = site_packages or Path(sysconfig.get_paths()["platlib"])
+        compiler = packages / "triton" / "runtime" / "tcc" / "tcc.exe"
+        if compiler.is_file():
+            # CC and Visual Studio shell variables otherwise take precedence
+            # over bundled TinyCC, even with an incomplete Windows SDK.
+            child["CC"] = str(compiler)
+        cuda = packages / "triton" / "backends" / "nvidia"
+        if all((cuda / part).is_file() for part in
+               ("bin/ptxas.exe", "include/cuda.h", "lib/x64/cuda.lib")):
+            # Match the pinned Triton wheel even if Windows has another toolkit.
+            child["CUDA_PATH"] = str(cuda)
+            child["CUDA_HOME"] = str(cuda)
+    return child
+
+
 def hardware_info() -> dict:
+    # This function runs in the isolated probe Python. Configure before any
+    # Triton import: its compiler selection is cached in that process.
+    os.environ.update(triton_env(os.environ))
     info = {"system": platform.system(), "machine": platform.machine(),
-            "python": list(sys.version_info[:2])}
+            "python": list(sys.version_info[:2]), "compiler": os.environ.get("CC")}
     try:
         import torch
         info.update(torch=torch.__version__, cuda=torch.version.cuda)

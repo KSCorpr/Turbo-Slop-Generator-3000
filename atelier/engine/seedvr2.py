@@ -171,7 +171,9 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
     # Validate controls before copying a potentially large video.
     build_command(source, output, model, output_resolution(source, resolution) if scale is None else 256,
                   is_video=is_video, seed=int(seed))
-    env = settings.child_env(settings.generation_gpu_index(settings.load_prefs()))
+    env = acceleration.triton_env(
+        settings.child_env(settings.generation_gpu_index(settings.load_prefs())),
+        addons.root("seedvr2") / ".venv" / "Lib" / "site-packages")
     # imageio's bundled executable has a versioned name; upstream invokes 'ffmpeg'.
     if is_video and strength > 0:
         binary_dir = addons.root("seedvr2") / "ffmpeg"

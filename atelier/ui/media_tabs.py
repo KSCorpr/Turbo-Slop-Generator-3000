@@ -10,7 +10,7 @@ from pathlib import Path
 import gradio as gr
 from PIL import Image, ImageOps
 
-from .. import addons, settings
+from .. import addons, settings, seedvr2_acceleration as acceleration
 from ..engine import seedvr2, ltx25, splat
 from . import widgets
 
@@ -67,7 +67,9 @@ def install_action(name, job, log, quant=None, *, optimizations=False):
         command += ["--quant", quant]
     if optimizations:
         command += ["--optimizations"]
-    env = settings.child_env(settings.generation_gpu_index(settings.load_prefs())) if name == "seedvr2" else None
+    env = acceleration.triton_env(
+        settings.child_env(settings.generation_gpu_index(settings.load_prefs())),
+        addons.root("seedvr2") / ".venv" / "Lib" / "site-packages") if name == "seedvr2" else None
     with job.session():
         job.run(command, log, env=env)
 

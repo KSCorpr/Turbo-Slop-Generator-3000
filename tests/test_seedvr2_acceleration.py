@@ -25,6 +25,37 @@ def hardware(capability=(8, 6), **overrides):
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_bundled_compiler_and_cuda_override_broken_windows_tools_in_child_only(self):
+        with tempfile.TemporaryDirectory(prefix="SeedVR2 env ") as temporary:
+            packages = Path(temporary) / "Lib" / "site-packages"
+            compiler = packages / "triton" / "runtime" / "tcc" / "tcc.exe"
+            compiler.parent.mkdir(parents=True)
+            compiler.write_bytes(b"compiler")
+            cuda = packages / "triton" / "backends" / "nvidia"
+            for part in ("bin/ptxas.exe", "include/cuda.h", "lib/x64/cuda.lib"):
+                path = cuda / part
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"bundled")
+            original = {"CC": r"C:\missing SDK\cl.exe", "CUDA_PATH": "CUDA 13.1",
+                        "CUDA_VISIBLE_DEVICES": "1", "PATH": "original path"}
+            with patch.object(acceleration.platform, "system", return_value="Windows"):
+                child = acceleration.triton_env(original, packages)
+            self.assertEqual(child["CC"], str(compiler))
+            self.assertEqual(child["CUDA_PATH"], str(cuda))
+            self.assertEqual(child["CUDA_HOME"], str(cuda))
+            self.assertEqual(child["CUDA_VISIBLE_DEVICES"], "1")
+            self.assertEqual(child["PATH"], "original path")
+            self.assertEqual(original["CC"], r"C:\missing SDK\cl.exe")
+            self.assertEqual(original["CUDA_PATH"], "CUDA 13.1")
+
+    def test_missing_bundled_tools_and_linux_preserve_the_existing_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            env = {"CC": "custom compiler", "CUDA_PATH": "custom CUDA"}
+            with patch.object(acceleration.platform, "system", return_value="Windows"):
+                self.assertEqual(acceleration.triton_env(env, Path(temporary)), env)
+            with patch.object(acceleration.platform, "system", return_value="Linux"):
+                self.assertEqual(acceleration.triton_env(env, Path(temporary)), env)
+
     def test_ampere_and_turing_receive_different_triton_and_flash_support(self):
         self.assertEqual(acceleration.wheel_plan(hardware())[0],
                          [acceleration.TRITON, acceleration.SAGE, acceleration.FLASH])
@@ -93,11 +124,16 @@ class InstallerTests(unittest.TestCase):
             stack.enter_context(patch.object(setup_media, "run", side_effect=run))
             downloads = stack.enter_context(patch.object(setup_media, "download", side_effect=download))
             installer = stack.enter_context(patch.object(setup_media, "pip"))
-            if broken or info is not None:
+            if info is not None:
                 with self.assertRaises(RuntimeError):
                     setup_media.install_seed_optimizations()
             else:
-                setup_media.install_seed_optimizations()
+                with patch("builtins.print") as messages:
+                    setup_media.install_seed_optimizations()
+                if broken:
+                    printed = "\n".join(str(call.args[0]) for call in messages.call_args_list)
+                    self.assertIn("SeedVR2 remains ready with SDPA", printed)
+                    self.assertNotIn("optimizations ready", printed)
             self.assertEqual(installed.read_text(), '{"commit":"unchanged"}')
             self.assertTrue(all(call.args[0] == root / "seed-python.exe" for call in installer.call_args_list))
             for call in installer.call_args_list:
@@ -146,6 +182,20 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("--optimizations", run.call_args.args[0])
         self.assertEqual(run.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"], "1")
 
+    def test_install_button_passes_the_bundled_compiler_to_setup_and_its_children(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            packages = root / ".venv" / "Lib" / "site-packages"
+            compiler = packages / "triton" / "runtime" / "tcc" / "tcc.exe"
+            compiler.parent.mkdir(parents=True)
+            compiler.write_bytes(b"compiler")
+            job = LocalJob()
+            with patch.object(addons, "root", return_value=root), \
+                 patch.object(acceleration.platform, "system", return_value="Windows"), \
+                 patch.object(job, "run") as run:
+                media_tabs.install_action("seedvr2", job, print, optimizations=True)
+            self.assertEqual(run.call_args.kwargs["env"]["CC"], str(compiler))
+
 
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
@@ -167,12 +217,16 @@ class RuntimeTests(unittest.TestCase):
         self.stack.enter_context(patch.object(settings, "load_prefs", return_value={"gpu_index": 1}))
 
     def test_probe_and_inference_use_the_same_gpu_and_verified_backend_argument(self):
+        compiler = self.root / ".venv" / "Lib" / "site-packages" / "triton" / "runtime" / "tcc" / "tcc.exe"
+        compiler.parent.mkdir(parents=True)
+        compiler.write_bytes(b"compiler")
         for healthy in (True, False):
             commands = []
 
             def run(command, log, **kwargs):
                 commands.append(command)
                 self.assertEqual(kwargs["env"]["CUDA_VISIBLE_DEVICES"], "1")
+                self.assertEqual(kwargs["env"]["CC"], str(compiler))
                 output = Path(command[command.index("--output") + 1])
                 if output.suffix == ".json":
                     output.write_text(json.dumps({**hardware(), "backends": {
@@ -183,7 +237,8 @@ class RuntimeTests(unittest.TestCase):
                     self.assertEqual(kwargs["env"]["SEEDVR2_OPTIMIZATIONS_LOGGED"], "1")
                     Image.open(self.source).save(output)
 
-            with self.subTest(healthy=healthy), patch.object(self.job, "run", side_effect=run):
+            with self.subTest(healthy=healthy), patch.object(self.job, "run", side_effect=run), \
+                 patch.object(acceleration.platform, "system", return_value="Windows"):
                 seedvr2.restore(self.source, log=lambda line: None)
             self.assertEqual(len(commands), 2)
 

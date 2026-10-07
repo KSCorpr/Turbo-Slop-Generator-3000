@@ -61,6 +61,16 @@ compilation de paquet ni installation de Visual Studio / CUDA Toolkit.
 Triton compile néanmoins ses petits kernels au premier usage ; cette première
 vérification peut prendre du temps. **Stop** interrompt aussi l'installation.
 
+SeedVR2 sélectionne explicitement **TinyCC**, livré avec Triton, et sa chaîne
+CUDA locale pour ses sous-processus. Cela évite qu'un environnement Visual
+Studio incomplet (`Failed to find Windows SDK`) ou un autre CUDA Toolkit
+installé sur Windows prenne la priorité. Aucun réglage système n'est modifié.
+Si une optimisation échoue, le journal affiche le diagnostic et SeedVR2 reste
+disponible avec **SDPA** ; l'échec d'une option ne marque plus le moteur entier
+comme inutilisable. Après une erreur de SDK, mettre à jour TurboSlop, le
+relancer, puis réessayer **Install optimizations**. On peut aussi sélectionner
+**Attention → SDPA** pour traiter immédiatement sans ces modules.
+
 | GPU sélectionné | Installation proposée |
 | --- | --- |
 | RTX 30xx / 40xx, A100, H100 | Triton Windows 3.3.1.post21, SageAttention 2.2.0, FlashAttention 2.8.3 |
