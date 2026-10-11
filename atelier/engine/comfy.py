@@ -45,6 +45,7 @@ class Engine:
         self.port = None
         self._tail = deque(maxlen=60)
         self._uploads = set()
+        self._preview_next = 0
         self._http = requests.Session()
         self._http.trust_env = False  # Corporate/cloud proxies never see prompts.
 
@@ -77,6 +78,7 @@ class Engine:
             with self._state_lock:
                 self._busy = True
                 self._cancelled.clear()
+                self._preview_next = 0
             try:
                 yield self
             finally:
@@ -342,6 +344,7 @@ class Engine:
                 log(f"Comfy generation completed in {time.monotonic() - start:.2f}s.")
             return outputs
         finally:
+            self._preview_next = preview_index
             if ws is not None:
                 ws.close()
             if prompt_id:
@@ -436,7 +439,7 @@ def generate(*, model, files, prompt, negative, steps, cfg_scale, width, height,
                     scheduler=schedule, loras=named_loras,
                     vae=runtime.model_name(files["vae"], roots) if files.get("vae") else None)
             paths = ENGINE.execute(graph, preview_path=preview_path,
-                                   preview_offset=index * steps, log=log)
+                                   preview_offset=ENGINE._preview_next, log=log)
             result.extend(paths)
             if on_output:
                 on_output(paths, base_seed + index)

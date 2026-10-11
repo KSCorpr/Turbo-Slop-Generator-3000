@@ -145,6 +145,25 @@ class ClientTests(unittest.TestCase):
         self.assertTrue((settings.TMP_DIR / "preview_008.png").is_file())
         self.assertTrue((settings.TMP_DIR / "preview_009.png").is_file())
         self.assertFalse((settings.TMP_DIR / "preview_010.png").exists())
+        self.assertEqual(self.engine._preview_next, 10)
+
+    def test_batch_previews_resume_after_received_frames_even_if_some_were_lost(self):
+        self.protocol()
+        model = registry.get_base_model("qwen-image-2.1-turbo", {"image_backend": "comfy"})
+        self.engine._preview_next = 99
+        seen = []
+        def execute(graph, *, preview_offset, **unused):
+            seen.append(preview_offset)
+            self.engine._preview_next = preview_offset + 3  # dropped frames, not eight
+            return [self.folder / ("batch" + str(len(seen)) + ".png")]
+        files = {"diffusion": self.folder / "turbo.safetensors",
+                 "enc": self.folder / "encoder.safetensors", "vae": self.folder / "vae.safetensors"}
+        with patch.object(comfy, "ENGINE", self.engine), \
+             patch.object(self.engine, "ensure"), \
+             patch.object(self.engine, "execute", side_effect=execute):
+            comfy.generate(model=model, files=files, prompt="test", negative="", steps=8,
+                           cfg_scale=1, width=1024, height=1024, seed=1, batch_count=2)
+        self.assertEqual(seen, [0, 3])
 
     def test_foreign_progress_and_errors_are_ignored(self):
         self.protocol()
