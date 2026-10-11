@@ -306,7 +306,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "z_image", "qwen21")
+FAMILIES = ("flux2", "krea2", "z_image", "qwen21", "sdxl")
 
 
 def _family(model_family: str) -> str:
@@ -314,6 +314,8 @@ def _family(model_family: str) -> str:
 
 
 def level(kind: str, key: str, model_family: str) -> str:
+    if model_family == "sdxl":
+        return BEST if key in ("euler", "dpm++2m", "auto", "karras") else OK
     table = SAMPLERS if kind == "sampler" else SCHEDULES
     entry = table.get(key)
     if not entry:
@@ -337,6 +339,9 @@ def choices(kind: str, model_family: str) -> list[tuple[str, str]]:
     table = SAMPLERS if kind == "sampler" else SCHEDULES
     out = []
     for key, entry in table.items():
+        if model_family == "sdxl" and key not in (
+                "euler", "euler_a", "heun", "dpm++2m", "auto", "karras", "exponential"):
+            continue
         mark = _MARK[level(kind, key, model_family)]
         out.append((f"{i18n.t(entry[0])} {mark}".strip(), key))
     return out
@@ -401,10 +406,14 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "sdxl":
+        return ("**SDXL** uses ordinary diffusion sampling and negative prompts. "
+                "Start with 24 steps and CFG 6; Euler or DPM++ 2M with Karras "
+                "are available. Increase transformation strength to change an input image more.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "
-                "and are passed to sd.cpp explicitly. Keep the Turbo preset; "
+                "and are passed to the selected local engine explicitly. Keep the Turbo preset; "
                 "a generic scheduler changes the distilled sampling trajectory. "
                 "Negative prompts have no effect at CFG 1.")
     name, steps, cfg = _MODEL[fam]

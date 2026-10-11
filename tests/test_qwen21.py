@@ -15,6 +15,7 @@ from atelier.ui.preview import step_frames
 class QwenCatalogTests(unittest.TestCase):
     def test_turbo_uses_verified_weights_and_reuses_vae_encoder(self):
         model = registry.get_base_model("qwen-image-2.1-turbo", {
+            "image_backend": "sdcpp",
             "model_files": {"qwen-image-2.1": {"diffusion": "qwen_image_2.1-Q6_K.gguf"}}})
         self.assertEqual((model.defaults["steps"], model.defaults["cfg_scale"]), (8, 1.0))
         self.assertFalse(model.defaults["supports_negative"])
@@ -45,6 +46,7 @@ class QwenCatalogTests(unittest.TestCase):
 class QwenEngineTests(unittest.TestCase):
     def test_turbo_rejects_old_engine_and_incorrect_sampling_before_loading_weights(self):
         with patch.object(generate.settings, "find_sd_cli", return_value=Path("sd-cli")), \
+             patch.object(generate.settings, "load_prefs", return_value={"image_backend": "sdcpp"}), \
              patch.object(generate, "_check_qwen_engine"), \
              patch.object(generate, "resolve_model_files") as resolve:
             with patch.object(generate.sdcpp, "supported_options", return_value=frozenset()):
@@ -149,7 +151,7 @@ class QwenEngineTests(unittest.TestCase):
     def test_edit_without_projector_fails_but_text_generation_does_not(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            model = registry.get_base_model("qwen-image-2.1-turbo", {})
+            model = registry.get_base_model("qwen-image-2.1-turbo", {"image_backend": "sdcpp"})
             paths = {}
             for role in ("diffusion", "vae", "text_encoder"):
                 paths[role] = root / role
@@ -158,7 +160,7 @@ class QwenEngineTests(unittest.TestCase):
             def resolve(component):
                 return paths.get(component.role)
 
-            prefs = {"auto_optimize": False, "flags": {}}
+            prefs = {"auto_optimize": False, "flags": {}, "image_backend": "sdcpp"}
             with patch.object(generate.settings, "find_sd_cli", return_value=root / "sd-cli"), \
                  patch.object(generate.registry, "get_base_model", return_value=model), \
                  patch.object(generate.registry, "resolve_component_path", side_effect=resolve), \

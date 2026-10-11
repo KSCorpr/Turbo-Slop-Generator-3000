@@ -271,7 +271,7 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_style_choices_are_lazy_but_available_on_open(self):
         functions = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") == "load_style_choices"]
-        self.assertEqual(len(functions), 4)
+        self.assertEqual(len(functions), 5)
         for fn in functions:
             self.assertEqual(fn.outputs[0].choices, [])
             self.assertEqual(fn.outputs[1].choices, [])
@@ -283,13 +283,13 @@ class StudioWiringTests(unittest.TestCase):
     def test_transfers_are_direct_and_do_not_wait_for_the_gpu_queue(self):
         functions = [fn for fn in self.demo.fns.values()
                      if getattr(fn.fn, "__name__", "") == "transfer_image"]
-        self.assertEqual(len(functions), 13)
+        self.assertEqual(len(functions), 16)
         for fn in functions:
             self.assertFalse(fn.queue)
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))
 
     def test_payload_stays_below_the_original_1_9_mb(self):
-        # Budget includes the additional multiview workspace (~49 KB), while
+        # Budget includes multiview and the SDXL image workspace, while
         # retaining the substantial reduction from the original 1.9 MB UI.
         self.assertLess(len(json.dumps(self.demo.config, default=str)), 1_520_000)
 

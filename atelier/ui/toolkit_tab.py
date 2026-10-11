@@ -881,11 +881,11 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "**refines tile by tile** with SDXL img2img at low "
                     "denoise (model **resident** → fast tiles, overlap "
                     "feather blending). Invents fine detail, Magnific-style. "
-                    "**100% GPU** (PyTorch).")
+                    "Runs locally on the selected image engine and GPU.")
                 _installer_block(
                     "Creative SDXL upscale",
-                    "PyTorch + diffusers (~9.5 GB: SDXL base + VAE fp16-fix + "
-                    "ControlNet Tile). Model resident on the GPU. No command "
+                    "Local SDXL engine (~9.5 GB: SDXL base + VAE fp16-fix + "
+                    "ControlNet Tile). Existing SDXL weights are reused. No command "
                     "to type.",
                     tools.install_upscale_stream, tools.upscale_is_installed())
 

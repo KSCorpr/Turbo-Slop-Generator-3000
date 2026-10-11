@@ -1064,6 +1064,7 @@ def main() -> int:
     #  réseau. La placer au bout veut dire que tout ce qui pouvait être dit
     #  hors ligne a déjà été dit quand la connexion lâche.
     engine_stale = check_engine(update_engine)
+    comfy_stale = check_comfy(update_engine)
     trellis_stale = check_trellis(update_trellis)
     print("-" * 60)
     if recoverable > 0:
@@ -1074,6 +1075,7 @@ def main() -> int:
         print("   To reclaim it:  update.bat --clean   (./update.sh --clean "
               "on Linux/Mac)")
     stale = ((engine_stale and not update_engine)
+             or (comfy_stale and not update_engine)
              or (trellis_stale and not update_trellis))
     if stale:
         print("🔧 An engine is behind the code.")
@@ -1087,6 +1089,28 @@ def main() -> int:
               "above (see the [!]/[X] lines).")
     print("=" * 60)
     return 0 if _problems == 0 else 1
+
+
+def check_comfy(update: bool = False) -> bool:
+    """Bring an installed local runtime to the core pin tested with this UI."""
+    from atelier import comfy_runtime
+    if not (comfy_runtime.root() / "source" / "main.py").is_file():
+        return False  # Optional on existing installations; Settings installs it.
+    print("• Comfy local engine…")
+    if comfy_runtime.ready():
+        print(OK + comfy_runtime.status())
+        return False
+    if not update:
+        _warn("The installed Comfy runtime needs the version tested with this code.")
+        return True
+    try:
+        from scripts.setup_comfy import install
+        install(comfy_runtime.manifest().get("flavor", "auto"))
+        print(OK + "Comfy runtime installed and its local API verified.")
+        return False
+    except Exception as exc:
+        _warn(f"Comfy installation failed: {exc}. Repair it from System → Settings.")
+        return True
 
 
 if __name__ == "__main__":

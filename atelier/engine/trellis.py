@@ -466,6 +466,8 @@ def generate(image_path: Path, out_path: Path, res: int = 512,
     # Réutilise le serveur résident SEULEMENT si TOUS les flags de lancement
     # sont identiques. decim/atlas/no-texture/gpu… ne sont pas renégociables
     # par requête : sans ce contrôle, les changer resterait sans effet.
+    from . import comfy
+    comfy.release()
     if resident and resident_is_running():
         if _RESIDENT.get("sig") == sig:
             use_port = _RESIDENT["port"]

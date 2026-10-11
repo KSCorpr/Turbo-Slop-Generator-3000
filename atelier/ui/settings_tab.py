@@ -14,7 +14,7 @@ import threading
 
 import gradio as gr
 
-from .. import benchmark, diagnostics, hardware, registry, settings, system_profile
+from .. import benchmark, comfy_runtime, diagnostics, hardware, registry, settings, system_profile
 from ..i18n import t
 from .theme import THEME_JS
 from . import widgets
@@ -118,6 +118,12 @@ def _headline(prefs: dict | None = None) -> str:
         lines.append(t("Second card available: {other}.").format(
             other=others))
 
+    if prefs.get("image_backend", "comfy") == "comfy":
+        lines += ["", "**Qwen Turbo / SDXL:** Comfy uses the selected image GPU, "
+                  "automatic model offload and tiled image decoding. It keeps models cached "
+                  "between compatible images when memory allows. The classic placement "
+                  "settings below apply to the other models."]
+
     if prefs.get("system_mode") == "auto":
         lines += ["", t("**Automatic system setup, recalculated for each model:**")]
         lines.append(t("- choose the image and text weights for this model "
@@ -143,7 +149,8 @@ def _system_table(prefs: dict | None = None) -> str:
     prefs = prefs if prefs is not None else settings.load_prefs()
     if prefs.get("system_mode") != "auto":
         return ("**Manual mode:** your saved system settings are active. "
-                "Switch to Automatic to let each model choose its placement.")
+                "Comfy still manages its own offload for Qwen Turbo and SDXL. "
+                "Switch to Automatic to let classic models choose their placement.")
     from ..engine import sdcpp
     sd_cli = settings.find_sd_cli()
     gpu = hardware.auto_profile(settings.generation_gpu_index(prefs)).gpu
@@ -160,6 +167,12 @@ def _system_table(prefs: dict | None = None) -> str:
         if not registry.model_is_ready(model) or not image:
             lines.append(f"| {model.name} | Download required | — | "
                          "Computed after download |")
+            continue
+        if comfy_runtime.enabled(model.id, prefs):
+            image_size = f"{image.stat().st_size / 2**30:.1f} GiB"
+            encoder = by_role.get("text_encoder")
+            enc_size = f"{encoder.stat().st_size / 2**30:.1f} GiB" if encoder else "Included"
+            lines.append(f"| {model.name} | {image_size} | {enc_size} | Comfy automatic offload |")
             continue
         files = {"diffusion": image, "vae": vae,
                  "enc": by_role.get("text_encoder")}
@@ -200,6 +213,83 @@ def build_settings_tab():
         multi_gpu = len(gpus) > 1
 
         headline = gr.Markdown(_headline(prefs))
+        with gr.Accordion("Local image engine (optional settings)", open=False):
+            gr.Markdown("**Comfy edition · local image engine**\nQwen Turbo and SDXL "
+                        "use Comfy in the background. Other models keep their classic engine. "
+                        "Restart TurboSlop after changing engines to refresh the Model catalog.")
+            image_backend = gr.Radio([("Comfy local (Qwen Turbo / SDXL)", "comfy"),
+                                      ("Classic SD.CPP / SDXL", "sdcpp")],
+                                     value=prefs.get("image_backend", "comfy"), label="Image engine")
+            comfy_status = gr.Markdown(comfy_runtime.status())
+            comfy_install = gr.Button("Install / repair Comfy", size="sm")
+            comfy_log = gr.Textbox(label="Local engine installation log", lines=6,
+                                   autoscroll=True, elem_classes="log-box")
+            def _install_comfy():
+                from ..engine import comfy, tools
+                comfy.release()
+                for value in tools._setup_script_stream("setup_comfy.py", "Comfy"):
+                    yield comfy_runtime.status(), value
+            comfy_install.click(_install_comfy, outputs=[comfy_status, comfy_log], **widgets.GPU_QUEUE)
+            def _choose_backend(choice):
+                from ..engine import comfy
+                comfy.release()
+                _save(image_backend=choice)
+                return "Engine selected. Restart TurboSlop to refresh the encoder choices."
+            image_backend.change(_choose_backend, inputs=image_backend, outputs=comfy_status,
+                                  **widgets.GPU_QUEUE)
+            gr.Markdown("**Measure the two engines** · 1024×1024 at the full model preset. "
+                        "The first image and three subsequent images use different seeds to force actual inference. "
+                        "Download both engines' encoder formats first. Compare the saved images as well as their times.")
+            comparison_model = gr.Dropdown([("Qwen 2.1 Turbo", "qwen-image-2.1-turbo"),
+                                             ("SDXL Base", "sdxl-base")],
+                                            value="qwen-image-2.1-turbo", label="Model to compare")
+            with gr.Row():
+                comparison_btn = gr.Button("Compare Classic / Comfy on my PC")
+                comparison_stop = gr.Button("Stop comparison", variant="stop")
+            comparison_status = gr.Markdown("")
+            comparison_file = gr.File(label="Engine comparison report", interactive=False)
+            comparison_log = gr.Textbox(label="Engine comparison log", lines=6, autoscroll=True,
+                                        elem_classes="log-box")
+            comparison_cancel = threading.Event()
+
+            def _compare_engines(model_id):
+                comparison_cancel.clear()
+                messages = queue.Queue()
+                state = {}
+                def worker():
+                    try:
+                        state["path"] = benchmark.run_engine_benchmark(
+                            model_id, log=messages.put, cancel=comparison_cancel.is_set)
+                    except Exception as exc:
+                        state["error"] = str(exc)
+                    finally:
+                        messages.put(None)
+                threading.Thread(target=worker, daemon=True).start()
+                lines = []
+                yield "Measuring both engines…", gr.update(), ""
+                while True:
+                    line = messages.get()
+                    if line is None:
+                        break
+                    lines.append(line)
+                    yield gr.update(), gr.update(), "\n".join(lines[-500:])
+                if "error" in state:
+                    yield state["error"], gr.update(), "\n".join(lines[-500:])
+                    return
+                data = json.loads(state["path"].read_text(encoding="utf-8"))
+                summary = []
+                for row in data["results"]:
+                    summary.append(f"**{row['label']}**: first image {row['first_image_seconds']:.2f}s, "
+                                   f"subsequent median {row['seconds']:.2f}s" if row["ok"] else
+                                   f"**{row['label']}**: {row['error']}")
+                yield "  \n".join(summary), str(state["path"]), "\n".join(lines[-500:])
+            comparison_event = comparison_btn.click(_compare_engines, inputs=comparison_model,
+                outputs=[comparison_status, comparison_file, comparison_log], **widgets.GPU_QUEUE)
+            def _stop_comparison():
+                comparison_cancel.set()
+                from ..engine import generate
+                return generate.cancel()
+            widgets.stop_into_log(comparison_stop, _stop_comparison, comparison_log, [comparison_event])
         status = gr.Markdown("", elem_classes="feedback", visible=False)
         mode = gr.Radio(
             [("Automatic for each model (recommended)", "auto"),
@@ -290,7 +380,7 @@ def build_settings_tab():
             "decide."
         ).format(n=benchmark.MEASURED_RUNS))
         with gr.Row():
-            bench_btn = gr.Button(t("⏱️ Measure on my machine"),
+            bench_btn = gr.Button("Measure classic GPU placement",
                                   variant="primary")
             apply_bench = gr.Button(t("Apply the fastest"))
             bench_stop = gr.Button(t("⏹️ Stop"), variant="stop")

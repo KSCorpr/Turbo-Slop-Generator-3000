@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .. import hardware, registry, settings, system_profile
+from .. import comfy_runtime, hardware, registry, settings, system_profile
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -45,7 +45,10 @@ def _check_qwen_engine(model: registry.BaseModel,
 
 def cancel() -> str:
     """Annule la génération en cours."""
-    return sdcpp.cancel_active()
+    from . import comfy
+    a = comfy.cancel()
+    b = sdcpp.cancel_active()
+    return a if not a.startswith("No Comfy") else b
 
 
 def list_custom_models() -> list[str]:
@@ -289,7 +292,8 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     sinon le raccord se voit — et une seconde copie de cette résolution
     dériverait, comme celle du serveur résident l'avait fait.
     """
-    prefs = settings.load_prefs()
+    # ADetailer keeps its classic runner and matching GGUF encoder.
+    prefs = {**settings.load_prefs(), "image_backend": "sdcpp"}
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError("The sd-cli binary was not found. "
@@ -410,15 +414,36 @@ def generate(
     # inherit the saved automatic mode, which would erase the tested flags.
     prefs = ({**prefs_override, "system_mode": "manual"}
              if prefs_override is not None else settings.load_prefs())
+    model = registry.get_base_model(model_id, prefs)
+    if model is None:
+        raise sdcpp.EngineError(f"Unknown model: {model_id}")
+
+    if comfy_runtime.enabled(model_id, prefs):
+        from . import comfy
+        files = resolve_model_files(model, diffusion_override, vae_override,
+                                    encoder_override, want_vision=False)
+        def save_completed(paths, actual_seed):
+            if save_prompt:
+                req = GenRequest(prompt=prompt, negative=negative, steps=steps,
+                      cfg_scale=cfg_scale, width=width, height=height, seed=actual_seed,
+                      sampler=sampler or model.defaults.get("sampler", "euler"),
+                      schedule="" if schedule in (None, "", "auto") else schedule,
+                      init_image=init_image, strength=strength)
+                _write_prompt_sidecars(paths, req, model, actual_seed)
+        paths = comfy.generate(model=model, files=files, prompt=prompt, negative=negative,
+            steps=steps, cfg_scale=cfg_scale, width=width, height=height, seed=seed,
+            batch_count=batch_count, sampler=sampler, schedule=schedule,
+            flow_shift=flow_shift, init_image=init_image, strength=strength,
+            mask_image=mask_image, ref_image=ref_image, loras=loras,
+            preview_path=preview_path, hires=hires, circular=circular, log=log,
+            prefs=prefs, on_output=save_completed)
+        return paths
+
     sd_cli = settings.find_sd_cli()
     if sd_cli is None:
         raise sdcpp.EngineError(
             "The sd-cli binary was not found. Run the installation "
             "(install.bat) or “python scripts/get_sdcpp.py”.")
-
-    model = registry.get_base_model(model_id, prefs)
-    if model is None:
-        raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":

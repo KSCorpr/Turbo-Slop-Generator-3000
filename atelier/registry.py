@@ -27,6 +27,7 @@ class Component:
     optional: bool = False
     source_template: str | None = None  # motif de toutes les variantes GGUF
     selectable: tuple[str, ...] = ()    # choix explicites non GGUF autorisés
+    local_paths: tuple[str, ...] = ()   # existing portable weights to reuse
 
     @property
     def token(self) -> str | None:
@@ -114,7 +115,10 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
                      if isinstance(saved_files, dict) else {})
         if not isinstance(overrides, dict):
             overrides = {}
-        for role, spec in (m.get("sources") or {}).items():
+        from . import comfy_runtime
+        sources = (m.get("comfy_sources") if comfy_runtime.enabled(m["id"], prefs)
+                   and m.get("comfy_sources") else m.get("sources")) or {}
+        for role, spec in sources.items():
             template = source_template = spec["match"]
             if "{enc_quant}" in template:
                 q = q_enc
@@ -145,7 +149,8 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             comps.append(Component(role, spec["repo"], template, q,
                                    optional=bool(spec.get("optional")),
                                    source_template=source_template,
-                                   selectable=selectable))
+                                   selectable=selectable,
+                                   local_paths=tuple(spec.get("local_paths") or ())))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),
@@ -312,6 +317,10 @@ def _match(files: list[Path], repo_dir: Path, pattern: str) -> list[Path]:
 
 def resolve_component_path(comp: Component) -> Path | None:
     """Cherche sur le disque le fichier correspondant au composant. None si absent."""
+    for relative in comp.local_paths:
+        candidate = settings.ROOT / relative
+        if candidate.is_file():
+            return candidate
     repo_dir = settings.model_repo_dir(comp.repo)
     if not repo_dir.exists():
         return None

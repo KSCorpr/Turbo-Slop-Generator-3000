@@ -12,9 +12,11 @@ _AUTO = "__auto__"
 
 def _weight_menu(model: registry.BaseModel, role: str,
                  variants: list[tuple[str, str]] | None = None):
+    if role == "diffusion" and any(c.role == "model" for c in model.components):
+        role = "model"
     comp = next((c for c in model.components if c.role == role), None)
     if comp is None:
-        return [], _AUTO
+        return [], None
     auto_label = (f"Automatic (target: {comp.requested()})" if comp.token else
                   f"Default ({comp.requested()})")
     menu = [(auto_label, _AUTO)]
@@ -87,8 +89,8 @@ def build_library_tab():
                             interactive=True)
                         encoder_file = gr.Dropdown(
                             choices=e_menu, value=e_selected,
-                            label="Text encoder · weights",
-                            interactive=True)
+                            label="Text encoder · weights" if e_menu else "Text encoder · included in checkpoint",
+                            interactive=bool(e_menu))
                 with gr.Column(scale=1, min_width=170):
                     btn = gr.Button("⬇️ Download", variant="primary")
                     del_btn = gr.Button("🗑️ Delete", size="sm")
@@ -102,11 +104,11 @@ def build_library_tab():
                     except Exception as exc:  # noqa: BLE001
                         return gr.update(), gr.update(), \
                             f"Cannot read weight file sizes: {exc}"
-                    if not variants.get("diffusion"):
+                    if not (variants.get("diffusion") or variants.get("model")):
                         return gr.update(), gr.update(), \
                             "No matching image-model weight was found in the repository."
                     d, ds = _weight_menu(model, "diffusion",
-                                         variants.get("diffusion"))
+                                         variants.get("diffusion") or variants.get("model"))
                     e, es = _weight_menu(model, "text_encoder",
                                          variants.get("text_encoder"))
                     return (gr.update(choices=d, value=ds),
@@ -122,6 +124,8 @@ def build_library_tab():
                     selected = dict(files.get(model_id) or {})
                     for role, choice in (("diffusion", diff_choice),
                                          ("text_encoder", enc_choice)):
+                        if role == "diffusion" and any(c.role == "model" for c in registry.get_base_model(model_id, p).components):
+                            role = "model"
                         if choice and choice != _AUTO:
                             selected[role] = choice
                         else:

@@ -22,12 +22,13 @@ PyYAML>=6.0
 Pillow>=10.2
 numpy>=1.26,<3
 requests>=2.31
+websocket-client==1.8.0
 # sd.cpp writes AVI; the bundled FFmpeg converts video clips to browser-ready MP4.
 imageio-ffmpeg>=0.6,<1
 
 # ---------------------------------------------------------------------------
-# PyTorch n'est PAS listé ici : la génération (Flux.2 Klein) passe par
-# stable-diffusion.cpp (binaire natif, GGUF). PyTorch n'est nécessaire que pour
-# les outils du Toolkit (profondeur, détourage), installés à la demande par
-# `scripts/setup_tools.py` avec la bonne build CUDA.
+# Torch for Comfy lives in tools_repo/comfy/.venv, with its own compatible
+# dependencies. The Gradio process never imports that runtime. Other image
+# models keep their native stable-diffusion.cpp runner; toolkit add-ons have
+# their existing installation paths.
 # ---------------------------------------------------------------------------

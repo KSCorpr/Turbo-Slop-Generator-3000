@@ -125,7 +125,7 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
     repos: dict[str, list] = {}
     result: dict[str, list[tuple[str, str]]] = {}
     for comp in model.components:
-        if comp.role not in ("diffusion", "text_encoder") or not (
+        if comp.role not in ("diffusion", "model", "text_encoder") or not (
                 comp.base_glob().lower().endswith((".gguf", ".safetensors"))
                 or comp.selectable):
             continue

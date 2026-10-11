@@ -281,6 +281,9 @@ def build_app() -> gr.Blocks:
         # d'avertissement, il n'y a rien à installer. L'alerte GPU ne vise que
         # les PC où une carte NVIDIA est attendue mais absente.
         alerts = []
+        from atelier import comfy_runtime
+        if settings.load_prefs().get("image_backend", "comfy") == "comfy" and not comfy_runtime.ready():
+            alerts.append("**Comfy local engine missing** — System → Settings → Local image engine → Install / repair Comfy.")
         if sd_cli is None:
             alerts.append(i18n.t(
                 "**`sd-cli` binary not found** — run `install.bat` / "
@@ -320,6 +323,10 @@ def build_app() -> gr.Blocks:
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["qwen-image-2.1-turbo"] = build_generative_tab(
                         "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["sdxl-base"] = build_generative_tab(
+                        "sdxl-base", "SDXL",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["krea2-turbo"] = build_generative_tab(

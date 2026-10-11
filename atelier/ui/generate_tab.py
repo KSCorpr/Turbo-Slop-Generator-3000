@@ -8,7 +8,7 @@ import re
 
 import gradio as gr
 
-from .. import downloader, i18n, registry, sampling, settings, styles
+from .. import comfy_runtime, downloader, i18n, registry, sampling, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -95,6 +95,8 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 
 
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
+    if family == "sdxl":
+        return RATIOS_KREA2
     if family == "qwen21":
         return RATIOS_QWEN21
     # startswith et non == : toute variante Krea à venir partagera
@@ -388,8 +390,8 @@ def build_generative_tab(model_id: str, title: str,
                             "of image 2”*).")
                         if family == "qwen21":
                             gr.Markdown(
-                                "**Qwen 2.1 Turbo:** editing requires the vision "
-                                "projector downloaded with the model; no "
+                                "**Qwen 2.1 Turbo:** editing requires the complete "
+                                "image encoder downloaded with the model; no "
                                 "editing LoRA is needed. For a transparent "
                                 "PNG, use: `This is an RGBA image with "
                                 "transparency. <your description>. The image "
@@ -523,6 +525,8 @@ def build_generative_tab(model_id: str, title: str,
                                         step=0.1, label="CFG", interactive=family != "qwen21",
                                         info=("Qwen 2.1 Turbo: fixed CFG 1 and 8 steps."
                                               if family == "qwen21" else
+                                              "SDXL: start at CFG 6 and 24 steps. Higher guidance follows the prompt more strongly."
+                                              if family == "sdxl" else
                                               "On sd.cpp, CFG disabled = 1.0 "
                                               "(normal for distilled models). 0.0 "
                                               "= pure unconditional: may IGNORE "
@@ -560,13 +564,15 @@ def build_generative_tab(model_id: str, title: str,
                         inputs=[schedule], outputs=[schedule_doc])
                     flow_shift = gr.Slider(
                         0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
-                        label="Flow shift", interactive=family != "qwen21",
+                        label="Flow shift", interactive=family not in ("qwen21", "sdxl"),
+                        visible=family != "sdxl",
                         info="Leave at 0 (auto): the model picks the right value "
                              "for the resolution. Too low (1–2) leaves "
                              "GRAIN/noise at high resolution; ~3–4 reinforces "
                              "structure.")
                     circular = gr.Checkbox(
                         value=False,
+                        visible=not comfy_runtime.enabled(model_id),
                         label="Seamless pattern (circular)",
                         info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
 

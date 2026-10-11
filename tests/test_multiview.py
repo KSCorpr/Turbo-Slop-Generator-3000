@@ -78,7 +78,8 @@ class MultiviewTests(unittest.TestCase):
 
     def test_all_catalogue_engines_use_their_supported_conditioning_and_defaults(self):
         models = registry.load_base_models(settings.load_prefs())
-        self.assertEqual(len(models), 4)
+        self.assertEqual({m.id for m in models}, {"flux2-klein-9b", "krea2-turbo",
+                         "z-image-turbo", "qwen-image-2.1-turbo", "sdxl-base"})
         with patch.object(mv.gen_engine, "generate", side_effect=self.generate), \
              patch.object(mv.tools, "describe_is_installed", return_value=True), \
              patch.object(mv.tools, "image_to_prompt", return_value=["A red sculptural object."]) as read:
