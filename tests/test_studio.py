@@ -219,7 +219,43 @@ class StudioWiringTests(unittest.TestCase):
     def test_root_navigation_is_six_visible_workspaces(self):
         nav = next(b for b in self.demo.blocks.values() if b.elem_id == "studio-nav")
         self.assertEqual([b.id for b in nav.children],
-                         ["create", "h3-video", "tools", "history", "models", "system"])
+                         ["create", "video", "tools", "history", "models", "system"])
+
+    def test_retired_models_and_toolkit_enlargement_tabs_are_absent(self):
+        tabs = [b for b in self.demo.blocks.values() if isinstance(b, gr.Tab)]
+        self.assertFalse(any("Ming" in tab.label or "H3" in tab.label for tab in tabs))
+        toolkit = next(tab for tab in tabs if tab.id == "toolkit")
+        children = next(block for block in toolkit.children if isinstance(block, gr.Tabs))
+        self.assertEqual([tab.id for tab in children.children],
+                         ["describe", "depth", "bg", "sam", "layers", "face", "adetailer", "creative"])
+        seed_model = next(b for b in self.demo.blocks.values()
+                          if isinstance(b, gr.Dropdown) and b.label == "Restoration model")
+        self.assertEqual(seed_model.value, "3b-w4a8")
+
+    def test_editing_controls_are_connected_to_generation(self):
+        def generation_inputs(model_id):
+            tab = next(b for b in self.demo.blocks.values() if isinstance(b, gr.Tab) and b.id == model_id)
+
+            def belongs(block):
+                while block is not None:
+                    if block is tab:
+                        return True
+                    block = block.parent
+                return False
+
+            function = next(fn for fn in self.demo.fns.values()
+                            if getattr(fn.fn, "__name__", "") == "do_generate"
+                            and any(belongs(block) for block in fn.inputs))
+            return function.inputs
+
+        for model in ("qwen-image-2.1-turbo", "flux2-klein-9b"):
+            with self.subTest(model=model):
+                inputs = generation_inputs(model)
+                reference_labels = {block.label for block in inputs if isinstance(block, gr.Image)}
+                self.assertTrue({"Image to edit", "Reference 2 (optional)", "Reference 3 (optional)"}.issubset(reference_labels))
+                self.assertTrue(any(isinstance(block, gr.Slider) and "Centred outpaint" in block.label for block in inputs))
+        krea_inputs = generation_inputs("krea2-turbo")
+        self.assertTrue(any(isinstance(block, gr.Checkbox) and "Edit mode" in block.label for block in krea_inputs))
 
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
         names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_generate3d", "do_depth", "do_bg",
@@ -235,7 +271,7 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_style_choices_are_lazy_but_available_on_open(self):
         functions = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") == "load_style_choices"]
-        self.assertEqual(len(functions), 5)
+        self.assertEqual(len(functions), 4)
         for fn in functions:
             self.assertEqual(fn.outputs[0].choices, [])
             self.assertEqual(fn.outputs[1].choices, [])
@@ -247,7 +283,7 @@ class StudioWiringTests(unittest.TestCase):
     def test_transfers_are_direct_and_do_not_wait_for_the_gpu_queue(self):
         functions = [fn for fn in self.demo.fns.values()
                      if getattr(fn.fn, "__name__", "") == "transfer_image"]
-        self.assertEqual(len(functions), 16)
+        self.assertEqual(len(functions), 13)
         for fn in functions:
             self.assertFalse(fn.queue)
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))

@@ -108,19 +108,26 @@ def _video_detail(source: Path, output: Path, strength: float, log,
 
 def build_command(source: Path, output: Path, model: str, resolution: int,
                   *, is_video: bool, seed: int = 42, attention: str = "sdpa") -> list[str]:
-    if model not in addons.SEED_MODELS or not 256 <= resolution <= 8192:
+    if model not in addons.SEED_MODELS | addons.SEED_CONVROT_MODELS or not 256 <= resolution <= 8192:
         raise ValueError("Choose a SeedVR2 model and a short edge between 256 and 8192 px.")
     if attention not in ("sdpa", *acceleration.BACKENDS):
         raise ValueError("Choose SDPA, SageAttention 2 or FlashAttention 2.")
-    return [str(addons.python("seedvr2")), "-u",
-            str(addons.root("seedvr2") / "source" / "inference_cli.py"),
+    addon = addons.seed_addon(model)
+    convrot = model in addons.SEED_CONVROT_MODELS
+    runner = ([str(settings.ROOT / "scripts" / "tools" / "run_seedvr2_convrot.py"),
+               "--addon-root", str(addons.root(addon))] if convrot else
+              [str(addons.root(addon) / "source" / "inference_cli.py")])
+    filename = (addons.SEED_CONVROT_MODELS if convrot else addons.SEED_MODELS)[model]
+    # Standard loader only: W4A8 must keep packed weights on the GPU, not DisTorch2.
+    swaps = (16 if model == "7b-int8" or model == "7b-sharp-int8" else 0) if convrot else (32 if model == "3b" else 36)
+    return [str(addons.python(addon)), "-u", *runner,
             str(source), "--output", str(output),
             "--model_dir", str(addons.root("seedvr2") / "models"),
-            "--dit_model", addons.SEED_MODELS[model],
+            "--dit_model", filename,
             "--resolution", str(resolution), "--seed", str(seed),
             "--batch_size", "5" if is_video else "1",
-            "--blocks_to_swap", "32" if model == "3b" else "36",
-            "--swap_io_components", "--dit_offload_device", "cpu",
+            "--blocks_to_swap", str(swaps),
+            *(["--swap_io_components"] if not convrot else []), "--dit_offload_device", "cpu",
             "--vae_offload_device", "cpu", "--vae_encode_tiled", "--vae_decode_tiled",
             "--vae_encode_tile_size", "512", "--vae_decode_tile_size", "512",
             "--attention_mode", attention, "--color_correction", "lab",
@@ -153,7 +160,7 @@ def select_attention(requested, directory: Path, env, log=print):
     return selected
 
 
-def _run_inference(command, output: Path, env: dict, log) -> None:
+def _run_inference(command, output: Path, env: dict, log, *, addon="seedvr2") -> None:
     """Retry an optional kernel compilation failure once, in a fresh SDPA process."""
     compile_failed = False
 
@@ -165,7 +172,7 @@ def _run_inference(command, output: Path, env: dict, log) -> None:
         log(line)
 
     try:
-        JOB.run(command, inference_log, cwd=addons.root("seedvr2") / "source", env=env)
+        JOB.run(command, inference_log, cwd=addons.root(addon) / "source", env=env)
     except RuntimeError as exc:
         JOB.check()  # Stop must never launch another GPU process.
         attention_index = command.index("--attention_mode") + 1
@@ -177,7 +184,7 @@ def _run_inference(command, output: Path, env: dict, log) -> None:
             "Retrying once with SDPA, the same source, seed and restoration settings.")
         fallback = list(command)
         fallback[attention_index] = "sdpa"
-        JOB.run(fallback, log, cwd=addons.root("seedvr2") / "source", env=env)
+        JOB.run(fallback, log, cwd=addons.root(addon) / "source", env=env)
 
 
 def restore(source, model="3b", resolution=1080, seed=42, log=print,
@@ -192,7 +199,9 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
         raise ValueError("Choose ×2, ×4 or a custom short edge.")
     if attention not in acceleration.MODES:
         raise ValueError("Choose Auto, SDPA, SageAttention 2 or FlashAttention 2.")
-    if strength > 0 and not addons.ready("seedvr2"):
+    addon = addons.seed_addon(model)
+    convrot = model in addons.SEED_CONVROT_MODELS
+    if strength > 0 and not addons.ready(addon):
         raise RuntimeError("Install SeedVR2 using the button in this tab first.")
     is_video = source.suffix.lower() in VIDEOS
     output = sdcpp.unique_output("seedvr2", "mp4" if is_video else "png")
@@ -201,10 +210,10 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
                   is_video=is_video, seed=int(seed))
     env = acceleration.triton_env(
         settings.child_env(settings.generation_gpu_index(settings.load_prefs())),
-        addons.root("seedvr2") / ".venv" / "Lib" / "site-packages")
+        addons.root(addon) / ".venv" / "Lib" / "site-packages")
     # imageio's bundled executable has a versioned name; upstream invokes 'ffmpeg'.
     if is_video and strength > 0:
-        binary_dir = addons.root("seedvr2") / "ffmpeg"
+        binary_dir = addons.root(addon) / "ffmpeg"
         binary_dir.mkdir(parents=True, exist_ok=True)
         binary = binary_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
         if not binary.is_file():
@@ -232,13 +241,23 @@ def restore(source, model="3b", resolution=1080, seed=42, log=print,
             else:
                 _image_detail(staged_source, staged_output, 0, resolution=target)
         else:
-            selected = select_attention(attention, Path(temporary), env, log)
+            if convrot:
+                selected = "sdpa"
+                log("SeedVR2 ConvRot: testing native packed weights on the selected GPU…")
+                JOB.run([addons.python(addon), "-u", settings.ROOT / "scripts" / "tools" / "run_seedvr2_convrot.py",
+                         "--addon-root", addons.root(addon), "--probe", "--precision",
+                         "w4a8" if model.endswith("w4a8") else "int8"], log, env=env)
+            else:
+                selected = select_attention(attention, Path(temporary), env, log)
             # Our GPU check replaces upstream's generic pip suggestion, which
             # neither targets SeedVR2's Python nor checks Windows/GPU compatibility.
             env["SEEDVR2_OPTIMIZATIONS_LOGGED"] = "1"
             command = build_command(staged_source, staged_output, model, target,
                                     is_video=is_video, seed=int(seed), attention=selected)
-            _run_inference(command, staged_output, env, log)
+            if convrot:
+                _run_inference(command, staged_output, env, log, addon=addon)
+            else:
+                _run_inference(command, staged_output, env, log)
         if not staged_output.is_file() or not staged_output.stat().st_size:
             raise RuntimeError("SeedVR2 finished without an output file.")
         if not is_video:

@@ -166,7 +166,7 @@ def generate_views(source, model_id, *, mode="object", description="", size=768,
         raise ValueError("Choose an image model.")
     method = conditioning(model)
     if (auto_describe or method == "description") and not tools.describe_is_installed():
-        raise ValueError("Install Image → prompt before using automatic image description or Ming.")
+        raise ValueError("Install Image → prompt before using automatic image description.")
     views = panorama.OBJECT_VIEWS if mode == "object" else panorama.SCENE_VIEWS
     base_seed = int(seed)
     if base_seed < 0:

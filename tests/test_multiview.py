@@ -76,9 +76,9 @@ class MultiviewTests(unittest.TestCase):
                   (len(self.calls), 50, 100)).save(path)
         return [path]
 
-    def test_all_five_engines_use_their_supported_conditioning_and_defaults(self):
+    def test_all_catalogue_engines_use_their_supported_conditioning_and_defaults(self):
         models = registry.load_base_models(settings.load_prefs())
-        self.assertEqual(len(models), 5)
+        self.assertEqual(len(models), 4)
         with patch.object(mv.gen_engine, "generate", side_effect=self.generate), \
              patch.object(mv.tools, "describe_is_installed", return_value=True), \
              patch.object(mv.tools, "image_to_prompt", return_value=["A red sculptural object."]) as read:
@@ -104,7 +104,7 @@ class MultiviewTests(unittest.TestCase):
                         self.assertIn("manifest.json", zf.namelist())
                         self.assertIn("contact-sheet.jpg", zf.namelist())
                         self.assertEqual(len([n for n in zf.namelist() if n[:2].isdigit()]), 10)
-            self.assertEqual(read.call_count, 1)  # Ming reads once, not ten times
+            read.assert_not_called()
 
     def test_cancel_between_views_keeps_partial_export_and_never_starts_third(self):
         updates = []
@@ -148,12 +148,21 @@ class MultiviewTests(unittest.TestCase):
                     mv.generate_views(self.source, "flux2-klein-9b", job=self.job, **kwargs)
             engine.assert_not_called()
 
-    def test_ming_requires_vision_module_and_never_silently_ignores_the_image(self):
+    def test_automatic_description_requires_captioner_before_generation(self):
         with patch.object(mv.tools, "describe_is_installed", return_value=False), \
              patch.object(mv.gen_engine, "generate") as engine:
             with self.assertRaisesRegex(ValueError, "Install Image"):
-                mv.generate_views(self.source, "ming-image-design", job=self.job)
+                mv.generate_views(self.source, "z-image-turbo", auto_describe=True, job=self.job)
             engine.assert_not_called()
+
+    def test_optional_description_reads_source_once_for_ten_views(self):
+        with patch.object(mv.gen_engine, "generate", side_effect=self.generate), \
+             patch.object(mv.tools, "describe_is_installed", return_value=True), \
+             patch.object(mv.tools, "image_to_prompt", return_value=["A red object."]) as read:
+            result = mv.generate_views(self.source, "z-image-turbo", auto_describe=True, job=self.job)
+        self.assertEqual(len(result.views), 10)
+        read.assert_called_once()
+        self.assertTrue(all("A red object." in call["prompt"] for call in self.calls))
 
     def test_scene_generation_and_reconversion_preserve_order_and_projection(self):
         def generate_scene(**kw):

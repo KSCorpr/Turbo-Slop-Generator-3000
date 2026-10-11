@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings, video
+from .. import downloader, registry, settings
 from ..i18n import t
 
 _AUTO = "__auto__"
@@ -47,103 +47,6 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
             f"<small>{reco}</small>{shared}</div>")
 
 
-def _build_h3_catalog():
-    """Keep video weights separate from image models and their encoder presets."""
-    gr.Markdown("---\n### 🎬 MiniMax H3 · video only\n"
-                "Turbo uses a merged 4-step GGUF for text and first/last "
-                "frames. Ref2VA uses a separate GGUF for 1–3 reference "
-                "images (50 steps). Both modes share the same H3 text "
-                "encoder and video VAE; no audio model is downloaded. "
-                "Weight placement and compute segmentation are automatic.")
-    d, e = video.selected()
-    rd, _ = video.selected(mode="refs")
-
-    def _status():
-        td, te = video.selected()
-        refd, refe = video.selected(mode="refs")
-        turbo = "ready" if video.ready(td, te) else "missing weights"
-        refs = ("ready" if video.ready(refd, refe, mode="refs")
-                else "missing weights")
-        return f"**Turbo:** {turbo} · **References:** {refs}."
-
-    status = gr.Markdown(_status())
-    with gr.Row():
-        diffusion = gr.Dropdown(choices=video.choices("diffusion"), value=d,
-                                label="Turbo diffusion · GGUF")
-        ref_diffusion = gr.Dropdown(choices=video.choices("ref_diffusion"),
-                                    value=rd, label="Ref2VA diffusion · GGUF")
-        encoder = gr.Dropdown(choices=video.choices("text_encoder"), value=e,
-                              label="Shared H3 text encoder · GGUF")
-    gr.Markdown(f"Video VAE · {video.VAE} — {video.VAE_SIZE / 1e9:.2f} GB "
-                "(shared across Turbo and Ref2VA).")
-    with gr.Row():
-        scan = gr.Button("Load exact sizes", size="sm")
-        download = gr.Button("⬇️ Download Turbo", variant="primary")
-        download_refs = gr.Button("⬇️ Download Ref2VA", variant="primary")
-    with gr.Row():
-        delete = gr.Button("🗑️ Delete selected Turbo weights", size="sm")
-        delete_refs = gr.Button("🗑️ Delete selected Ref2VA weights", size="sm")
-    log = gr.Textbox(label="Video weight download log", lines=6,
-                     autoscroll=True, elem_classes="log-box")
-
-    def _scan(current_d, current_rd, current_e):
-        try:
-            ds = video.choices("diffusion", exact=True)
-            rds = video.choices("ref_diffusion", exact=True)
-            es = video.choices("text_encoder", exact=True)
-            return (gr.update(choices=ds, value=current_d),
-                    gr.update(choices=rds, value=current_rd),
-                    gr.update(choices=es, value=current_e),
-                    "Exact file sizes loaded from the repositories.")
-        except Exception as exc:  # noqa: BLE001
-            return gr.update(), gr.update(), gr.update(), f"Cannot load sizes: {exc}"
-
-    scan.click(_scan, inputs=[diffusion, ref_diffusion, encoder],
-               outputs=[diffusion, ref_diffusion, encoder, log])
-
-    def _download(current_d, current_e, mode):
-        lines: list[str] = []
-        try:
-            for message in video.download(current_d, current_e, log=lines.append,
-                                          mode=mode):
-                lines.append(message)
-                yield "\n".join(lines), gr.update()
-            prefs = settings.load_prefs()
-            chosen = prefs.get("video_model_files") or {}
-            if not isinstance(chosen, dict):
-                chosen = {}
-            chosen["diffusion" if mode == "turbo" else "ref_diffusion"] = current_d
-            chosen["text_encoder"] = current_e
-            prefs["video_model_files"] = chosen
-            settings.save_prefs(prefs)
-            yield "\n".join(lines), _status()
-        except Exception as exc:  # noqa: BLE001
-            yield "\n".join(lines + [f"Download failed: {exc}"]), gr.update()
-
-    def _download_turbo(d, e):
-        yield from _download(d, e, "turbo")
-
-    def _download_refs(d, e):
-        yield from _download(d, e, "refs")
-
-    download.click(_download_turbo,
-                   inputs=[diffusion, encoder], outputs=[log, status])
-    download_refs.click(_download_refs,
-                        inputs=[ref_diffusion, encoder], outputs=[log, status])
-
-    def _delete(current_d, current_e, mode):
-        try:
-            count = video.delete(current_d, current_e, mode=mode)
-            return (f"Deleted {count} selected file(s); shared weights "
-                    "are kept while another H3 diffusion weight is installed.",
-                    _status())
-        except (ValueError, OSError) as exc:
-            return f"Delete failed: {exc}", gr.update()
-
-    delete.click(lambda d, e: _delete(d, e, "turbo"),
-                 inputs=[diffusion, encoder], outputs=[log, status])
-    delete_refs.click(lambda d, e: _delete(d, e, "refs"),
-                      inputs=[ref_diffusion, encoder], outputs=[log, status])
 
 
 def build_library_tab():
@@ -157,7 +60,7 @@ def build_library_tab():
             "repo doesn't offer it, the closest available quant **below** it "
             "is downloaded (to fit your VRAM) — shown in the log and flagged "
             "after the download. Text encoders are reused when a compatible "
-            "weight is already installed. Flux, Qwen Image, Ming Image, Krea and Z-Image "
+            "weight is already installed. Flux, Qwen Image Turbo, Krea and Z-Image "
             "require different encoder weights, which cannot be combined.")
 
         prefs = settings.load_prefs()
@@ -275,7 +178,6 @@ def build_library_tab():
 
         refresh.click(refresh_cards, outputs=cards)
 
-        _build_h3_catalog()
 
         gr.Markdown(
             "---\n*The tools (depth, background removal, SAM, prompt "

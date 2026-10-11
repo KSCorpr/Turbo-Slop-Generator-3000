@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
-Onglets : Génération (Flux.2 Klein 9B / Qwen Image 2.1 / Ming Image /
+Onglets : Génération (Flux.2 Klein 9B / Qwen Image 2.1 Turbo /
 Krea 2 Turbo / Z-Image,
 GGUF) · Xanax (style figé) ·
 Catalogue de modèles ·
@@ -219,7 +219,6 @@ from atelier.ui.theme import CSS, SHORTCUTS, theme
 from atelier.ui.history_tab import build_history_tab
 from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
-from atelier.ui.video_tab import build_video_tab
 from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
 from atelier.ui.multiview_tab import build_multiview_tab
 from atelier.ui.xanax_tab import build_xanax_tab
@@ -319,12 +318,8 @@ def build_app() -> gr.Blocks:
                         "flux2-klein-9b", "Flux.2 Klein",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["qwen-image-2.1"] = build_generative_tab(
-                        "qwen-image-2.1", "Qwen Image 2.1",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["ming-image-design"] = build_generative_tab(
-                        "ming-image-design", "Ming Image",
+                    prompt_boxes["qwen-image-2.1-turbo"] = build_generative_tab(
+                        "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["krea2-turbo"] = build_generative_tab(
@@ -342,9 +337,8 @@ def build_app() -> gr.Blocks:
                     # onglet pour les deux modèles — ils partagent tout sauf le moteur.
                     build_xanax_tab("Xanax")
 
-            with gr.Tab("Video", id="h3-video"):
+            with gr.Tab("Video", id="video"):
                 with gr.Tabs():
-                    build_video_tab()
                     build_ltx25_tab()
 
             # « Outils » : tout ce qui part d'une image existante. Les envois

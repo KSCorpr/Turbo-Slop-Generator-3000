@@ -106,8 +106,8 @@ def build_multiview_tab():
                                          info="Krea / Z-Image only. High values allow bigger angle changes but reduce fidelity.")
                     seed = gr.Number(value=-1, precision=0, label="Seed (-1 = random)")
                     describe = gr.Checkbox(value=False, label="Read the source with the local vision model",
-                                           info="Always used for Ming. Adds a description; it does not turn a text-only engine into an image editor.")
-                    install = gr.Button("Install Image → prompt (needed for Ming)", size="sm")
+                                           info="Adds a description of the source to the view instructions.")
+                    install = gr.Button("Install Image → prompt", size="sm")
                 with gr.Row():
                     run = gr.Button("Generate 10 views", variant="primary")
                     stop = gr.Button("Stop views", variant="stop")

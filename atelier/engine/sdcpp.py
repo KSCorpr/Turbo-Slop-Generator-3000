@@ -87,7 +87,7 @@ class GenRequest:
     vae: Path | None = None
     model_path: Path | None = None        # checkpoint complet -> -m
     text_encoder: Path | None = None       # --llm (modèles à encodeur LLM)
-    tokenizer: Path | None = None          # --tokenizer (Ling / Ming Image)
+    tokenizer: Path | None = None          # --tokenizer
     # --llm_vision : projecteur vision (mmproj) de l'encodeur — permet à
     # Qwen3-VL de « voir » l'image de référence (Qwen 2.1 / Krea 2 Edit).
     llm_vision: Path | None = None
@@ -115,7 +115,7 @@ class GenRequest:
     ref_image: "Path | list[Path] | None" = None
     lora_dir: Path | None = None       # --lora-model-dir
     preview_path: Path | None = None   # aperçu temps réel (--preview-path)
-    preview_method: str = "proj"       # Ming RGBA utilise "vae" si besoin
+    preview_method: str = "proj"       # projection légère pour l'aperçu par pas
     preview_interval: int = 1          # une image par pas
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None

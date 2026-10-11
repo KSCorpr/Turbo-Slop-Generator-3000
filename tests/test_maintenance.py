@@ -116,6 +116,12 @@ class RealProjectTests(unittest.TestCase):
                   if M._still_in_service(rel)]
         self.assertEqual(living, [], "REMOVED_FEATURES vise du code vivant")
 
+    def test_live_media_runtimes_and_shared_seed_models_are_never_orphans(self):
+        self.assertTrue({"seedvr2", "seedvr2-convrot", "splat"}.issubset(M._known_addon_dirs()))
+        retired_dirs = {rel for feature in M.REMOVED_FEATURES for rel in feature["dirs"]}
+        self.assertNotIn("tools_repo/seedvr2", retired_dirs)
+        self.assertNotIn("tools_repo/seedvr2-convrot", retired_dirs)
+
     def test_every_engine_module_is_reachable(self):
         """Aucun module du paquet moteur ne doit passer pour orphelin.
 

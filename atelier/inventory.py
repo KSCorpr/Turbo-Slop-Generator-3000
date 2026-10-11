@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import registry, settings, video
+from . import addons, registry, settings
 from .engine import tools, trellis
 
 
@@ -114,6 +114,11 @@ def items(prefs: dict | None = None) -> list[Item]:
         "engine_trellis", "trellis.cpp engine (image → 3D)", "Engines",
         [trellis.TRELLIS_BIN_DIR],
         note="Reinstallable: the “Image → 3D” tab."))
+    for name, label in (("seedvr2", "SeedVR2 classic"), ("seedvr2-convrot", "SeedVR2 ConvRot")):
+        folder = addons.root(name)
+        out.append(Item(f"engine_{name}", f"{label} runtime", "Engines",
+                        [folder / part for part in (".venv", "source", "comfy", "installed.json", "ffmpeg")],
+                        note="Reinstallable: SeedVR2 → Install / repair."))
 
     # --- Modèles du catalogue ---------------------------------------------
     # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (variantes
@@ -146,18 +151,13 @@ def items(prefs: dict | None = None) -> list[Item]:
                              "them removes them all. Downloadable again: "
                              "Model catalog.")
 
-    # Both video diffusion modes share an encoder and VAE; count all repositories.
-    out.append(Item(
-        "model_minimax_h3_turbo", "Model — MiniMax H3 Turbo / Ref2VA (video)", "Models",
-        [settings.model_repo_dir(repo) for repo in
-         (video.DIFFUSION_REPO, video.ENCODER_REPO, video.VAE_REPO)],
-        note="Deletes all H3 weight variants in these repositories. "
-             "Downloadable again: Model catalog."))
-
     # --- Autres modèles ----------------------------------------------------
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Models",
                     [registry.upscalers_dir()],
-                    note="Reinstallable: Toolkit → Enlarge."))
+                    note="Optional pre-upscalers used inside Toolkit → SDXL creative upscale."))
+    out.append(Item("seedvr2_models", "SeedVR2 weights (shared classic / ConvRot)", "Models",
+                    [addons.root("seedvr2") / "models"],
+                    note="Downloads on first restoration. Both runtimes share this cache."))
     out.append(Item("trellis_models", "TRELLIS.2 / Pixal3D weights (GGUF)",
                     "Models", [trellis.MODELS_DIR],
                     note="Reinstallable: the “Image → 3D” tab."))

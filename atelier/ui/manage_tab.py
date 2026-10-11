@@ -305,7 +305,7 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         gr.Markdown("---\n### 📖 Help — what does each option do?")
 
-        with gr.Accordion("🎨 Generation tabs (Flux.2 / Qwen / Ming / Krea / Z-Image)",
+        with gr.Accordion("🎨 Generation tabs (Flux.2 / Qwen Turbo / Krea / Z-Image)",
                           open=False):
             gr.Markdown(
                 "**Prompt** — your description. On an **editing model** "
