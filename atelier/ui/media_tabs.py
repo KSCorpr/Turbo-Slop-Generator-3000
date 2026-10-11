@@ -11,7 +11,7 @@ import gradio as gr
 from PIL import Image, ImageOps
 
 from .. import addons, settings, seedvr2_acceleration as acceleration
-from ..engine import seedvr2, ltx25, splat
+from ..engine import seedvr2, ltx25, splat, video
 from . import widgets
 
 
@@ -61,15 +61,19 @@ def stream_task(action):
         yield "Completed.", path, "\n".join(lines)
 
 
-def install_action(name, job, log, quant=None, *, optimizations=False):
+def install_action(name, job, log, quant=None, *, optimizations=False, precision=None):
     command = [sys.executable, "-u", str(settings.ROOT / "scripts" / "setup_media.py"), name]
     if quant:
         command += ["--quant", quant]
     if optimizations:
         command += ["--optimizations"]
+    if precision:
+        command += ["--precision", precision]
     env = acceleration.triton_env(
         settings.child_env(settings.generation_gpu_index(settings.load_prefs())),
-        addons.root("seedvr2") / ".venv" / "Lib" / "site-packages") if name == "seedvr2" else None
+        addons.root(name) / ".venv" / "Lib" / "site-packages") if name.startswith("seedvr2") else None
+    if name == "seedvr2-convrot":
+        env["PYTHONPATH"] = str(settings.ROOT)
     with job.session():
         job.run(command, log, env=env)
 
@@ -124,18 +128,18 @@ def seed_size_controls(path, scale, resolution):
 def build_seedvr2_tab():
     with gr.Tab("SeedVR2 upscale", id="seedvr2"):
         gr.Markdown("### Restore images and videos\n"
-                    "AI restoration with a memory-saving 11–12 GB preset. "
+                    "ConvRot W4A8 / INT8 restoration for RTX GPUs, using the standard loader. "
                     "Details can be reconstructed or changed. Compare fine structures at 100%. "
                     "The first AI restoration downloads the selected model and VAE. "
                     "The source preview appears on import; the restored result appears "
                     "after processing. SeedVR2 does not provide a per-step image preview.")
         with gr.Row():
             install = gr.Button("Install / repair SeedVR2", size="sm")
-            optimize = gr.Button("Install optimizations", size="sm")
-            gr.Markdown("Installed." if addons.ready("seedvr2") else "AI restoration requires installation once.")
-        gr.Markdown("Optional Windows acceleration: installs attention packages for the selected GPU. "
+            optimize = gr.Button("Install optimizations", size="sm", visible=False)
+            installed = gr.Markdown("Installed." if addons.ready("seedvr2-convrot") else "Install the selected model's engine once.")
+        classic_help = gr.Markdown("Optional Windows acceleration: installs attention packages for the selected GPU. "
                     "Auto tests them before use and falls back to SDPA if unavailable. "
-                    "Turing support is experimental; GTX 10xx uses SDPA.")
+                    "Turing support is experimental; GTX 10xx uses SDPA.", visible=False)
         with gr.Row():
             with gr.Column():
                 source = gr.File(label="Image or video", type="filepath",
@@ -146,14 +150,26 @@ def build_seedvr2_tab():
                                           buttons=widgets.IMAGE_VIEW_ONLY,
                                           elem_id="seedvr2-source-preview")
                 source_info = gr.Markdown(elem_id="seedvr2-source-info")
-                model = gr.Dropdown([("3B · balanced · Q8", "3b"),
-                                     ("7B · quality · Q4 · slower", "7b")],
-                                    value="3b", label="Restoration model")
+                model = gr.Dropdown([
+                    ("3B · ConvRot W4A8 · RTX · ~2 GB weights", "3b-w4a8"),
+                    ("3B · ConvRot INT8 · RTX · ~3.5 GB weights", "3b-int8"),
+                    ("7B · ConvRot W4A8 · RTX · ~4.8 GB weights", "7b-w4a8"),
+                    ("7B Sharp · ConvRot W4A8 · RTX", "7b-sharp-w4a8"),
+                    ("7B · ConvRot INT8 · RTX · more offloading", "7b-int8"),
+                    ("7B Sharp · ConvRot INT8 · RTX", "7b-sharp-int8"),
+                    ("Classic 3B · GGUF Q8 · GTX compatible", "3b"),
+                    ("Classic 7B · GGUF Q4 · GTX compatible", "7b")],
+                    value="3b-w4a8", label="Restoration model", elem_id="seedvr2-model")
                 attention = gr.Dropdown([("Auto · check selected GPU", "auto"),
                                          ("SDPA · PyTorch", "sdpa"),
                                          ("SageAttention 2", "sageattn_2"),
                                          ("FlashAttention 2", "flash_attn_2")],
-                                        value="auto", label="Attention", elem_id="seedvr2-attention")
+                                        value="auto", label="Attention", visible=False, elem_id="seedvr2-attention")
+                def engine_status(selected):
+                    classic = selected in addons.SEED_MODELS
+                    return ("Installed." if addons.ready(addons.seed_addon(selected)) else "Install the selected model's engine once.",
+                            gr.update(visible=classic), gr.update(visible=classic), gr.update(visible=classic))
+                model.change(engine_status, inputs=model, outputs=[installed, attention, optimize, classic_help], queue=False)
                 scale = gr.Radio([("×2", "2"), ("×4", "4"), ("Custom", "custom")],
                                  value="2", label="Upscale size", elem_id="seedvr2-scale")
                 with gr.Group(visible=False, elem_id="seedvr2-custom-size") as custom_size:
@@ -189,11 +205,13 @@ def build_seedvr2_tab():
         resolution.change(lambda path, scale, pixels: seed_size_controls(path, scale, pixels)[1],
                           inputs=[source, scale, resolution], outputs=size_info, queue=False)
 
-        def install_seed():
-            for state, _, text in stream_task(lambda report: install_action("seedvr2", seedvr2.JOB, report)):
-                yield state, text
+        def install_seed(selected):
+            addon = addons.seed_addon(selected)
+            precision = ("w4a8" if selected.endswith("w4a8") else "int8") if addon == "seedvr2-convrot" else None
+            for state, _, text in stream_task(lambda report: install_action(addon, seedvr2.JOB, report, precision=precision)):
+                yield state, text, ("Installed." if addons.ready(addon) else "Install the selected model's engine once.")
 
-        install.click(install_seed, outputs=[status, log], **widgets.GPU_QUEUE)
+        install.click(install_seed, inputs=model, outputs=[status, log, installed], **widgets.GPU_QUEUE)
 
         def install_optimizations():
             for state, _, text in stream_task(lambda report: install_action(
@@ -252,6 +270,23 @@ def build_ltx25_tab():
                 download = gr.File(label="Download MP4", interactive=False)
         status = gr.Markdown()
         log = gr.Textbox(label="Progress", lines=8, autoscroll=True)
+        with gr.Accordion("Recover a saved AVI", open=False):
+            gr.Markdown("If MP4 conversion failed, recover the completed video without generating it again.")
+            saved_avi = gr.Dropdown(choices=[], label="Saved LTX AVI")
+            with gr.Row():
+                refresh_avi = gr.Button("Refresh AVI list", size="sm")
+                recover_avi = gr.Button("Convert AVI to MP4", size="sm")
+
+        def avi_choices():
+            choices = video.saved_avis()
+            return gr.update(choices=choices, value=choices[0] if choices else None)
+
+        def recover(name):
+            for state, path, text in stream_task(lambda report: video.convert_saved_avi(name, log=report)):
+                yield state, path, path, text
+
+        refresh_avi.click(avi_choices, outputs=saved_avi, queue=False)
+        recover_avi.click(recover, inputs=saved_avi, outputs=[status, result, download, log])
 
         def install_ltx(quant):
             for state, _, text in stream_task(lambda report: install_action("ltx25", ltx25.JOB, report, quant)):

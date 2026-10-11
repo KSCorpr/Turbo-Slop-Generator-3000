@@ -16,7 +16,6 @@ from .sdcpp import GenRequest
 # flags alone cannot distinguish an older binary from one that loads the model.
 QWEN21_MIN_BUILD = 896
 QWEN21_PREVIEW_BUILD = 901
-MING_MIN_BUILD = 924
 
 
 def _check_qwen_engine(model: registry.BaseModel,
@@ -42,26 +41,6 @@ def _check_qwen_engine(model: registry.BaseModel,
             "on Linux/Mac) to update the engine.")
 
 
-def _check_ming_engine(model: registry.BaseModel, sd_cli: Path) -> None:
-    if model.family != "ming_image":
-        return
-    manifest = settings.BIN_DIR / "engine-manifest.json"
-    try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        tag = data.get("tag") if isinstance(data, dict) else None
-    except (OSError, ValueError, TypeError):
-        tag = None  # moteur installé manuellement : vérifier au moins le flag
-    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
-        if isinstance(tag, str) else None
-    if match and int(match.group(1)) < MING_MIN_BUILD:
-        raise sdcpp.EngineError(
-            f"Ming Image needs sd.cpp build {MING_MIN_BUILD} or newer. "
-            "Run update.bat (or ./update.sh on Linux/Mac).")
-    known = sdcpp.supported_options(sd_cli)
-    if known and "--tokenizer" not in known:
-        raise sdcpp.EngineError(
-            "Ming Image needs an sd.cpp engine with --tokenizer. "
-            "Run update.bat (or ./update.sh on Linux/Mac).")
 
 
 def cancel() -> str:
@@ -322,6 +301,11 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
+    if model.id == "qwen-image-2.1-turbo":
+        if steps not in (0, 8):
+            raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
+        if "--sigmas" not in sdcpp.supported_options(sd_cli):
+            raise sdcpp.EngineError("Qwen Image 2.1 Turbo needs sd.cpp with --sigmas. Run update.bat.")
     files = resolve_model_files(model)
     d = dict(model.defaults)
     automatic = prefs.get("system_mode") == "auto"
@@ -377,6 +361,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
         cmd += ["-n", req.negative]
     if req.schedule:
         cmd += ["--scheduler", req.schedule]
+    cmd += d.get("extra_flags", [])
     cmd += sdcpp.memory_args(sd_cli, req)
     if extra:
         cmd += ["--extra-ad-args",
@@ -436,7 +421,12 @@ def generate(
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     _check_qwen_engine(model, preview_path)
-    _check_ming_engine(model, sd_cli)
+    if model.id == "qwen-image-2.1-turbo":
+        if "--sigmas" not in sdcpp.supported_options(sd_cli):
+            raise sdcpp.EngineError("Qwen Image 2.1 Turbo needs sd.cpp with --sigmas. Run update.bat.")
+        if (steps != 8 or cfg_scale != 1.0 or sampler not in (None, "", "euler")
+                or schedule not in (None, "", "auto") or flow_shift):
+            raise sdcpp.EngineError("Use the official Qwen Turbo preset: 8 steps, CFG 1, Euler, Auto schedule and no flow shift.")
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image))
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
@@ -535,7 +525,7 @@ def generate(
         lora_dir=lora_dir, preview_path=preview_path,
         # Depuis la build 901, sd.cpp projette aussi les 64 canaux RGBA de
         # Qwen 2.1. La projection légère autorise l'aperçu à CHAQUE pas.
-        preview_method="vae" if model.family == "ming_image" else "proj",
+        preview_method="proj",
         preview_interval=1,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,

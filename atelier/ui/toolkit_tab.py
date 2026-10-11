@@ -1,4 +1,4 @@
-"""Onglet Toolkit : profondeur, détourage, SAM et upscale ESRGAN."""
+"""Toolkit utilities, face/detail repair and SDXL creative upscaling."""
 from __future__ import annotations
 
 import queue
@@ -142,7 +142,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
         gr.Markdown(
             "### Utility tools\n**Depth** map, **background removal** "
             "(transparent PNG), **click-to-cutout** (Segment Anything) and "
-            "**ESRGAN upscale** (simple, 100% GPU).")
+            "**SDXL upscale** (tile-by-tile refinement).")
 
         with gr.Tabs() as sub_tabs:
             # ---------- Image -> prompt ----------
@@ -436,166 +436,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
 
-            # ---------- Agrandir (ESRGAN, sd.cpp) ----------
-            with gr.Tab("🔼 Upscale", id="esrgan"):
-                gr.Markdown(
-                    "**Plain, deterministic** enlargement — no prompt, no diffusion, no "
-                    "seed: the same image always gives exactly the same "
-                    "result. That is what separates it from a *creative* "
-                    "upscale, whose “painted” look is not a setting gone "
-                    "wrong but how it works.\n\n⚙️ **Two engines, one "
-                    "list.** A `.gguf` model runs on **sd.cpp** (100% GPU, no "
-                    "PyTorch). Anything else runs on **spandrel**, which "
-                    "reads 42 architectures — DAT, SPAN, PLKSR, ATD, HAT, "
-                    "SwinIR… sd.cpp implements exactly **one**, RRDBNet "
-                    "(ESRGAN, 2018), so every GGUF here is that same 2018 "
-                    "network. Its halo on crisp lines is not a setting you "
-                    "have not found yet — it is what that architecture "
-                    "does.\n\n🎨 **Comics, illustration, line art**: "
-                    "pick a model marked **drawing / anime**. Photo models "
-                    "(Remacri, Nomos, UltraSharp…) are trained on natural "
-                    "textures: on a flat colour area they invent grain, and "
-                    "along a crisp line they lay down a halo. That is what "
-                    "“horrible interpolation” looks like.\n\n📥 **Adding your "
-                    "own models**: drop a `.pth`, `.safetensors` or `.gguf` "
-                    "file into the upscalers folder, then “↻ Refresh”. sd.cpp "
-                    "reads most `.pth` files directly — so the whole "
-                    "[OpenModelDB](https://openmodeldb.info) catalog is "
-                    "usable; filter it on *anime* / *manga* / *cartoon*. GGUF "
-                    "loads faster and avoids executing a pickle, but it is "
-                    "not required.")
-
-                with gr.Accordion("⬇️ Download the upscalers (1 click)",
-                                  open=not registry.upscalers_ready()):
-                    gr.Markdown(
-                        "**GGUF pack (sd.cpp)** — fetches **all** the ESRGAN "
-                        "models (~1 GB total) from "
-                        "`wbruna/upscalers-sdcpp-gguf`. Runs without PyTorch, "
-                        "and every one of them is the same 2018 "
-                        "architecture.\n\n**Modern pack (spandrel)** — six "
-                        "models on six *different* architectures (DAT, "
-                        "RealPLKSR, ATD, SPAN, Compact, SwinIR), ~450 MB "
-                        "total, by Philip Hofmann, all **CC-BY-4.0 so "
-                        "commercial use is allowed with attribution**. They "
-                        "install their dependencies automatically on first use; "
-                        "progress appears in the upscale log. Start with the SPAN 2x — it "
-                        "is 9 MB and the fastest way to see the difference on "
-                        "your own images.")
-                    u_inst_log = gr.Textbox(label="Download log",
-                                            lines=8, autoscroll=True,
-                                            elem_classes="log-box")
-                    with gr.Row():
-                        u_inst = gr.Button("⬇️ GGUF pack (sd.cpp, ~1 GB)")
-                        u_inst_modern = gr.Button(
-                            "⬇️ Modern pack (spandrel, ~450 MB)",
-                            variant="primary")
-
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        u_image = gr.Image(
-                            label="Image to upscale", type="pil",
-                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        u_model = gr.Dropdown(
-                            registry.upscaler_choices(),
-                            value=registry.default_upscaler(),
-                            label="Upscale model (×2 / ×4 by name)",
-                            info="🎨 = trained for DRAWINGS (crisp linework, "
-                                 "clean flat colours) · 📷 = photo. On a "
-                                 "comics page, a photo model smears and lays "
-                                 "down halos.")
-                        u_repeats = gr.Radio(
-                            [("×1 (native)", 1), ("Repeat ×2", 2)],
-                            value=1, label="Repeat",
-                            info="⚠️ Repeating runs the network on its OWN "
-                                 "output: it mistakes the high frequencies it "
-                                 "just invented for real detail and "
-                                 "re-emphasizes them. That is what produces "
-                                 "the staircase on diagonals. A ×4 model "
-                                 "always beats a repeated ×2.")
-                        with gr.Row():
-                            u_refresh = gr.Button("↻ Refresh list", size="sm")
-                            u_run = gr.Button("🔼 Upscale", variant="primary",
-                                              size="lg", scale=2)
-                        u_stop = gr.Button("⏹️ Cancel", variant="stop", size="sm")
-                    with gr.Column(scale=4):
-                        u_result = gr.Image(
-                            label="Result (full resolution in outputs/)",
-                            height=520, format="png",
-                            buttons=widgets.IMAGE_BUTTONS)
-                        u_to_face = gr.Button("→ 🙂 Fix the faces",
-                                              size="sm")
-                        u_log = gr.Textbox(label="Log", lines=10,
-                                           autoscroll=True, elem_classes="log-box")
-
-                def _install_upscalers():
-                    lines: list[str] = []
-                    for msg in downloader.download_upscalers(log=lines.append):
-                        lines.append(msg)
-                        yield "\n".join(lines), gr.update()
-                    yield ("\n".join(lines),
-                           gr.update(choices=registry.upscaler_choices(),
-                                     value=registry.default_upscaler()))
-
-                u_inst.click(_install_upscalers, outputs=[u_inst_log, u_model])
-
-                def _install_modern():
-                    lines: list[str] = []
-                    for msg in downloader.download_modern_upscalers(
-                            log=lines.append):
-                        lines.append(msg)
-                        yield "\n".join(lines), gr.update()
-                    yield ("\n".join(lines),
-                           gr.update(choices=registry.upscaler_choices(),
-                                     value=registry.default_upscaler()))
-
-                u_inst_modern.click(_install_modern,
-                                    outputs=[u_inst_log, u_model])
-
-                def _refresh_upscalers():
-                    return gr.update(choices=registry.upscaler_choices(),
-                                     value=registry.default_upscaler())
-
-                u_refresh.click(_refresh_upscalers, outputs=[u_model])
-
-                def do_upscale(img, model, repeats, progress=gr.Progress()):
-                    if img is None:
-                        raise gr.Error(t("Provide an image."))
-                    if not model:
-                        raise gr.Error(t("Choose an upscale model (download "
-                                         "them first)."))
-                    logs: list[str] = []
-                    progress(0.1, desc="Upscaling…")
-                    engine = registry.upscaler_engine(model)
-                    try:
-                        if engine == "spandrel":
-                            # Le facteur vient du modèle : « Repeat » n'a pas
-                            # de sens ici, et l'enchaînement est justement ce
-                            # qui fabrique les escaliers sur les diagonales.
-                            if int(repeats) > 1:
-                                logs.append(
-                                    "[upscale] “Repeat” is ignored for a "
-                                    "modern model: chaining a network over "
-                                    "its own output is what creates the "
-                                    "staircase. Pick a ×4 model instead.")
-                            out = tools.modern_upscale(img, model,
-                                                       log=logs.append)
-                        else:
-                            out = gen_engine.upscale_image(
-                                img, model, repeats=int(repeats),
-                                log=logs.append)
-                    except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERROR] {exc}")
-                        return None, "\n".join(logs)
-                    progress(1.0, desc="Done")
-                    logs.append(f"\n✅ Upscaled: {out}")
-                    return str(out), "\n".join(logs)
-
-                u_evt = u_run.click(do_upscale,
-                                    inputs=[u_image, u_model, u_repeats],
-                                    outputs=[u_result, u_log], **widgets.GPU_QUEUE)
-                widgets.stop_into_log(u_stop, gen_engine.cancel, u_log,
-                                      [u_evt])
-
             # ---------- Décomposition en calques (PSD) ----------------------
             with gr.Tab("🧩 Layers", id="layers"):
                 gr.Markdown(
@@ -803,235 +643,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 widgets.stop_into_log(lay_stop, tools.cancel, lay_log,
                                       [lay_evt])
 
-            # ---------- HD natif sd.cpp (highres fix) -----------------------
-            with gr.Tab("🚀 HD", id="hd"):
-                gr.Markdown(
-                    "**Native sd.cpp HD pass**: the image is enlarged, then "
-                    "**re-denoised as a whole** by your generation model "
-                    "(Krea 2, Flux.2). All in **a single command**, 100% GPU, "
-                    "no PyTorch.\n\nTwo fundamental differences from the "
-                    "creative SDXL upscale:\n- **no tiling at all** — the "
-                    "second pass sees the whole image, so there is no seam "
-                    "*possible*, and no mismatch between neighbouring "
-                    "squares;\n- **your model** does the redrawing, not a "
-                    "2023 SDXL: the added detail stays in the style the model "
-                    "already knows.\n\nIn exchange, **it is VRAM-hungry**: "
-                    "refusing to tile has a price. The second pass allocates "
-                    "a buffer proportional to the pixel count, **on top of "
-                    "the model weights** already on the card. The factor is "
-                    "therefore budgeted from your VRAM and your model's size, "
-                    "and lowered on its own if it does not fit — the log "
-                    "states the value it settled on. On 11–12 GB with a Q5 "
-                    "model, expect ×1.25 to ×1.5; a lighter quantization buys "
-                    "factor.")
-
-                _hd_models = [(m.name, m.id)
-                              for m in registry.load_base_models(
-                                  settings.load_prefs())
-                              if registry.model_is_ready(m)
-                              and m.defaults.get("supports_img2img", True)]
-                if not _hd_models:
-                    gr.Markdown(
-                        "> ⚠️ **No generation model installed.** Download "
-                        "Krea 2 Turbo or Flux.2 Klein from the “Model "
-                        "catalog” tab, then come back here.")
-
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        hd_image = gr.Image(label="Image to take to HD",
-                                            type="pil",
-                                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        hd_model = gr.Dropdown(
-                            choices=_hd_models,
-                            value=(_hd_models[0][1] if _hd_models else None),
-                            label="Generation model")
-                        hd_scale = gr.Slider(
-                            1.25, 3.0, value=2.0, step=0.25,
-                            label="Enlargement factor",
-                            info="The final side is capped: beyond it the "
-                                 "factor is reduced automatically and the log "
-                                 "states the value it settled on.")
-                        hd_denoise = gr.Slider(
-                            0.15, 0.70, value=0.40, step=0.05,
-                            label="Added detail (HD pass denoise)",
-                            info="The ONLY setting that really matters. 0.2 = "
-                                 "stays very close to the original; 0.5+ = "
-                                 "the model frankly reinvents the material.")
-                        _hd_ups = registry.list_upscalers()
-                        hd_upscaler = gr.Dropdown(
-                            choices=[("Lanczos (default — neutral)", "Lanczos")]
-                                    + [(f"{u}", u) for u in _hd_ups],
-                            value="Lanczos",
-                            label="Intermediate enlargement",
-                            info="What enlarges BEFORE the second denoise. "
-                                 "Lanczos is neutral and honest; an upscaler "
-                                 "model gives an already-crisp base (useful "
-                                 "on line art), at the risk of freezing its "
-                                 "own flaws.")
-                        hd_prompt = gr.Textbox(
-                            label="Description (optional)", lines=2,
-                            placeholder="what the image shows, in a few words",
-                            info="Guides the added detail. Empty works very "
-                                 "well: the model starts from the image.")
-                        hd_seed = gr.Number(value=-1, precision=0,
-                                            label="Seed (-1 = random)")
-                        with gr.Row():
-                            hd_run = gr.Button("🚀 Take to HD",
-                                               variant="primary", size="lg",
-                                               scale=2)
-                            hd_stop = gr.Button("⏹️ Cancel", variant="stop",
-                                                size="sm")
-                    with gr.Column(scale=4):
-                        hd_result = gr.Image(
-                            label="Live preview (full resolution in outputs/)", height=520, format="png",
-                            buttons=widgets.IMAGE_BUTTONS)
-                        hd_log = gr.Textbox(label="Log", lines=12,
-                                            autoscroll=True,
-                                            elem_classes="log-box")
-
-                def do_hd(img, model_id, scale, denoise, upscaler, prompt,
-                          seed_v, progress=gr.Progress()):
-                    if img is None:
-                        raise gr.Error(t("Provide an image."))
-                    if not model_id:
-                        raise gr.Error(t("No generation model installed: "
-                                         "download one from the “Model "
-                                         "catalog” tab."))
-                    logs: list[str] = []
-                    settings.ensure_dirs()
-                    preview = settings.TMP_DIR / "hd_preview.png"
-                    try:
-                        seed_i = int(seed_v)
-                    except (TypeError, ValueError):
-                        seed_i = -1
-                    progress(0.1, desc="HD pass…")
-                    try:
-                        outs = gen_engine.hd_upscale(
-                            model_id, img, scale=float(scale),
-                            upscaler=upscaler, denoise=float(denoise),
-                            prompt=prompt or "", seed=seed_i,
-                            preview_path=preview, log=logs.append)
-                    except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERROR] {exc}")
-                        return None, "\n".join(logs)
-                    if not outs:
-                        logs.append("\n[ERROR] no image produced.")
-                        return None, "\n".join(logs)
-                    progress(1.0, desc="Done")
-                    logs.append(f"\n✅ Image HD : {outs[0]}")
-                    return str(outs[0]), "\n".join(logs)
-
-                hd_evt = hd_run.click(
-                    do_hd,
-                    inputs=[hd_image, hd_model, hd_scale, hd_denoise,
-                            hd_upscaler, hd_prompt, hd_seed],
-                    outputs=[hd_result, hd_log], **widgets.GPU_QUEUE)
-                widgets.stop_into_log(hd_stop, gen_engine.cancel, hd_log,
-                                      [hd_evt])
-
-            # ---------- Haute résolution (Flux.2 en référence + départ) ------
-            with gr.Tab("🔍 High resolution", id="highres"):
-                gr.Markdown(
-                    "The image is **run back through Flux.2 at its native "
-                    "resolution**, serving as both the **reference** and the "
-                    "**starting point**. Three details make all the "
-                    "difference, and none of them is obvious:\n- we ask for "
-                    "“**high resolution**”, not “upscale”: in the training "
-                    "captions, *upscaled* labels images that really were "
-                    "upscaled — and therefore carry the very artifacts we "
-                    "want to avoid;\n- the pre-enlargement is **bilinear**, "
-                    "deliberately bland: Lanczos adds ringing that the model "
-                    "reads back as detail and amplifies;\n- the same image "
-                    "serves as the **reference** (the content) **and** as the "
-                    "**starting latent** (the structure).\n\n⚠️ **This is not "
-                    "a restoration.** At a high denoise the model REDRAWS: "
-                    "what is preserved is plausibility, not fidelity. To keep "
-                    "a face the same person, use a **modern upscaler** "
-                    "(🔼 Enlarge) followed by **🙂 Faces** instead — neither "
-                    "redraws what it does not need to.")
-
-                _hr_models = highres.edit_models()
-                if not _hr_models:
-                    gr.Markdown(
-                        "> ⚠️ **No editing model installed.** This method "
-                        "needs a model that accepts a reference image (Flux.2 "
-                        "Klein). Download one from the “Model catalog” tab.")
-
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        hr_image = gr.Image(label="Image to upscale", type="pil",
-                                            buttons=widgets.IMAGE_VIEW_ONLY)
-                        hr_model = gr.Dropdown(
-                            choices=_hr_models,
-                            value=(_hr_models[0][1] if _hr_models else None),
-                            label="Editing model")
-                        hr_factor = gr.Slider(
-                            1.0, 3.0, value=2.0, step=0.25,
-                            label="Enlargement factor",
-                            info="Output never goes below 1 MP (Flux.2's own "
-                                 "regime) and never past 3.7 MP — beyond that "
-                                 "the model loses global coherence. Reduced "
-                                 "by itself if the card refuses.")
-                        hr_strength = gr.Slider(
-                            0.4, 0.95, value=0.8, step=0.05,
-                            label="Denoise",
-                            info="0.7–0.9 is the method's range. Lower moves "
-                                 "the image less but gains less detail; "
-                                 "higher makes it a different image.")
-                        hr_prompt = gr.Textbox(
-                            value=highres.DEFAULT_PROMPT,
-                            label="Prompt",
-                            info="The words “high resolution” ARE the method. "
-                                 "Add a description if the image deserves "
-                                 "one.")
-                        hr_colors = gr.Checkbox(
-                            value=True,
-                            label="Give the original its colours back",
-                            info="At high denoise the model washes the image "
-                                 "out. We put the starting colours back "
-                                 "underneath the detail it just added.")
-                        with gr.Row():
-                            hr_run = gr.Button("🔍 Go high resolution",
-                                               variant="primary", size="lg",
-                                               scale=2)
-                            hr_stop = gr.Button("⏹️ Cancel", variant="stop",
-                                                size="sm")
-                    with gr.Column(scale=4):
-                        hr_result = gr.Image(label="Result", height=520,
-                                             format="png",
-                                             buttons=widgets.IMAGE_BUTTONS)
-                        hr_log = gr.Textbox(label="Log", lines=12,
-                                            autoscroll=True,
-                                            elem_classes="log-box")
-
-                def do_highres(img, model_id, factor, strength, prompt,
-                               colors, progress=gr.Progress()):
-                    if img is None:
-                        raise gr.Error(t("Provide an image."))
-                    if not model_id:
-                        raise gr.Error(t("No editing model installed."))
-                    logs: list[str] = []
-                    progress(0.1, desc="High resolution…")
-                    try:
-                        out = highres.high_resolution(
-                            img, model_id=model_id, factor=float(factor),
-                            strength=float(strength), prompt=prompt,
-                            match_colors=bool(colors), log=logs.append)
-                    except Exception as exc:  # noqa: BLE001
-                        logs.append(f"\n[ERROR] {exc}")
-                        return None, "\n".join(logs)
-                    progress(1.0, desc="Done")
-                    logs.append(f"\n✅ Image : {out}")
-                    return str(out), "\n".join(logs)
-
-                hr_evt = hr_run.click(
-                    do_highres,
-                    inputs=[hr_image, hr_model, hr_factor, hr_strength,
-                            hr_prompt, hr_colors],
-                    outputs=[hr_result, hr_log], **widgets.GPU_QUEUE)
-                widgets.stop_into_log(hr_stop, gen_engine.cancel, hr_log,
-                                      [hr_evt])
-
             with gr.Tab("🙂 Faces", id="face"):
                 gr.Markdown(
                     "Rebuilds **faces only**; the rest of the image is left "
@@ -1124,7 +735,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
                 button.click(_go, inputs=[source], outputs=[f_image, sub_tabs])
 
-            _hand_over_to_faces(u_to_face, u_result)
 
             # ---------- Upscale créatif SDXL (tuilé, Ultimate SD Upscale) ----
             with gr.Tab("🖐️ Details", id="adetailer"):
@@ -1393,8 +1003,8 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             done.append(t("⚠️ no **drawing** upscaler "
                                           "installed — the base stays on "
                                           "Lanczos (softer linework). "
-                                          "Download the upscalers from the “🔼 "
-                                          "Upscale” tab."))
+                                          "Use Lanczos or import a drawing model into "
+                                          "the upscalers folder, then refresh."))
                     elif want:
                         esrgan_up = gr.update(value=want)
 
@@ -1555,7 +1165,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
 
         # --- Réception d'une image envoyée depuis un onglet de génération ---
         if pending_toolkit is not None and tabs is not None:
-            _keys = ["depth", "bg", "sam", "esrgan", "creative"]
+            _keys = ["depth", "bg", "sam", "creative"]
 
             def _consume(pend):
                 # +2 sorties fixes : le groupe parent et le sélecteur d'outil.
@@ -1570,6 +1180,6 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                 return tuple([top, sub] + img_upd)
 
             _outs = [parent_tabs if parent_tabs is not None else sub_tabs,
-                     sub_tabs, d_image, b_image, s_image, u_image,
+                     sub_tabs, d_image, b_image, s_image,
                      c_image]
             pending_toolkit.receive(_consume, outputs=_outs)

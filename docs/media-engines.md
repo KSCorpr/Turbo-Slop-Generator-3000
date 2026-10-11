@@ -8,7 +8,8 @@ Le canal de mise à jour suit `main`.
 ### SeedVR2
 
 Ouvrir **Tools & 3D → SeedVR2 upscale**, puis **Install / repair SeedVR2**.
-Importer une image ou une vidéo, choisir 3B (Q8) ou 7B (Q4), sélectionner **×2**
+Choisir **3B ConvRot W4A8** sur RTX (sélection par défaut), ou **Classic 3B /
+7B GGUF** sur GTX 10xx. Importer une image ou une vidéo, sélectionner **×2**
 ou **×4**, régler **Added detail strength (%)**, puis **Restore**.
 Le premier traitement avec une force supérieure à 0 télécharge automatiquement
 le DiT choisi et le VAE.
@@ -43,15 +44,54 @@ sert à varier ou adoucir la reconstruction, pas à régler précisément sa for
 pour ce réglage. Les vidéos à force intermédiaire passent par un mélange FFmpeg
 encodé en H.264, puis la piste audio éventuelle est réattachée en AAC.
 
-Le profil utilise le déchargement CPU, BlockSwap et des tuiles VAE de 512 pixels.
-Sans optimisation installée, **Attention → Auto** utilise l'attention PyTorch
-SDPA. Les vidéos passent par lots de 5 images et segments de
+Les profils utilisent des tuiles VAE de 512 pixels et le déchargement CPU
+entre les étapes. ConvRot emploie SDPA ; les options d'attention additionnelles
+concernent uniquement le runtime classique. Le BlockSwap reste actif pour les
+GGUF classiques et les 7B INT8. W4A8 garde son DiT quantifié sur le GPU. Les vidéos passent par lots de 5 images et segments de
 33 images, avec recouvrement temporel. La piste audio éventuelle est réattachée
 en AAC ; les images restaurées ne sont pas réencodées pendant ce raccord.
 Un modèle génératif peut modifier les petits détails : comparer les résultats
 sur les sources professionnelles, notamment typographie et architecture.
 
-#### Optimisations Windows
+#### ConvRot INT8 / W4A8
+
+Les fichiers proviennent de
+[ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8](https://huggingface.co/ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8).
+Les six variantes 3B / 7B / 7B Sharp en INT8 et W4A8 sont proposées. Le 3B W4A8
+réduit les poids de diffusion à environ 2 Go ; cela ne représente pas la VRAM
+totale du traitement, qui inclut les activations et le VAE.
+
+Ce format nécessite un chargement quantifié natif : remplacer uniquement le nom
+du fichier dans l'ancienne CLI GGUF ne suffit pas. Le runtime dédié utilise la
+CLI du [fork ConvRot](https://github.com/ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT),
+ses opérations comfy.ops et comfy-kitchen, sans serveur ni éditeur de nœuds.
+Il utilise le **chargeur standard** ; W4A8 n'est pas envoyé à DisTorch2.
+Le VAE reste le VAE original en tuiles : aucun moteur TensorRT spécifique à
+une taille d'image n'est requis.
+
+**Install / repair** crée tools_repo/seedvr2-convrot/.venv, épingle le fork et
+ComfyUI à des commits précis, et installe Torch 2.13.0 / torchvision 0.28.0 CUDA
+12.6 avec comfy-kitchen 0.2.37. Il laisse le runtime classique isolé. Les deux
+lisent tools_repo/seedvr2/models afin de partager les poids et le VAE.
+Le bouton utilise le GPU sélectionné dans **System** : choisir la RTX 3060.
+ConvRot exige CUDA et une capacité de calcul d'au moins 7.5. Le GTX 10xx reste
+sur le chemin classique. La génération RTX ne garantit pas que toutes les
+architectures et versions de pilote sont compatibles.
+
+Avant de marquer l'installation comme prête, un test charge des poids INT8 ou
+W4A8 empaquetés et exécute une projection quantifiée sur le GPU. Le même test
+est lancé avant une restauration avec le GPU et la précision sélectionnés.
+Un échec de kernel bloque le traitement avec son diagnostic ; aucun repli
+silencieux qui décompresse tout le DiT en FP16 n'est ajouté.
+
+**Validation limitée :** les commandes, l'isolation des runtimes et les tests
+d'annulation sont vérifiés sans GPU. La qualité, la VRAM maximale et les temps
+de restauration sur une RTX 3060 / 2080 Ti ne sont pas mesurés ici. Le benchmark
+du dépôt amont n'est pas une garantie de gain sur ces cartes. Commencer avec
+3B W4A8, ×2 et une petite image, puis comparer au classique sur la même source,
+la même taille et la même seed.
+
+#### Optimisations Windows du runtime classique
 
 Après l'installation de SeedVR2, cliquer sur **Install optimizations** dans le
 même onglet. Le bouton utilise le GPU choisi dans les réglages du studio et
@@ -141,7 +181,7 @@ Elle produit une vidéo MP4 sans audio et un fichier JSON de paramètres.
 Elle n'utilise pas le décodeur par diffusion, le modèle distilled, les passes DFR,
 les images clés intermédiaires ni les sorties HDR/EXR du pipeline Python LTX.
 Si l'encodage MP4 échoue, l'AVI reste disponible via la récupération de vidéos
-dans l'onglet MiniMax H3.
+dans **Video → LTX 2.5 → Recover a saved AVI**.
 
 ### Capture 3D
 
@@ -181,10 +221,14 @@ outils. Vérifier le GPU annoncé dans le journal, en particulier avec un iGPU.
 
 ## Isolation et versions
 
-- SeedVR2 CLI : `numz/ComfyUI-SeedVR2_VideoUpscaler` au commit
+- SeedVR2 classique : `numz/ComfyUI-SeedVR2_VideoUpscaler` au commit
   `4490bd1f482e026674543386bb2a4d176da245b9`.
 - Environnement SeedVR2 séparé : Python 3.12 géré par uv, Torch 2.7.1 /
   torchvision 0.22.1 CUDA 12.6. Aucune modification du Torch des outils existants.
+- SeedVR2 ConvRot : fork ussoewwin au commit
+  `68191c40d03566608b65d24e97d11dc4389f3a62`, ComfyUI au commit
+  `7f7fd918ed0815c5d5ef2ccfe44bfc8e72cfd217`. Python 3.12 séparé, Torch 2.13.0 /
+  torchvision 0.28.0 CUDA 12.6, comfy-kitchen 0.2.37.
 - COLMAP : wheel `pycolmap==3.12.0`, exécution CPU, environnement séparé.
 - Brush : binaire officiel `v0.3.0`, empreinte SHA-256 vérifiée avant extraction.
 - LTX : modèle `vantagewithai/LTX-2.5-GGUF`, composants `Lightricks/LTX-2.5`,

@@ -90,7 +90,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             "### Extend an image (outpaint)\nEnlarges the canvas in the "
             "directions you pick and lets the model **continue the scene**, "
             "Midjourney-style.\n\n**Use an EDITING model** (Flux.2 Klein or "
-            "Qwen Image 2.1). Only such a model actually *looks* at the image, through "
+            "Qwen Image 2.1 Turbo). Only such a model actually *looks* at the image, through "
             "its vision encoder: it knows what it is continuing. The enlarged "
             "canvas is handed to it as a **reference** along with an "
             "**extension instruction written automatically** — that is what "
@@ -154,7 +154,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                              "duller than the generated surroundings.")
                     steps = gr.Slider(
                         1, 40, value=_defaults(_first)["steps"], step=1,
-                        label="Steps",
+                        label="Steps", interactive=_first != "qwen-image-2.1-turbo",
                         info="Adjusted automatically to the model you pick.")
                     seed = gr.Number(value=-1, precision=0,
                                      label="Seed (-1 = random)")
@@ -175,7 +175,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             if img is None:
                 return ""
             p = op.plan(img.size, (dirs or "").split("|"), float(amt),
-                        multiple=32 if mid == "qwen-image-2.1" else 16)
+                        multiple=32 if mid == "qwen-image-2.1-turbo" else 16)
             return f"**New size:** {op.describe(p)}"
 
         for comp in (image, direction, amount, model):
@@ -195,7 +195,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                         "does not see the image, it gets a noised latent and "
                         "**reinvents** instead of continuing. The result is "
                         "often incoherent. Prefer Flux.2 Klein or Qwen 2.1.")
-            return (gr.update(value=dd["steps"]),
+            return (gr.update(value=dd["steps"], interactive=mid != "qwen-image-2.1-turbo"),
                     gr.update(interactive=not dd["edit"]),
                     gr.update(value="neutral" if dd["edit"] else "edge"),
                     gr.update(value=note))
@@ -210,7 +210,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             if not model_id:
                 raise gr.Error(t("Pick a model."))
             p = op.plan(img.size, (dirs or "").split("|"), float(amt),
-                        multiple=32 if model_id == "qwen-image-2.1" else 16)
+                        multiple=32 if model_id == "qwen-image-2.1-turbo" else 16)
             if not any(p[d] for d in op.DIRECTIONS):
                 raise gr.Error(t("No direction selected."))
 

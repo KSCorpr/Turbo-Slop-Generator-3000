@@ -69,25 +69,24 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
-  - id: qwen-image-2.1
-    name: "Qwen Image 2.1"
+  - id: qwen-image-2.1-turbo
+    name: "Qwen Image 2.1 Turbo"
     family: qwen21
-    tags: [qualité, édition, transparence, texte]
+    tags: [fast, distilled, editing, transparency, text]
     description: >
-      Qwen Image 2.1 en GGUF : génération, édition native avec jusqu'à trois
-      images de référence et sortie PNG transparente sur demande. Encodeur
-      Qwen3-VL-8B en RAM et VAE propre à la version 2.1. Euler, CFG 6 et
-      40 pas selon les exemples officiels ; 1024 px par défaut pour limiter
-      la mémoire sur les cartes 11–12 Go. Les formats 2K sont plus exigeants.
-      Pour l'édition, le projecteur vision doit également être installé.
-      Mettez le moteur sd.cpp à jour avec update.bat. Licence Qwen Research.
+      Official Turbo checkpoint: generation and editing with three references,
+      8 steps, Euler and CFG 1. Official Turbo sigmas are passed to sd.cpp.
+      INT8 ConvRot diffusion (~7.26 GB) by default; BF16 is also selectable.
+      Reuses the installed 2.1 VAE, Qwen3-VL-8B GGUF encoder and vision
+      projector. Starts at 1024 px for 11–12 GB GPUs; 2K uses more memory.
+      A recent sd.cpp engine with --sigmas is required. Qwen Research license.
     sources:
       diffusion:
-        repo: leejet/Qwen-Image-2.1-GGUF
-        match: "qwen_image_2.1-{quant}.gguf"
-        quantizable: true
-        # Ce dépôt utilise Q4_K et Q5_0, pas les variantes K_M du profil auto.
-        quant_map: {Q4_K_M: Q4_K, Q5_K_M: Q5_0}
+        repo: Comfy-Org/Qwen-Image-2.1
+        match: "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
+          - "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors"
       vae:
         repo: Comfy-Org/Qwen-Image-2.1
         match: "vae/qwen_image_2.1_vae_bf16.safetensors"
@@ -100,64 +99,19 @@ base_models:
         match: "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
         optional: true  # text-to-image sans ce fichier ; édition avec -r
     defaults:
-      steps: 40
-      cfg_scale: 6.0
-      sampler: euler
-      scheduler: auto
-      width: 1024
-      height: 1024
-      supports_negative: true
-      edit: full
-    presets:
-      - {name: "Recommandé (40 pas, doc)", sampler: euler, scheduler: auto, steps: 40, cfg_scale: 6.0}
-      - {name: "Essai rapide (28 pas)",     sampler: euler, scheduler: auto, steps: 28, cfg_scale: 6.0}
-    vram_min_gb: 10
-
-  # --------------------------------------------------------------------------
-  - id: ming-image-design
-    name: "Ming Image 0.1 Design"
-    family: ming_image
-    tags: [design, transparence, texte]
-    description: >
-      Ming Image 0.1 Design : illustrations, affiches et compositions avec du
-      texte, sortie PNG RGBA sur demande. 12 pas, Euler, CFG 1. La diffusion
-      INT8 convrot (6,18 Go) est proposée par défaut ; BF16 (12,3 Go) reste
-      disponible. Encodeur Ling-mini-2.0 BF16 (36,7 Go), VAE dédié et
-      tokenizer.json sont indispensables. Prévoir au moins 44 Go sur disque
-      et beaucoup de RAM pour décharger l'encodeur. Le modèle BF16 a été
-      validé en amont sur 80 Gio de VRAM ; les petites cartes ne sont pas
-      garanties. INT8 convrot est accéléré sur CUDA sm_75+ ; autres backends
-      peuvent être nettement plus lents. Nécessite sd.cpp build 924+.
-      Licence MIT.
-    sources:
-      diffusion:
-        repo: Comfy-Org/Ming-Image
-        match: "diffusion_models/ming_image_0.1_design_int8_convrot.safetensors"
-        selectable:
-          - "diffusion_models/ming_image_0.1_design_int8_convrot.safetensors"
-          - "diffusion_models/ming_image_0.1_design_bf16.safetensors"
-      text_encoder:
-        repo: Comfy-Org/Ming-Image
-        match: "text_encoders/ming_image_0.1_ling_mini_2.0_bf16.safetensors"
-      vae:
-        repo: Comfy-Org/Ming-Image
-        match: "vae/ming_image_vae_bf16.safetensors"
-      tokenizer:
-        repo: inclusionAI/Ming-Image-0.1-Design
-        match: "mllm/tokenizer.json"
-    defaults:
-      steps: 12
+      steps: 8
       cfg_scale: 1.0
       sampler: euler
       scheduler: auto
       width: 1024
       height: 1024
       supports_negative: false
-      supports_img2img: false
+      edit: full
+      # Qwen/Qwen-Image-2.1-Turbo/model_index.json; sd.cpp needs terminal zero.
+      extra_flags: ["--sigmas", "1.0,0.978453,0.95418,0.926626,0.89508,0.845148,0.704534,0.414568,0.0"]
     presets:
-      - {name: "Recommandé (12 pas, doc)", sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
-      - {name: "Essai rapide (8 pas)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
-    vram_min_gb: 80
+      - {name: "Official Turbo (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+    vram_min_gb: 10
 
   # --------------------------------------------------------------------------
   - id: krea2-turbo

@@ -142,6 +142,50 @@ def install_seed_optimizations():
               flush=True)
 
 
+def _install_source(repo, commit, target):
+    with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
+        stage = Path(temporary)
+        archive = stage / "source.zip"
+        download(f"https://github.com/{repo}/archive/{commit}.zip", archive)
+        unpack(archive, stage / "unpacked")
+        source = next((stage / "unpacked").iterdir())
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.move(str(source), target)
+
+
+def install_seed_convrot(precision="w4a8"):
+    target = addons.root("seedvr2-convrot")
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / "installed.json"
+    marker.unlink(missing_ok=True)
+    py = environment("seedvr2-convrot")
+    # Separate from classic SeedVR2 and the app. CUDA 12.6 avoids a CUDA 13 driver requirement.
+    constraints = target / "torch-constraints.txt"
+    constraints.write_text("torch==2.13.0\ntorchvision==0.28.0\ncomfy-kitchen==0.2.37\n", encoding="utf-8")
+    pip(py, "torch==2.13.0", "torchvision==0.28.0",
+        "--index-url", "https://download.pytorch.org/whl/cu126")
+    run(py, "-c", "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; "
+        "assert torch.cuda.get_device_capability(0) >= (7, 5), 'Select an RTX GPU'; "
+        "print('Selected GPU:', torch.cuda.get_device_name(0))")
+    _install_source("ussoewwin/ComfyUI-SeedVR2-VideoUpscaler-with-TensorRT",
+                    addons.SEED_CONVROT_COMMIT, target / "source")
+    _install_source("Comfy-Org/ComfyUI", addons.COMFY_CONVROT_COMMIT, target / "comfy")
+    cli = target / "source" / "inference_cli.py"
+    cli.write_text(cli.read_text(encoding="utf-8").replace(
+        "script_dir + ':'", "script_dir + os.pathsep"), encoding="utf-8")
+    pip(py, "-c", constraints, "-r", target / "comfy" / "requirements.txt",
+        "-r", target / "source" / "requirements.txt", "imageio-ffmpeg>=0.6,<1")
+    wrapper = ROOT / "scripts" / "tools" / "run_seedvr2_convrot.py"
+    run(py, wrapper, "--addon-root", target, "--probe", "--precision", precision)
+    run(py, wrapper, "--addon-root", target, "--help")
+    marker.write_text(json.dumps({"commit": addons.SEED_CONVROT_COMMIT,
+                                 "comfy_commit": addons.COMFY_CONVROT_COMMIT,
+                                 "gpu_tested_precision": precision}), encoding="utf-8")
+    print("SeedVR2 ConvRot installed; the selected model and shared VAE download on first use. "
+          "No node editor or TensorRT VAE engine is required.", flush=True)
+
+
 def install_splat():
     target = addons.root("splat")
     target.mkdir(parents=True, exist_ok=True)
@@ -215,7 +259,8 @@ def install_ltx(quant):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "splat", "ltx25"])
+    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "splat", "ltx25"])
+    parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
     parser.add_argument("--quant", choices=["Q3_K_M", "Q4_K_M"], default="Q3_K_M")
     parser.add_argument("--optimizations", action="store_true",
                         help="Install and test optional SeedVR2 Windows attention wheels.")
@@ -223,6 +268,7 @@ def main(argv=None):
     if args.optimizations and args.tool != "seedvr2":
         parser.error("--optimizations is available for seedvr2 only")
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
+     "seedvr2-convrot": lambda: install_seed_convrot(args.precision),
      "ltx25": lambda: install_ltx(args.quant)}[args.tool]()
 
 

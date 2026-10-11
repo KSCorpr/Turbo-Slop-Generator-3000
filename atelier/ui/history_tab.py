@@ -93,7 +93,7 @@ def build_history_tab(tabs, generation_tabs, prompt_boxes, pending_toolkit):
                 path = history.resolve(name)
             except ValueError as exc:
                 raise gr.Error(str(exc)) from exc
-            return (str(path), "esrgan"), gr.Tabs(selected="tools")
+            return (str(path), "creative"), gr.Tabs(selected="tools")
 
         pending_toolkit.send(upscale.click, send_upscale,
                              inputs=[selected], outputs=[tabs])

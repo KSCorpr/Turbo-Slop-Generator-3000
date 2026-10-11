@@ -17,7 +17,7 @@ class LivePreviewTests(unittest.TestCase):
         handler = next(f.fn for f in demo.fns.values()
                        if getattr(f.fn, "__name__", "") == "do_generate"
                        and any(k == "model_id" and c.cell_contents ==
-                               "qwen-image-2.1" for k, c in zip(
+                               "qwen-image-2.1-turbo" for k, c in zip(
                                    f.fn.__code__.co_freevars,
                                    f.fn.__closure__)))
         event = next(f for f in demo.fns.values() if f.fn is handler)

@@ -104,7 +104,7 @@ def main():
         def restore_seed(source, model, resolution, seed, log, *, scale=None, detail_strength=100, attention="auto"):
             if not source:
                 raise ValueError("Import an image or a video first.")
-            seed_calls.append({"source": str(source), "scale": scale, "details": detail_strength,
+            seed_calls.append({"source": str(source), "model": model, "scale": scale, "details": detail_strength,
                                "attention": attention})
             path = settings.OUTPUT_DIR / "seedvr2-simulated.png"
             with Image.open(source) as im:
@@ -117,8 +117,8 @@ def main():
         stack.enter_context(patch.object(engine, "generate", generate))
         stack.enter_context(patch.object(engine, "cancel", cancel))
         stack.enter_context(patch.object(seedvr2, "restore", restore_seed))
-        def install_seed(name, job, log, quant=None, *, optimizations=False):
-            seed_installs.append((name, optimizations))
+        def install_seed(name, job, log, quant=None, *, optimizations=False, precision=None):
+            seed_installs.append((name, optimizations, precision))
             log("Simulated optimization installation completed.")
 
         stack.enter_context(patch.object(media_tabs, "install_action", install_seed))
@@ -151,10 +151,20 @@ def main():
                 page.get_by_role("tab", name="Tools & 3D", exact=True).click()
                 page.get_by_role("tab", name="SeedVR2 upscale", exact=True).click()
                 expect(page.get_by_role("button", name="Install / repair SeedVR2", exact=True)).to_be_visible()
+                expect(page.locator("#seedvr2-attention")).not_to_be_visible()
+                expect(page.get_by_role("button", name="Install optimizations", exact=True)).not_to_be_visible()
+                page.get_by_role("button", name="Install / repair SeedVR2", exact=True).click()
+                expect(page.locator("#seedvr2-status")).to_contain_text("Completed.")
+                assert seed_installs == [("seedvr2-convrot", False, "w4a8")], seed_installs
+                page.locator("#seedvr2-model input").click()
+                page.get_by_role("option", name="Classic 3B · GGUF Q8 · GTX compatible", exact=True).click()
                 page.get_by_role("button", name="Install optimizations", exact=True).click()
                 expect(page.locator("#seedvr2-status")).to_contain_text("Completed.")
-                assert seed_installs == [("seedvr2", True)], seed_installs
+                assert seed_installs == [("seedvr2-convrot", False, "w4a8"), ("seedvr2", True, None)], seed_installs
                 expect(page.locator("#seedvr2-attention")).to_be_visible()
+                page.locator("#seedvr2-model input").click()
+                page.get_by_role("option", name="3B · ConvRot W4A8 · RTX · ~2 GB weights", exact=True).click()
+                expect(page.locator("#seedvr2-attention")).not_to_be_visible()
                 page.get_by_role("button", name="Restore", exact=True).click()
                 expect(page.get_by_text("Failed: Import an image or a video first.", exact=True)).to_be_visible()
                 seed_source = folder / "brutalisme…é_日本.jpg"
@@ -180,6 +190,7 @@ def main():
                 assert len(seed_calls) == 1, seed_calls
                 assert seed_calls[0]["scale"] == 4 and seed_calls[0]["details"] == 35, seed_calls
                 assert seed_calls[0]["attention"] == "auto", seed_calls
+                assert seed_calls[0]["model"] == "3b-w4a8", seed_calls
                 page.screenshot(path=str(screenshots / "studio-seedvr2.png"))
 
                 page.get_by_role("tab", name="Capture → splats", exact=True).click()
@@ -216,7 +227,8 @@ def main():
                 expect(page.locator("#history-prompt textarea")).to_have_value("A studio browser test")
                 page.screenshot(path=str(screenshots / "studio-gallery.png"))
                 page.get_by_role("button", name="Send original to upscale", exact=True).click()
-                expect(page.get_by_role("tab", name="🔼 Upscale", exact=True)).to_have_attribute("aria-selected", "true")
+                expect(page.get_by_role("tab", name="✨ SDXL upscale", exact=True)).to_have_attribute("aria-selected", "true")
+                expect(page.get_by_role("tab", name=re.compile("Ming|MiniMax H3"))).to_have_count(0)
 
                 page.get_by_role("tab", name="Gallery", exact=True).click()
                 expect(page.locator("#history-grid img")).to_have_count(24)
@@ -233,7 +245,7 @@ def main():
                 page.get_by_role("button", name=re.compile("Styles — presets")).click()
 
                 # All model workspaces still exist and use the new navigation.
-                for title in ("Qwen Image 2.1", "Ming Image", "Krea 2 Turbo", "Z-Image Turbo", "Flux.2 Klein"):
+                for title in ("Qwen Image 2.1 Turbo", "Krea 2 Turbo", "Z-Image Turbo", "Flux.2 Klein"):
                     page.get_by_role("tab", name=title, exact=True).click()
                     expect(prompt).to_be_visible()
 

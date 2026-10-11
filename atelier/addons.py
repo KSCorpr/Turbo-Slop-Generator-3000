@@ -6,15 +6,34 @@ from pathlib import Path
 from . import settings
 
 SEED_COMMIT = "4490bd1f482e026674543386bb2a4d176da245b9"
+SEED_CONVROT_COMMIT = "68191c40d03566608b65d24e97d11dc4389f3a62"
+COMFY_CONVROT_COMMIT = "7f7fd918ed0815c5d5ef2ccfe44bfc8e72cfd217"
 BRUSH_VERSION = "v0.3.0"
+ADDON_NAMES = ("seedvr2", "seedvr2-convrot", "splat")
 SEED_MODELS = {
     "3b": "seedvr2_ema_3b-Q8_0.gguf",
     "7b": "seedvr2_ema_7b-Q4_K_M.gguf",
 }
+SEED_CONVROT_MODELS = {
+    "3b-w4a8": "seedvr2_3b_convrot_w4a8.safetensors",
+    "3b-int8": "seedvr2_3b_convrot_int8.safetensors",
+    "7b-w4a8": "seedvr2_7b_convrot_w4a8.safetensors",
+    "7b-int8": "seedvr2_7b_convrot_int8.safetensors",
+    "7b-sharp-w4a8": "seedvr2_7b_sharp_convrot_w4a8.safetensors",
+    "7b-sharp-int8": "seedvr2_7b_sharp_convrot_int8.safetensors",
+}
+
+
+def seed_addon(model: str) -> str:
+    if model in SEED_CONVROT_MODELS:
+        return "seedvr2-convrot"
+    if model in SEED_MODELS:
+        return "seedvr2"
+    raise ValueError("Choose a listed SeedVR2 model.")
 
 
 def root(name: str) -> Path:
-    if name not in ("seedvr2", "splat"):
+    if name not in ADDON_NAMES:
         raise ValueError("Unknown add-on")
     return settings.ROOT / "tools_repo" / name
 

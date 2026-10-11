@@ -86,9 +86,7 @@ REMOVED_FEATURES = [
      "files": ["update-engine-ci.bat",
                ".github/workflows/build-sdcpp.yml"],
      "dirs": []},
-    #  Ancienne génération vidéo Wan 2.2, retirée. La nouvelle intégration
-    #  H3 Turbo réutilise les noms video.py/video_tab.py : ils sont vivants
-    #  et ne doivent jamais être effacés par la maintenance.
+    #  Ancienne génération vidéo Wan 2.2, retirée.
     #
     #  Les POIDS (~8,5 Go) ne sont pas déclarés ici : le catalogue ne les
     #  référence plus, donc le contrôle des modèles orphelins les signalera
@@ -97,18 +95,20 @@ REMOVED_FEATURES = [
     {"name": "Video generation (Wan 2.2)",
      "files": ["tests/test_video.py"],
      "dirs": []},
-    # L'ancienne sonde H3 reste retirée. La génération H3 Turbo est assurée
-    # par atelier/engine/video.py, sans script de sonde séparé.
+    {"name": "MiniMax H3 generation",
+     "files": ["atelier/video.py", "atelier/ui/video_tab.py", "tests/test_minimax_h3.py"],
+     "dirs": []},
+    {"name": "Ming Image",
+     "files": ["tests/test_ming_image.py"], "dirs": []},
     {"name": "Sonde MiniMax-H3",
      "files": ["scripts/try_minimax.py", "try-minimax.bat", "try-minimax.sh",
                "tests/test_try_minimax.py"],
      "dirs": []},
-    # SeedVR2 : retiré. Ses DONNÉES pèsent lourd — un Python isolé complet
-    # plus les poids 3B/7B — d'où le dossier déclaré ici plutôt que supprimé
-    # d'office : plusieurs gigaoctets ne s'effacent pas sans prévenir.
-    {"name": "SeedVR2 restoration",
+    # Les anciens scripts sont retirés ; tools_repo/seedvr2 est à nouveau
+    # utilisé par le moteur classique et le cache de poids partagé ConvRot.
+    {"name": "Old SeedVR2 scripts",
      "files": ["scripts/setup_seedvr2.py", "tests/test_seedvr2.py"],
-     "dirs": ["tools_repo/seedvr2"]},
+     "dirs": []},
     # Krea 2 INT8 ConvRot : la variante expérimentale et son banc A/B. Le
     # checkpoint de 13 Go vivait dans models/, sous le nom du dépôt Comfy-Org
     # — que le catalogue ne référence plus, donc le contrôle des modèles
@@ -291,11 +291,12 @@ def _known_addon_dirs() -> set[str]:
     maintenant les chemins déclarés par tools.py lui-même : ajouter un add-on
     suffit, en retirer un le rend automatiquement orphelin, et il n'y a plus de
     seconde liste à tenir à jour."""
+    from atelier import addons
     from atelier.engine import tools
     dirs = [value for name, value in vars(tools).items()
             if name.endswith("_DIR") and isinstance(value, Path)
             and value != tools.TOOLS_DIR]
-    out = set()
+    out = set(addons.ADDON_NAMES)
     for d in dirs:
         try:
             out.add(d.relative_to(tools.TOOLS_DIR).parts[0])
@@ -376,7 +377,7 @@ def clean_tmp() -> None:
 def _expected_model_dirs() -> set[str]:
     """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
     tous les composants des modèles + upscalers."""
-    from atelier import registry, settings, video
+    from atelier import registry, settings
     prefs = settings.load_prefs()
     repos: set[str] = set()
     for m in registry.load_base_models(prefs):
@@ -384,7 +385,6 @@ def _expected_model_dirs() -> set[str]:
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)
-    repos.update((video.DIFFUSION_REPO, video.ENCODER_REPO, video.VAE_REPO))
     # Installés depuis l'onglet 3D, hors du catalogue des modèles d'image.
     return {settings.model_repo_dir(r).name for r in repos if r} | {"trellis"}
 

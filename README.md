@@ -36,13 +36,15 @@ cd turbo-slop-studio
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1**,
-**Ming Image 0.1 Design**, **Krea 2 Turbo** and **Z-Image Turbo**, with an
+CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
+**Krea 2 Turbo** and **Z-Image Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, three upscalers, and a utility toolkit.
+editing, SDXL creative upscaling, SeedVR2 restoration, and a utility toolkit.
 
-No ComfyUI, no node spaghetti — just a clean web UI.
+A clean web UI without a node editor. SeedVR2 ConvRot uses Comfy internals
+in its isolated command-line runtime; image generation still uses sd.cpp.
+A future replacement of sd.cpp is described in [the backend migration plan](docs/backend-migration.md).
 
 > **Credits & honesty.** All the heavy lifting — the inference engine, GGUF
 > support, CUDA kernels — comes from **Leejet’s
@@ -62,8 +64,8 @@ LoRA settings expand when needed.
 
 | Tab | What it does |
 |---|---|
-| **Images** | Flux.2 Klein, Qwen Image 2.1, Ming Image, Krea 2 Turbo, Z-Image Turbo and Xanax; all existing model controls remain available. |
-| **Video** | MiniMax H3 Turbo / Ref2VA video generation. |
+| **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, Krea 2 Turbo, Z-Image Turbo and Xanax; sampling controls follow each model's requirements. |
+| **Video** | LTX 2.5 text/image-to-video generation and AVI recovery. |
 | **Tools & 3D** | Image-to-prompt, depth, cutouts, layers, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
 | **Models** | Hardware-aware model catalog and on-demand downloads. |
@@ -78,8 +80,7 @@ LoRA settings expand when needed.
   - [Maintenance](#maintenance)
 - [Quick start](#quick-start)
 - [Model catalog](#model-catalog)
-- [Qwen Image 2.1](#qwen-image-21)
-- [Ming Image 0.1 Design](#ming-image-01-design)
+- [Qwen Image 2.1 Turbo](#qwen-image-21-turbo)
 - [Generation options](#generation-options)
 - [Xanax tab](#xanax-tab)
 - [Hardware & optimization](#hardware--optimization)
@@ -89,9 +90,6 @@ LoRA settings expand when needed.
   - [Updating the engines](#updating-the-engines)
   - [Interface language & theme](#interface-language--theme)
 - [Upscaling](#upscaling)
-  - [🔼 Simple (ESRGAN)](#-simple-esrgan-native-sdcpp)
-  - [🚀 HD (native highres fix)](#-hd-native-sdcpp-highres-fix)
-  - [🔍 High resolution (Flux.2)](#-high-resolution-flux2-as-its-own-upscaler)
   - [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer)
   - [🖐️ Details — hands and faces](#-details--hands-faces-and-anything-a-detector-finds)
   - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
@@ -151,7 +149,7 @@ stable-diffusion.cpp instead of the CUDA one. What differs on a Mac:
   of killing the run.
 - **🧊 Text / Image → 3D is unavailable.** trellis.cpp ships a Windows-CUDA binary only —
   no Apple Silicon build, no Metal path. The tab says so instead of offering an
-  installer that would find nothing. Everything else works.
+  installer that would find nothing. SeedVR2 ConvRot requires NVIDIA CUDA and is unavailable on MPS.
 - **16 GB is the realistic floor**, 24 GB+ comfortable. Intel Macs are not
   supported: upstream publishes no Intel build.
 
@@ -364,9 +362,9 @@ An already installed compatible encoder is reused in Automatic mode even if
 the preferred quantization has changed, avoiding another multi-GB copy. An
 explicit weight choice always takes precedence.
 
-The five current image models require five distinct encoder checkpoints:
-Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1), Qwen3-VL-4B (Krea 2),
-Qwen3-4B-Instruct-2507 (Z-Image), and Ling-mini-2.0 (Ming Image). Similar names do not make their
+The four catalog image models require four distinct encoder checkpoints:
+Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1 Turbo), Qwen3-VL-4B (Krea 2),
+and Qwen3-4B-Instruct-2507 (Z-Image). Similar names do not make their
 weights interchangeable. Compatible files from the *same* Hugging Face repo
 are stored only once and shared by any model that uses them.
 
@@ -377,103 +375,42 @@ are stored only once and shared by any model that uses them.
   encoder or VAE used by another installed model is never taken out from under
   it.
 - The image catalog is `config/models.yaml` (sources, defaults and presets).
-  MiniMax H3 Turbo video weights are defined separately in `atelier/video.py`.
 
 The tools that live under 🧰 Toolkit are **not** here: each one carries its own
 one-click installer in its own tab, because each pulls a different Python
 dependency set.
 
-### Qwen Image 2.1
+### Qwen Image 2.1 Turbo
 
-Update the app and sd.cpp with **`update.bat`** (`./update.sh` on Linux/Mac).
-Qwen Image 2.1 needs official sd.cpp build **896 or newer** for transparent
-image inputs and build **901 or newer** for live preview at every step. Download **Qwen Image 2.1** in Model
-Catalog; the one-click download gets GGUF diffusion weights, the **Qwen Image
-2.1 VAE**, Qwen3-VL-8B encoder and its vision projector. Older Qwen Image and
-Wan VAEs are incompatible with this model. The projector is loaded only when
-editing.
+Run **`update.bat`** (`./update.sh` on Linux/Mac), then download **Qwen Image
+2.1 Turbo** in **Models**. The catalog uses the actual Turbo checkpoint from
+[`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/tree/main/diffusion_models):
+**INT8 ConvRot** by default (~7.26 GB), with **BF16** selectable (~14.2 GB).
+The earlier Qwen 2.1 diffusion checkpoint is not a Turbo checkpoint. Old saved
+diffusion selections are therefore not reused. The Qwen 2.1 VAE and Qwen3-VL-8B
+GGUF encoder remain compatible and are reused when installed; the vision
+projector is needed only for editing. Older Qwen Image and Wan VAEs are incompatible.
 
-The Qwen tab starts at **1024×1024, Euler, CFG 6, 40 steps**. The upstream
-model is native 2K, but 2K presets may exhaust 11–12 GB cards: start at 1024.
-Edit up to **three reference images** through `-r` by describing the changes;
-no strength slider or editing LoRA is needed. Image sizes follow a 32-pixel
-grid. For transparency, prompt e.g. `This is an RGBA image with transparency.
-A red flower. The image has alpha channel and the background is transparent.`
-and save as **PNG**. The weights carry the **Qwen Research** license; check its
-terms before commercial use.
+Turbo uses **8 steps, CFG 1, Euler** and the exact sigma sequence in
+[Qwen's model configuration](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo/blob/main/model_index.json):
+`1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568`,
+followed by terminal zero for sd.cpp. These controls are fixed in the interface.
+The engine must support `--sigmas`; an older binary displays an update instruction.
+Official build 896 or newer is needed for transparent inputs, and build 901 or
+newer for per-step live previews. These checks do not replace a GPU image-quality
+test of the new Turbo weights.
 
-### Ming Image 0.1 Design
-
-Run **`update.bat`** (`./update.sh` on Linux/Mac) to install sd.cpp build
-**924 or newer**, then select **Ming Image 0.1 Design** in Model Catalog.
-**Load weights and sizes** shows two compatible DiT checkpoints: INT8 convrot
-(6.18 GB, selected by default) and BF16 (12.3 GB). Both need the dedicated
-Ling-mini-2.0 **BF16 text encoder (36.7 GB)**, Ming VAE (254 MB), and Ling
-`tokenizer.json`, which the Download button fetches from the original model
-repo. INT8 convrot has a native CUDA path on sm_75 or newer; other backends
-may fall back to CPU. These are safetensors weights; upstream has not listed
-a Ming GGUF checkpoint in its setup guide. Allow at least 44 GB disk space
-for the default selection. The upstream validated BF16 inference on an 80 GiB
-CUDA GPU; smaller cards and INT8 placement have not been validated here.
-
-The Ming tab starts at **1024×1024, Euler, CFG 1, 12 steps**. Dimensions use
-16-pixel increments. It generates from text; prompt for a transparent
-background and download the output PNG to keep its alpha channel. Its step
-previews use VAE decoding, so preview updates may take longer than with other
-models. The model weights are MIT licensed.
-
-### MiniMax H3 Turbo and Ref2VA · video only
-
-In **Model Catalog → MiniMax H3**, choose a standalone 4-step Turbo GGUF
-diffusion weight and an H3-specific Qwen3-VL encoder. Their sizes are displayed
-next to each option; **Load exact sizes** refreshes the repositories' file
-metadata. Download also installs the video VAE. The default files are the
-11.4 GB Q4_0 Turbo diffusion weight, 13.1 GB Q2_K_M encoder and 5.21 GB video
-VAE (about 30 GB on disk). There is **no audio VAE** download. The Turbo
-checkpoint is already merged; no separate base checkpoint or LoRA is needed.
-
-Use **Tools → Video · MiniMax H3 → Turbo** for text-to-video, image-to-video, or optional
-first/last-frame conditioning. The app fixes the model-specific parameters to
-**4 steps, Euler, CFG 1, flow shift 6, 24 fps**. Choose 22, 39 or 56 frames
-and a resolution; the default is 864×480 and 22 frames. Weight placement and
-the VRAM compute budget are automatic, with a 640×352 retry if generation
-runs out of GPU memory. The result is a silent MP4; `imageio-ffmpeg` supplies
-the local AVI-to-MP4 converter. If it was added after your last install, the
-app installs it into its own Python on the first conversion. **Tools → Video
-→ Convert a completed AVI** can convert an earlier video from `outputs/`
-without loading H3 or generating anything again. Download the clip from the
-video player. Update sd.cpp through `update.bat` / `./update.sh` first.
-
-For a video guided by **one, two or three reference images**, choose
-**References** in the video tab. Download a **Ref2VA** diffusion GGUF in
-**Model Catalog → MiniMax H3**: Q2_K_M is approximately 6.72 GB, Q4_K_M
-approximately 11.4 GB. The already selected H3 text encoder and video VAE
-are reused, so installing both modes does not duplicate them. Place images
-in Picture 1–3 without gaps, then describe their roles in the prompt, for
-example: `Use the person from <Picture 1>, the outfit from <Picture 2>,
-and the setting from <Picture 3> for a moving cinematic shot.` They guide
-appearance and identity; they are not keyframes at fixed times. Ref2VA uses
-**50 steps, Euler, CFG 1, flow shift 12 and 24 fps**; on a 12 GB GPU this
-will generally take much longer than the four-step Turbo mode. Ref2VA is a
-different diffusion checkpoint from the first/last-frame Turbo model. Both
-save silent MP4 video; the AVI recovery control also supports Ref2VA runs.
-
-The Q4_0 diffusion file alone uses almost all the VRAM of a standard
-RTX 2080 Ti, leaving too little room for computation; auto-fit may keep
-weights in RAM. Expect potentially long generation times. Turbo support with
-sd.cpp on that card has not been measured. The model uses the MiniMax H3
-Community License Agreement.
-
----
+Start at **1024×1024** on 11–12 GB cards. Up to **three reference images** use
+native editing through `-r`, with no editing LoRA or strength slider. Image sizes
+follow a 32-pixel grid. For transparency, request an RGBA image with transparent
+background and save PNG. Check the **Qwen Research** license before commercial use.
 
 ## Generation options
 
 Generation tabs share prompt, styles, size, sampler and preview controls.
-Ming Image currently supports text-to-image only; reference-image controls
-are hidden there.
 
 ### Prompt & system style
-- **Prompt** — your description. For **edit models** (Flux.2 Klein, Qwen 2.1) describe the
+- **Prompt** — your description. For **edit models** (Flux.2 Klein, Qwen 2.1 Turbo) describe the
   *modification* to apply to the reference image.
 - **✨ Enhance prompt (AI)** — see [Prompt enhancer](#prompt-enhancer-ai). Note
   that a **style preset translates nothing** — it is a prefix glued in front of
@@ -482,8 +419,8 @@ are hidden there.
   active preset as a constraint**: it describes the subject without adding
   camera, lens, lighting or processing wording that would contradict the style.
   Pick the preset first, then enhance.
-- **Negative prompt** — shown for Qwen 2.1 (CFG 6); hidden on the distilled
-  models at CFG 1.0, where it has no effect.
+- **Negative prompt** — hidden on the current catalog models at CFG 1.0,
+  where it has no effect. Custom models can expose it when guidance is enabled.
 - **System / style prefix** (🎨 Styles → *Custom preset*) — a prefix prepended
   to every prompt. Save
   reusable styles to a dropdown (persisted in `userdata/`). Styles are **global**:
@@ -524,7 +461,7 @@ The accordion adapts to the model family:
   strength slider — editing is prompt-driven. Output aspect follows your image.
   An **🧩 Outpaint** slider (experimental) extends the canvas and lets the model
   fill the new borders — describe the extension in the prompt.
-- **Qwen Image 2.1** — native multi-reference editing via `-r` as above; the
+- **Qwen Image 2.1 Turbo** — native multi-reference editing via `-r` as above; the
   Qwen3-VL-8B vision projector is required for editing, no LoRA. Uploaded PNG
   alpha is preserved for transparent image editing.
 - **Krea 2 Turbo — ✏️ Edit mode (Ostris Edit)** — tick **✏️ Edit mode** to pass
@@ -560,11 +497,11 @@ best on these):
   1344×768… (+ a 2K option).
 - **Z-Image Turbo** — 1024 family on a **16-px grid** (patch size 2 × VAE
   factor 8): 1024², 1216×832, 1152×896, 1344×768… (+ a 2K option).
-- **Qwen 2.1** — a 32-px grid with 1024-class presets and native 2K formats
+- **Qwen 2.1 Turbo** — a 32-px grid with 1024-class presets and native 2K formats
   (2048², 2400×1792, 2752×1536…).
 
 Pick a ratio from the dropdown, or choose **Custom (sliders)** for free width /
-height (256–2048, step 16 for most tabs including Ming; 256–2816, step 32
+height (256–2048, step 16 for most tabs; 256–2816, step 32
 for Qwen). Loading a reference image auto-fits width/height to its aspect.
 
 ### Sampler / scheduler / steps
@@ -593,14 +530,13 @@ for Qwen). Loading a reference image auto-fits width/height to its aspect.
 
 ### Output
 - **Live preview** — each sampling step writes its own preview and updates the
-  image above the gallery. Ming uses VAE decoding, which can take longer on
-  large images. Qwen Image 2.1 requires sd.cpp build 901 or newer for its
+  image above the gallery. Qwen Image 2.1 Turbo requires sd.cpp build 901 or newer for its
   RGBA latent preview (`update.bat`). Final images appear in the gallery when
   generation finishes.
 - **Seed** — the selected image's seed shows in a copy-button box; **Reuse this
   seed** drops it back into the seed field. Clearing the seed field resets it to -1.
 - **Send to Toolkit** — push the selected image straight into a Toolkit tool
-  (depth, background removal, SAM, ESRGAN or creative upscale).
+  (depth, background removal, SAM or SDXL creative upscale).
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
 
@@ -821,10 +757,10 @@ default** (the docs never force one), at each model's documented steps/CFG
 still expose the full sd.cpp list for manual experimentation, **annotated per
 model** — with a description card and a fold-out rationale right in the tab.
 New entries need a recent engine (`update.bat`).
-Qwen 2.1 follows `docs/qwen_image_2.1.md`: Euler / CFG 6 and an automatic
-resolution-dependent flow schedule, with 40 steps from Qwen's official example.
-The two columns below compare **Flux.2 Klein and Krea 2 Turbo**; Qwen's tab
-gives separate guidance for its longer, guided sampling.
+Qwen Image 2.1 Turbo uses Euler / CFG 1 / 8 steps with its official custom
+sigma sequence. Its sampling controls are fixed, including in outpaint; the
+benchmark uses all eight steps. The comparison below concerns **Flux.2 Klein
+and Krea 2 Turbo**.
 
 #### Why most of the menu does not apply here
 Three properties of the two models compared below — read off sd.cpp itself —
@@ -1090,213 +1026,10 @@ from the app.
 
 ## Upscaling
 
-Four complementary tools live under **Toolkit**, in increasing order of
-invention: an upscaler enlarges, **HD** re-denoises with your own model, the
-creative pass
-restores, SDXL hallucinates.
-
-### 🔼 Simple (ESRGAN, native sd.cpp)
-Modern `.pth` / `.safetensors` models (HAT, DAT, SPAN…) run through Spandrel.
-The backend is checked and installed automatically on first use, in the same
-Python as TurboSlop. This also covers SDXL pre-enlargement and existing models
-restored from another installation. Face models are not required. Installation
-progress appears in the upscale log; existing Torch builds are constrained
-while installing Spandrel. A ready backend works offline without another pip
-installation. To prepare or repair it before starting the app, run
-`python/python.exe scripts/setup_tools.py spandrel` on a portable Windows install
-(or `venv/bin/python scripts/setup_tools.py spandrel` on Linux/macOS).
-
-Deterministic ESRGAN upscale via sd.cpp `--mode upscale`: **100% GPU, no PyTorch,
-no prompt**. One-click downloads **all** models from
-[`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf)
-(2x-ESRGAN, RealESRGAN_x4plus, 4xUltrasharpV10, 4x_foolhardy_Remacri…). Pick a
-model (×2/×4 depending on its name); **Repeat ×2** chains two passes (a ×2 model
-twice = ×4). Best for a clean, faithful enlargement.
-
-**Tile size — where ESRGAN artifacts actually come from.** sd.cpp runs the RRDB
-network on **128 px tiles** by default (25% overlap, smootherstep blend). A RRDB
-decides how hard to sharpen from what it can see, and on 128 px it sees almost
-nothing: two neighbouring tiles treat the same line differently. The feather
-softens the seam but cannot reconcile two contradictory decisions — that is the
-micro-staircasing on diagonals and the grain that changes character from square
-to square. The app therefore sizes the tile itself, from your VRAM (1024 px at
-16 GB+, 832 at 11 GB, 640 at 8 GB, 512 otherwise) and, when the image fits under
-that cap, asks for **a tile at least as large as the image** — sd.cpp then takes
-its untiled path and there is no seam at all, by construction. If the wider tile
-runs out of memory the run is retried once at sd.cpp's 128 px and the log says
-so. On an older `sd-cli` that predates `--upscale-tile-size`, the option is
-simply not sent and the log tells you to update the engine.
-
-**Repeating is worse than it looks.** Chaining passes runs the network on its
-*own output*: pass 2 mistakes the high frequencies pass 1 invented for real
-detail and sharpens them again, turning mild ringing into hard stair-steps. A ×4
-model always beats a ×2 model run twice.
-
-**Line art, comics and illustration.** The model matters more than the settings.
-Photo-trained models (Remacri, Nomos, UltraSharp…) learned natural texture: on a
-flat colour area they hallucinate grain, and along a clean ink line they ring.
-The dropdown therefore tags each model — 🎨 **drawing / anime** vs 📷 **photo** —
-lists the drawing ones first and preselects one, instead of defaulting to
-whatever sorted first alphabetically.
-
-**Bring your own models.** sd.cpp loads most `.pth` files directly, so the picker
-accepts `.gguf`, `.pth` and `.safetensors`: drop a file in the upscalers folder,
-hit **↻ Refresh**, and it appears. That opens the whole
-[OpenModelDB](https://openmodeldb.info) catalog — filter on *anime* / *manga* /
-*cartoon* for line art. GGUF still loads faster and avoids executing a pickle, and
-you can convert one yourself with
-`sd-cli --mode convert --model x.pth --output x.gguf`. Note that sd.cpp only
-implements the **ESRGAN (RRDBNet)** architecture for image upscaling, so newer
-SPAN / DAT / Compact models will not load.
-
-### 🚀 HD (native sd.cpp *highres fix*)
-
-The one that has no seams, because it never cuts the image up.
-
-sd.cpp gained a native highres fix, and `sd_img_gen_params_t` carries both an
-init image and the hires block — so a single `sd-cli` command does the whole
-job: a very light img2img at the source size, then the enlargement (Lanczos or
-one of your upscaler models), then a **second denoise pass over the entire
-image** at the final size. No PyTorch, no SDXL, **no tiles**.
-
-> **Latent enlargement was removed.** sd.cpp still accepts it, but enlarging in
-> latent space means interpolating numbers that are not pixels: the second
-> denoise starts from a mush and invents to fill it in — which is exactly the
-> painted look this project spends its time avoiding. Lanczos gives an honest
-> base, a modern upscaler a crisp one; in both cases the model sharpens rather
-> than guesses.
-
-Two things follow from that, and they are the reason this tab exists:
-
-- **there is no seam to hide.** The creative SDXL upscale refines 1024 px tiles
-  and blends them; a feather can smooth a border but cannot make two tiles agree
-  about what they are drawing. Here the second pass sees the whole scene at once,
-  so the question does not arise;
-- **your model does the redrawing.** Krea 2 or Flux.2 add detail in the style
-  they already know, instead of an SDXL from 2023 reinterpreting it.
-
-Controls: the **factor**, the **added detail** (the hires denoise — the only
-setting that really matters: 0.2 stays very close to the source, 0.5+ frankly
-reinvents the material), the **intermediate enlarger**, and an optional short
-description. The first img2img pass is fixed at a deliberately negligible
-strength — sd.cpp computes `t_enc = steps × strength`, so it amounts to a single
-step at very low sigma; it cannot be removed (the hires pass hangs off a
-generation) so it is made harmless instead.
-
-Sizes are aligned **up** to 16 px — the common divisor of every family's grid,
-which leaves the app's own resolutions (1184×880, 1152×896…) untouched where a
-64 px grid would move them. sd.cpp then aligns further up to its real multiple
-if it needs to, and the log reports the size that actually came out rather than
-the one that was requested. The final side is capped at 3072 px: past that the
-model is outside its training scale and starts repeating patterns. Hitting the
-cap lowers the *factor*, never the framing, and says so.
-
-**VRAM is the real limit here, not the side length.** Refusing to tile has a
-price: the second pass allocates a compute buffer proportional to the pixel
-count, *on top of* the model weights already resident on the card. A measured
-example — Krea 2 at 2304×1792 (4.13 Mpx) asks for a 4.62 GiB buffer while 8.4 GB
-of weights are loaded: 13 GB total, which no 11–12 GB card can serve. So the
-factor is budgeted rather than capped by a magic number: usable VRAM minus the
-diffusion file's size on disk, divided by ~1200 bytes per pixel (the constant
-comes from that same failure). Concretely, with Krea 2 at **Q5_K_M** (8.4 GB) an
-11 GB card tops out near **×1.25** and a 12 GB card near **×1.5**; dropping to
-**Q4_K_M** restores a full **×2** on 12 GB. A lighter quantization buys HD
-factor.
-
-**Segmented execution lifts that ceiling** (`--max-vram`). By default sd.cpp
-reserves its compute graph *in one block*: if the block does not fit, the run
-dies. Given a budget it is allowed to **cut the graph** to fit instead. A
-negative value is the interesting one — the engine measures **free** VRAM at
-launch and reserves the given margin, so `-1` means "take what is free, keep
-1 GiB back", which adapts to the card *and* to whatever already occupies it.
-The HD tab therefore turns it on regardless of the Settings preference, because
-HD is where all-or-nothing allocation breaks; when it is active the pixel budget
-above is **dropped rather than half-relaxed**, since keeping it would throttle
-exactly what was just made possible. Cutting the graph costs memory round-trips,
-so it is **slower** — which is why ordinary generation leaves it off by default
-and Settings exposes the budget (auto / hard cap / per-device) for people who
-would rather wait than not get the image at all.
-
-`--stream-layers` is a separate mechanism, not another VRAM budget. It streams
-diffusion layers from system RAM and therefore only applies when the diffusion
-parameters are CPU-resident (for example `diffusion=cpu`). Setting
-`--max-vram` while keeping all parameters on the GPU does not make layer
-streaming valid; the interface enforces that distinction.
-
-> ⚠️ **`--stream-layers` no longer exists upstream.** Current sd.cpp
-> ([`performance.md`](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/performance.md))
-> cuts the graph and prefetches the next segment **on its own**, and exposes
-> `--disable-prefetch` / `--disable-segmented-compute` to turn that *off*
-> rather than a flag to turn streaming on. This section described an older
-> engine. The code reads the installed binary's help before sending the flag,
-> so nothing breaks either way: on a recent engine the streaming rung is simply
-> not taken, and the automatic segmentation does the same job. The paragraph
-> below still describes what happens on the engine you have if it predates the
-> change.
-
-**The retry ladder tries streaming before it gives up pixels.** Older sd.cpp
-documented the escalation as `--offload-to-cpu` → `+ --max-vram` →
-`+ --stream-layers`, and said the three combined run models roughly 3–4× larger
-than the raw VRAM allows. HD had the first two rungs and not the third, so the
-first out-of-memory immediately cost 20% of the factor. The first recovery now
-**keeps the requested size** and loads the diffusion layers from RAM as the
-computation walks through them; only if that still fails does the factor drop.
-The order follows what each one costs: a lower factor loses pixels for good,
-streaming only costs PCIe bandwidth, so the thing that sacrifices nothing is
-tried first. The streaming attempt does not consume a rung of the ladder either
-— otherwise turning it on would cost a size reduction, which is what it exists
-to avoid. On an engine without `--stream-layers`, or with the weights resident
-on the GPU (where the flag is a no-op), the behaviour is exactly as before.
-
-Neither the budget nor the segmentation is the safety net. **An out-of-memory
-failure is caught, the factor is stepped down 20% and the run is retried** (twice
-at most), and the log states what it settled on. sd-cli failures are now typed:
-only a genuine VRAM error is retried, because it is the only one where trying
-something smaller can succeed — everything else would fail identically. When even
-the smallest attempt fails, the message names the two ways out (lower the factor,
-or use the tiled ESRGAN → SDXL path, which fits in far less VRAM) instead of the
-old bare "sd-cli exited with code 1".
-
-Requires a recent engine. On an `sd-cli` that predates `--hires` the tab says so
-and points at `update.bat` instead of silently producing a plain image.
-
-
-### 🔍 High resolution (Flux.2 as its own upscaler)
-Runs the image back through **Flux.2 at its native resolution**, using it as
-**both the reference and the starting latent**. Three details carry the whole
-method, and none of them is obvious:
-
-- the prompt says **“high resolution”**, not “upscale”. In training captions
-  *upscaled* labels images that really were upscaled — carrying exactly the
-  artefacts we are trying to avoid. *High resolution* labels photographs that
-  were sharp to begin with. Different distribution, different output;
-- the pre-enlargement is **bilinear**, deliberately bland. Lanczos adds ringing
-  the model reads as detail and then amplifies;
-- the same image goes in as the **reference** (content, through the VAE) *and*
-  as the **starting latent** (structure). The engine always supported passing
-  both; the interface sent one or the other, never both.
-
-Denoise sits at **0.8** by default (the method's range is 0.7–0.9), and the
-pass runs **8 steps**: Klein is distilled for 4, which at 0.8 denoise leaves
-only 3 effective steps — too short to rebuild anything.
-
-**This is not restoration.** At that denoise the model *redraws*: what survives
-is plausibility, not fidelity. For a face that must stay the same person, use
-the **creative SDXL upscale**. The two tools answer different questions.
-
-Output is bounded on both ends: never below **1 MP** (Flux.2's own regime —
-below it the model is out of its element anyway) and never past **3.7 MP**,
-where it starts losing global coherence and the VRAM cost explodes. If the card
-refuses, the target shrinks and the log says to what.
-
-High denoise also drags colour toward the model's own prior — the original post
-noticed the desaturation and suggested prompting against it. Prompting is a
-wish; this tab does the arithmetic instead: the **original's low frequencies**
-(hue, exposure, cast) are put back underneath the **result's high frequencies**
-(the detail just added). On by default, one checkbox to turn off.
-
-Credit: the method comes from a r/StableDiffusion post; the colour-matching
-step and the memory ladder are ours.
+**Toolkit → SDXL upscale** is the only Toolkit enlargement path.
+Faces and Details remain available for local repair. **SeedVR2 upscale** has
+its own workspace in Tools & 3D for image/video restoration. The standalone
+ESRGAN, native HD and Flux.2 High resolution tabs have been removed.
 
 ### 🙂 Faces (GFPGAN · RestoreFormer++ · CodeFormer)
 Rebuilds **faces only** — the rest of the image is untouched. This is the step
@@ -1436,12 +1169,8 @@ Controls:
 - **Steps / tile**, **CFG**, **tile size** (640–1280).
 - On < 12 GB VRAM, the model is automatically CPU-offloaded to avoid OOM.
 
-> Use the right tool: an **upscaler model** is fast and deterministic; the
-> **creative SDXL upscale** reinvents
-> plausible detail with limited drift; **High resolution** re-renders through
-> Flux.2 (best-looking, least faithful); **SDXL creative** is slower and
-> explicitly invents detail; **Faces** fixes what all of them leave broken, and
-> runs last.
+> **SDXL creative** can invent plausible detail and change the source.
+> Use low creativity for faithful enlargement; apply **Faces** last if needed.
 
 #### Upscaling illustrations without interpolation
 
@@ -1716,9 +1445,6 @@ subprocesses so torch DLLs never lock the UI process):
 | **✂️ Background removal** | cutout → transparent PNG — *RMBG-1.4* (**non-commercial**) | ~176 MB |
 | **🪄 Cut out (SAM)** | click an object, extract it — *Segment Anything* (`facebook/sam-vit-base`) | ~375 MB |
 | **🧩 Layers** | decompose into layers, write a PSD ([below](#layers--psd)) | shares SAM; CLIP optional (~600 MB) |
-| **🔼 Upscale** | ESRGAN, deterministic ([Upscaling](#-simple-esrgan-native-sdcpp)) | GGUF upscaler pack, ~1 GB |
-| **🚀 HD** | native sd.cpp highres fix, no tiles ([Upscaling](#-hd-native-sdcpp-highres-fix)) | none — uses your model |
-| **🔍 High resolution** | Flux.2 as its own upscaler ([Upscaling](#-high-resolution-flux2-as-its-own-upscaler)) | none — uses your model |
 | **🙂 Faces** | GFPGAN · RestoreFormer++ · CodeFormer ([Upscaling](#-faces-gfpgan--restoreformer--codeformer)) | ~1.5 GB, five weights |
 | **🖐️ Details** | redraws hands / faces found by a detector ([below](#-details--hands-faces-and-anything-a-detector-finds)) | ~12 MB, native engine |
 | **✨ SDXL upscale** | creative, tile-by-tile ([Upscaling](#-creative-sdxl-ultimate-sd-upscale)) | ~9.5 GB with ControlNet |
@@ -2040,14 +1766,10 @@ resolved from your hardware; the downloader picks the closest matching file.
 - VAE — [`Comfy-Org/flux2-klein-9B`](https://huggingface.co/Comfy-Org/flux2-klein-9B) (`flux2-vae.safetensors`)
 - text encoder — [`unsloth/Qwen3-8B-GGUF`](https://huggingface.co/unsloth/Qwen3-8B-GGUF) (official Qwen3-8B, via `--llm`, offloaded to RAM)
 
-**Qwen Image 2.1** (family `qwen21`, generation + edit)
-- diffusion — [`leejet/Qwen-Image-2.1-GGUF`](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) (quantization picked for VRAM)
+**Qwen Image 2.1 Turbo** (family `qwen21`, generation + edit)
+- diffusion — [`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/tree/main/diffusion_models) (`qwen_image_2.1_turbo_int8_convrot.safetensors`, selectable Turbo BF16; 8 steps / CFG 1 / official sigmas)
 - VAE — [`Comfy-Org/Qwen-Image-2.1`](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) (`qwen_image_2.1_vae_bf16.safetensors`)
 - text encoder and optional editing projector — [`Qwen/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF) (`--llm`, `--llm_vision`)
-
-**Ming Image 0.1 Design** (family `ming_image`, text-to-image)
-- diffusion, Ling BF16 text encoder, VAE — [`Comfy-Org/Ming-Image`](https://huggingface.co/Comfy-Org/Ming-Image) (12 steps, CFG 1; selectable BF16/INT8 convrot DiT)
-- tokenizer — [`inclusionAI/Ming-Image-0.1-Design`](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) (`mllm/tokenizer.json`, via `--tokenizer`)
 
 **Krea 2 Turbo** (family `krea2`, sd.cpp)
 - diffusion — [`vantagewithai/Krea-2-Turbo-GGUF`](https://huggingface.co/vantagewithai/Krea-2-Turbo-GGUF) (8 steps, CFG 1.0)
@@ -2133,8 +1855,7 @@ atelier/
   i18n.py                    # identity seam — the interface is English (see above)
   engine/
     sdcpp.py                 # build/run sd-cli commands, error typing, DiskWatch
-    generate.py              # generation pipeline (model + hardware + LoRA) + ESRGAN + HD
-    highres.py               # 🔍 High resolution: Flux.2 as its own upscaler
+    generate.py              # generation pipeline (model + hardware + LoRA)
     outpaint.py              # directional outpaint: canvas plan, fill, tone match, composite
     trellis.py               # trellis.cpp server: image → GLB, transient or resident
     tools.py                 # PyTorch tools as subprocesses (depth, bg, SAM, faces…)
@@ -2482,6 +2203,12 @@ or removed, please open an issue.
 # New media tools: SeedVR2, LTX 2.5 and Gaussian Splatting
 
 **Tools & 3D → SeedVR2 upscale** restores images and videos locally.
+Choose **3B ConvRot W4A8** (default, ~2 GB diffusion weights) on an RTX GPU,
+or the classic GGUF runtime on GTX 10xx. Install / repair prepares the selected
+runtime separately and tests its native quantized GPU operations. INT8 and 7B
+variants are also selectable. Both runtimes share the model/VAE download cache.
+W4A8 uses the standard loader, without DisTorch2 or TensorRT VAE engines.
+Its speed on your hardware remains to be measured.
 Choose **×2 / ×4** to calculate the size from the source, or **Custom** to set
 the short edge manually. **Added detail strength** mixes the resized original
 with the AI result: 0% is a simple upscale without loading SeedVR2, 100% keeps

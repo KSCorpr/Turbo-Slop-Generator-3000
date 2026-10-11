@@ -22,7 +22,7 @@ PyYAML>=6.0
 Pillow>=10.2
 numpy>=1.26,<3
 requests>=2.31
-# sd.cpp writes AVI; the bundled FFmpeg converts H3 clips to browser-ready MP4.
+# sd.cpp writes AVI; the bundled FFmpeg converts video clips to browser-ready MP4.
 imageio-ffmpeg>=0.6,<1
 
 # ---------------------------------------------------------------------------

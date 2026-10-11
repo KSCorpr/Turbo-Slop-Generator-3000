@@ -25,20 +25,17 @@ champ : les modèles inventent ces parties et peuvent modifier la géométrie.
 | Moteur du catalogue actuel | Comment la source est utilisée | Limite |
 | --- | --- | --- |
 | Flux.2 Klein | Référence native, instruction de changement de vue | Recommandé ; identité et angles restent approximatifs |
-| Qwen Image 2.1 | Référence native, instruction de changement de vue | Recommandé ; plus de pas par défaut |
+| Qwen Image 2.1 Turbo | Référence native, instruction de changement de vue | 8 étapes, CFG 1 et sigmas officiels fixes ; angles approximatifs |
 | Krea 2 Turbo | Img2img classique | Pas de LoRA d'édition ajouté automatiquement ; grandes rotations peu fiables |
 | Z-Image Turbo | Img2img classique | Le débruitage peut préserver l'angle d'origine ou réinventer le sujet |
-| Ming Image | Description de la source par le module local Image → prompt, puis génération texte | Aucune référence visuelle directe ; identité moins fidèle |
 
 Cocher **Advanced and conversion tools** pour afficher la force img2img,
 le seed, le module de description et la conversion de vues existantes.
-Pour Ming, installer **Image → prompt** depuis le bouton de cet onglet si
-nécessaire. Le modèle de vision Qwen2.5-VL-3B déjà employé par le Toolkit est
-chargé une fois pour lire l'image, puis déchargé avant les dix générations.
-Le bouton installe ce module et ses poids, pas Ming : le moteur image se
-télécharge dans **Models**. Une description complémentaire peut être saisie
-pour préciser le sujet ou les éléments à garder. L'option de lecture
-automatique de la source est également disponible avec les autres moteurs.
+L'option de description automatique peut compléter les instructions avec les
+moteurs actuels. Installer **Image → prompt** depuis son bouton si nécessaire.
+Le modèle de vision Qwen2.5-VL-3B est chargé une seule fois pour lire l'image,
+puis déchargé avant les dix générations. Le moteur image se télécharge dans
+**Models**. Une description complémentaire peut préciser les éléments à garder.
 
 Les nouveaux modèles du catalogue emprunteront le chemin déclaré par leurs
 capacités : édition native, img2img, ou description visuelle. Tous utilisent
@@ -82,7 +79,7 @@ d'orbite d'objet sont refusées car elles n'ont pas le même centre de caméra.
 
 La reprojection est testée contre un environnement analytique dont la couleur
 encode la direction du rayon : axes, pôles, recouvrement et fermeture à 180°.
-Les chemins des cinq moteurs, les exports et l'annulation entre vues sont
+Les chemins des quatre moteurs, les exports et l'annulation entre vues sont
 testés sans poids GPU. Le parcours de l'interface est vérifié dans Chromium
 avec un moteur simulé. La fidélité des dix angles avec de vrais modèles n'est
 pas mesurée dans cet environnement, qui n'a pas de GPU adapté.

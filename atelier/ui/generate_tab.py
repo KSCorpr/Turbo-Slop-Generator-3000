@@ -97,8 +97,6 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     if family == "qwen21":
         return RATIOS_QWEN21
-    if family == "ming_image":
-        return RATIOS_ZIMAGE  # multiples de 16, carré 1024/1536 et ratios usuels
     # startswith et non == : toute variante Krea à venir partagera
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
@@ -373,26 +371,12 @@ def build_generative_tab(model_id: str, title: str,
 
                         enh_inst.click(_install_enh, outputs=[enh_log])
 
-                _acc_title = ("Transparent PNG (RGBA)" if family == "ming_image"
-                              else "🖼️ Reference images (image editing)" if is_edit
+                _acc_title = ("🖼️ Reference images (image editing)" if is_edit
                               else "🖼️ Reference / starting image (image-to-image)")
                 # Ouvert par défaut sur un modèle d'édition (Flux.2) : l'édition
                 # est une capacité phare, on la met en avant.
                 with gr.Accordion(_acc_title, open=False):
-                    if family == "ming_image":
-                        gr.Markdown(
-                            "Ming Image generates from text. To request a "
-                            "transparent background, include ‘transparent "
-                            "background’ in the prompt (e.g. ‘A cheerful "
-                            "orange cat sticker, transparent background’). "
-                            "The output is saved as PNG with its alpha channel.")
-                        init_image = gr.State(None)
-                        ref_image2 = gr.State(None)
-                        ref_image3 = gr.State(None)
-                        strength = gr.State(0.6)
-                        edit_mode = gr.State(False)
-                        outpaint = gr.State(1.0)
-                    elif is_edit:
+                    if is_edit:
                         gr.Markdown(
                             "**Edit an image**: load it and describe **the "
                             "change** in the prompt (e.g. *“change the car "
@@ -404,7 +388,7 @@ def build_generative_tab(model_id: str, title: str,
                             "of image 2”*).")
                         if family == "qwen21":
                             gr.Markdown(
-                                "**Qwen 2.1:** editing requires the vision "
+                                "**Qwen 2.1 Turbo:** editing requires the vision "
                                 "projector downloaded with the model; no "
                                 "editing LoRA is needed. For a transparent "
                                 "PNG, use: `This is an RGBA image with "
@@ -432,12 +416,11 @@ def build_generative_tab(model_id: str, title: str,
                                 "downscaled automatically, and the automatic "
                                 "quantization (Q4_K_M on 11–12 GB) leaves the "
                                 "headroom it needs.")
-                    if family != "ming_image":
-                        init_image = gr.Image(
-                            label="Image to edit" if is_edit else "Starting image",
-                            type="pil", image_mode=("RGBA" if family == "qwen21"
-                                                    else "RGB"),
-                            buttons=widgets.IMAGE_VIEW_ONLY)
+                    init_image = gr.Image(
+                        label="Image to edit" if is_edit else "Starting image",
+                        type="pil", image_mode=("RGBA" if family == "qwen21"
+                                                else "RGB"),
+                        buttons=widgets.IMAGE_VIEW_ONLY)
                     if is_edit:
                         with gr.Row():
                             ref_image2 = gr.Image(
@@ -450,13 +433,12 @@ def build_generative_tab(model_id: str, title: str,
                                 image_mode=("RGBA" if family == "qwen21"
                                             else "RGB"),
                                 buttons=widgets.IMAGE_VIEW_ONLY)
-                    elif family != "ming_image":
+                    else:
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
-                    if family != "ming_image":
-                        strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
-                                             label="Transformation strength",
-                                             visible=not is_edit)
+                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
+                                         label="Transformation strength",
+                                         visible=not is_edit)
                     if edit_optional:
                         edit_mode = gr.Checkbox(
                             value=False,
@@ -466,7 +448,7 @@ def build_generative_tab(model_id: str, title: str,
                                 "⬇️ Install the official editing LoRA (one click)",
                                 size="sm")
                             edit_lora_msg = gr.Markdown("")
-                    elif family != "ming_image":
+                    else:
                         edit_mode = gr.State(False)
                     if is_edit:
                         outpaint = gr.Slider(
@@ -478,7 +460,7 @@ def build_generative_tab(model_id: str, title: str,
                                  "directional outpaint "
                                  "(left/right/top/bottom), with no prompt and "
                                  "with any model, use the “🖼️ Outpaint” tab.")
-                    elif family != "ming_image":
+                    else:
                         outpaint = gr.State(1.0)
 
                 with gr.Accordion("🧩 LoRA", open=False):
@@ -536,11 +518,10 @@ def build_generative_tab(model_id: str, title: str,
                                            label="Height")
                     with gr.Row():
                         steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
-                                          label="Steps")
+                                          label="Steps", interactive=family != "qwen21")
                         cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
-                                        step=0.1, label="CFG",
-                                        info=("Qwen 2.1: CFG 6.0 in the sd.cpp "
-                                              "example; negative prompts can work."
+                                        step=0.1, label="CFG", interactive=family != "qwen21",
+                                        info=("Qwen 2.1 Turbo: fixed CFG 1 and 8 steps."
                                               if family == "qwen21" else
                                               "On sd.cpp, CFG disabled = 1.0 "
                                               "(normal for distilled models). 0.0 "
@@ -555,13 +536,13 @@ def build_generative_tab(model_id: str, title: str,
                     with gr.Row():
                         sampler = gr.Dropdown(
                             sampling.choices("sampler", family),
-                            value=d.get("sampler", "euler"), label="Sampler",
+                            value=d.get("sampler", "euler"), label="Sampler", interactive=family != "qwen21",
                             info="⭐ recommended · △ poorly suited · ⚠️ "
                                  "discouraged for THIS model")
                         schedule = gr.Dropdown(
                             sampling.choices("schedule", family),
                             value=d.get("scheduler", "auto"),
-                            label="Scheduler (sigmas)",
+                            label="Scheduler (sigmas)", interactive=family != "qwen21",
                             info="How the denoising steps are spread out")
                     with gr.Row():
                         sampler_doc = gr.Markdown(
@@ -579,7 +560,7 @@ def build_generative_tab(model_id: str, title: str,
                         inputs=[schedule], outputs=[schedule_doc])
                     flow_shift = gr.Slider(
                         0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
-                        label="Flow shift",
+                        label="Flow shift", interactive=family != "qwen21",
                         info="Leave at 0 (auto): the model picks the right value "
                              "for the resolution. Too low (1–2) leaves "
                              "GRAIN/noise at high resolution; ~3–4 reinforces "
@@ -619,7 +600,6 @@ def build_generative_tab(model_id: str, title: str,
                     [(t("🌐 Depth"), "depth"),
                      (t("✂️ Background removal"), "bg"),
                      (t("🪄 Cut out an object (SAM)"), "sam"),
-                     (t("🔼 Agrandir (ESRGAN)"), "esrgan"),
                      (t("✨ Creative upscale (SDXL)"), "creative")],
                     value=None, label="📤 Send the selection to the Toolkit",
                     visible=pending_toolkit is not None)
@@ -893,9 +873,8 @@ def build_generative_tab(model_id: str, title: str,
             return (gr.update(value=w), gr.update(value=h),
                     gr.update(value=t(_CUSTOM_LABEL)))
 
-        if family != "ming_image":
-            init_image.upload(_fit_to_ref, inputs=[init_image],
-                              outputs=[width, height, ratio])
+        init_image.upload(_fit_to_ref, inputs=[init_image],
+                          outputs=[width, height, ratio])
 
         if preset_list:
             def apply_preset(name):
