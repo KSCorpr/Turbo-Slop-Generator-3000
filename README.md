@@ -2206,7 +2206,12 @@ or removed, please open an issue.
 Choose **3B ConvRot W4A8** (default, ~2 GB diffusion weights) on an RTX GPU,
 or the classic GGUF runtime on GTX 10xx. Install / repair prepares the selected
 runtime separately and tests its native quantized GPU operations. INT8 and 7B
-variants are also selectable. Both runtimes share the model/VAE download cache.
+variants are also available. ConvRot uses **PyTorch CUDA 13.0** in its isolated
+environment, with a driver compatibility check before installation. If an
+earlier installation used CUDA 12.6, update the app, select a ConvRot model and
+use **Install / repair SeedVR2** to replace that runtime. Installing the CUDA
+Toolkit alone does not change PyTorch's CUDA build.
+Both runtimes share the model/VAE download cache.
 W4A8 uses the standard loader, without DisTorch2 or TensorRT VAE engines.
 Its speed on your hardware remains to be measured.
 Choose **×2 / ×4** to calculate the size from the source, or **Custom** to set

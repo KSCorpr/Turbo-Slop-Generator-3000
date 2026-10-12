@@ -71,11 +71,18 @@ une taille d'image n'est requis.
 
 **Install / repair** crée tools_repo/seedvr2-convrot/.venv, épingle le fork et
 ComfyUI à des commits précis, et installe Torch 2.13.0 / torchvision 0.28.0 CUDA
-12.6 avec comfy-kitchen 0.2.37. Il laisse le runtime classique isolé. Les deux
+13.0 avec comfy-kitchen 0.2.37. Il laisse le runtime classique isolé. Les deux
 lisent tools_repo/seedvr2/models afin de partager les poids et le VAE.
 Le bouton utilise le GPU sélectionné dans **System** : choisir la RTX 3060.
-ConvRot exige CUDA et une capacité de calcul d'au moins 7.5. Le GTX 10xx reste
-sur le chemin classique. La génération RTX ne garantit pas que toutes les
+ConvRot exige PyTorch compilé pour CUDA 13.0 et une capacité de calcul d'au moins
+7.5. L'installeur vérifie que le pilote NVIDIA prend en charge CUDA 13.0 avant
+de télécharger PyTorch. Les versions `torch==2.13.0+cu130` et
+`torchvision==0.28.0+cu130` sont explicites pour remplacer aussi une installation
+existante de la même version en `cu126`. Le CUDA Toolkit n'est pas nécessaire.
+Après mise à jour d'une installation ConvRot en CUDA 12.6, sélectionner un modèle
+ConvRot puis utiliser **Install / repair SeedVR2** pour réparer son environnement.
+Le test vérifie également que les kernels CUDA de comfy-kitchen sont disponibles.
+Le GTX 10xx reste sur le chemin classique. La génération RTX ne garantit pas que toutes les
 architectures et versions de pilote sont compatibles.
 
 Avant de marquer l'installation comme prête, un test charge des poids INT8 ou
@@ -228,7 +235,8 @@ outils. Vérifier le GPU annoncé dans le journal, en particulier avec un iGPU.
 - SeedVR2 ConvRot : fork ussoewwin au commit
   `68191c40d03566608b65d24e97d11dc4389f3a62`, ComfyUI au commit
   `7f7fd918ed0815c5d5ef2ccfe44bfc8e72cfd217`. Python 3.12 séparé, Torch 2.13.0 /
-  torchvision 0.28.0 CUDA 12.6, comfy-kitchen 0.2.37.
+  torchvision 0.28.0 CUDA 13.0, comfy-kitchen 0.2.37. Vérification préalable du pilote ;
+  réparation ciblée des installations ConvRot restées en CUDA 12.6.
 - COLMAP : wheel `pycolmap==3.12.0`, exécution CPU, environnement séparé.
 - Brush : binaire officiel `v0.3.0`, empreinte SHA-256 vérifiée avant extraction.
 - LTX : modèle `vantagewithai/LTX-2.5-GGUF`, composants `Lightricks/LTX-2.5`,

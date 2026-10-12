@@ -160,11 +160,17 @@ def install_seed_convrot(precision="w4a8"):
     marker = target / "installed.json"
     marker.unlink(missing_ok=True)
     py = environment("seedvr2-convrot")
-    # Separate from classic SeedVR2 and the app. CUDA 12.6 avoids a CUDA 13 driver requirement.
+    wrapper = ROOT / "scripts" / "tools" / "run_seedvr2_convrot.py"
+    # Comfy's pinned quant_ops disables native CUDA kernels on Torch cu126.
+    # Check the driver before downloading packages or replacing the sources.
+    run(py, wrapper, "--addon-root", target, "--check-driver")
     constraints = target / "torch-constraints.txt"
-    constraints.write_text("torch==2.13.0\ntorchvision==0.28.0\ncomfy-kitchen==0.2.37\n", encoding="utf-8")
-    pip(py, "torch==2.13.0", "torchvision==0.28.0",
-        "--index-url", "https://download.pytorch.org/whl/cu126")
+    # Pin the local CUDA version too: 2.13.0 alone accepts an installed cu126
+    # build, so changing only --index-url can silently leave the wrong runtime.
+    constraints.write_text("torch==2.13.0+cu130\ntorchvision==0.28.0+cu130\n"
+                           "comfy-kitchen==0.2.37\n", encoding="utf-8")
+    pip(py, "torch==2.13.0+cu130", "torchvision==0.28.0+cu130",
+        "--index-url", "https://download.pytorch.org/whl/cu130")
     run(py, "-c", "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; "
         "assert torch.cuda.get_device_capability(0) >= (7, 5), 'Select an RTX GPU'; "
         "print('Selected GPU:', torch.cuda.get_device_name(0))")
@@ -176,11 +182,11 @@ def install_seed_convrot(precision="w4a8"):
         "script_dir + ':'", "script_dir + os.pathsep"), encoding="utf-8")
     pip(py, "-c", constraints, "-r", target / "comfy" / "requirements.txt",
         "-r", target / "source" / "requirements.txt", "imageio-ffmpeg>=0.6,<1")
-    wrapper = ROOT / "scripts" / "tools" / "run_seedvr2_convrot.py"
     run(py, wrapper, "--addon-root", target, "--probe", "--precision", precision)
     run(py, wrapper, "--addon-root", target, "--help")
     marker.write_text(json.dumps({"commit": addons.SEED_CONVROT_COMMIT,
                                  "comfy_commit": addons.COMFY_CONVROT_COMMIT,
+                                 "torch_cuda": "13.0",
                                  "gpu_tested_precision": precision}), encoding="utf-8")
     print("SeedVR2 ConvRot installed; the selected model and shared VAE download on first use. "
           "No node editor or TensorRT VAE engine is required.", flush=True)
