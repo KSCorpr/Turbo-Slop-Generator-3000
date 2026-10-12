@@ -9,6 +9,7 @@ import fnmatch
 import hashlib
 import math
 import re
+import socket
 import time
 from pathlib import Path
 
@@ -27,24 +28,76 @@ def download_limit() -> float:
 
 
 class RateLimiter:
-    """Cadence les lectures, avec une rafale maximale d'un petit bloc."""
+    """Cadence les lectures, avec au plus deux petits blocs de crédit."""
     def __init__(self):
         self.next_read = time.monotonic()
+        self.last_limit = None
 
     def wait(self, size: int = CHUNK_SIZE) -> None:
         limit = download_limit()
         if not limit:
             self.next_read = time.monotonic()
+            self.last_limit = 0
             return
         now = time.monotonic()
-        self.next_read = max(now, self.next_read) + size / (limit * 1_000_000)
+        if limit != self.last_limit:
+            self.next_read = now
+            self.last_limit = limit
+        duration = size / (limit * 1_000_000)
+        # Créditer le temps de lecture/écriture et les dépassements du timer.
+        # Auparavant, chaque lecture réseau s'ajoutait au délai du plafond :
+        # une source lente était donc ralentie une seconde fois.
+        # Deux blocs de crédit suffisent à amortir un timer Windows de 15 ms
+        # sans accumuler une grosse rafale après une pause de plusieurs minutes.
+        self.next_read = max(now - 2 * duration, self.next_read) + duration
         # Réagir aux modifications du plafond sans dormir plusieurs minutes.
-        while self.next_read > time.monotonic():
-            time.sleep(min(0.25, self.next_read - time.monotonic()))
+        while True:
+            delay = self.next_read - time.monotonic()
+            if delay <= 0.000001:
+                break
+            time.sleep(min(0.25, delay))
             changed = download_limit()
             if changed != limit:
                 self.next_read = time.monotonic()
+                self.last_limit = changed
                 return
+
+
+def receive_buffer_size() -> int | None:
+    limit = download_limit()
+    if not limit:
+        return None
+    # Environ 100 ms au débit choisi, avec des bornes raisonnables. Empêche
+    # une lecture cadencée de laisser Windows recevoir des Mo en avance.
+    # Ce compromis peut réduire le débit sur un chemin à très forte latence.
+    return min(2 * 1024 * 1024, max(CHUNK_SIZE, int(limit * 100_000)))
+
+
+def download_session():
+    """Borne le tampon AVANT connect(), sans modifier le réseau du PC."""
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.connection import HTTPConnection
+
+    buffer_size = receive_buffer_size()
+    if buffer_size is None:
+        return requests.Session()
+    options = [*HTTPConnection.default_socket_options,
+               (socket.SOL_SOCKET, socket.SO_RCVBUF, buffer_size)]
+
+    class DownloadAdapter(HTTPAdapter):
+        def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+            kwargs["socket_options"] = options
+            return super().init_poolmanager(connections, maxsize, block=block, **kwargs)
+
+        def proxy_manager_for(self, proxy, **kwargs):
+            kwargs["socket_options"] = options
+            return super().proxy_manager_for(proxy, **kwargs)
+
+    session = requests.Session()
+    session.mount("http://", DownloadAdapter())
+    session.mount("https://", DownloadAdapter())
+    return session
 
 
 def transfer_lock():
@@ -78,7 +131,6 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
         with transfer_lock():
             return hub_download(repo_id=repo_id, filename=filename,
                                 local_dir=local_dir, revision=revision, **kwargs)
-    import requests
     from tqdm.auto import tqdm
 
     root = Path(local_dir).resolve()
@@ -106,6 +158,10 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
             offset = 0
         partial.touch(exist_ok=True)
         if offset < meta.size:
+            limit = download_limit()
+            print(f"[download] HTTP, one stream, Xet disabled; "
+                  f"limit {limit:g} MB/s ({limit * 8:g} Mbit/s); "
+                  f"receive buffer {receive_buffer_size()} bytes", flush=True)
             # URL à commit immuable : un changement de main ne mélange jamais
             # deux versions, même si le transfert est repris le lendemain.
             url = hf_hub_url(repo_id, filename, revision=meta.commit_hash,
@@ -114,8 +170,9 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
             headers["Accept-Encoding"] = "identity"
             if offset:
                 headers["Range"] = f"bytes={offset}-"
-            with requests.get(url, headers=headers, stream=True,
-                              timeout=(30, 120)) as response:
+            with download_session() as session, session.get(
+                    url, headers=headers, stream=True,
+                    timeout=(30, 120)) as response:
                 response.raise_for_status()
                 if response.status_code == 200:
                     offset = 0  # serveur sans Range : recommencer proprement
@@ -127,6 +184,7 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
                 else:
                     raise RuntimeError("Unexpected HTTP download response.")
                 limiter = RateLimiter()
+                started = time.monotonic()
                 with partial.open("ab" if offset else "wb") as target, tqdm(
                         total=meta.size, initial=offset, unit="B", unit_scale=True,
                         desc=filename) as progress:
@@ -140,6 +198,11 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
                         progress.update(len(chunk))
                         if target.tell() > meta.size:
                             raise RuntimeError("Download exceeds expected file size.")
+                elapsed = max(time.monotonic() - started, 0.001)
+                speed = (partial.stat().st_size - offset) / elapsed / 1_000_000
+                print(f"[download] File data: {speed:.2f} MB/s "
+                      f"({speed * 8:.1f} Mbit/s). Verifying the file; "
+                      "the model transfer has ended.", flush=True)
         _verify(partial, meta.size, meta.etag)
         partial.replace(dest)
         marker.unlink(missing_ok=True)

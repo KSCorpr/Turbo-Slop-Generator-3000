@@ -1,5 +1,7 @@
 """Real HTTP transfer, resume safety, rate and persisted UI setting."""
 import hashlib
+import math
+import socket
 import tempfile
 import threading
 import time
@@ -156,6 +158,69 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(transfers.download_limit(), expected)
         self.limit = 0
         transfers.RateLimiter().wait(1_000_000)
+
+
+class RateAndBufferTests(unittest.TestCase):
+    def test_network_read_time_is_credited_instead_of_added_to_the_limit(self):
+        clock = [0.0]
+        def sleep(seconds):
+            clock[0] += seconds
+        with patch.object(transfers, "download_limit", return_value=1), \
+             patch.object(transfers.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(transfers.time, "sleep", side_effect=sleep):
+            limiter = transfers.RateLimiter()
+            for _ in range(10):
+                limiter.wait(100_000)
+                clock[0] += .1  # source réseau déjà limitée à 1 Mo/s
+        # L'ancien code prenait 2 s : 1 s réseau PLUS 1 s de pauses.
+        self.assertAlmostEqual(clock[0], 1.1)
+
+    def test_coarse_windows_timer_does_not_accumulate_oversleep(self):
+        clock = [0.0]
+        def sleep(seconds):
+            clock[0] += math.ceil(seconds / .015625) * .015625
+        with patch.object(transfers, "download_limit", return_value=5), \
+             patch.object(transfers.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(transfers.time, "sleep", side_effect=sleep):
+            limiter = transfers.RateLimiter()
+            for _ in range(200):
+                limiter.wait(transfers.CHUNK_SIZE)
+        ideal = 200 * transfers.CHUNK_SIZE / 5_000_000
+        self.assertGreaterEqual(clock[0], ideal)
+        self.assertLess(clock[0], ideal + .032)
+
+    def test_no_large_burst_credit_accumulates_after_a_long_pause(self):
+        clock = [0.0]
+        sleeps = []
+        def sleep(seconds):
+            sleeps.append(seconds)
+            clock[0] += seconds
+        with patch.object(transfers, "download_limit", return_value=1), \
+             patch.object(transfers.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(transfers.time, "sleep", side_effect=sleep):
+            limiter = transfers.RateLimiter()
+            limiter.wait(100_000)
+            clock[0] += 60
+            sleeps.clear()
+            limiter.wait(100_000)
+            limiter.wait(100_000)
+            limiter.wait(100_000)
+        self.assertAlmostEqual(sum(sleeps), .1)
+
+    def test_receive_buffer_is_set_for_http_https_and_proxy_before_connect(self):
+        with patch.object(transfers, "download_limit", return_value=1), \
+             transfers.download_session() as session:
+            option = (socket.SOL_SOCKET, socket.SO_RCVBUF, 100_000)
+            for scheme in ["http://", "https://"]:
+                adapter = session.get_adapter(scheme)
+                self.assertIn(option, adapter.poolmanager.connection_pool_kw["socket_options"])
+                proxy = adapter.proxy_manager_for("http://127.0.0.1:9999")
+                self.assertIn(option, proxy.connection_pool_kw["socket_options"])
+
+    def test_unlimited_leaves_socket_buffers_at_system_defaults(self):
+        with patch.object(transfers, "download_limit", return_value=0), \
+             transfers.download_session() as session:
+            self.assertNotIn("socket_options", session.get_adapter("https://").poolmanager.connection_pool_kw)
 
 
 if __name__ == "__main__":
