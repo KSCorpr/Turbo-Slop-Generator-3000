@@ -12,6 +12,34 @@
 
 base_models:
 
+  - id: sdxl-base
+    name: "SDXL Base 1.0"
+    family: sdxl
+    tags: [local, generation, img2img, LoRA]
+    description: >
+      SDXL generation and img2img through the local Comfy engine. Uses the
+      complete checkpoint (~6.6 GB), including its text encoders and VAE.
+      An existing Toolkit SDXL checkpoint is reused. Select your own SDXL
+      safetensors checkpoint in the local-file controls. Start at 1024 px.
+    sources:
+      model:
+        repo: stabilityai/stable-diffusion-xl-base-1.0
+        match: "sd_xl_base_1.0.safetensors"
+        selectable: ["sd_xl_base_1.0.safetensors"]
+        local_paths: ["tools_repo/upscale/sd_xl_base_1.0.safetensors"]
+    defaults:
+      steps: 24
+      cfg_scale: 6.0
+      sampler: euler
+      scheduler: auto
+      width: 1024
+      height: 1024
+      supports_negative: true
+    presets:
+      - {name: "Balanced (24 steps)", sampler: euler, scheduler: auto, steps: 24, cfg_scale: 6.0}
+      - {name: "Detail (30 steps)", sampler: dpm++2m, scheduler: karras, steps: 30, cfg_scale: 6.0}
+    vram_min_gb: 8
+
   # --------------------------------------------------------------------------
   - id: flux2-klein-9b
     name: "Flux.2 Klein 9B"
@@ -75,11 +103,12 @@ base_models:
     tags: [fast, distilled, editing, transparency, text]
     description: >
       Official Turbo checkpoint: generation and editing with three references,
-      8 steps, Euler and CFG 1. Official Turbo sigmas are passed to sd.cpp.
+      8 steps, Euler and CFG 1. Uses the official Turbo sigmas.
       INT8 ConvRot diffusion (~7.26 GB) by default; BF16 is also selectable.
-      Reuses the installed 2.1 VAE, Qwen3-VL-8B GGUF encoder and vision
-      projector. Starts at 1024 px for 11–12 GB GPUs; 2K uses more memory.
-      A recent sd.cpp engine with --sigmas is required. Qwen Research license.
+      The local Comfy edition reuses the installed diffusion and VAE and needs
+      the official Qwen3-VL-8B INT8 Comfy encoder (~8.7 GB). GGUF encoders stay
+      available with the classic engine. Start at 1024 px for 11–12 GB GPUs;
+      2K uses more memory. Qwen Research license.
     sources:
       diffusion:
         repo: Comfy-Org/Qwen-Image-2.1
@@ -98,6 +127,22 @@ base_models:
         repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
         match: "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
         optional: true  # text-to-image sans ce fichier ; édition avec -r
+    comfy_sources:
+      diffusion:
+        repo: Comfy-Org/Qwen-Image-2.1
+        match: "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
+          - "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors"
+      vae:
+        repo: Comfy-Org/Qwen-Image-2.1
+        match: "vae/qwen_image_2.1_vae_bf16.safetensors"
+      text_encoder:
+        repo: Comfy-Org/Qwen-Image-2.1
+        match: "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+        selectable:
+          - "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+          - "text_encoders/qwen3vl_8b_bf16.safetensors"
     defaults:
       steps: 8
       cfg_scale: 1.0

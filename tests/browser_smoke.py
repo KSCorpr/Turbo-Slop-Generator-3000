@@ -233,6 +233,7 @@ def main():
                 page.get_by_role("tab", name="Gallery", exact=True).click()
                 expect(page.locator("#history-grid img")).to_have_count(24)
                 page.locator("#history-grid img").first.click()
+                expect(page.locator("#history-prompt textarea")).to_have_value("Shortcut request")
                 page.get_by_role("button", name="Use prompt in Images", exact=True).click()
                 expect(prompt).to_have_value("Shortcut request")
 
@@ -245,9 +246,18 @@ def main():
                 page.get_by_role("button", name=re.compile("Styles — presets")).click()
 
                 # All model workspaces still exist and use the new navigation.
-                for title in ("Qwen Image 2.1 Turbo", "Krea 2 Turbo", "Z-Image Turbo", "Flux.2 Klein"):
+                for title in ("Qwen Image 2.1 Turbo", "Krea 2 Turbo", "Z-Image Turbo", "SDXL", "Flux.2 Klein"):
                     page.get_by_role("tab", name=title, exact=True).click()
                     expect(prompt).to_be_visible()
+
+                page.get_by_role("tab", name="SDXL", exact=True).click()
+                expect(prompt).to_be_visible()
+                prompt.fill("SDXL edition request")
+                page.get_by_role("button", name="Generate", exact=True).click()
+                expect(page.locator(".studio-status:visible").first).to_contain_text("Done", timeout=30000)
+                assert calls[-1] == "SDXL edition request", calls
+                page.screenshot(path=str(screenshots / "studio-sdxl.png"))
+                page.get_by_role("tab", name="Flux.2 Klein", exact=True).click()
 
                 # Stop executes outside the inference queue.
                 engine_started.clear()

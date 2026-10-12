@@ -2,7 +2,7 @@ name: Tests application
 
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main, comfy-edition, 'codex/**']
   pull_request:
 
 permissions:
@@ -43,6 +43,27 @@ jobs:
 
       - name: Vérifier les dépendances
         run: python -m pip check
+
+  comfy-runtime:
+    name: Comfy local API · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-latest]
+    env:
+      PYTHONUTF8: "1"
+      GRADIO_ANALYTICS_ENABLED: "False"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install requests PyYAML "huggingface_hub>=0.26,<1.0"
+      - name: Install and validate the real isolated Comfy server without weights
+        run: python scripts/setup_comfy.py --runtime cpu
+      - name: Check isolated dependencies
+        run: python scripts/setup_comfy.py --check-deps
 
   spandrel-runtime:
     name: Spandrel first use and HAT · ${{ matrix.os }}

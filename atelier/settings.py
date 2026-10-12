@@ -52,6 +52,9 @@ CUSTOM_DIR = MODELS_DIR / "custom"   # modèles téléchargés manuellement aill
 
 # Préférences par défaut (surchargées par l'onglet Réglages, persistées en JSON).
 DEFAULT_PREFS: dict[str, Any] = {
+    # This branch runs Qwen Turbo and SDXL through the local Comfy engine.
+    # Other models retain their existing engine until their workflows migrate.
+    "image_backend": "comfy",
     "theme": "light",           # thème de l'interface : "light" | "dark"
     # Dossier des modèles. Vide/None = `models/` dans le projet. Un chemin
     # ABSOLU le déplace ailleurs (ex. "D:\\IA\\models" sur un NVMe).

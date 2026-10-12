@@ -122,6 +122,7 @@ def _benchmark_prefs(base: dict, patch: dict) -> dict:
     merged["cache_by_model"] = {}
     merged["max_vram"] = ""
     merged["stream_layers"] = False
+    merged["image_backend"] = "sdcpp"  # Placement flags belong to this runner.
     return merged
 
 
@@ -144,7 +145,8 @@ MEASURED_RUNS = 3
 
 
 def _one_run(model_id: str, prefs: dict, defaults: dict,
-             log: Callable[[str], None] | None) -> tuple[float, list, dict]:
+             log: Callable[[str], None] | None, *, seed=BENCHMARK_SEED,
+             size=512, full_steps=False, peak_total=None) -> tuple[float, list, dict]:
     """Un tir chronométré, avec le pic VRAM observé pendant CE tir."""
     # La ligne de base est relevée AVANT le tir et retranchée ensuite : ce qui
     # nous intéresse est ce que le tir consomme, pas ce que le bureau occupait
@@ -159,18 +161,22 @@ def _one_run(model_id: str, prefs: dict, defaults: dict,
     try:
         outputs = generate.generate(
             model_id=model_id, prompt=BENCHMARK_PROMPT, negative="",
-            steps=(8 if model_id == "qwen-image-2.1-turbo" else
+            steps=(int(defaults.get("steps", 24)) if full_steps else
+                   8 if model_id == "qwen-image-2.1-turbo" else
                    min(4, int(defaults.get("steps", 4)))),
             cfg_scale=float(defaults.get("cfg_scale", 1.0)),
-            width=512, height=512, seed=BENCHMARK_SEED, batch_count=1,
+            width=size, height=size, seed=seed, batch_count=1,
             sampler=defaults.get("sampler", "euler"),
-            schedule=defaults.get("scheduler", "auto"),
+            schedule=defaults.get("schedule", defaults.get("scheduler", "auto")),
             flow_shift=float(defaults.get("flow_shift", 0.0) or 0.0),
             save_prompt=False, prefs_override=prefs, log=log)
         elapsed = time.perf_counter() - started
     finally:
         stop.set()
         watcher.join(timeout=1)
+    if peak_total is not None:
+        for idx, used in peak.items():
+            peak_total[idx] = max(peak_total.get(idx, 0.0), used)
     delta = {idx: round(max(0.0, used - baseline.get(idx, 0.0)), 2)
              for idx, used in peak.items()}
     return elapsed, outputs, delta
@@ -267,7 +273,7 @@ def run_hardware_benchmark(model_id: str | None = None,
                            log: Callable[[str], None] | None = None,
                            cancel: Callable[[], bool] | None = None) -> Path:
     base = settings.load_prefs()
-    selected = model_id or _pick_model(base)
+    selected = model_id or _pick_model({**base, "image_backend": "sdcpp"})
     if not selected:
         raise RuntimeError("No model installed: download Krea 2 Turbo or Flux.2.")
     modes = placement_candidates(base)
@@ -289,6 +295,73 @@ def run_hardware_benchmark(model_id: str | None = None,
         "recommended_prefs_patch": winner.get("prefs_patch") if winner else None,
     }
     return _write_report("hardware-benchmark", payload)
+
+
+def run_engine_benchmark(model_id="qwen-image-2.1-turbo", log=None, cancel=None) -> Path:
+    """First image and real subsequent inference, at the model's full preset.
+
+    Seeds change on every run. Reusing a seed with an identical prompt would
+    hit Comfy's output cache and produce a misleading inference time.
+    """
+    from . import comfy_runtime
+    from .engine import comfy
+    if model_id not in comfy_runtime.MODEL_IDS:
+        raise ValueError("Choose Qwen Turbo or SDXL for the engine comparison.")
+    base = settings.load_prefs()
+    gpu = comfy_runtime.selected_gpu(base)
+    results = []
+    sequence = [BENCHMARK_SEED + i for i in range(MEASURED_RUNS + 1)]
+    for engine, label in (("sdcpp", "Classic"), ("comfy", "Comfy local")):
+        if cancel and cancel():
+            raise Cancelled("Measurement stopped.")
+        comfy.ENGINE.close()
+        prefs = {**base, "image_backend": engine, "system_mode": "manual",
+                 "gpu_index": gpu.index if gpu else None, "encoder_gpu_index": None,
+                 "auto_optimize": True, "params_backend": "", "cache_mode": "",
+                 "cache_option": "", "cache_by_model": {}, "auto_fit": False}
+        model = registry.get_base_model(model_id, prefs)
+        row = {"label": label, "backend": engine, "ok": False, "outputs": []}
+        if not registry.model_is_ready(model):
+            row["error"] = "Download this engine's model components first (encoder formats differ)."
+            results.append(row)
+            continue
+        durations, peak = [], {}
+        try:
+            for index, seed in enumerate(sequence):
+                if cancel and cancel():
+                    raise Cancelled("Measurement stopped.")
+                if log:
+                    log(f"{label}: {'first image' if index == 0 else 'subsequent image ' + str(index)} · seed {seed}")
+                elapsed, outputs, _ = _one_run(model_id, prefs, model.defaults, log,
+                    seed=seed, size=1024, full_steps=True, peak_total=peak)
+                durations.append(elapsed)
+                row["outputs"].extend(str(path) for path in outputs)
+            warm = sorted(durations[1:])
+            row.update(ok=True, first_image_seconds=round(durations[0], 3),
+                       seconds=round(warm[len(warm) // 2], 3),
+                       runs_seconds=[round(t, 3) for t in durations[1:]],
+                       spread_seconds=round(warm[-1] - warm[0], 3),
+                       peak_total_vram_gb={str(k): round(v, 2) for k, v in peak.items()})
+        except Cancelled:
+            raise
+        except Exception as exc:
+            if cancel and cancel():
+                raise Cancelled("Measurement stopped.") from exc
+            row["error"] = str(exc)
+        finally:
+            comfy.ENGINE.close()
+        results.append(row)
+    successful = {r["backend"]: r for r in results if r["ok"]}
+    ratio = (successful["sdcpp"]["seconds"] / max(successful["comfy"]["seconds"], 0.001)
+             if len(successful) == 2 else None)
+    return _write_report("engine-benchmark", {
+        "schema": 1, "kind": "local-engine-comparison", "model_id": model_id,
+        "prompt": BENCHMARK_PROMPT, "size": [1024, 1024], "seeds": sequence,
+        "measured_runs": MEASURED_RUNS, "results": results,
+        "comfy_speedup": round(ratio, 3) if ratio is not None else None,
+        "system": diagnostics.system_report(), "comfy_version": comfy_runtime.VERSION,
+        "limitations": "Encoder formats differ; compare saved images too. First-image timing includes process/model loading, but filesystem cache is not reset. VRAM is sampled for the whole card.",
+    })
 
 
 def apply_recommendation(report_path: str | Path) -> str:

@@ -31,13 +31,13 @@ if [ "$OS" = "Darwin" ] && [ "$ARCH" != "arm64" ]; then
 fi
 
 if [ ! -d "$VENV" ]; then
-    echo "[1/4] Creation de l'environnement virtuel..."
+    echo "[1/5] Creation de l'environnement virtuel..."
     "$PY" -m venv "$VENV"
 fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
-echo "[2/4] Installation des dependances..."
+echo "[2/5] Installation des dependances..."
 PIP_NET="--retries 8 --timeout 120"
 pip install --upgrade pip $PIP_NET
 pip install -r requirements.txt $PIP_NET || pip install -r requirements.txt $PIP_NET
@@ -51,10 +51,13 @@ pip show diffusers >/dev/null 2>&1 && pip install "diffusers>=0.30,<0.32" $PIP_N
 # Variante du moteur : deduite du systeme par get_sdcpp lui-meme (metal sur
 # macOS, cuda ailleurs). On ne la force pas ici pour n'avoir qu'un seul endroit
 # ou cette regle est ecrite.
-echo "[3/4] Telechargement du moteur stable-diffusion.cpp..."
-python scripts/get_sdcpp.py
+echo "[3/5] Installation de Comfy local (Qwen Turbo et SDXL)..."
+python scripts/setup_comfy.py
 
-echo "[4/4] Dossiers utilisateur..."
+echo "[4/5] Telechargement du moteur classique pour les autres modeles..."
+python scripts/get_sdcpp.py || echo "Moteur classique indisponible. Qwen Turbo et SDXL restent utilisables avec Comfy."
+
+echo "[5/5] Dossiers utilisateur..."
 mkdir -p models loras outputs tmp userdata
 
 echo

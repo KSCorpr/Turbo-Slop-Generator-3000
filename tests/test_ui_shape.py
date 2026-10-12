@@ -160,7 +160,7 @@ class AccordionBudgetTests(unittest.TestCase):
                 if tab not in set(self.generative)}
         total = sum(len(labels) for labels in rest.values())
         self.assertLessEqual(
-            total, 26,
+            total, 27,  # One optional Comfy installer/comparison panel.
             "trop de replis hors génération :\n" +
             "\n".join(f"  {tab} : {len(labels)}"
                        for tab, labels in sorted(rest.items())))
@@ -276,7 +276,7 @@ class SettingsTabTests(unittest.TestCase):
     def test_only_optional_things_are_folded(self):
         """Ce qui est replié doit être facultatif, et le dire dans son titre."""
         labels = [b.label or "" for b in self._inside(gr.Accordion)]
-        self.assertLessEqual(len(labels), 3, labels)
+        self.assertLessEqual(len(labels), 4, labels)
         for lbl in labels:
             self.assertTrue(
                 any(w in lbl for w in ("facultatif", "optional", "Détail",

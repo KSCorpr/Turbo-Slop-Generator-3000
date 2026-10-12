@@ -63,6 +63,8 @@ class LocalJob:
 
     def run(self, command, log=print, *, cwd=None, env=None):
         self.check()
+        from . import comfy
+        comfy.release()
         command = [str(part) for part in command]
         log("$ " + subprocess.list2cmdline(command))
         options = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}

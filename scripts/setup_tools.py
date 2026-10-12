@@ -396,11 +396,16 @@ def ensure_spandrel():
 
 def install_upscale():
     base = settings.ROOT / "tools_repo" / "upscale"
-    ensure_torch_cuda()
-    install_spandrel()
-    print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
-    sh([sys.executable, "-m", "pip", "install", *_PINS.values(),
-        "accelerate", "safetensors", "omegaconf", "pillow"])
+    if settings.load_prefs().get("image_backend", "comfy") == "comfy":
+        from atelier import comfy_runtime
+        if not comfy_runtime.ready():
+            sh([sys.executable, str(settings.ROOT / "scripts" / "setup_comfy.py")])
+    else:
+        ensure_torch_cuda()
+        install_spandrel()
+        print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
+        sh([sys.executable, "-m", "pip", "install", *_PINS.values(),
+            "accelerate", "safetensors", "omegaconf", "pillow"])
     from huggingface_hub import hf_hub_download, snapshot_download
     # Dossier où déposer des checkpoints SDXL perso (sélectionnables dans l'UI).
     (base / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -409,7 +414,8 @@ def install_upscale():
     # téléchargement). Sur un réseau qui bloque huggingface.co (entreprise),
     # téléchargez les fichiers depuis un poste qui atteint HF et déposez-les
     # aux emplacements indiqués — puis relancez : l'install les détecte et saute.
-    base_ck = base / "sd_xl_base_1.0.safetensors"
+    from atelier.engine.tools import _upscale_base
+    base_ck = _upscale_base()
     vae_ok = (base / "vae").is_dir() and any((base / "vae").glob("*.safetensors"))
     cn_ok = (base / "controlnet").is_dir() and \
         any((base / "controlnet").glob("*.safetensors"))

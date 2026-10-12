@@ -674,6 +674,8 @@ def child_env_for(gpu_index: int | None,
 
 def run(cmd: list[str], log: Callable[[str], None] | None = None,
         gpu_index: int | None = None, all_gpus: bool = False) -> None:
+    from . import comfy
+    comfy.release()
     global _CANCELLED
     env = child_env_for(gpu_index, all_gpus)
     if log:

@@ -4,7 +4,10 @@ Oui, le studio peut conserver ses écrans et utiliser ComfyUI uniquement comme
 moteur local. L'éditeur de nœuds n'est pas nécessaire : le studio envoie les
 paramètres à des workflows internes et reçoit les images, les aperçus et les
 événements de progression par API. Cette migration complète n'est pas réalisée
-dans la modification du catalogue et de SeedVR2 ConvRot.
+dans la modification du catalogue et de SeedVR2 ConvRot. La branche
+`comfy-edition` en réalise maintenant une première étape : Qwen Turbo, SDXL,
+upscale SDXL, aperçus, annulation et installation locale. Voir
+[le guide de cette édition](comfy-edition.md) pour les fonctions encore classiques.
 
 ## Choix du moteur
 

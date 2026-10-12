@@ -41,12 +41,14 @@ _CANCELLED = False
 
 
 def cancel() -> str:
-    """Termine le(s) sous-process d'outil en cours (upscale, etc.)."""
+    """Stop active local image engines and toolkit workers."""
+    from . import comfy
+    comfy_status = comfy.cancel()
     global _CANCELLED
     with _LOCK:
         procs = list(_ACTIVE)
     if not procs:
-        return "No task running."
+        return comfy_status if "Stopping" in comfy_status else "No task running."
     _CANCELLED = True
     for p in procs:
         try:
@@ -138,9 +140,22 @@ def face_is_installed() -> bool:
 
 
 def upscale_is_installed() -> bool:
-    base = UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
+    base = _upscale_base()
     vae = UPSCALE_DIR / "vae"
     return base.is_file() and vae.is_dir() and any(vae.glob("*.safetensors"))
+
+
+def _upscale_base() -> Path:
+    """Share the catalogue's SDXL download with the toolkit, in either order."""
+    from .. import registry
+    model = registry.get_base_model("sdxl-base", settings.load_prefs())
+    if model:
+        for component in model.components:
+            if component.role == "model":
+                resolved = registry.resolve_component_path(component)
+                if resolved:
+                    return resolved
+    return UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
 
 
 def upscale_cn_is_installed() -> bool:
@@ -153,7 +168,7 @@ def list_upscale_checkpoints() -> list[tuple[str, str]]:
     """Checkpoints SDXL disponibles pour l'upscale créatif : (libellé, chemin).
     Le modèle de base + tout .safetensors déposé dans tools_repo/upscale/checkpoints/."""
     out: list[tuple[str, str]] = []
-    base = UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
+    base = _upscale_base()
     if base.is_file():
         out.append(("SDXL Base 1.0 (default)", str(base)))
     if UPSCALE_CKPT_DIR.is_dir():
@@ -277,6 +292,8 @@ def _run_tool(cmd: list[str], log: Callable[[str], None] | None,
               err_msg: str, gpu_index: int | None = None,
               cwd: Path | None = None, env: dict | None = None) -> None:
     global _CANCELLED
+    from . import comfy
+    comfy.release()
     run_env = env if env is not None else settings.child_env(gpu_index)
     if log:
         log("$ " + " ".join(cmd))
@@ -796,7 +813,7 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
     if not upscale_is_installed():
         raise ToolError("The creative SDXL upscale is not installed "
                         "(“Install” button in Toolkit → Upscale).")
-    base = Path(base_model) if base_model else UPSCALE_DIR / "sd_xl_base_1.0.safetensors"
+    base = Path(base_model) if base_model else _upscale_base()
     if not base.is_file():
         raise ToolError(f"Checkpoint SDXL introuvable : {base}")
     from PIL import Image as _PILImage
@@ -862,6 +879,19 @@ def ultimate_upscale(image, scale: float = 2.0, prompt: str = "",
                 log(f"[usdu] pre-enlargement failed ({exc}) → Lanczos "
                     "fallback.")
             inp = src
+
+    if settings.load_prefs().get("image_backend", "comfy") == "comfy":
+        from . import comfy
+        vaes = sorted((UPSCALE_DIR / "vae").glob("*.safetensors"))
+        controls = sorted((UPSCALE_DIR / "controlnet").glob("*.safetensors"))
+        if use_controlnet and not controls:
+            raise ToolError("Install SDXL ControlNet Tile, or turn off ControlNet.")
+        return comfy.upscale(inp, checkpoint=base,
+            vae=vaes[0] if vaes and not integrated_vae else None,
+            controlnet=controls[0] if use_controlnet else None, cn_scale=cn_scale,
+            width=tw, height=th, denoise=denoise, steps=steps, cfg=cfg,
+            tile=tile, overlap=overlap, prompt=prompt, negative=negative,
+            preview_path=preview_path, log=log)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = settings.TMP_DIR / f"usdu_out_{stamp}"

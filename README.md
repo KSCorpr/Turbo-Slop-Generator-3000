@@ -1,5 +1,11 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Comfy edition — separate `comfy-edition` branch.** Qwen 2.1 Turbo, SDXL
+generation and tiled SDXL upscale now use an owned local ComfyUI process
+behind the existing studio. No node editor, account or remote generation
+service is involved. Flux.2 Klein, Krea 2, Z-Image and ADetailer retain their
+classic runner in this first migration. [Installation, comparison and limits](docs/comfy-edition.md).
+
 **10 views / 360°:** generate ten object angles or fixed-camera scene views
 from one image using any image engine in the catalogue. Scene views can be
 reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](docs/multiview-360.md).
@@ -12,12 +18,12 @@ reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](d
 workspace with six navigation tabs, a local image gallery, lighter previews,
 and one shared GPU queue. [Release notes and verification](docs/STUDIO_RELEASE.md).
 
-[Download Studio](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/main.zip)
+[Download Comfy edition](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/comfy-edition.zip)
 and extract it into a folder, then use the normal installers below.
 With Git:
 
 ```bash
-git clone --branch main --single-branch https://github.com/KSCorpr/Turbo-Slop-Generator-3000.git turbo-slop-studio
+git clone --branch comfy-edition --single-branch https://github.com/KSCorpr/Turbo-Slop-Generator-3000.git turbo-slop-studio
 cd turbo-slop-studio
 ```
 
@@ -34,23 +40,25 @@ cd turbo-slop-studio
 > French and translated through a dictionary; that layer is gone and the source
 > strings are English. See [Interface language & theme](#interface-language--theme).
 
-A **local**, modern, lightweight image-generation studio for artists, built on
-**[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
+A **local** image-generation studio for artists, built on
+**[ComfyUI](https://github.com/Comfy-Org/ComfyUI)** and
+**[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)**.
+Generate with **SDXL**, **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
 **Krea 2 Turbo** and **Z-Image Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
 editing, SDXL creative upscaling, SeedVR2 restoration, and a utility toolkit.
 
-A clean web UI without a node editor. SeedVR2 ConvRot uses Comfy internals
-in its isolated command-line runtime; image generation still uses sd.cpp.
-A future replacement of sd.cpp is described in [the backend migration plan](docs/backend-migration.md).
+A clean web UI without a node editor. ComfyUI stays on this computer and
+keeps models cached between compatible Qwen/SDXL images when memory allows.
+SeedVR2 ConvRot has its separate isolated runtime. The remaining migration
+is described in [the backend migration plan](docs/backend-migration.md).
 
 > **Credits & honesty.** All the heavy lifting — the inference engine, GGUF
-> support, CUDA kernels — comes from **Leejet’s
+> support, CUDA kernels — comes from **ComfyUI, PyTorch, and Leejet’s
 > [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)**. This
 > project is just a friendly local UI on top of it; full credit and thanks to
-> Leejet and the sd.cpp contributors.
+> ComfyUI, PyTorch, Leejet and their contributors.
 >
 > This GUI was **vibe-coded with [Claude](https://claude.ai/code)** (Anthropic) —
 > built iteratively in plain language rather than hand-written line by line. Treat
@@ -115,7 +123,7 @@ LoRA settings expand when needed.
 
 ### Windows (RTX cards)
 ```bat
-install.bat      ::  portable Python + dependencies + GGUF engine (CUDA)
+install.bat      ::  portable Python + local Comfy runtime + classic engine
 run.bat          ::  launch the UI at http://127.0.0.1:7860
 update.bat       ::  the ONLY update button: code, cleanup, both engines
 ```

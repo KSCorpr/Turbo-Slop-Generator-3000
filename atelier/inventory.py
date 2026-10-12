@@ -106,6 +106,10 @@ def items(prefs: dict | None = None) -> list[Item]:
     out: list[Item] = []
 
     # --- Moteurs -----------------------------------------------------------
+    from . import comfy_runtime
+    out.append(Item("engine_comfy", "Comfy local image engine", "Engines",
+                    [comfy_runtime.root()],
+                    note="Reinstallable: System → Settings → Install / repair Comfy."))
     out.append(Item(
         "engine_sdcpp", "stable-diffusion.cpp engine (sd-cli + DLLs)", "Engines",
         _engine_sdcpp_paths(),
@@ -235,6 +239,9 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
             msgs.append(f"• {item.label}: nothing to delete.")
             continue
         size = item.size
+        if key == "engine_comfy":
+            from .engine import comfy
+            comfy.release()
         ok = 0
         for p in item.paths:
             try:
