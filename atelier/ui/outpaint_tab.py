@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import queue
 import random
+import re
 import threading
 import time
 
@@ -26,7 +27,99 @@ from ..engine import generate as gen_engine
 from ..engine import outpaint as op
 from ..engine import sdcpp
 from ..i18n import t
-from . import widgets
+from . import preview, widgets
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_BAR = re.compile(r"\|[#=>\-\s]*\|")
+
+
+def _stream_outpaint(messages, preview_path, steps, logs):
+    """Keep the UI responsive while sd.cpp emits thousands of segment logs."""
+    started = time.monotonic()
+    last_emit = 0.0
+    last_text = ""
+    version = 0
+    emitted_version = -1
+    next_frame = 0
+    next_check = 0.0
+    current = 0
+    segments = 0
+    phase = "Loading model / preparing reference"
+    step_re = re.compile(rf"(\d+)\s*/\s*{steps}\b.*(?:s/it|it/s)")
+    yield ("Preparing outpaint...", gr.update(value=None), "\n".join(logs))
+    done = False
+    while not done:
+        try:
+            first = messages.get(timeout=0.1)
+        except queue.Empty:
+            first = ""
+        batch = [first]
+        # Drain bursts without emitting a browser update for each tensor.
+        for _ in range(127):
+            if batch[-1] is None:
+                break
+            try:
+                batch.append(messages.get_nowait())
+            except queue.Empty:
+                break
+        for raw in batch:
+            if raw is None:
+                done = True
+                break
+            if not raw:
+                continue
+            line = _ANSI.sub("", raw).strip()
+            match = step_re.search(line)
+            if match:
+                current = max(current, min(steps, int(match[1])))
+                phase = "Generating"
+            if "generating image:" in line:
+                phase = "Generating"
+            segment = re.search(r"using (\d+) segments", line)
+            if segment:
+                segments = int(segment[1])
+                logs.append(f"[memory] Processing in {segments} segments; "
+                            "moving weights between RAM and GPU costs time.")
+                version += 1
+            important = bool(re.search(r"\[(?:E|W|ERROR|WARNING)\]|failed|error", line, re.I))
+            noisy = (line.startswith("[V]") or _BAR.search(line)
+                     or "loading tensors completed" in line)
+            if important or not noisy:
+                logs.append(line)
+                version += 1
+            if len(logs) > 400:
+                del logs[:-400]
+        now = time.monotonic()
+        memory = f" · {segments} segments" if segments else ""
+        text = (f"Step {current}/{steps}" if current else phase) + memory
+        text += f" · {int(now - started)} s elapsed"
+        if done or now >= next_check:
+            next_check = now + 0.05
+            for index, frame in preview.step_frames(preview_path, next_frame):
+                next_frame = index + 1
+                last_emit = time.monotonic()
+                emitted_version = version
+                last_text = text
+                yield (text, gr.update(value=frame), "\n".join(logs))
+        if done:
+            if text != last_text or version != emitted_version:
+                yield (text, gr.update(), "\n".join(logs))
+            break
+        if ((text != last_text and now - last_emit >= 0.25)
+                or (version != emitted_version and now - last_emit >= 1)):
+            last_emit = now
+            emitted_version = version
+            last_text = text
+            yield (text, gr.update(), "\n".join(logs))
+
+
+def _cleanup_preview(template):
+    for path in template.parent.glob(template.name.replace("%03d", "*")):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 PRESETS = [
     ("← Left", ["left"]),
@@ -129,6 +222,12 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                          "area. The extension instruction itself is always "
                          "sent to the model.")
                 with gr.Accordion("Advanced settings", open=False):
+                    processing = gr.Dropdown(
+                        [("Full resolution", 0), ("Fast — max 1024 px", 1024)],
+                        value=0, label="Processing resolution",
+                        info="Fast reduces the generated border's detail and "
+                             "GPU workload. Final canvas size and the original "
+                             "image are preserved.")
                     fill = gr.Radio(
                         op.FILLS, value="neutral",
                         label="Border fill",
@@ -164,7 +263,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     stop = gr.Button("⏹️ Cancel", variant="stop", scale=1)
                 status = gr.Markdown("")
             with gr.Column(scale=4):
-                result = gr.Image(label="Result", type="filepath",
+                result = gr.Image(label="Live preview / result", type="filepath",
                                   buttons=widgets.IMAGE_BUTTONS)
                 again = gr.Button("♻️ Extend the result again", size="sm")
                 log = gr.Textbox(label="Log", lines=12, autoscroll=True,
@@ -204,7 +303,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                      outputs=[steps, strength, fill, mode_md])
 
         def do_outpaint(img, dirs, amt, model_id, prompt_txt, fill_v, strength_v,
-                        feather_v, tone_v, steps_v, seed_v):
+                        feather_v, tone_v, steps_v, seed_v, processing_v=0):
             if img is None:
                 raise gr.Error(t("Load an image to extend."))
             if not model_id:
@@ -217,8 +316,15 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             settings.ensure_dirs()
             d = _defaults(model_id)
             canvas = op.build_canvas(img, p, fill=fill_v or "edge")
-            canvas_path = settings.TMP_DIR / "outpaint_init.png"
+            work_size = op.working_size(canvas.size, int(processing_v or 0),
+                                       multiple=32 if model_id == "qwen-image-2.1-turbo" else 16)
+            if work_size != canvas.size:
+                from PIL import Image as _PI
+                canvas = canvas.resize(work_size, _PI.Resampling.LANCZOS)
+            job_id = time.time_ns()
+            canvas_path = settings.TMP_DIR / f"outpaint_{job_id}_init.png"
             canvas.save(canvas_path)
+            preview_path = settings.TMP_DIR / f"outpaint_{job_id}_preview_%03d.png"
 
             try:
                 s = int(seed_v)
@@ -246,21 +352,26 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 # Masque : seulement si CE binaire sd-cli connaît l'option.
                 mf = sdcpp.mask_flag(settings.find_sd_cli())
                 if mf:
-                    mask_path = settings.TMP_DIR / "outpaint_mask.png"
-                    op.build_mask(p, feather=int(feather_v)).save(mask_path)
+                    mask_path = settings.TMP_DIR / f"outpaint_{job_id}_mask.png"
+                    mask = op.build_mask(p, feather=int(feather_v))
+                    if mask.size != work_size:
+                        from PIL import Image as _PI
+                        mask = mask.resize(work_size, _PI.Resampling.NEAREST)
+                    mask.save(mask_path)
 
             q: "queue.Queue[str | None]" = queue.Queue()
             state: dict = {}
+            consumer_closed = threading.Event()
 
             def worker():
                 try:
                     kw = dict(
                         model_id=model_id, negative="", steps=int(steps_v),
                         cfg_scale=d["cfg_scale"],
-                        width=p["width"], height=p["height"], seed=s,
+                        width=work_size[0], height=work_size[1], seed=s,
                         batch_count=1, sampler=d["sampler"],
                         schedule=d["schedule"], flow_shift=d["flow_shift"],
-                        log=q.put, save_prompt=False)
+                        log=q.put, save_prompt=False, preview_path=preview_path)
                     if d["edit"]:
                         # Édition : pilotée par le prompt, sans force ni init.
                         kw.update(prompt=instr, ref_image=[canvas_path])
@@ -274,6 +385,15 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                 except Exception as exc:  # noqa: BLE001
                     state["err"] = str(exc)
                 finally:
+                    for path in (canvas_path, mask_path):
+                        if path is not None:
+                            try:
+                                path.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                    state["done"] = True
+                    if consumer_closed.is_set():
+                        _cleanup_preview(preview_path)
                     q.put(None)
 
             threading.Thread(target=worker, daemon=True).start()
@@ -288,13 +408,17 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     f"cfg {d['cfg_scale']} · {int(steps_v)} steps"]
             if d["edit"]:
                 logs.append(f"Instruction: {instr[:160]}…")
-            yield t("⏳ Extending…"), gr.update(), "\n".join(logs)
-            while True:
-                line = q.get()
-                if line is None:
-                    break
-                logs.append(line)
-                yield gr.update(), gr.update(), "\n".join(logs[-400:])
+            logs.append(f"Processing: {work_size[0]}×{work_size[1]} · "
+                        f"final canvas: {p['width']}×{p['height']}")
+            if work_size != (p["width"], p["height"]):
+                logs.append("Fast mode: generated borders use a smaller working "
+                            "resolution; the original image stays at full resolution.")
+            try:
+                yield from _stream_outpaint(q, preview_path, int(steps_v), logs)
+            finally:
+                consumer_closed.set()
+                if state.get("done"):
+                    _cleanup_preview(preview_path)
 
             if "err" in state or not state.get("outs"):
                 logs.append(f"\n[ERROR] {state.get('err', 'no output')}")
@@ -306,14 +430,14 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
             #    contrastée ; sans ça l'original recollé fait un rectangle terne.
             # 2) recollage de l'original : la zone d'origine reste intacte.
             from PIL import Image as _PI
-            gen = _PI.open(state["outs"][0])
-            gen = op.match_tone(gen, img, p, amount=float(tone_v))
+            with _PI.open(state["outs"][0]) as generated:
+                gen = op.match_tone(generated, img, p, amount=float(tone_v))
             final = op.composite_back(gen, img, p, feather=int(feather_v))
             out_path = settings.OUTPUT_DIR / \
-                f"outpaint-{time.strftime('%Y%m%d-%H%M%S')}.png"
+                f"outpaint-{job_id}.png"
             final.save(out_path)
             _sidecar(out_path, p, model_id, prompt_txt, s, strength_v,
-                     feather_v, steps_v, d, fill_v, tone_v, mf)
+                     feather_v, steps_v, d, fill_v, tone_v, mf, work_size)
             logs.append(f"\n✅ Tone matched ({float(tone_v):.1f}), then the "
                         f"original pasted back (feather "
                         f"{int(feather_v)} px) → "
@@ -324,8 +448,8 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
         evt = run.click(
             do_outpaint,
             inputs=[image, direction, amount, model, prompt, fill, strength,
-                    feather, tone, steps, seed],
-            outputs=[status, result, log], **widgets.GPU_QUEUE)
+                    feather, tone, steps, seed, processing],
+            outputs=[status, result, log], stream_every=0.15, **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, gen_engine.cancel, status, [evt])
 
         # Enchaîner : le résultat redevient l'image d'entrée (extensions
@@ -353,13 +477,15 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
 
 
 def _sidecar(out_path, p, model_id, prompt_txt, seed, strength_v, feather_v,
-             steps_v, d, fill_v=None, tone_v=None, mask_used=None) -> None:
+             steps_v, d, fill_v=None, tone_v=None, mask_used=None,
+             processing_size=None) -> None:
     """Journal .txt à côté du PNG, comme pour les images et les GLB."""
     lines = [
         f"File: {out_path.name}",
         f"Model: {model_id}",
         f"Prompt: {prompt_txt or '(none)'}",
         f"Extension: {op.describe(p)}",
+        f"Processing size: {processing_size or (p['width'], p['height'])}",
         f"Seed: {seed}",
         f"Remplissage: {fill_v or 'edge'}",
         f"Engine mask: {mask_used or 'non'}",

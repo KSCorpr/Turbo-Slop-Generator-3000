@@ -33,6 +33,22 @@ from __future__ import annotations
 
 DIRECTIONS = ["left", "right", "top", "bottom"]
 
+
+def working_size(size: tuple[int, int], max_side: int = 0,
+                 multiple: int = 16) -> tuple[int, int]:
+    """Optional faster generation; the final canvas keeps its original size.
+
+    Only the newly generated border is interpolated on return. The original
+    image is composited at its original resolution as usual.
+    """
+    w, h = size
+    if max_side <= 0 or max(w, h) <= max_side:
+        return w, h
+    cap = max(multiple, (max_side // multiple) * multiple)
+    scale = cap / max(w, h)
+    return tuple(max(multiple, min(cap, int(round(edge * scale / multiple)) * multiple))
+                 for edge in (w, h))
+
 # Modes de pré-remplissage de la nouvelle zone.
 FILLS = [
     ("Neutral grey (editing models)", "neutral"),
