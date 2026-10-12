@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -12,6 +13,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from urllib.parse import unquote, urlsplit
 import zipfile
@@ -27,12 +30,54 @@ def run(*args):
     subprocess.run([str(a) for a in args], check=True)
 
 
-def download(url, destination):
-    request = urllib.request.Request(url, headers={"User-Agent": "TurboSlop-media/1"})
+def download(url, destination, *, attempts=4):
+    """Retry transient failures; keep the destination until a complete transfer.
+
+    Source archives use GitHub's archive host directly. The original archive
+    endpoint is retained as a fallback, at the same pinned commit.
+    """
+    if attempts < 1:
+        raise ValueError("At least one download attempt is required.")
+    destination = Path(destination)
+    parsed = urlsplit(url)
+    parts = parsed.path.strip("/").split("/")
+    urls = [url]
+    if (parsed.scheme == "https" and parsed.hostname == "github.com"
+            and len(parts) == 4 and parts[2] == "archive"
+            and parts[3].endswith(".zip")):
+        urls.insert(0, f"https://codeload.github.com/{parts[0]}/{parts[1]}"
+                       f"/zip/{parts[3][:-4]}")
     partial = destination.with_suffix(destination.suffix + ".part")
-    with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as stream:
-        shutil.copyfileobj(response, stream)
-    partial.replace(destination)
+    for attempt in range(attempts):
+        request = urllib.request.Request(urls[attempt % len(urls)],
+                                         headers={"User-Agent": "TurboSlop-media/1"})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as stream:
+                shutil.copyfileobj(response, stream)
+                length = response.headers.get("Content-Length")
+                if length is not None and stream.tell() != int(length):
+                    raise http.client.IncompleteRead(b"", max(0, int(length) - stream.tell()))
+            partial.replace(destination)
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (408, 429, 500, 502, 503, 504):
+                raise
+            failure = f"HTTP {exc.code}"
+            exc.close()
+            last_error = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.IncompleteRead, http.client.RemoteDisconnected) as exc:
+            failure = type(exc).__name__
+            last_error = exc
+        finally:
+            partial.unlink(missing_ok=True)
+        if attempt + 1 < attempts:
+            delay = 2 ** attempt
+            print(f"Download interrupted ({failure}). Retrying "
+                  f"{attempt + 2}/{attempts} in {delay}s...", flush=True)
+            time.sleep(delay)
+    raise RuntimeError(f"Download failed after {attempts} attempts ({failure}). "
+                       "Retry Install / repair when the connection is available.") from last_error
 
 
 def unpack(archive, destination):
