@@ -323,7 +323,7 @@ def install_models(variant: str = "f16", log=print) -> bool:
     try:
         os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
         _settings.configure_hf_env()
-        from huggingface_hub import snapshot_download
+        from atelier.transfers import snapshot_download
     except ImportError:
         log("huggingface_hub manquant (pip install huggingface_hub).")
         return False
@@ -370,7 +370,7 @@ def install_pixal_models(variant: str = "f16", resolution: int = 512,
         try:
             os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
             _settings.configure_hf_env()
-            from huggingface_hub import snapshot_download
+            from atelier.transfers import snapshot_download
             missing = [name for name in required
                        if not (MODELS_DIR / name).is_file()]
             log(f"Downloading {len(missing)} Pixal3D GGUF from "

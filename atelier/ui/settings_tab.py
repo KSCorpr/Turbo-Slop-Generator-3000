@@ -405,6 +405,17 @@ def build_settings_tab():
         # ------------------------------------------------------------------ #
         #  Ce qui n'a rien à voir avec la génération
         # ------------------------------------------------------------------ #
+        with gr.Group():
+            gr.Markdown(t("### Downloads"))
+            download_limit = gr.Number(
+                value=prefs.get("download_limit_mbps", 5.0),
+                minimum=0, maximum=10000, precision=2,
+                label=t("Download limit (MB/s)"),
+                info=t("5 MB/s = 40 Mbit/s. 0 = unlimited. Applied immediately "
+                       "to catalog and tool model downloads. HTTP uses one "
+                       "connection; interrupted Hub downloads can resume."))
+            download_status = gr.Markdown("", elem_classes="feedback", visible=False)
+
         with gr.Accordion(t("🌍 Theme and accounts"), open=False):
             with gr.Row():
                 theme_dd = gr.Dropdown(
@@ -514,6 +525,18 @@ def build_settings_tab():
                                  model_plans])
 
         # ---- Theme, accounts ---------------------------------------------- #
+        def _apply_download_limit(value):
+            import math
+            value = float(value if value is not None else 5)
+            if not math.isfinite(value) or not 0 <= value <= 10000:
+                raise gr.Error(t("Enter a download limit between 0 and 10000 MB/s."))
+            _save(download_limit_mbps=value)
+            return _said(_OK + (t("Downloads are unlimited.") if value == 0
+                               else f"Download limit: {value:g} MB/s."))
+
+        download_limit.change(_apply_download_limit, inputs=[download_limit],
+                              outputs=[download_status], queue=False)
+
         def _apply_theme(th):
             _save(theme="dark" if th == "dark" else "light")
             return _said(_OK + t("Theme applied and saved."))

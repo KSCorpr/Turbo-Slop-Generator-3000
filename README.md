@@ -2225,3 +2225,15 @@ Each workspace has its own installation button. SeedVR2 and COLMAP use isolated
 Python environments. Start with the small presets on 11–12 GB GPUs.
 
 See [installation, capture guidance and validation limits](docs/media-engines.md).
+# Débit des téléchargements
+
+Dans **Settings → Downloads**, le plafond est de **5 Mo/s (40 Mbit/s)** par
+défaut. Il s'applique aux modèles du catalogue et aux modèles téléchargés par
+les installeurs d'outils, et peut être changé pendant un transfert. `0` enlève
+le plafond. Choisir une valeur inférieure au débit de la connexion garde une
+marge pour les autres usages ; l'application ne mesure pas automatiquement la
+capacité de la ligne. Les transferts HTTP sont séquentiels, sans Xet. Les
+fichiers Hub interrompus sont repris au prochain essai ; les poids ne sont
+publiés sur disque qu'après vérification de leur taille et, lorsque le Hub le
+fournit, de leur SHA-256. Cette limite ne s'applique pas aux paquets pip, aux
+clones Git ou aux téléchargements internes de logiciels tiers.

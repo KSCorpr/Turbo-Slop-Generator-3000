@@ -21,7 +21,8 @@ def download_lora(repo: str, log: Callable[[str], None] | None = None) -> str:
     """
     settings.configure_hf_env()
     settings.LORA_DIR.mkdir(parents=True, exist_ok=True)
-    from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import list_repo_files
+    from .transfers import hf_hub_download
 
     files = list_repo_files(repo)
     cands = [f for f in files if f.lower().endswith(".safetensors")]
@@ -72,14 +73,24 @@ def download_lora_civitai(ref: str, token: str | None = None,
     r.raise_for_status()
     cd = r.headers.get("content-disposition", "")
     fn = re.search(r'filename="?([^";]+)"?', cd)
-    name = fn.group(1) if fn else f"civitai_{vid}.safetensors"
+    name = Path(fn.group(1).replace("\\", "/")).name if fn else f"civitai_{vid}.safetensors"
     if not name.lower().endswith((".safetensors", ".gguf", ".ckpt", ".pt")):
         name += ".safetensors"
     dest = settings.LORA_DIR / name
-    with open(dest, "wb") as fh:
-        for chunk in r.iter_content(chunk_size=1 << 20):
-            if chunk:
-                fh.write(chunk)
+    from .transfers import CHUNK_SIZE, RateLimiter, transfer_lock
+    partial = dest.with_name(dest.name + ".download")
+    with r, transfer_lock():
+        with partial.open("wb") as fh:
+            limiter = RateLimiter()
+            chunks = r.iter_content(chunk_size=CHUNK_SIZE)
+            while True:
+                limiter.wait()
+                chunk = next(chunks, None)
+                if chunk is None:
+                    break
+                if chunk:
+                    fh.write(chunk)
+        partial.replace(dest)
     if log:
         log(f"  ✓ {name}")
     return dest.stem
@@ -169,7 +180,8 @@ def download_component(comp: Component,
                        ) -> Path:
     settings.configure_hf_env()
     try:
-        from huggingface_hub import hf_hub_download, list_repo_files
+        from huggingface_hub import list_repo_files
+        from .transfers import hf_hub_download
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("huggingface_hub manquant : "
                            "pip install -r requirements.txt") from exc
@@ -273,7 +285,7 @@ def download_modern_upscalers(
     if not entries:
         yield "No modern upscaler is configured."
         return
-    from huggingface_hub import hf_hub_download
+    from .transfers import hf_hub_download
 
     local_dir = upscalers_dir()
     local_dir.mkdir(parents=True, exist_ok=True)
@@ -310,7 +322,7 @@ def download_upscalers(log: Callable[[str], None] | None = None) -> Iterator[str
     if not repo or not files:
         yield "Upscalers not configured."
         return
-    from huggingface_hub import hf_hub_download
+    from .transfers import hf_hub_download
 
     local_dir = upscalers_dir()
     local_dir.mkdir(parents=True, exist_ok=True)

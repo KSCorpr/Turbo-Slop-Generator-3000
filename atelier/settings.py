@@ -106,6 +106,8 @@ DEFAULT_PREFS: dict[str, Any] = {
     "conv_direct_diffusion": False,
     "conv_direct_vae": False,
     "hf_endpoint": "https://huggingface.co",
+    # Mo/s décimaux : 0 = sans plafond. Lu pendant le transfert.
+    "download_limit_mbps": 5.0,
     "civitai_token": "",        # jeton Civitai (optionnel, pour les LoRA protégés)
     # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
@@ -234,11 +236,19 @@ def child_env(gpu_index: "int | None" = None) -> dict:
 def configure_hf_env() -> None:
     """Configure l'environnement Hugging Face pour des téléchargements fiables.
 
-    hf_transfer est désactivé : sous Windows il provoque des verrous de fichier
-    (os error 32). Le téléchargement HTTP standard est plus lent mais robuste.
+    HTTP séquentiel : les téléchargements contrôlés n'utilisent pas Xet.
     """
     import os
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+    os.environ["HF_HUB_DISABLE_XET"] = "1"
+    os.environ["HF_XET_HIGH_PERFORMANCE"] = "0"
+    # Gradio peut avoir importé le Hub avant cet appel : ses constantes sont
+    # figées à l'import, modifier seulement os.environ ne suffit alors pas.
+    import sys
+    constants = sys.modules.get("huggingface_hub.constants")
+    if constants is not None:
+        constants.HF_HUB_DISABLE_XET = True
+        constants.HF_HUB_ENABLE_HF_TRANSFER = False
     prefs = load_prefs()
     os.environ.setdefault("HF_ENDPOINT",
                           prefs.get("hf_endpoint", "https://huggingface.co"))

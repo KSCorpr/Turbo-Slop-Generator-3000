@@ -97,7 +97,7 @@ def main() -> int:
         print("[OK] Every detector is already converted.")
         return 0
 
-    from huggingface_hub import hf_hub_download
+    from atelier.transfers import hf_hub_download
     venv = WORK / "venv"
     try:
         try:

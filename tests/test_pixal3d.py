@@ -39,7 +39,7 @@ class PixalInstallerTests(unittest.TestCase):
                 (self.root / name).write_bytes(name.encode())
 
         hub = SimpleNamespace(snapshot_download=mock.Mock(side_effect=download))
-        with mock.patch.dict(sys.modules, {"huggingface_hub": hub}):
+        with mock.patch("atelier.transfers.snapshot_download", hub.snapshot_download):
             self.assertTrue(get_trellis.install_pixal_models(
                 variant="q4", resolution=512, log=lambda *_: None))
             self.assertTrue(get_trellis.install_pixal_models(
@@ -60,7 +60,7 @@ class PixalInstallerTests(unittest.TestCase):
                 (self.root / name).write_bytes(name.encode())
 
         hub = SimpleNamespace(snapshot_download=mock.Mock(side_effect=download))
-        with mock.patch.dict(sys.modules, {"huggingface_hub": hub}):
+        with mock.patch("atelier.transfers.snapshot_download", hub.snapshot_download):
             self.assertTrue(get_trellis.install_pixal_models(
                 variant="q4", resolution=1024, log=lambda *_: None))
         hub.snapshot_download.assert_called_once()

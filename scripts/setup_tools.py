@@ -159,7 +159,7 @@ def install_depth():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading the depth model ({DEPTH_REPO})…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
     pin_numpy()  # transformers peut réintroduire NumPy 2 -> on re-fige
     print("\n[OK] Depth Anything V2 installed (depth + normals).")
@@ -172,7 +172,7 @@ def install_bg():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "scikit-image", "pillow"])
     print(f"\nDownloading the background-removal model ({BG_REPO})…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] RMBG-1.4 installed. Available in the Toolkit tab.")
@@ -185,7 +185,7 @@ def install_clip():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading CLIP ({CLIP_REPO})…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=CLIP_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] CLIP installed — splitting into layers can now name and "
@@ -199,7 +199,7 @@ def install_sam():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading Segment Anything ({SAM_REPO})…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=SAM_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] Segment Anything installed. Available in the Toolkit tab.")
@@ -212,7 +212,7 @@ def install_enhance():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "accelerate", "safetensors"])
     print(f"\nDownloading the prompt enhancer ({ENHANCE_REPO}, ~6 GB)…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=ENHANCE_REPO, local_dir=str(model_dir),
                       allow_patterns=["*.json", "*.safetensors", "*.txt",
                                       "tokenizer*", "vocab*", "merges*"])
@@ -229,7 +229,7 @@ def install_describe():
         "pillow"])
     print(f"\nDownloading the image → prompt model ({DESCRIBE_REPO}, "
           f"~7.5 GB)…")
-    from huggingface_hub import snapshot_download
+    from atelier.transfers import snapshot_download
     snapshot_download(repo_id=DESCRIBE_REPO, local_dir=str(model_dir),
                       allow_patterns=["*.json", "*.safetensors", "*.txt",
                                       "tokenizer*", "vocab*", "merges*",
@@ -401,7 +401,7 @@ def install_upscale():
     print(f"Installation de {DIFFUSERS_PIN} + accelerate…")
     sh([sys.executable, "-m", "pip", "install", *_PINS.values(),
         "accelerate", "safetensors", "omegaconf", "pillow"])
-    from huggingface_hub import hf_hub_download, snapshot_download
+    from atelier.transfers import hf_hub_download, snapshot_download
     # Dossier où déposer des checkpoints SDXL perso (sélectionnables dans l'UI).
     (base / "checkpoints").mkdir(parents=True, exist_ok=True)
 
