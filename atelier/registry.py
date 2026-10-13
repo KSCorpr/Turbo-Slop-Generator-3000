@@ -16,6 +16,13 @@ import yaml
 from . import hardware, quant, settings
 
 
+@dataclass(frozen=True)
+class ComponentVariant:
+    repo: str
+    template: str
+    label: str
+
+
 @dataclass
 class Component:
     role: str            # diffusion | vae | text_encoder | tokenizer | ...
@@ -27,6 +34,7 @@ class Component:
     optional: bool = False
     source_template: str | None = None  # motif de toutes les variantes GGUF
     selectable: tuple[str, ...] = ()    # choix explicites non GGUF autorisés
+    alternatives: tuple[ComponentVariant, ...] = ()  # inclut le choix par défaut
 
     @property
     def token(self) -> str | None:
@@ -116,6 +124,11 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             overrides = {}
         for role, spec in (m.get("sources") or {}).items():
             template = source_template = spec["match"]
+            repo = spec["repo"]
+            alternatives = tuple(
+                ComponentVariant(s["repo"], s["match"], s.get("label", s["match"]))
+                for s in [spec, *spec["alternatives"]]
+            ) if spec.get("alternatives") else ()
             if "{enc_quant}" in template:
                 q = q_enc
             elif "{quant}" in template:
@@ -127,10 +140,11 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             if q is not None:
                 q = spec.get("quant_map", {}).get(q, q)
             # Une sélection précise prime sur le profil matériel. On vérifie
-            # qu'elle reste dans le motif du composant et dans son dépôt :
+            # qu'elle reste dans le motif du composant ou une variante approuvée :
             # le fichier peut aussi avoir disparu d'un catalogue distant.
             selected = overrides.get(role)
             selectable = tuple(spec.get("selectable") or ())
+            variant = next((v for v in alternatives if v.template == selected), None)
             valid_gguf = (q is not None
                           and isinstance(selected, str)
                           and selected.lower().endswith(".gguf")
@@ -140,12 +154,15 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             if (isinstance(selected, str)
                     and not selected.startswith("/") and "\\" not in selected
                     and ".." not in selected.split("/")
-                    and (valid_gguf or selected in selectable)):
+                    and (valid_gguf or selected in selectable or variant)):
                 template, q = selected, None
-            comps.append(Component(role, spec["repo"], template, q,
+                if variant:
+                    repo, source_template = variant.repo, variant.template
+            comps.append(Component(role, repo, template, q,
                                    optional=bool(spec.get("optional")),
                                    source_template=source_template,
-                                   selectable=selectable))
+                                   selectable=selectable,
+                                   alternatives=alternatives))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),
@@ -159,6 +176,11 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
 def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
     return next((m for m in load_base_models(prefs) if m.id == model_id), None)
 
+
+def model_repos(model: BaseModel) -> set[str]:
+    """Tous les dépôts approuvés, même si une autre variante est sélectionnée."""
+    return {c.repo for c in model.components} | {
+        v.repo for c in model.components for v in c.alternatives}
 
 
 def upscaler_config() -> dict[str, Any]:

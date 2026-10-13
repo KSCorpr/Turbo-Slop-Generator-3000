@@ -15,11 +15,15 @@ def _weight_menu(model: registry.BaseModel, role: str,
     comp = next((c for c in model.components if c.role == role), None)
     if comp is None:
         return [], _AUTO
-    auto_label = (f"Automatic (target: {comp.requested()})" if comp.token else
+    auto_label = (f"Default ({comp.alternatives[0].label})" if comp.alternatives else
+                  f"Automatic (target: {comp.requested()})" if comp.token else
                   f"Default ({comp.requested()})")
     menu = [(auto_label, _AUTO)]
     menu.extend(variants or [])
-    if not variants and comp.token is None:
+    if not variants and comp.alternatives:
+        menu.extend((f"{v.label} (load sizes)", v.template)
+                    for v in comp.alternatives)
+    elif not variants and comp.token is None:
         # Un choix enregistré doit déjà figurer dans le menu avant même la
         # requête de métadonnées, sinon Gradio le réinitialise au lancement.
         menu.append((f"Selected: {comp.requested()} (load sizes)",
@@ -89,39 +93,45 @@ def build_library_tab():
                             choices=e_menu, value=e_selected,
                             label="Text encoder · weights",
                             interactive=True)
+                        vae_file = None
+                        if any(c.role == "vae" and c.alternatives for c in m.components):
+                            v_menu, v_selected = _weight_menu(m, "vae")
+                            vae_file = gr.Dropdown(
+                                choices=v_menu, value=v_selected,
+                                label="VAE · textures", interactive=True)
                 with gr.Column(scale=1, min_width=170):
                     btn = gr.Button("⬇️ Download", variant="primary")
                     del_btn = gr.Button("🗑️ Delete", size="sm")
             cards.append(card)
 
-            def make_scanner(model_id):
+            def make_scanner(model_id, roles):
                 def scan():
                     model = registry.get_base_model(model_id, settings.load_prefs())
                     try:
                         variants = downloader.weight_choices(model)
                     except Exception as exc:  # noqa: BLE001
-                        return gr.update(), gr.update(), \
-                            f"Cannot read weight file sizes: {exc}"
+                        return (*[gr.update() for _ in roles],
+                                f"Cannot read weight file sizes: {exc}")
                     if not variants.get("diffusion"):
-                        return gr.update(), gr.update(), \
-                            "No matching image-model weight was found in the repository."
-                    d, ds = _weight_menu(model, "diffusion",
-                                         variants.get("diffusion"))
-                    e, es = _weight_menu(model, "text_encoder",
-                                         variants.get("text_encoder"))
-                    return (gr.update(choices=d, value=ds),
-                            gr.update(choices=e, value=es),
-                            "Actual file sizes loaded. Pick the weights "
+                        return (*[gr.update() for _ in roles],
+                                "No matching image-model weight was found in the repository.")
+                    updates = []
+                    for role in roles:
+                        menu, selected = _weight_menu(model, role, variants.get(role))
+                        updates.append(gr.update(choices=menu, value=selected))
+                    return (*updates, "Actual file sizes loaded. Pick the weights "
                             "then click Download.")
                 return scan
 
             def make_handler(model_id):
-                def handler(diff_choice, enc_choice):
+                def handler(diff_choice, enc_choice, vae_choice=None):
                     p = settings.load_prefs()
                     files = dict(p.get("model_files") or {})
                     selected = dict(files.get(model_id) or {})
-                    for role, choice in (("diffusion", diff_choice),
-                                         ("text_encoder", enc_choice)):
+                    choices = [("diffusion", diff_choice), ("text_encoder", enc_choice)]
+                    if vae_choice is not None:
+                        choices.append(("vae", vae_choice))
+                    for role, choice in choices:
                         if choice and choice != _AUTO:
                             selected[role] = choice
                         else:
@@ -158,10 +168,15 @@ def build_library_tab():
                     return _card_md(model, registry.recommend(p)), msg
                 return deleter
 
-            scan_btn.click(make_scanner(m.id),
-                           outputs=[diffusion_file, encoder_file, log])
+            weight_inputs = [diffusion_file, encoder_file]
+            roles = ["diffusion", "text_encoder"]
+            if vae_file is not None:
+                weight_inputs.append(vae_file)
+                roles.append("vae")
+            scan_btn.click(make_scanner(m.id, roles),
+                           outputs=[*weight_inputs, log])
             btn.click(make_handler(m.id),
-                      inputs=[diffusion_file, encoder_file],
+                      inputs=weight_inputs,
                       outputs=[log, card])
             del_btn.click(make_deleter(m.id), outputs=[card, log])
 

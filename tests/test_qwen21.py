@@ -13,7 +13,7 @@ from atelier.ui.preview import step_frames
 
 
 class QwenCatalogTests(unittest.TestCase):
-    def test_turbo_uses_verified_weights_and_reuses_vae_encoder(self):
+    def test_turbo_uses_verified_weights_and_texture_fix_vae(self):
         model = registry.get_base_model("qwen-image-2.1-turbo", {
             "model_files": {"qwen-image-2.1": {"diffusion": "qwen_image_2.1-Q6_K.gguf"}}})
         self.assertEqual((model.defaults["steps"], model.defaults["cfg_scale"]), (8, 1.0))
@@ -24,7 +24,10 @@ class QwenCatalogTests(unittest.TestCase):
         self.assertEqual(diffusion.requested(), "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors")
         self.assertEqual(len(diffusion.selectable), 2)
         self.assertNotIn("qwen_image_2.1_int8_convrot.safetensors", diffusion.requested())
-        self.assertEqual(components["vae"].requested(), "vae/qwen_image_2.1_vae_bf16.safetensors")
+        self.assertEqual(components["vae"].repo,
+                         "madebyollin/texture-fix-vae-for-qwen-image-2.1")
+        self.assertEqual(components["vae"].requested(),
+                         "texture_fix_vae_for_qwen_image_2.1_bf16.safetensors")
         self.assertTrue(components["text_encoder_vision"].optional)
         self.assertEqual(model.defaults["extra_flags"], ["--sigmas", "1.0,0.978453,0.95418,0.926626,0.89508,0.845148,0.704534,0.414568,0.0"])
         bf16 = registry.get_base_model(model.id, {"model_files": {model.id: {

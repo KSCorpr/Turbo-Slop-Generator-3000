@@ -381,7 +381,7 @@ def _expected_model_dirs() -> set[str]:
     prefs = settings.load_prefs()
     repos: set[str] = set()
     for m in registry.load_base_models(prefs):
-        repos.update(c.repo for c in m.components)
+        repos.update(registry.model_repos(m))
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)

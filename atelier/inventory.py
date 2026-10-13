@@ -90,8 +90,7 @@ def _engine_sdcpp_paths() -> list[Path]:
 def _model_dirs_for(model: registry.BaseModel) -> list[Path]:
     """Dossiers de dépôt HF utilisés par un modèle du catalogue."""
     dirs: list[Path] = []
-    for comp in model.components:
-        repo = getattr(comp, "repo", None)
+    for repo in sorted(registry.model_repos(model)):
         if not repo:
             continue
         d = settings.model_repo_dir(repo)

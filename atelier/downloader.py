@@ -136,6 +136,26 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
     repos: dict[str, list] = {}
     result: dict[str, list[tuple[str, str]]] = {}
     for comp in model.components:
+        if comp.role == "vae" and comp.alternatives:
+            options = []
+            for variant in comp.alternatives:
+                if variant.repo not in repos:
+                    repos[variant.repo] = api.model_info(
+                        repo_id=variant.repo, files_metadata=True).siblings or []
+                sibling = next((s for s in repos[variant.repo]
+                                if s.rfilename == variant.template), None)
+                if sibling is None:
+                    continue
+                size = getattr(sibling, "size", None)
+                if size is None and getattr(sibling, "lfs", None):
+                    size = getattr(sibling.lfs, "size", None)
+                human = f"{size / 1e9:.2f} GB" if size is not None else "size unknown"
+                here = settings.model_repo_dir(variant.repo) / variant.template
+                installed = " · installed" if here.is_file() else ""
+                options.append((f"{variant.label} — {human}{installed}",
+                                variant.template))
+            result[comp.role] = options
+            continue
         if comp.role not in ("diffusion", "text_encoder") or not (
                 comp.base_glob().lower().endswith((".gguf", ".safetensors"))
                 or comp.selectable):

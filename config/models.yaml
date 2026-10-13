@@ -77,8 +77,10 @@ base_models:
       Official Turbo checkpoint: generation and editing with three references,
       8 steps, Euler and CFG 1. Official Turbo sigmas are passed to sd.cpp.
       INT8 ConvRot diffusion (~7.26 GB) by default; BF16 is also selectable.
-      Reuses the installed 2.1 VAE, Qwen3-VL-8B GGUF encoder and vision
-      projector. Starts at 1024 px for 11–12 GB GPUs; 2K uses more memory.
+      Texture Fix VAE (~0.68 GB) reduces checkerboard texture artifacts;
+      the original Qwen 2.1 VAE remains selectable. Reuses the installed
+      Qwen3-VL-8B GGUF encoder and vision projector.
+      Starts at 1024 px for 11–12 GB GPUs; 2K uses more memory.
       A recent sd.cpp engine with --sigmas is required. Qwen Research license.
     sources:
       diffusion:
@@ -88,8 +90,13 @@ base_models:
           - "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
           - "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors"
       vae:
-        repo: Comfy-Org/Qwen-Image-2.1
-        match: "vae/qwen_image_2.1_vae_bf16.safetensors"
+        repo: madebyollin/texture-fix-vae-for-qwen-image-2.1
+        match: "texture_fix_vae_for_qwen_image_2.1_bf16.safetensors"
+        label: "Texture Fix (default)"
+        alternatives:
+          - repo: Comfy-Org/Qwen-Image-2.1
+            match: "vae/qwen_image_2.1_vae_bf16.safetensors"
+            label: "Original Qwen 2.1 VAE"
       text_encoder:
         repo: Qwen/Qwen3-VL-8B-Instruct-GGUF
         match: "Qwen3VL-8B-Instruct-{enc_quant}.gguf"
