@@ -119,7 +119,7 @@ class Flux3Tests(unittest.TestCase):
         resolve.assert_not_called()
         for tag in ("master-968-8cd731e", "master-969-abcdef0"):
             (settings.BIN_DIR / "engine-manifest.json").write_text(json.dumps({"tag": tag}))
-            generate._check_flux3_engine(self.model)
+            generate._check_engine_build(self.model)
 
     def test_eleven_references_fail_before_loading_weights(self):
         with patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \

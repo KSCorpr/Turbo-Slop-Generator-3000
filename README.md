@@ -59,6 +59,21 @@ editing LoRA is needed. This entry is the step-distilled Klein, not Klein Base.
 See the [sd.cpp guide](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/flux3.md).
 GPU output quality and speed have not been validated in this project.
 
+**Krea 2 Realism:** [RudySen's full checkpoint](https://huggingface.co/RudySen/Krea2-Realism-Checkpoint)
+is available in **Models → Krea 2 Realism** and **Images → Krea 2 Realism**.
+Choose **INT8 ConvRot (~13.32 GB, default)** or the **original FP8 (~13.14 GB)**;
+the V3 realism LoRA is already merged into these weights. The existing Krea 2
+Wan 2.1 VAE, Qwen3-VL-4B encoder and optional vision projector are reused.
+Defaults follow the author: **Euler + Simple, 6 steps, CFG 1, 1152×1792 (~2 MP)**.
+Smaller Krea resolutions remain available. Both checkpoints exceed a 12 GB
+card's VRAM before compute buffers; keep **automatic system placement** enabled
+to use RAM. File size is not a speed or memory-use guarantee.
+Update with `update.bat` / `./update.sh`; the app uses build **968+** as its
+supported baseline for this checkpoint. INT8 ConvRot needs an official build
+using sd.cpp's patched GGML; a custom build with `SD_USE_UPSTREAM_GGML=ON` cannot
+load it. The author's W4A8 `asym_w4a8_int8` format is unsupported by sd.cpp and
+is excluded from the file menu. Actual GPU output and speed remain unverified.
+
 > **Credits & honesty.** All the heavy lifting — the inference engine, GGUF
 > support, CUDA kernels — comes from **Leejet’s
 > [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)**. This

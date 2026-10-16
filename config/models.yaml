@@ -229,6 +229,55 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: krea2-realism
+    name: "Krea 2 Realism"
+    family: krea2_realism
+    tags: [realism, photography, safetensors]
+    description: >
+      RudySen's Krea2 Realism V1 checkpoint. INT8 ConvRot (~13.32 GB) by
+      default; original FP8 (~13.14 GB) is selectable. Reuses Krea 2's
+      Qwen3-VL-4B encoder and Wan 2.1 VAE. Recommended: Euler + Simple,
+      6 steps, CFG 1, around 2 MP (1152 x 1792).
+      These weights exceed 12 GB VRAM: automatic placement uses system RAM;
+      more memory and transfers are needed at 2 MP. W4A8 is not supported
+      by sd.cpp and is excluded. Use an up-to-date official sd.cpp build.
+    sources:
+      diffusion:
+        repo: RudySen/Krea2-Realism-Checkpoint
+        match: "Krea2Realism_V1_INT8_ConvRot.safetensors"
+        selectable:
+          - "Krea2Realism_V1_INT8_ConvRot.safetensors"
+          - "Krea2Realism_V1.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+      text_encoder_vision:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf"
+        optional: true
+      vae:
+        repo: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+        match: "*wan_2.1_vae.safetensors"
+    defaults:
+      min_engine_build: 968
+      steps: 6
+      benchmark_steps: 6
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: simple
+      width: 1152
+      height: 1792
+      supports_negative: false
+      edit: optional
+      edit_lora: ostris/krea2_turbo_style_reference
+    presets:
+      - {name: "Recommended (6 steps)", sampler: euler, scheduler: simple, steps: 6, cfg_scale: 1.0}
+      - {name: "Fast (4 steps)", sampler: euler, scheduler: simple, steps: 4, cfg_scale: 1.0}
+      - {name: "Detailed (8 steps)", sampler: euler, scheduler: simple, steps: 8, cfg_scale: 1.0}
+    vram_min_gb: 12
+
+  # --------------------------------------------------------------------------
   #  Z-Image Turbo — modèle compact, et le seul en Apache-2.0
   #  de bout en bout (modèle + encodeur + VAE). 6B distillé, 8 pas, CFG 1.0.
   # --------------------------------------------------------------------------

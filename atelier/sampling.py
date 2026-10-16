@@ -307,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "flux3", "krea2", "z_image", "qwen21")
+FAMILIES = ("flux2", "flux3", "krea2", "krea2_realism", "z_image", "qwen21")
 
 
 def _family(model_family: str) -> str:
@@ -319,6 +319,12 @@ def level(kind: str, key: str, model_family: str) -> str:
     entry = table.get(key)
     if not entry:
         return OK
+    if model_family == "krea2_realism":
+        if (kind, key) in (("sampler", "euler"), ("schedule", "simple")):
+            return BEST
+        if (kind, key) == ("schedule", "auto"):
+            return OK
+        return entry[4].get("krea2", OK)
     if model_family == "flux3":
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
@@ -408,6 +414,14 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "krea2_realism":
+        return ("**Krea 2 Realism** is a full RudySen checkpoint, with the "
+                "realism LoRA already merged. The author recommends "
+                "**Euler + Simple, 6 steps and around 2 MP**; use **CFG 1.0**. "
+                "Negative prompts have no effect at CFG 1. Keep Krea 2's "
+                "Qwen3-VL-4B encoder and Wan 2.1 VAE. INT8 ConvRot and FP8 "
+                "are available; the checkpoint's W4A8 format is not supported "
+                "by sd.cpp. On 12 GB cards these 13 GB weights need RAM offload.")
     if fam == "flux3":
         return ("**Flux.3 Image Klein** uses **Euler, CFG 1.0 and 16 steps** "
                 "in sd.cpp's documented preset. Keep the scheduler on **Auto** "

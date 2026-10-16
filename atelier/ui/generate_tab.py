@@ -97,6 +97,11 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     if family == "qwen21":
         return RATIOS_QWEN21
+    if family == "krea2_realism":
+        return {"Portrait 9:14 — 1152×1792 (2 MP)": (1152, 1792),
+                "Landscape 14:9 — 1792×1152 (2 MP)": (1792, 1152),
+                "Square 1:1 — 1440×1440 (2 MP)": (1440, 1440),
+                **RATIOS_KREA2}
     # startswith et non == : toute variante Krea à venir partagera
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
@@ -182,6 +187,12 @@ def build_generative_tab(model_id: str, title: str,
         model_status = gr.Markdown(
             f"**{title}** · text to image & {_mode} · {status}",
             elem_classes="model-summary")
+        if family == "krea2_realism":
+            gr.Markdown(
+                "**Realism preset:** Euler + Simple, 6 steps, CFG 1. "
+                "Around **2 MP** is recommended by the author. The checkpoint "
+                "alone is over **13 GB**; keep automatic system placement "
+                "enabled on 12 GB cards to use RAM as well as VRAM.")
 
         def refresh_model_status():
             current = registry.get_base_model(model_id, settings.load_prefs())

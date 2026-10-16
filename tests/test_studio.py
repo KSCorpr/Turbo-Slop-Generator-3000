@@ -290,9 +290,16 @@ class StudioWiringTests(unittest.TestCase):
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))
 
     def test_payload_stays_below_the_original_1_9_mb(self):
-        # Budget includes the additional multiview workspace (~49 KB), while
-        # retaining the substantial reduction from the original 1.9 MB UI.
-        self.assertLess(len(json.dumps(self.demo.config, default=str)), 1_520_000)
+        # Measure the UTF-8 payload served to the browser, including schemas.
+        # json.dumps() defaults add whitespace and escape every Unicode glyph,
+        # overstating actual download size as more model workspaces are added.
+        from gradio.routes import App
+        from starlette.testclient import TestClient
+
+        with TestClient(App.create_app(self.demo)) as client:
+            response = client.get("/config")
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(len(response.content), 1_520_000)
 
 
 if __name__ == "__main__":

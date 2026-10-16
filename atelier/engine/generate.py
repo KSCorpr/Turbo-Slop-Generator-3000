@@ -19,8 +19,10 @@ QWEN21_PREVIEW_BUILD = 901
 FLUX3_MIN_BUILD = 968
 
 
-def _check_flux3_engine(model: registry.BaseModel) -> None:
-    if model.family != "flux3":
+def _check_engine_build(model: registry.BaseModel) -> None:
+    minimum = int(model.defaults.get("min_engine_build") or
+                  (FLUX3_MIN_BUILD if model.family == "flux3" else 0))
+    if not minimum:
         return
     try:
         data = json.loads((settings.BIN_DIR / "engine-manifest.json").read_text(
@@ -30,9 +32,9 @@ def _check_flux3_engine(model: registry.BaseModel) -> None:
         return  # Un binaire manuel sera validé par sd.cpp lui-même.
     match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
         if isinstance(tag, str) else None
-    if match and int(match[1]) < FLUX3_MIN_BUILD:
+    if match and int(match[1]) < minimum:
         raise sdcpp.EngineError(
-            f"Flux.3 Image Klein needs sd.cpp build {FLUX3_MIN_BUILD} or newer. "
+            f"{model.name} needs sd.cpp build {minimum} or newer. "
             "Run update.bat (or ./update.sh on Linux/Mac), then restart the app.")
 
 
@@ -319,7 +321,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
-    _check_flux3_engine(model)
+    _check_engine_build(model)
     if model.id == "qwen-image-2.1-turbo":
         if steps not in (0, 8):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
@@ -343,7 +345,9 @@ def adetailer_command(model_id: str, source: Path, output: Path,
         prompt=prompt, negative=negative,
         steps=int(steps or d.get("steps", 8) or 8),
         cfg_scale=float(d.get("cfg_scale", 1.0)),
-        sampler=d.get("sampler", "euler"), schedule=d.get("schedule", ""),
+        sampler=d.get("sampler", "euler"),
+        schedule=("" if d.get("scheduler", "auto") == "auto" else
+                  d.get("scheduler", "")),
         seed=int(seed), strength=float(denoise),
         flags=flags, gpu_index=gpu_index,
         params_backend=(plan.params_backend if plan else
@@ -439,7 +443,7 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
-    _check_flux3_engine(model)
+    _check_engine_build(model)
     if model.family == "flux3":
         references = [ref_image] if isinstance(ref_image, (str, Path)) else (ref_image or [])
         if len(references) > model.defaults.get("max_references", 10):

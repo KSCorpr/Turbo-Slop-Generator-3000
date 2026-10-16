@@ -330,6 +330,10 @@ def build_app() -> gr.Blocks:
                         "krea2-turbo", "Krea 2 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["krea2-realism"] = build_generative_tab(
+                        "krea2-realism", "Krea 2 Realism",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     # Z-Image Turbo : 6B distillé compact et le
                     # seul dont TOUTE la chaîne (modèle, encodeur, VAE) soit en
                     # Apache-2.0 — donc sans réserve pour un usage commercial.
