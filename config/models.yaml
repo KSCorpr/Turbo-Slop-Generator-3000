@@ -69,6 +69,52 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: flux3-klein
+    name: "Flux.3 Image Klein"
+    family: flux3
+    tags: [distilled, editing, text, gguf]
+    description: >
+      FLUX.3 Image Klein, step-distilled 5.5B model: 16 steps, Euler, CFG 1.
+      Community GGUF weights (Q5 ~3.95 GB, Q8 ~5.99 GB), selected by hardware;
+      exact quantizations and sizes can also be chosen below.
+      Reuses the Flux.2 VAE and Krea 2's Qwen3-VL-4B GGUF text encoder.
+      Native prompt-driven editing with up to 10 reference images, no editing
+      LoRA or vision projector required. Requires sd.cpp build 968 or newer.
+      FLUX Kommunity License; weights from akhaliq, original model by BFL.
+    sources:
+      diffusion:
+        repo: akhaliq/flux-3-image-klein-sd-gguf
+        match: "flux3_image_klein_sd-{quant}.gguf"
+        quantizable: true
+        # 5.5B au lieu de 9B : Q5 sur 11 Go, Q8 sur 12 Go.
+        quant_bias: 3
+        quant_map: {Q5_0: Q5_K_M}
+      vae:
+        # Identique au dépôt local historique de Flux.2 : aucun doublon.
+        repo: Comfy-Org/flux2-klein-9B
+        match: "split_files/vae/flux2-vae.safetensors"
+      text_encoder:
+        repo: Qwen/Qwen3-VL-4B-Instruct-GGUF
+        match: "Qwen3VL-4B-Instruct-{enc_quant}.gguf"
+        quantizable: true
+    defaults:
+      steps: 16
+      benchmark_steps: 16
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      # Auto laisse sd.cpp appliquer le décalage natif de 6.93.
+      flow_shift: 0.0
+      width: 1024
+      height: 1024
+      supports_negative: false
+      edit: full
+      max_references: 10
+    presets:
+      - {name: "Recommended (16 steps)", sampler: euler, scheduler: auto, steps: 16, cfg_scale: 1.0}
+    vram_min_gb: 8
+
+  # --------------------------------------------------------------------------
   - id: qwen-image-2.1-turbo
     name: "Qwen Image 2.1 Turbo"
     family: qwen21
@@ -183,7 +229,7 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
-  #  Z-Image Turbo — le plus léger du catalogue, et le seul en Apache-2.0
+  #  Z-Image Turbo — modèle compact, et le seul en Apache-2.0
   #  de bout en bout (modèle + encodeur + VAE). 6B distillé, 8 pas, CFG 1.0.
   # --------------------------------------------------------------------------
   - id: z-image-turbo
@@ -192,8 +238,8 @@ base_models:
     tags: [rapide, distillé, apache-2.0]
     description: >
       Z-Image Turbo (Tongyi-MAI, **6B distillé**) en GGUF — 8 pas, CFG 1.0,
-      photoréalisme et rendu de texte bilingue EN/ZH. **Le plus léger du
-      catalogue** : 6,6 Go en Q8_0, soit un cran de qualité de plus que Krea 2
+      photoréalisme et rendu de texte bilingue EN/ZH. 6,6 Go en Q8_0,
+      soit un cran de qualité de plus que Krea 2
       sur la même carte (11–12 Go). Encodeur **Qwen3-4B-Instruct** (via --llm,
       déchargé en RAM) + VAE Flux. **Licence Apache-2.0 de bout en bout** —
       modèle, encodeur et VAE — donc sans restriction pour un usage commercial.

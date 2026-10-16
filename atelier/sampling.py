@@ -200,7 +200,8 @@ SCHEDULES: dict[str, tuple] = {
         "Auto (model)",
         "Lets the engine choose according to the loaded model.",
         "Always consistent with the model: `flux2` for Flux.2 Klein, "
-        "`discrete` for Krea 2, a resolution-dependent flow schedule for "
+        "`discrete` for Krea 2 and Flux.3 Klein (shift 6.93), "
+        "a resolution-dependent flow schedule for "
         "Qwen 2.1. This is the setting sd.cpp documents.",
         "None — unless you want to experiment knowingly.",
         {"flux2": BEST, "krea2": BEST, "z_image": BEST}),
@@ -306,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "z_image", "qwen21")
+FAMILIES = ("flux2", "flux3", "krea2", "z_image", "qwen21")
 
 
 def _family(model_family: str) -> str:
@@ -317,6 +318,12 @@ def level(kind: str, key: str, model_family: str) -> str:
     table = SAMPLERS if kind == "sampler" else SCHEDULES
     entry = table.get(key)
     if not entry:
+        return OK
+    if model_family == "flux3":
+        if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
+            return BEST
+        if key in ("lcm", "tcd"):
+            return BAD
         return OK
     if model_family == "qwen21":
         # Turbo uses the publisher's fixed 8-step Euler schedule.
@@ -401,6 +408,14 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "flux3":
+        return ("**Flux.3 Image Klein** uses **Euler, CFG 1.0 and 16 steps** "
+                "in sd.cpp's documented preset. Keep the scheduler on **Auto** "
+                "and flow shift at **0 (auto)**: sd.cpp's default discrete "
+                "scheduler applies the upstream time shift of **6.93**. "
+                "This is a step-distilled model; negative prompts have no "
+                "effect at CFG 1. It uses the Flux.2 VAE and Qwen3-VL 4B "
+                "encoder, and accepts up to **10 reference images**.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "

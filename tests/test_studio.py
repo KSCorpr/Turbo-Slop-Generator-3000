@@ -16,7 +16,7 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 from PIL import Image
 import gradio as gr
 
-from atelier import history, inventory, settings
+from atelier import history, inventory, registry, settings
 from atelier.ui import widgets
 
 
@@ -271,7 +271,7 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_style_choices_are_lazy_but_available_on_open(self):
         functions = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") == "load_style_choices"]
-        self.assertEqual(len(functions), 4)
+        self.assertEqual(len(functions), len(registry.load_base_models(settings.load_prefs())))
         for fn in functions:
             self.assertEqual(fn.outputs[0].choices, [])
             self.assertEqual(fn.outputs[1].choices, [])
@@ -283,7 +283,8 @@ class StudioWiringTests(unittest.TestCase):
     def test_transfers_are_direct_and_do_not_wait_for_the_gpu_queue(self):
         functions = [fn for fn in self.demo.fns.values()
                      if getattr(fn.fn, "__name__", "") == "transfer_image"]
-        self.assertEqual(len(functions), 13)
+        self.assertEqual(len(functions),
+                         3 * len(registry.load_base_models(settings.load_prefs())) + 1)
         for fn in functions:
             self.assertFalse(fn.queue)
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))

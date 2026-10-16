@@ -159,8 +159,9 @@ def _one_run(model_id: str, prefs: dict, defaults: dict,
     try:
         outputs = generate.generate(
             model_id=model_id, prompt=BENCHMARK_PROMPT, negative="",
-            steps=(8 if model_id == "qwen-image-2.1-turbo" else
-                   min(4, int(defaults.get("steps", 4)))),
+            steps=int(defaults.get("benchmark_steps") or
+                      (8 if model_id == "qwen-image-2.1-turbo" else
+                       min(4, int(defaults.get("steps", 4))))),
             cfg_scale=float(defaults.get("cfg_scale", 1.0)),
             width=512, height=512, seed=BENCHMARK_SEED, batch_count=1,
             sampler=defaults.get("sampler", "euler"),

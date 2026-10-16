@@ -115,6 +115,31 @@ def _presets(model_id: str) -> list[dict]:
     return list(m.presets) if (m and m.presets) else []
 
 
+def _save_edit_references(images, extra_files, job_id, max_references=3):
+    """Prépare les PNG dans l'ordre affiché, sans modifier les fichiers importés."""
+    from PIL import Image, ImageOps
+
+    sources = [image for image in images if image is not None]
+    extras = list(extra_files or [])
+    if len(sources) + len(extras) > max_references:
+        raise gr.Error(f"This model supports at most {max_references} reference images.")
+    paths = []
+    try:
+        for i, source in enumerate([*sources, *extras], start=1):
+            path = settings.TMP_DIR / f"edit_ref_{job_id}_{i}.png"
+            paths.append(path)
+            if i <= len(sources):
+                source.save(path)
+            else:
+                with Image.open(source) as image:
+                    ImageOps.exif_transpose(image).convert("RGB").save(path)
+        return paths
+    except (OSError, ValueError) as exc:
+        for path in paths:
+            path.unlink(missing_ok=True)
+        raise gr.Error(f"Cannot read a reference image: {exc}") from exc
+
+
 def _ratio_label(ratios: dict[str, tuple[int, int]], w: int, h: int) -> str:
     for label, (rw, rh) in ratios.items():
         if rw == w and rh == h:
@@ -386,6 +411,12 @@ def build_generative_tab(model_id: str, title: str,
                             "reference images** to combine elements (e.g. "
                             "*“put the character from image 1 into the scene "
                             "of image 2”*).")
+                        if family == "flux3":
+                            gr.Markdown(
+                                "**Flux.3 Klein:** up to **10 references** in total. "
+                                "Add further images below; their order follows "
+                                "references 1–3. More references use more memory. "
+                                "Use **16 steps, CFG 1, Euler and Auto scheduler**.")
                         if family == "qwen21":
                             gr.Markdown(
                                 "**Qwen 2.1 Turbo:** editing requires the vision "
@@ -436,6 +467,13 @@ def build_generative_tab(model_id: str, title: str,
                     else:
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
+                    if family == "flux3":
+                        extra_references = gr.File(
+                            label="Additional references (10 images total)",
+                            file_count="multiple", file_types=["image"],
+                            type="filepath", allow_reordering=True)
+                    else:
+                        extra_references = gr.State(None)
                     strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
                                          label="Transformation strength",
                                          visible=not is_edit)
@@ -896,7 +934,7 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc):
+                        custom_diff, custom_vae, custom_enc, extra_references=None):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
             # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
@@ -970,12 +1008,9 @@ def build_generative_tab(model_id: str, title: str,
                                "outer borders to complete the scene seamlessly, "
                                "matching perspective, lighting and content").strip(", ")
             elif is_edit:
-                # Édition multi-référence : jusqu'à 3 images (-r répété).
-                for i, im in enumerate((init_image, ref_image2, ref_image3)):
-                    if im is not None:
-                        rp = settings.TMP_DIR / f"edit_ref_{job_id}_{i + 1}.png"
-                        im.save(rp)
-                        ref_paths.append(rp)
+                ref_paths = _save_edit_references(
+                    (init_image, ref_image2, ref_image3), extra_references,
+                    job_id, int(d.get("max_references", 3)))
             elif edit_mode and init_image is not None:
                 # Mode édition Ostris Edit (Krea 2) : l'image passe en référence
                 # de contexte (-r + mmproj vision), pas en img2img. Un LoRA
@@ -1145,7 +1180,7 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     circular,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc],
+                    custom_diff, custom_vae, custom_enc, extra_references],
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )

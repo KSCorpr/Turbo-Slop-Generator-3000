@@ -64,8 +64,9 @@ def build_library_tab():
             "repo doesn't offer it, the closest available quant **below** it "
             "is downloaded (to fit your VRAM) — shown in the log and flagged "
             "after the download. Text encoders are reused when a compatible "
-            "weight is already installed. Flux, Qwen Image Turbo, Krea and Z-Image "
-            "require different encoder weights, which cannot be combined.")
+            "weight is already installed. Flux.3 Klein and Krea 2 share the "
+            "Qwen3-VL-4B encoder; Flux.2, Qwen Image Turbo and Z-Image use "
+            "other encoder weights.")
 
         prefs = settings.load_prefs()
         models = registry.load_base_models(prefs)

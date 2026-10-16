@@ -318,6 +318,10 @@ def build_app() -> gr.Blocks:
                         "flux2-klein-9b", "Flux.2 Klein",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["flux3-klein"] = build_generative_tab(
+                        "flux3-klein", "Flux.3 Klein",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["qwen-image-2.1-turbo"] = build_generative_tab(
                         "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
@@ -326,7 +330,7 @@ def build_app() -> gr.Blocks:
                         "krea2-turbo", "Krea 2 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    # Z-Image Turbo : 6B distillé, le plus léger du catalogue et le
+                    # Z-Image Turbo : 6B distillé compact et le
                     # seul dont TOUTE la chaîne (modèle, encodeur, VAE) soit en
                     # Apache-2.0 — donc sans réserve pour un usage commercial.
                     prompt_boxes["z-image-turbo"] = build_generative_tab(

@@ -16,6 +16,24 @@ from .sdcpp import GenRequest
 # flags alone cannot distinguish an older binary from one that loads the model.
 QWEN21_MIN_BUILD = 896
 QWEN21_PREVIEW_BUILD = 901
+FLUX3_MIN_BUILD = 968
+
+
+def _check_flux3_engine(model: registry.BaseModel) -> None:
+    if model.family != "flux3":
+        return
+    try:
+        data = json.loads((settings.BIN_DIR / "engine-manifest.json").read_text(
+            encoding="utf-8"))
+        tag = data.get("tag") if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError):
+        return  # Un binaire manuel sera validé par sd.cpp lui-même.
+    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
+        if isinstance(tag, str) else None
+    if match and int(match[1]) < FLUX3_MIN_BUILD:
+        raise sdcpp.EngineError(
+            f"Flux.3 Image Klein needs sd.cpp build {FLUX3_MIN_BUILD} or newer. "
+            "Run update.bat (or ./update.sh on Linux/Mac), then restart the app.")
 
 
 def _check_qwen_engine(model: registry.BaseModel,
@@ -301,6 +319,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
+    _check_flux3_engine(model)
     if model.id == "qwen-image-2.1-turbo":
         if steps not in (0, 8):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
@@ -420,6 +439,11 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
+    _check_flux3_engine(model)
+    if model.family == "flux3":
+        references = [ref_image] if isinstance(ref_image, (str, Path)) else (ref_image or [])
+        if len(references) > model.defaults.get("max_references", 10):
+            raise sdcpp.EngineError("Flux.3 Image Klein supports at most 10 reference images.")
     _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":
         if "--sigmas" not in sdcpp.supported_options(sd_cli):

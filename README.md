@@ -36,7 +36,7 @@ cd turbo-slop-studio
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
+CUDA, GGUF). Generate with **Flux.3 Image Klein**, **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
 **Krea 2 Turbo** and **Z-Image Turbo**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, an AI prompt enhancer, multi-reference image
@@ -45,6 +45,19 @@ editing, SDXL creative upscaling, SeedVR2 restoration, and a utility toolkit.
 A clean web UI without a node editor. SeedVR2 ConvRot uses Comfy internals
 in its isolated command-line runtime; image generation still uses sd.cpp.
 A future replacement of sd.cpp is described in [the backend migration plan](docs/backend-migration.md).
+
+**Flux.3 Image Klein:** close the app and run `update.bat` (or `./update.sh`)
+to update both the app and sd.cpp. Build **968 or newer** is required; a code-only
+update leaves older engines unable to load Flux.3. In **Models**, download
+**Flux.3 Image Klein**, then open **Images → Flux.3 Klein**. The distilled
+checkpoint uses **16 steps, CFG 1, Euler, Auto scheduler and flow shift 0 (auto)**;
+sd.cpp applies the upstream time shift of 6.93. The catalogue offers community
+[GGUF weights](https://huggingface.co/akhaliq/flux-3-image-klein-sd-gguf)
+(Q5 ~3.95 GB, Q8 ~5.99 GB), shares Flux.2's VAE and Krea 2's Qwen3-VL-4B
+encoder, and accepts up to **10 reference images**. No vision projector or
+editing LoRA is needed. This entry is the step-distilled Klein, not Klein Base.
+See the [sd.cpp guide](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/flux3.md).
+GPU output quality and speed have not been validated in this project.
 
 > **Credits & honesty.** All the heavy lifting — the inference engine, GGUF
 > support, CUDA kernels — comes from **Leejet’s
