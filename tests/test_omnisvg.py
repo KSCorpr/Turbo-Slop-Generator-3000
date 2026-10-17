@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -60,7 +61,7 @@ class ControlTests(unittest.TestCase):
     def test_rejects_invalid_or_nonfinite_controls(self):
         for values in ({"tokens": 100000}, {"ram": float("nan")}, {"temperature": 0},
                        {"variants": 8}, {"variants": 1.5}, {"vram": -1}, {"top_p": 1.1},
-                       {"timeout": 0}, {"seed": -1}, {"memory": "magic"}, {"ram": None}):
+                       {"timeout": -1}, {"seed": -1}, {"memory": "magic"}, {"ram": None}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 omni.validate_options(options(**values))
         with self.assertRaises(ValueError):
@@ -179,7 +180,7 @@ class RealTorchTests(unittest.TestCase):
 
     def test_unfinished_generation_is_not_repaired_into_a_successful_svg(self):
         import torch
-        with self.assertRaisesRegex(ValueError, "before the SVG was complete"):
+        with self.assertRaisesRegex(ValueError, "without EOS 196999"):
             omni.decode_svg(Mock(), torch.tensor([151939, 151944]))
 
     @unittest.skipUnless(SOURCE, "Set TURBOSLOP_OMNISVG_SOURCE to the prepared pinned source")
@@ -189,7 +190,9 @@ class RealTorchTests(unittest.TestCase):
         token = lambda x, y: 151944+y*200+x
         ids = [196998, 151939, token(20, 20), token(20, 20), 151940, token(180, 20),
                151940, token(180, 180), 151940, token(20, 180), 151943, token(20, 20), 195789, 196999]
+        before = list(sys.path)
         tokenizer = omni.load_tokenizer(Path(SOURCE))
+        self.assertEqual(sys.path, before)
         svg, count = omni.decode_svg(tokenizer, torch.tensor(ids))
         self.assertEqual(count, 1)
         self.assertEqual(omni.render_candidate(svg).getpixel((512, 512)), (255, 0, 0))

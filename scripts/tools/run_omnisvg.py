@@ -8,6 +8,7 @@ import json
 import math
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageOps, ImageStat
@@ -25,9 +26,9 @@ SYSTEM_PROMPT = ("You are an expert SVG code generator. \n"
 
 
 def validate_options(options):
-    limits = {"tokens": (256, 4096), "seed": (0, 2**32-1), "variants": (1, 4),
+    limits = {"tokens": (256, 16384), "seed": (0, 2**32-1), "variants": (1, 4),
               "temperature": (0.05, 1.5), "top_p": (0.05, 1), "top_k": (1, 200),
-              "repetition": (1, 1.5), "vram": (0, 128), "ram": (0, 1024), "timeout": (30, 1800)}
+              "repetition": (1, 1.5), "vram": (0, 128), "ram": (0, 1024), "timeout": (0, 7200)}
     for key, (lower, upper) in limits.items():
         try:
             value = float(getattr(options, key))
@@ -79,6 +80,69 @@ def describe_plan(plan):
             f"Torch limit {plan['gpu_budget']/GIB:.1f} GiB · weights budget {plan['gpu_weights']/GIB:.1f} GiB. " + ram)
 
 
+class GenerationWatch:
+    """StoppingCriteria callable without importing Torch into the main UI process."""
+    def __init__(self, input_length, token_budget, seconds=0, log=print, clock=None):
+        self.input_length = input_length
+        self.token_budget = token_budget
+        self.seconds = seconds
+        self.clock = clock or time.monotonic
+        self.started = self.last_log = self.clock()
+        self.log = log
+        self.timed_out = False
+
+    def __call__(self, input_ids, scores=None, **kwargs):
+        now = self.clock()
+        elapsed = now - self.started
+        count = input_ids.shape[-1] - self.input_length
+        if now-self.last_log >= 10:
+            self.log(f"OmniSVG progress: {count}/{self.token_budget} tokens · "
+                     f"{elapsed:.1f}s · {count/max(elapsed, .001):.2f} tokens/s")
+            self.last_log = now
+        self.timed_out = self.seconds > 0 and elapsed >= self.seconds
+        return self.timed_out
+
+
+def stop_statistics(ids, budget, elapsed, timed_out=False):
+    ids = list(ids)
+    limits = (["token_limit"] if len(ids) >= budget else []) + (["time_limit"] if timed_out else [])
+    return {"generated_tokens": len(ids), "token_budget": budget,
+            "elapsed_seconds": round(elapsed, 2), "last_token_id": ids[-1] if ids else None,
+            "limits_reached": limits,
+            "stop_reason": "eos" if 196999 in ids else "token_and_time_limit" if len(limits) == 2 else "time_limit" if timed_out else
+                           "token_limit" if len(ids) >= budget else "unknown"}
+
+
+def incomplete_message(stats):
+    if stats["stop_reason"] == "token_and_time_limit":
+        return (f"OmniSVG reached both its {stats['token_budget']}-token limit and generation time limit "
+                f"after {stats['elapsed_seconds']}s, without EOS 196999. Raise the token budget and "
+                "increase the time budget or set time to 0.")
+    if stats["stop_reason"] == "time_limit":
+        return (f"OmniSVG generation time limit reached after {stats['elapsed_seconds']}s "
+                f"and {stats['generated_tokens']}/{stats['token_budget']} tokens, without EOS 196999. "
+                "Increase the time budget or set it to 0 (no time limit).")
+    if stats["stop_reason"] == "token_limit":
+        return (f"OmniSVG reached its {stats['token_budget']}-token limit without EOS 196999. "
+                "Increase the SVG token budget or simplify the source.")
+    return (f"OmniSVG stopped without EOS 196999 after {stats['generated_tokens']} tokens "
+            f"and {stats['elapsed_seconds']}s. See the saved token IDs for diagnosis.")
+
+
+def save_diagnostics(args, attempts, raw_outputs, error):
+    directory = getattr(args, "diagnostics_dir", None) or args.output / "diagnostic"
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    report = {"engine": "OmniSVG1.1_4B", "failed": True, "error": str(error), "attempts": attempts,
+              "time_budget_seconds": args.timeout, "token_budget": args.tokens}
+    (directory / "diagnostic.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    with zipfile.ZipFile(directory / "diagnostics.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.write(directory / "diagnostic.json", "diagnostic.json")
+        for index, ids in enumerate(raw_outputs, 1):
+            archive.writestr(f"generated-token-ids-{index:02d}.json", json.dumps(ids))
+    print("Diagnostics saved to: " + str(directory / "diagnostics.zip"), flush=True)
+
+
 def load_model(model_dir, plan):
     import torch
     from accelerate import init_empty_weights, infer_auto_device_map, dispatch_model, cpu_offload
@@ -123,11 +187,15 @@ def load_tokenizer(source):
     import importlib.util
     # Only the official token decoding and DeepSVG serialization are used.
     # setup_svg removes eager Cairo/notebook/video imports from its pinned copy.
+    previous_path = list(sys.path)
     sys.path.insert(0, str(source))
-    spec = importlib.util.spec_from_file_location("omnisvg_tokenizer", source / "tokenizer.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.SVGTokenizer(str(source / "config.yaml"), model_size="4B")
+    try:
+        spec = importlib.util.spec_from_file_location("omnisvg_tokenizer", source / "tokenizer.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.SVGTokenizer(str(source / "config.yaml"), model_size="4B")
+    finally:
+        sys.path[:] = previous_path
 
 
 def prepare_inputs(processor, mode, source, prompt, keep_aspect=True):
@@ -151,12 +219,12 @@ def prepare_inputs(processor, mode, source, prompt, keep_aspect=True):
     return processor(**kwargs), reference
 
 
-def decode_svg(tokenizer, generated):
+def decode_svg(tokenizer, generated, stats=None):
     import torch
     ids = generated.detach().cpu().reshape(-1)
     eos = (ids == 196999).nonzero().reshape(-1)
     if not len(eos):
-        raise ValueError("The token/time budget ended before the SVG was complete.")
+        raise ValueError(incomplete_message(stats or stop_statistics(ids.tolist(), len(ids)+1, 0)))
     ids = ids[:int(eos[0])]
     wrapped = torch.cat([torch.tensor([196998]), ids, torch.tensor([196999])]).unsqueeze(0)
     xy = tokenizer.process_generated_tokens(wrapped)
@@ -188,10 +256,10 @@ def render_candidate(svg):
 
 def generate(args, plan):
     import torch
-    from transformers import AutoProcessor
+    from transformers import AutoProcessor, StoppingCriteriaList
     tokenizer = load_tokenizer(args.addon_root / "source")
     processor = AutoProcessor.from_pretrained(args.addon_root / "processor", local_files_only=True,
-        trust_remote_code=False, padding_side="left", max_pixels=448*448)
+        trust_remote_code=False, use_fast=False, padding_side="left", max_pixels=448*448)
     inputs, reference = prepare_inputs(processor, args.mode, args.source, args.prompt, args.keep_aspect)
     print("Memory admission check passed. " + describe_plan(plan), flush=True)
     started = time.monotonic()
@@ -201,22 +269,31 @@ def generate(args, plan):
               else value.to(device) for key, value in inputs.items()}
     folder = args.output / "candidates"
     folder.mkdir(parents=True, exist_ok=True)
-    successful, files = [], []
+    successful, files, attempts, raw_outputs = [], [], [], []
     generation_start = time.monotonic()
     for attempt in range(args.variants):
-        remaining = args.timeout - (time.monotonic() - generation_start)
-        if remaining <= 0:
+        remaining = max(0, args.timeout - (time.monotonic() - generation_start)) if args.timeout else 0
+        if args.timeout and remaining <= 0:
             print("Generation time budget reached; keeping completed variants.", flush=True)
             break
         torch.manual_seed((args.seed + attempt) % 2**32)
-        print(f"Generating variant {attempt+1}/{args.variants} (one at a time)…", flush=True)
+        limit_label = f"{remaining:.0f}s remaining" if args.timeout else "no time limit"
+        print(f"Generating variant {attempt+1}/{args.variants}: up to {args.tokens} tokens, {limit_label}…", flush=True)
+        watch = GenerationWatch(inputs["input_ids"].shape[1], args.tokens, remaining)
         with torch.inference_mode():
-            generated = model.generate(**inputs, max_new_tokens=args.tokens, max_time=remaining,
+            generated = model.generate(**inputs, max_new_tokens=args.tokens,
+                stopping_criteria=StoppingCriteriaList([watch]),
                 num_return_sequences=1, do_sample=True, temperature=args.temperature,
                 top_p=args.top_p, top_k=args.top_k, repetition_penalty=args.repetition,
                 use_cache=args.cache, eos_token_id=196999, bos_token_id=196998, pad_token_id=151643)
+        ids = generated[0, inputs["input_ids"].shape[1]:].detach().cpu()
+        raw_outputs.append(ids.tolist())
+        stats = stop_statistics(raw_outputs[-1], args.tokens, time.monotonic()-watch.started, watch.timed_out)
+        stats.update(attempt=attempt+1, seed=(args.seed+attempt) % 2**32)
+        print(f"Variant {attempt+1} stopped: {stats['stop_reason']} · "
+              f"{stats['generated_tokens']}/{args.tokens} tokens · {stats['elapsed_seconds']}s.", flush=True)
         try:
-            svg, count = decode_svg(tokenizer, generated[0, inputs["input_ids"].shape[1]:])
+            svg, count = decode_svg(tokenizer, ids, stats)
             preview = render_candidate(svg)
             number = len(successful) + 1
             path = folder / f"{number:02d}.svg"
@@ -228,20 +305,26 @@ def generate(args, plan):
                 diff = ImageChops.difference(reference.resize(preview.size), preview)
                 score = round(sum(ImageStat.Stat(diff).mean) / (3*255)*100, 2)
             successful.append({"number": number, "seed": (args.seed+attempt) % 2**32,
-                               "paths": count, "pixel_difference_percent": score})
+                               "paths": count, "pixel_difference_percent": score, "generation": stats.copy()})
             print(f"Variant {number}: {count} paths; pixel difference {score} percent.", flush=True)
         except (ValueError, RuntimeError) as exc:
+            stats["error"] = str(exc)
             print(f"Variant {attempt+1} rejected: {exc}", flush=True)
+        attempts.append(stats)
         del generated
         gc.collect()
     if not successful:
-        raise RuntimeError("No complete, nonempty SVG was generated. Increase the token/time budget "
-                           "or simplify the source/description. No partial SVG was exported.")
+        reason = next((item["error"] for item in reversed(attempts) if item.get("error")),
+                      "The shared generation time budget was exhausted.")
+        error = "No complete SVG was generated. " + reason + " No partial SVG was exported."
+        save_diagnostics(args, attempts, raw_outputs, error)
+        raise RuntimeError(error)
     if reference is not None:
         reference.save(args.output / "reference.png")
         files.append(args.output / "reference.png")
     metadata = {"engine": "OmniSVG1.1_4B", "revision": "117d4c4541839e02943554fe71c0a0d54fcef819",
         "mode": args.mode, "variants": successful, "memory_plan": plan,
+        "attempts": attempts,
         "controls": {key: getattr(args, key) for key in ("tokens", "seed", "temperature", "top_p", "top_k",
                      "repetition", "variants", "timeout", "cache", "keep_aspect")},
         "elapsed_seconds": round(time.monotonic()-started, 2),
@@ -260,10 +343,11 @@ def parser():
     cli.add_argument("--source", type=Path)
     cli.add_argument("--prompt", default="")
     cli.add_argument("--output", type=Path)
+    cli.add_argument("--diagnostics-dir", type=Path)
     cli.add_argument("--memory", choices=["auto", "offload", "cpu"], default="auto")
-    for name, default, kind in (("tokens", 2048, int), ("seed", 0, int), ("variants", 1, int),
+    for name, default, kind in (("tokens", 4096, int), ("seed", 0, int), ("variants", 1, int),
         ("temperature", .3, float), ("top-p", .9, float), ("top-k", 50, int), ("repetition", 1.05, float),
-        ("vram", 0, float), ("ram", 0, float), ("timeout", 300, int)):
+        ("vram", 0, float), ("ram", 0, float), ("timeout", 0, int)):
         cli.add_argument("--" + name, type=kind, default=default)
     cli.add_argument("--cache", action=argparse.BooleanOptionalAction, default=True)
     cli.add_argument("--keep-aspect", action=argparse.BooleanOptionalAction, default=True)

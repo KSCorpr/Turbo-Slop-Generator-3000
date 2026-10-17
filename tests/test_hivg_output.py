@@ -69,11 +69,11 @@ class HiVGOutputTests(unittest.TestCase):
                 self.assertEqual(report["stop_reason"], "token_limit")
             self.assertFalse((root / "result.svg").exists())
 
-    def test_ui_gives_hivg_more_room_without_changing_omnisvg_limits(self):
+    def test_ui_gives_both_svg_models_room_to_complete(self):
         self.assertEqual(mode_help("hivg-image")[3]["maximum"], 16384)
         self.assertEqual(mode_help("hivg-image")[3]["value"], 4096)
-        self.assertEqual(mode_help("omnisvg-image")[3]["maximum"], 4096)
-        self.assertEqual(mode_help("omnisvg-image")[3]["value"], 2048)
+        self.assertEqual(mode_help("omnisvg-image")[3]["maximum"], 16384)
+        self.assertEqual(mode_help("omnisvg-image")[3]["value"], 4096)
 
     def test_failure_survives_child_cleanup_without_pretending_to_be_a_completed_svg(self):
         with tempfile.TemporaryDirectory() as directory:

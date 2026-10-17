@@ -62,10 +62,11 @@ GPU, without loading weights. The same check runs again before each generation.
   admission estimate is about **16.3 GiB** for GPU modes or **23.5 GiB** for CPU
   FP32. This is an estimate and placement budget, not an OS-enforced hard quota.
 
-Generation controls include token count (256–4,096), seed, temperature, top-p,
+Generation controls include token count (256–16,384; default 4,096), seed, temperature, top-p,
 top-k, repetition penalty, KV cache, source proportions and a shared generation
-time budget (30–1,800 seconds, excluding model loading). Transformers checks the
-time budget after a token step; it is not a hard process deadline. Stop terminates
+time budget (0–7,200 seconds, excluding model loading). **0 means no time limit**
+and is the default; token limits and Stop still apply. A stopping criterion checks
+an enabled time budget after each token step; it is not a hard process deadline. Stop terminates
 the whole subprocess tree, including during loading.
 
 Request **1–4 variants**. They run sequentially, without upstream's extra hidden
@@ -76,6 +77,25 @@ an inference failure discards the unfinished job. The ZIP includes all completed
 candidate SVGs/PNGs, settings, memory plan and peak Torch VRAM in `manifest.json`.
 Select any completed variant to preview/download it separately. The default
 `result.svg` and `preview.png` refer to variant 1.
+
+The original 2,048-token / 300-second defaults could stop a slow or complex
+generation before its real EOS token **196999**, even when memory admission and
+model placement succeeded. The 4B training token configuration and inference
+code agree on this EOS: it is retained, not replaced with a fabricated end token.
+Progress reports generated tokens, elapsed time and tokens/second about every
+10 seconds. Completion reports distinguish EOS, token limit, time limit, both
+limits or an unknown stop. The user's RTX 3060 log confirmed successful loading
+with all weights on GPU (`{"": 0}`); it did not record which generation limit was
+reached. No GPU output-quality claim follows from successful model loading.
+
+If all attempts fail, the UI offers `diagnostics.zip` instead of losing the
+generation. It contains `diagnostic.json` with per-attempt stop statistics and
+`generated-token-ids-NN.json` containing the numeric output of each attempt.
+There is no SVG success/preview for an incomplete sequence. The diagnostic
+folder is under `outputs/svg-diagnostic-*`. Successful exports also record their
+attempt statistics in `manifest.json`. The saved slow processor is selected
+explicitly with `use_fast=False` to retain preprocessing parity and avoid the
+default-change warning. These changes need an application update only.
 
 Image inputs keep their proportions with white padding by default, without
 automatic background removal. Turning this off stretches the image to the
@@ -102,7 +122,7 @@ build or remote model code is required. CUDA loading reserves 2 GiB of currently
 free VRAM and 2 GiB of available system RAM; Accelerate can place weights in RAM
 or temporary disk storage. This budget is for weights: activation/KV memory also
 depends on image complexity and token count. Default output budget is 4,096 tokens
-(256–16,384 selectable for HiVG; OmniSVG keeps its independent 4,096 limit),
+(256–16,384 selectable for either AI SVG engine),
 input processing is capped at 512 × 512 pixels, and each
 job exits to release its model. CPU inference uses FP32 and requires at least
 19 GiB free system RAM; it can be slow. CUDA needs a compatible driver for the

@@ -31,8 +31,8 @@ def mode_help(mode):
     ai = mode.startswith(("hivg", "omnisvg"))
     text = mode.endswith("-text")
     return (descriptions[mode], gr.update(visible=not text),
-            gr.update(visible=text), gr.update(visible=ai, maximum=16384 if mode.startswith("hivg") else 4096,
-                                             value=4096 if mode.startswith("hivg") else 2048),
+            gr.update(visible=text), gr.update(visible=ai, maximum=16384 if ai else 4096,
+                                             value=4096 if ai else 2048),
             gr.update(visible=ai), gr.update(visible=mode.startswith("layer")),
             gr.update(visible=mode.startswith("omnisvg")))
 
@@ -104,8 +104,8 @@ def build_svg_tab():
                         repetition = gr.Slider(1, 1.5, value=1.05, step=.01, label="Repetition penalty")
                     with gr.Row():
                         variants = gr.Slider(1, 4, value=1, step=1, label="Variants (sequential)")
-                        timeout = gr.Slider(30, 1800, value=300, step=30,
-                            label="Total generation time budget (seconds, checked after each token)")
+                        timeout = gr.Slider(0, 7200, value=0, step=30,
+                            label="Generation time budget (seconds, 0 = no time limit)")
                     cache = gr.Checkbox(value=True, label="KV cache (faster, uses more VRAM)")
                     keep_aspect = gr.Checkbox(value=True, label="Keep source proportions (white padding)")
                 with gr.Row():
