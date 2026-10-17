@@ -262,7 +262,8 @@ class StudioWiringTests(unittest.TestCase):
                  "do_describe", "do_upscale", "do_layers", "do_hd", "do_highres", "do_face",
                  "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
                  "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
-                 "run_views", "convert_panorama", "install_view_caption"}
+                 "run_views", "convert_panorama", "install_view_caption", "run_svg",
+                 "install_svg_cpu", "install_svg_ai"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:

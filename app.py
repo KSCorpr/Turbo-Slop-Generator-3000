@@ -221,6 +221,7 @@ from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
 from atelier.ui.multiview_tab import build_multiview_tab
+from atelier.ui.vector_tab import build_svg_tab
 from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
@@ -355,6 +356,7 @@ def build_app() -> gr.Blocks:
             with gr.Tab("Tools & 3D", id="tools"):
                 with gr.Tabs() as tool_tabs:
                     build_multiview_tab()
+                    build_svg_tab()
                     build_seedvr2_tab()
                     build_splat_tab()
                     build_toolkit_tab(pending_toolkit=pending_toolkit,

@@ -1,5 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
+**SVG & layers:** HiVG image/text → SVG, CPU image tracing, and LayerTracer
+reconstruction from prepared 4-/9-panel drawing sequences are available under
+**Tools & 3D → SVG & layers**. Engines install on demand. LayerTracer's FLUX
+image-to-sequence stage is not included. [Setup and limits](docs/svg-tools.md).
+
 **10 views / 360°:** generate ten object angles or fixed-camera scene views
 from one image using any image engine in the catalogue. Scene views can be
 reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](docs/multiview-360.md).

@@ -9,7 +9,10 @@ SEED_COMMIT = "4490bd1f482e026674543386bb2a4d176da245b9"
 SEED_CONVROT_COMMIT = "68191c40d03566608b65d24e97d11dc4389f3a62"
 COMFY_CONVROT_COMMIT = "7f7fd918ed0815c5d5ef2ccfe44bfc8e72cfd217"
 BRUSH_VERSION = "v0.3.0"
-ADDON_NAMES = ("seedvr2", "seedvr2-convrot", "splat")
+ADDON_NAMES = ("seedvr2", "seedvr2-convrot", "splat", "svg", "hivg")
+HIVG_COMMIT = "2ada95d057cb5d04fdbad4686258e174c8280c5f"
+HIVG_REVISION = "259cba9684201bbde830a59ca7543345bb333519"
+LAYERTRACER_COMMIT = "8e089f92795b4f32dcae8f7dbbd5ced20395dad7"
 SEED_MODELS = {
     "3b": "seedvr2_ema_3b-Q8_0.gguf",
     "7b": "seedvr2_ema_7b-Q4_K_M.gguf",
