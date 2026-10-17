@@ -1,5 +1,10 @@
 # SVG & layers
 
+For source-pixel segmentation with **SAM 2.1** or generative RGBA layer
+decomposition with **Qwen-Image-Layered**, use **Toolkit → Layers**. See
+[layer models and memory controls](layer-models.md). Those tools export raster
+PSD/PNG layers; vector tracing remains a separate stage.
+
 Open **Tools & 3D → SVG & layers**. Installation is explicit; opening the tab
 does not download weights or load Torch. The two install buttons create separate
 Python 3.12 environments under `tools_repo/svg`, `tools_repo/hivg` and

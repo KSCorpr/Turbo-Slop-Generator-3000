@@ -446,6 +446,7 @@ def _depth_order(depth_dir, img, masks, log):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sam-dir", required=True)
+    ap.add_argument("--backend", choices=["sam", "sam2"], default="sam")
     ap.add_argument("--depth-dir", default="")
     ap.add_argument("--clip-dir", default="",
                     help="CLIP model: semantic labelling + merging the pieces "
@@ -475,7 +476,11 @@ def main():
 
     img = Image.open(args.input).convert("RGB")
     total = img.width * img.height
-    masks = _auto_masks(args.sam_dir, img, args.points_per_side, args.batch, log)
+    if args.backend == "sam2":
+        from run_sam2 import auto_masks
+        masks = auto_masks(args.sam_dir, img, args.points_per_side, args.batch, log)
+    else:
+        masks = _auto_masks(args.sam_dir, img, args.points_per_side, args.batch, log)
     log(f"[layers] {len(masks)} raw mask(s).")
     kept = _filter_masks(masks, args.min_area * total, args.max_area * total,
                          args.iou_max, log)

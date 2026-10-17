@@ -74,7 +74,12 @@ def bg_is_installed() -> bool:
     return _model_present(BG_MODEL_DIR)
 
 
-def sam_is_installed() -> bool:
+def sam_is_installed(backend="sam") -> bool:
+    if backend == "sam2":
+        from .. import addons
+        return addons.ready("sam2")
+    if backend != "sam":
+        raise ValueError("Choose SAM or SAM 2.1.")
     return _model_present(SAM_MODEL_DIR)
 
 
@@ -513,10 +518,10 @@ def bg_remove(image, log: Callable[[str], None] | None = None) -> Path:
 
 
 def sam_segment(image, x: int, y: int,
-                log: Callable[[str], None] | None = None) -> tuple[Path, Path | None]:
+                log: Callable[[str], None] | None = None, *, backend="sam") -> tuple[Path, Path | None]:
     """Segment Anything au point (x, y). Renvoie (découpage PNG transparent,
     aperçu overlay) — l'overlay montre la zone sélectionnée en surbrillance."""
-    if not sam_is_installed():
+    if not sam_is_installed(backend):
         raise ToolError("Segment Anything is not installed (“Install” button "
                         "in the Toolkit).")
     src = _to_src(image, "sam")
@@ -525,7 +530,10 @@ def sam_segment(image, x: int, y: int,
     out_dir.mkdir(parents=True, exist_ok=True)
     overlay = settings.TMP_DIR / f"sam_overlay_{stamp}.png"
     runner = settings.ROOT / "scripts" / "tools" / "run_sam.py"
-    cmd = [sys.executable, str(runner), "--model-dir", str(SAM_MODEL_DIR),
+    from .. import addons
+    py = addons.python("sam2") if backend == "sam2" else sys.executable
+    model_dir = addons.root("sam2") / "model" if backend == "sam2" else SAM_MODEL_DIR
+    cmd = [str(py), str(runner), "--model-dir", str(model_dir), "--backend", backend,
            "--input", str(src), "--output-dir", str(out_dir),
            "--x", str(int(x)), "--y", str(int(y)),
            "--overlay-path", str(overlay)]
@@ -580,13 +588,19 @@ def _layers_to_files(src: Path, masks: list, names: list[str], stamp: str,
         if log:
             log(f"[layers] {len(layers)} transparent PNGs: {folder.name}/")
         out.append(folder)
+        import zipfile
+        bundle = folder.with_suffix(".zip")
+        with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
+            for file in sorted(folder.glob("*.png")):
+                archive.write(file, file.name)
+        out.append(bundle)
     return out
 
 
 def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
                     min_area_pct: float = 0.4, want_psd: bool = True,
                     want_png: bool = False,
-                    log: Callable[[str], None] | None = None) -> list[Path]:
+                    log: Callable[[str], None] | None = None, *, backend="sam") -> list[Path]:
     """AUTOMATIQUE : SAM balaie l'image, on en tire des calques triés en
     profondeur, puis on assemble le PSD.
 
@@ -595,7 +609,7 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     fond derrière lui n'a jamais existé. C'est utile pour masquer, retoucher une
     zone ou exporter un élément — pas pour recomposer la scène.
     """
-    if not sam_is_installed():
+    if not sam_is_installed(backend):
         raise ToolError("Segment Anything is not installed (“Install” button "
                         "in the Toolkit).")
     import numpy as np
@@ -604,8 +618,11 @@ def image_to_layers(image, points_per_side: int = 12, max_layers: int = 24,
     stamp = time.strftime("%Y%m%d-%H%M%S")
     work = settings.TMP_DIR / f"layers_{stamp}"
     runner = settings.ROOT / "scripts" / "tools" / "run_layers.py"
-    cmd = [sys.executable, str(runner),
-           "--sam-dir", str(SAM_MODEL_DIR),
+    from .. import addons
+    py = addons.python("sam2") if backend == "sam2" else sys.executable
+    model_dir = addons.root("sam2") / "model" if backend == "sam2" else SAM_MODEL_DIR
+    cmd = [str(py), str(runner), "--backend", backend,
+           "--sam-dir", str(model_dir),
            "--input", str(src), "--output-dir", str(work),
            "--points-per-side", str(int(points_per_side)),
            "--max-layers", str(int(max_layers)),

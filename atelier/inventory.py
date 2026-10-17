@@ -120,11 +120,17 @@ def items(prefs: dict | None = None) -> list[Item]:
                         note="Reinstallable: SeedVR2 → Install / repair."))
 
     # --- Modèles du catalogue ---------------------------------------------
-    for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG")):
+    for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG"),
+                        ("sam2", "SAM 2.1"), ("qwen-layered", "Qwen-Image-Layered")):
         folder = addons.root(name)
         out.append(Item(f"engine_{name}", f"{label} runtime", "Engines",
                         [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],
-                        note="Reinstallable: Tools & 3D → SVG & layers."))
+                        note=("Reinstallable: Toolkit → Layers." if name in {"sam2", "qwen-layered"}
+                              else "Reinstallable: Tools & 3D → SVG & layers.")))
+    for name, label, parts in (("sam2", "SAM 2.1 small weights (~184 MB)", ("model",)),
+                               ("qwen-layered", "Qwen-Image-Layered Q4 weights (~30 GB)", ("model", "quantized"))):
+        out.append(Item(name+"_models", label, "Models", [addons.root(name) / part for part in parts],
+                        note="Reinstallable: Toolkit → Layers → Install / repair."))
     out.append(Item("hivg_models", "HiVG-3B-Base weights (~8.14 GB)", "Models",
                     [addons.root("hivg") / "model"],
                     note="Reinstallable: SVG & layers → Install / repair HiVG."))

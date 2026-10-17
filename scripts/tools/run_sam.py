@@ -23,6 +23,7 @@ from _device import label, pick_device, pick_dtype  # noqa: E402
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-dir", required=True)
+    ap.add_argument("--backend", choices=["sam", "sam2"], default="sam")
     ap.add_argument("--input", required=True)
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--x", type=int, required=True)
@@ -41,21 +42,27 @@ def main():
 
     device = pick_device(torch)
     print(f"[sam] loading the model on {label(device)}…", flush=True)
-    model = SamModel.from_pretrained(args.model_dir).to(device).eval()
-    processor = SamProcessor.from_pretrained(args.model_dir)
-
     img = Image.open(args.input).convert("RGB")
+    if not (0 <= args.x < img.width and 0 <= args.y < img.height):
+        raise ValueError("Choose a point inside the image.")
     points = [[[int(args.x), int(args.y)]]]   # [image][point][x, y]
     print(f"[sam] segmentation au point ({args.x}, {args.y})…", flush=True)
-    inputs = processor(img, input_points=points, return_tensors="pt").to(device)
-    with torch.no_grad():
-        outputs = model(**inputs)
-
-    masks = processor.image_processor.post_process_masks(
-        outputs.pred_masks.cpu(), inputs["original_sizes"].cpu(),
-        inputs["reshaped_input_sizes"].cpu())
-    scores = outputs.iou_scores.cpu()[0][0]      # (3,) : 3 masques candidats
-    cand = masks[0][0]                            # (3, H, W)
+    if args.backend == "sam2":
+        from run_sam2 import load, predict
+        model, processor = load(args.model_dir, device)
+        masks, confidences = predict(model, processor, img, [[args.x, args.y]], device)
+        cand, scores = masks[0], confidences[0]
+    else:
+        model = SamModel.from_pretrained(args.model_dir).to(device).eval()
+        processor = SamProcessor.from_pretrained(args.model_dir)
+        inputs = processor(img, input_points=points, return_tensors="pt").to(device)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        masks = processor.image_processor.post_process_masks(
+            outputs.pred_masks.cpu(), inputs["original_sizes"].cpu(),
+            inputs["reshaped_input_sizes"].cpu())
+        scores = outputs.iou_scores.cpu()[0][0]
+        cand = masks[0][0]
     best = int(scores.argmax())
     mask = (cand[best].numpy().astype("uint8") * 255)
 

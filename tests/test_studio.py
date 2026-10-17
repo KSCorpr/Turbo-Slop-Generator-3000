@@ -263,7 +263,8 @@ class StudioWiringTests(unittest.TestCase):
                  "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
                  "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
                  "run_views", "convert_panorama", "install_view_caption", "run_svg",
-                 "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg"}
+                 "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg",
+                 "install_layer_model", "check_layer_memory"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:
@@ -349,6 +350,27 @@ class StudioWiringTests(unittest.TestCase):
             self.assertTrue(result[2].endswith("01.partial.svg"))
             self.assertIn("PARTIAL SVG", result[7])
             self.assertIn("no model inference", result[7])
+
+    def test_qwen_layer_mode_dispatches_all_controls_and_returns_real_exports(self):
+        from atelier.engine import layer_decompose
+        from atelier.ui import toolkit_tab
+        function = next(fn.fn for fn in self.demo.fns.values()
+                        if getattr(fn.fn, "__name__", "") == "do_layers")
+        with tempfile.TemporaryDirectory() as temporary:
+            folder=Path(temporary)
+            (folder/'manifest.json').write_text(json.dumps({'layers':[{'file':'layer-01.png','name':'Layer 01'}]}))
+            def stream(action):
+                yield 'Completed.',str(action(lambda line:None)),'step 2/2'
+            options={**layer_decompose.DEFAULTS,'layers':2,'steps':2,'seed':42}
+            with patch.object(layer_decompose,'run',return_value=folder) as run, \
+                 patch.object(toolkit_tab,'stream_task',side_effect=stream):
+                result=list(function(Image.new('RGB',(32,32)),'qwen',[],12,.4,24,False,False,'sam2',
+                                     'a poster',*options.values()))[-1]
+            self.assertEqual(run.call_args.args[1],options)
+            self.assertEqual(run.call_args.args[2],'a poster')
+            self.assertEqual(result[0],[str(folder/'layers.psd'),str(folder/'layers.zip')])
+            self.assertEqual(result[2],str(folder/'composite.png'))
+            self.assertEqual(result[3],[(str(folder/'layer-01.png'),'Layer 01')])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import queue
 import threading
+import json
+from pathlib import Path
 
 import gradio as gr
 
@@ -10,9 +12,23 @@ from .. import downloader, hardware, registry, settings
 from ..engine import generate as gen_engine
 from ..engine import highres
 from ..engine import tools
+from ..engine import layer_decompose
 from ..i18n import t
 from . import widgets
 from . import preview
+from .media_tabs import stream_task
+
+SAM_CHOICES = [("SAM 2.1 small", "sam2"), ("SAM 1 base (legacy)", "sam")]
+
+
+def _layer_installer(name, title):
+    button = gr.Button("Install / repair "+title, size="sm")
+    log = gr.Textbox(label=title+" install log", lines=3, autoscroll=True)
+
+    def install_layer_model():
+        for status, _, lines in stream_task(lambda logger: layer_decompose.install(name, logger)):
+            yield status+"\n"+lines
+    button.click(install_layer_model, outputs=log, **widgets.GPU_QUEUE)
 
 # Préréglages de l'upscale créatif.
 #
@@ -373,11 +389,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "*Segment Anything* — **click an object**: SAM instantly "
                     "shows the **selected area highlighted**. Re-click to "
                     "adjust, then “Extract” for the **transparent PNG**.")
-                _installer_block(
-                    "Segment Anything",
-                    "PyTorch + transformers (~375 MB, facebook/sam-vit-base). "
-                    "No command to type.",
-                    tools.install_sam_stream, tools.sam_is_installed())
+                s_backend = gr.Dropdown(SAM_CHOICES, value="sam2", label="Segmentation model")
+                with gr.Group(visible=False) as s_legacy:
+                    _installer_block("Segment Anything", "Legacy SAM 1 base (~375 MB weights).",
+                                     tools.install_sam_stream, tools.sam_is_installed())
+                with gr.Group() as s_modern:
+                    _layer_installer("sam2", "SAM 2.1 small (184 MB weights)")
+                s_backend.change(lambda backend: (gr.update(visible=backend == "sam"),
+                                                  gr.update(visible=backend == "sam2")),
+                                 inputs=s_backend, outputs=[s_legacy, s_modern], queue=False)
 
                 s_cut = gr.State(None)     # chemin du découpage déjà calculé
                 with gr.Row():
@@ -399,16 +419,15 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         s_log = gr.Textbox(label="Log", lines=8,
                                            autoscroll=True, elem_classes="log-box")
 
-                def _on_click(img, evt: gr.SelectData, progress=gr.Progress()):
+                def _on_click(img, backend, evt: gr.SelectData, progress=gr.Progress()):
                     if img is None:
                         raise gr.Error(t("Provide an image."))
-                    if not tools.sam_is_installed():
-                        raise gr.Error(t("Segment Anything is not installed "
-                                         "(the “Install” button above)."))
+                    if not tools.sam_is_installed(backend):
+                        raise gr.Error("Install the selected segmentation model first.")
                     x, y = int(evt.index[0]), int(evt.index[1])
                     progress(0.2, desc="Segmentation…")
                     try:
-                        cut, overlay = tools.sam_segment(img, x, y)
+                        cut, overlay = tools.sam_segment(img, x, y, backend=backend)
                     except Exception as exc:  # noqa: BLE001
                         raise gr.Error(str(exc))
                     progress(1.0, desc="Done")
@@ -416,7 +435,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                             t("Area selected at ({x}, {y}). Click “Extract” "
                               "or re-click elsewhere.").format(x=x, y=y))
 
-                s_image.select(_on_click, inputs=[s_image],
+                s_image.select(_on_click, inputs=[s_image, s_backend],
                                outputs=[s_overlay, s_cut, s_info], **widgets.GPU_QUEUE)
 
                 # Aperçu de secours : si la vignette du composant reste une
@@ -435,12 +454,18 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     return str(cut), f"✅ {cut}"
 
                 s_run.click(do_sam, inputs=[s_cut], outputs=[s_result, s_log])
+                s_image.input(lambda: (None, None, None, "Click a point on the image."),
+                              outputs=[s_cut, s_overlay, s_result, s_info], queue=False)
+                s_backend.change(lambda: (None, None, None, "Click a point on the image."),
+                                 outputs=[s_cut, s_overlay, s_result, s_info], queue=False)
 
             # ---------- Décomposition en calques (PSD) ----------------------
             with gr.Tab("🧩 Layers", id="layers"):
+                gr.Markdown("**SAM 2.1** keeps source pixels in cut-out layers. **Qwen-Image-Layered** generates "
+                    "RGBA layers and may change shapes or lettering. Both produce bitmap layers; SVG tracing is a separate step.")
                 gr.Markdown(
-                    "Cuts an image into **layers** and writes a **PSD** (or "
-                    "separate transparent PNGs). Two ways to go about it: let "
+                    "SAM modes cut an image into **layers** and write a **PSD** (or "
+                    "transparent PNGs in a downloadable ZIP). Let "
                     "SAM sweep the image on its own, or **point at the "
                     "regions yourself** by clicking.\n\n⚠️ **Know this before "
                     "you click**: the layers are **flat cut-outs**. Moving an "
@@ -456,12 +481,14 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     "softened. And the layers are **disjoint** — showing them "
                     "all reproduces the original image exactly, no pixel is "
                     "painted twice.")
-                _installer_block(
-                    "Segment Anything",
-                    "Same add-on as “Cut out an object”. Required.",
-                    tools.install_sam_stream, tools.sam_is_installed())
+                with gr.Group(visible=False) as lay_legacy:
+                    _installer_block("Segment Anything", "Legacy SAM 1 base; only needed when selected.",
+                                     tools.install_sam_stream, tools.sam_is_installed())
+                with gr.Group() as lay_modern:
+                    _layer_installer("sam2", "SAM 2.1 small (184 MB weights)")
                 _installer_block(
                     "CLIP (zone understanding)",
+                    "**SAM automatic mode only; Qwen does not use CLIP.** "
                     "**Optional, ~600 MB — but it is what brings the "
                     "intelligence.** Without CLIP the tool sees shapes only. "
                     "With it, it recognizes what it is cutting out and uses "
@@ -487,8 +514,29 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                              buttons=widgets.IMAGE_VIEW_ONLY)
                         lay_mode = gr.Radio(
                             [(t("Automatic — SAM sweeps the image"), "auto"),
-                             (t("Manual — I click the areas"), "manual")],
+                             (t("Manual — I click the areas"), "manual"),
+                             ("Qwen-Image-Layered — generative decomposition", "qwen")],
                             value="auto", label="Mode")
+                        lay_backend = gr.Dropdown(SAM_CHOICES, value="sam2", label="SAM segmentation model")
+                        with gr.Group(visible=False) as lay_qwen_box:
+                            _layer_installer("qwen-layered", "Qwen-Image-Layered Q4 (~30 GB weights)")
+                            q_prompt = gr.Textbox(label="Image description (optional)", lines=2,
+                                info="Describe the overall image; this does not assign an object to each layer.")
+                            q_layers = gr.Slider(2, 8, value=4, step=1, label="Qwen layer count")
+                            q_steps = gr.Slider(1, 100, value=50, step=1, label="Qwen steps")
+                            q_seed = gr.Number(value=777, minimum=0, maximum=2**32-1, precision=0, label="Qwen seed")
+                            q_resolution = gr.Dropdown([640, 1024], value=640, label="Qwen resolution bucket",
+                                info="640 is recommended. More layers and 1024 increase memory and time.")
+                            q_cfg = gr.Slider(1, 10, value=4, step=.5, label="Qwen guidance")
+                            q_memory = gr.Dropdown([("Sequential CPU offload (least VRAM, slow)", "sequential"),
+                                ("Whole-model CPU offload (more VRAM)", "model"), ("CPU only (very slow)", "cpu")],
+                                value="sequential", label="Qwen memory mode")
+                            q_vram = gr.Number(value=0, minimum=0, maximum=128, label="Qwen VRAM budget (GiB, 0 = auto)")
+                            q_ram = gr.Number(value=0, minimum=0, maximum=1024, label="Qwen RAM budget (GiB, 0 = auto)")
+                            q_probe = gr.Button("Check Qwen layer memory", size="sm")
+                            gr.Markdown("Qwen always exports a PSD, transparent PNG layers, a composite and a ZIP. "
+                                "Inspect the composite against the source before using the layers.")
+                        q_controls = [q_layers, q_steps, q_seed, q_resolution, q_cfg, q_memory, q_vram, q_ram]
                         with gr.Group(visible=False) as lay_manual_box:
                             lay_hint = gr.Markdown(
                                 "**Click an object** in the image above: it "
@@ -526,7 +574,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                                  scale=1, min_width=90)
                     with gr.Column(scale=4):
                         lay_preview = gr.Image(
-                            label="Selected areas (preview)", height=460,
+                            label="Layer preview / Qwen reconstructed composite", height=460,
                             interactive=False, format="png",
                             buttons=widgets.IMAGE_VIEW_ONLY)
                         lay_files = gr.File(label="Files produced",
@@ -534,14 +582,24 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                         lay_log = gr.Textbox(label="Log", lines=10,
                                              autoscroll=True,
                                              elem_classes="log-box")
+                        lay_gallery = gr.Gallery(label="Qwen RGBA layers (background to foreground)",
+                                                 columns=3, format="png", visible=False, buttons=widgets.GALLERY_BUTTONS)
 
-                def _lay_mode(mode):
+                def _lay_mode(mode, backend):
                     manual = (mode == "manual")
                     return (gr.update(visible=manual),
-                            gr.update(visible=not manual))
+                            gr.update(visible=mode == "auto"), gr.update(visible=mode == "qwen"),
+                            gr.update(visible=mode != "qwen"), gr.update(visible=mode != "qwen"),
+                            gr.update(visible=mode != "qwen"), gr.update(visible=mode == "qwen"),
+                            gr.update(visible=mode != "qwen" and backend == "sam"),
+                            gr.update(visible=mode != "qwen" and backend == "sam2"))
 
-                lay_mode.change(_lay_mode, inputs=[lay_mode],
-                                outputs=[lay_manual_box, lay_auto_box])
+                lay_mode.change(_lay_mode, inputs=[lay_mode, lay_backend],
+                                outputs=[lay_manual_box, lay_auto_box, lay_qwen_box, lay_backend,
+                                         lay_psd, lay_png, lay_gallery, lay_legacy, lay_modern], queue=False)
+                lay_backend.change(lambda backend: (gr.update(visible=backend == "sam"),
+                                                    gr.update(visible=backend == "sam2")),
+                                   inputs=lay_backend, outputs=[lay_legacy, lay_modern], queue=False)
 
                 # Même aperçu de secours qu'en détourage : c'est ici qu'il
                 # manque le plus, le mode manuel consistant à cliquer sur ce
@@ -572,17 +630,16 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     return (f"**{len(masks)} region(s) picked** — click "
                             "again to add more, then “Split”.")
 
-                def _lay_click(img, mode, masks, evt: gr.SelectData):
+                def _lay_click(img, mode, masks, backend, evt: gr.SelectData):
                     if mode != "manual" or img is None:
                         return gr.update(), gr.update(), gr.update()
-                    if not tools.sam_is_installed():
-                        raise gr.Error(t("Segment Anything is not installed "
-                                         "(the “Install” button above)."))
+                    if not tools.sam_is_installed(backend):
+                        raise gr.Error("Install the selected segmentation model first.")
                     import numpy as np
                     from PIL import Image as _PI
                     x, y = int(evt.index[0]), int(evt.index[1])
                     try:
-                        cut, _ = tools.sam_segment(img, x, y)
+                        cut, _ = tools.sam_segment(img, x, y, backend=backend)
                     except Exception as exc:  # noqa: BLE001
                         raise gr.Error(str(exc))
                     alpha = np.asarray(_PI.open(cut).convert("RGBA"))[:, :, 3]
@@ -590,7 +647,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                     return new, _lay_overlay(img, new), _lay_summary(new)
 
                 lay_image.select(_lay_click,
-                                 inputs=[lay_image, lay_mode, lay_masks],
+                                 inputs=[lay_image, lay_mode, lay_masks, lay_backend],
                                  outputs=[lay_masks, lay_preview, lay_list], **widgets.GPU_QUEUE)
 
                 def _lay_undo(img, masks):
@@ -603,11 +660,33 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                              _lay_summary([])),
                                 inputs=[lay_image],
                                 outputs=[lay_masks, lay_preview, lay_list])
+                lay_image.input(lambda: ([], None, "*No area selected.*"),
+                                outputs=[lay_masks, lay_preview, lay_list], queue=False)
+                lay_backend.change(lambda: ([], None, "*No area selected.*"),
+                                   outputs=[lay_masks, lay_preview, lay_list], queue=False)
+
+                def check_layer_memory(*values):
+                    for status, _, lines in stream_task(lambda logger: layer_decompose.diagnose(
+                            dict(zip(layer_decompose.DEFAULTS, values)), logger)):
+                        yield status+"\n"+lines
+                q_probe.click(check_layer_memory, inputs=q_controls, outputs=lay_log, **widgets.GPU_QUEUE)
 
                 def do_layers(img, mode, masks, points, minarea, maxn,
-                              want_psd, want_png, progress=gr.Progress()):
+                              want_psd, want_png, backend, description, *q_values, progress=gr.Progress()):
                     if img is None:
                         raise gr.Error(t("Provide an image."))
+                    if mode == "qwen":
+                        for status, directory, lines in stream_task(lambda logger: layer_decompose.run(
+                                img, dict(zip(layer_decompose.DEFAULTS, q_values)), description, logger)):
+                            if directory:
+                                folder = Path(directory)
+                                metadata = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+                                gallery = [(str(folder / item["file"]), item["name"]) for item in metadata["layers"]]
+                                yield ([str(folder / "layers.psd"), str(folder / "layers.zip")],
+                                       status+"\n"+lines, str(folder / "composite.png"), gallery)
+                            else:
+                                yield [], status+"\n"+lines, None, []
+                        return
                     if not (want_psd or want_png):
                         raise gr.Error(t("Choose at least one output format "
                                          "(PSD or PNG)."))
@@ -624,23 +703,28 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                 max_layers=int(maxn),
                                 min_area_pct=float(minarea),
                                 want_psd=want_psd, want_png=want_png,
-                                log=logs.append)
+                                log=logs.append, backend=backend)
                     except Exception as exc:  # noqa: BLE001
                         logs.append(f"\n[ERROR] {exc}")
-                        return gr.update(), "\n".join(logs)
+                        yield [], "\n".join(logs), gr.update(), []
+                        return
                     progress(1.0, desc="Done")
                     logs.append("\n✅ " + " · ".join(str(p.name) for p in out))
                     # Un dossier ne se télécharge pas : on ne propose que les
                     # fichiers, et le journal donne le chemin du dossier PNG.
                     files = [str(p) for p in out if p.is_file()]
-                    return (files or gr.update()), "\n".join(logs)
+                    yield (files or []), "\n".join(logs), gr.update(), []
 
                 lay_evt = lay_run.click(
                     do_layers,
                     inputs=[lay_image, lay_mode, lay_masks, lay_points,
-                            lay_minarea, lay_max, lay_psd, lay_png],
-                    outputs=[lay_files, lay_log], **widgets.GPU_QUEUE)
-                widgets.stop_into_log(lay_stop, tools.cancel, lay_log,
+                            lay_minarea, lay_max, lay_psd, lay_png, lay_backend, q_prompt, *q_controls],
+                    outputs=[lay_files, lay_log, lay_preview, lay_gallery], **widgets.GPU_QUEUE)
+                def cancel_layers():
+                    message = layer_decompose.JOB.cancel()
+                    old_message = tools.cancel()
+                    return old_message if message == "No task running." else message
+                widgets.stop_into_log(lay_stop, cancel_layers, lay_log,
                                       [lay_evt])
 
             with gr.Tab("🙂 Faces", id="face"):
