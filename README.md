@@ -1,8 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
-**SVG & layers:** HiVG image/text → SVG, CPU image tracing, and LayerTracer
+**SVG & layers:** HiVG and OmniSVG 1.1 4B image/text → SVG, CPU image tracing, and LayerTracer
 reconstruction from prepared 4-/9-panel drawing sequences are available under
-**Tools & 3D → SVG & layers**. Engines install on demand. LayerTracer's FLUX
+**Tools & 3D → SVG & layers**. OmniSVG includes memory checks, GPU/RAM budgets,
+CPU offload, generation controls and selectable sequential variants.
+Engines install on demand. LayerTracer's FLUX
 image-to-sequence stage is not included. [Setup and limits](docs/svg-tools.md).
 
 **10 views / 360°:** generate ten object angles or fixed-camera scene views

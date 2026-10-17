@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 import shutil
 import sys
 import tempfile
@@ -16,27 +17,61 @@ from .tools import _gen_gpu_index
 
 JOB = LocalJob()
 MODES = {"trace": "svg", "layer4": "svg", "layer9": "svg",
-         "hivg-image": "hivg", "hivg-text": "hivg"}
+         "hivg-image": "hivg", "hivg-text": "hivg",
+         "omnisvg-image": "omnisvg", "omnisvg-text": "omnisvg"}
+OMNI_DEFAULTS = {"memory": "auto", "vram": 0, "ram": 0, "temperature": .3, "top_p": .9,
+                 "top_k": 50, "repetition": 1.05, "variants": 1, "timeout": 300,
+                 "cache": True, "keep_aspect": True}
+
+
+def omni_arguments(options=None, *, tokens=2048, seed=0):
+    from scripts.tools.run_omnisvg import validate_options
+    options = {**OMNI_DEFAULTS, **(options or {})}
+    if set(options) != set(OMNI_DEFAULTS):
+        raise ValueError("Unknown OmniSVG control.")
+    if any(not isinstance(options[key], bool) for key in ("cache", "keep_aspect")):
+        raise ValueError("Cache and image proportions controls must be on or off.")
+    validate_options(SimpleNamespace(**options, tokens=tokens, seed=seed))
+    result = []
+    for name, value in options.items():
+        if isinstance(value, bool):
+            result += ["--" + ("" if value else "no-") + name.replace("_", "-")]
+        else:
+            if name in {"variants", "top_k", "timeout"}:
+                value = int(value)
+            result += ["--" + name.replace("_", "-"), str(value)]
+    return result
+
+
+def diagnose(options=None, log=print):
+    if not addons.ready("omnisvg"):
+        raise RuntimeError("Install OmniSVG first, then run the memory check.")
+    arguments = omni_arguments(options)
+    with JOB.session():
+        JOB.run([addons.python("omnisvg"), "-u", settings.ROOT / "scripts/tools/run_omnisvg.py",
+            "--addon-root", addons.root("omnisvg"), "--probe", *arguments], log,
+            env=settings.child_env(_gen_gpu_index()))
 
 
 def install(name, log=print):
-    if name not in {"svg", "hivg"}:
+    if name not in {"svg", "hivg", "omnisvg"}:
         raise ValueError("Unknown SVG engine.")
     with JOB.session():
         JOB.run([sys.executable, "-u", settings.ROOT / "scripts/setup_svg.py", name], log,
                 env=settings.child_env(_gen_gpu_index()))
 
 
-def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print):
+def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print, *, omni=None):
     if mode not in MODES:
         raise ValueError("Choose a listed SVG mode.")
     name = MODES[mode]
     if not addons.ready(name):
         raise RuntimeError("Install the selected SVG engine first.")
-    if mode != "hivg-text" and (not source or not Path(source).is_file()):
+    text_mode = mode in {"hivg-text", "omnisvg-text"}
+    if not text_mode and (not source or not Path(source).is_file()):
         raise ValueError("Import an image first.")
     prompt = str(prompt or "").strip()
-    if mode == "hivg-text" and not prompt:
+    if text_mode and not prompt:
         raise ValueError("Enter a description first.")
     if len(prompt) > 4000:
         raise ValueError("Use a description of at most 4000 characters.")
@@ -46,10 +81,11 @@ def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print):
     tokens, seed, threshold = map(int, values)
     if not (256 <= tokens <= 4096 and 0 <= seed <= 2**32-1 and 1 <= threshold <= 50):
         raise ValueError("SVG options are outside their allowed ranges.")
+    extra = omni_arguments(omni, tokens=tokens, seed=seed) if name == "omnisvg" else []
     output = settings.OUTPUT_DIR / ("svg-" + uuid.uuid4().hex[:12])
     with JOB.session(), tempfile.TemporaryDirectory(prefix="turboslop-svg-") as temporary:
         work = Path(temporary)
-        if mode != "hivg-text":
+        if not text_mode:
             with Image.open(source) as uploaded:
                 image = ImageOps.exif_transpose(uploaded)
                 if image.width * image.height > 16_000_000:
@@ -61,13 +97,14 @@ def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print):
                     image = Image.new("RGB", rgba.size, "white")
                     image.paste(rgba, mask=rgba.getchannel("A"))
                 image.save(work / "source.png")
-        script = "run_hivg.py" if name == "hivg" else "run_svg.py"
+        script = {"hivg": "run_hivg.py", "omnisvg": "run_omnisvg.py"}.get(name, "run_svg.py")
         command = [addons.python(name), "-u", settings.ROOT / "scripts/tools" / script,
             "--mode", mode, "--output", "export", "--addon-root", addons.root(name)]
-        if mode != "hivg-text":
+        if not text_mode:
             command += ["--source", "source.png"]
-        if name == "hivg":
+        if name in {"hivg", "omnisvg"}:
             command += ["--prompt", prompt, "--tokens", str(tokens), "--seed", str(seed)]
+            command += extra
         else:
             command += ["--threshold", str(threshold)]
         JOB.run(command, log, cwd=work, env=settings.child_env(_gen_gpu_index()))

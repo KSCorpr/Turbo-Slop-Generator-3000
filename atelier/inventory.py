@@ -120,7 +120,7 @@ def items(prefs: dict | None = None) -> list[Item]:
                         note="Reinstallable: SeedVR2 → Install / repair."))
 
     # --- Modèles du catalogue ---------------------------------------------
-    for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG")):
+    for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG")):
         folder = addons.root(name)
         out.append(Item(f"engine_{name}", f"{label} runtime", "Engines",
                         [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],
@@ -128,6 +128,9 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item("hivg_models", "HiVG-3B-Base weights (~8.14 GB)", "Models",
                     [addons.root("hivg") / "model"],
                     note="Reinstallable: SVG & layers → Install / repair HiVG."))
+    out.append(Item("omnisvg_models", "OmniSVG 1.1 4B weights & processor (~7.71 GB)", "Models",
+                    [addons.root("omnisvg") / part for part in ("model", "processor")],
+                    note="Reinstallable: SVG & layers → Install / repair OmniSVG."))
     # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (variantes
     # d'une même famille partageant encodeur ou VAE). Un dossier n'est listé
     # qu'une fois — sinon on compterait sa taille deux fois — mais l'élément

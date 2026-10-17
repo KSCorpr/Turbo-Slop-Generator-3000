@@ -9,8 +9,52 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from atelier import addons, transfers
+from atelier import addons, transfers, hardware
 from scripts.setup_media import environment, pip, run, _install_source
+
+
+def prepare_omnisvg_source(source):
+    # DeepSVG imports notebook/video/Cairo renderers eagerly. SVG serialization
+    # does not use them; Turbo Slop uses its validated resvg PNG renderer instead.
+    path = Path(source) / "deepsvg/svglib/svg.py"
+    text = path.read_text(encoding="utf-8")
+    for line in ("import IPython.display as ipd\n", "import cairosvg\n",
+                 "from moviepy.editor import ImageClip, concatenate_videoclips, ipython_display\n"):
+        if line not in text:
+            raise RuntimeError("The pinned DeepSVG rendering imports have changed.")
+        text = text.replace(line, "")
+    path.write_text(text, encoding="utf-8")
+
+
+def install_omnisvg(target, py, common):
+    gpus = hardware.detect_gpus()
+    # CUDA_VISIBLE_DEVICES is set by the shared installer job, so honor it here too.
+    import os
+    selected = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    gpu = next((g for g in gpus if str(g.index) == selected), gpus[0] if gpus else None)
+    blackwell = gpu is not None and gpu.arch == "blackwell"
+    torch_version, vision_version, cuda = (("2.8.0", "0.23.0", "cu128") if blackwell
+                                           else ("2.7.1", "0.22.1", "cu126"))
+    constraints = target / "constraints.txt"
+    constraints.write_text(f"torch=={torch_version}+{cuda}\ntorchvision=={vision_version}+{cuda}\n", encoding="utf-8")
+    pip(py, f"torch=={torch_version}+{cuda}", f"torchvision=={vision_version}+{cuda}",
+        "--index-url", "https://download.pytorch.org/whl/" + cuda)
+    pip(py, "-c", constraints, *common, "transformers==4.51.3", "accelerate>=1.2,<2",
+        "safetensors>=0.5,<1", "PyYAML>=6,<7", "psutil>=6,<8", "shapely>=2,<3", "networkx>=3,<4")
+    _install_source("OmniSVG/OmniSVG", addons.OMNISVG_COMMIT, target / "source")
+    prepare_omnisvg_source(target / "source")
+    transfers.snapshot_download(repo_id="OmniSVG/OmniSVG1.1_4B", revision=addons.OMNISVG_REVISION,
+        local_dir=str(target / "model"), allow_patterns=["config.json", "pytorch_model.bin", "README.md"])
+    # Only processor/tokenizer assets, never another copy of the Qwen base weights.
+    transfers.snapshot_download(repo_id="Qwen/Qwen2.5-VL-3B-Instruct",
+        revision=addons.OMNISVG_PROCESSOR_REVISION, local_dir=str(target / "processor"),
+        allow_patterns=["config.json", "preprocessor_config.json", "tokenizer*.json", "vocab.json",
+                        "merges.txt", "chat_template.json", "LICENSE"])
+    if (target / "model/pytorch_model.bin").stat().st_size != 7_694_002_862:
+        raise RuntimeError("Incomplete OmniSVG checkpoint. Run Install / repair again.")
+    run(py, ROOT / "scripts/tools/run_omnisvg.py", "--addon-root", target, "--check-imports")
+    return {"commit": addons.OMNISVG_COMMIT, "revision": addons.OMNISVG_REVISION,
+            "processor_revision": addons.OMNISVG_PROCESSOR_REVISION, "cuda": cuda}
 
 
 def install(name):
@@ -25,6 +69,8 @@ def install(name):
         _install_source("showlab/LayerTracer", addons.LAYERTRACER_COMMIT, target / "source")
         run(py, "-c", "import vtracer, cv2, resvg_py; print('CPU tracing ready')")
         metadata = {"commit": addons.LAYERTRACER_COMMIT}
+    elif name == "omnisvg":
+        metadata = install_omnisvg(target, py, common)
     else:
         # SDPA requires no FlashAttention, vLLM or compiler. cu128 supports Blackwell too.
         constraints = target / "constraints.txt"
@@ -53,5 +99,5 @@ def install(name):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("engine", choices=["svg", "hivg"])
+    parser.add_argument("engine", choices=["svg", "hivg", "omnisvg"])
     install(parser.parse_args().engine)
