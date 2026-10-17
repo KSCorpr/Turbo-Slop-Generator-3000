@@ -1,6 +1,7 @@
 """SVG jobs stay outside the Gradio process and release all models on exit."""
 from __future__ import annotations
 
+import json
 import math
 from types import SimpleNamespace
 import shutil
@@ -22,6 +23,12 @@ MODES = {"trace": "svg", "layer4": "svg", "layer9": "svg",
 OMNI_DEFAULTS = {"memory": "auto", "vram": 0, "ram": 0, "temperature": .3, "top_p": .9,
                  "top_k": 50, "repetition": 1.05, "variants": 1, "timeout": 300,
                  "cache": True, "keep_aspect": True}
+
+
+class SVGDiagnosticError(RuntimeError):
+    def __init__(self, message, directory):
+        super().__init__(message)
+        self.directory = Path(directory)
 
 
 def omni_arguments(options=None, *, tokens=2048, seed=0):
@@ -61,7 +68,7 @@ def install(name, log=print):
                 env=settings.child_env(_gen_gpu_index()))
 
 
-def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print, *, omni=None):
+def run(mode, source, prompt, tokens=None, seed=0, threshold=5, log=print, *, omni=None):
     if mode not in MODES:
         raise ValueError("Choose a listed SVG mode.")
     name = MODES[mode]
@@ -75,14 +82,18 @@ def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print, *, om
         raise ValueError("Enter a description first.")
     if len(prompt) > 4000:
         raise ValueError("Use a description of at most 4000 characters.")
+    if tokens is None:
+        tokens = 4096 if name == "hivg" else 2048
     values = (tokens, seed, threshold)
     if any(not math.isfinite(float(v)) or float(v) != int(v) for v in values):
         raise ValueError("Token budget, seed and threshold must be whole numbers.")
     tokens, seed, threshold = map(int, values)
-    if not (256 <= tokens <= 4096 and 0 <= seed <= 2**32-1 and 1 <= threshold <= 50):
+    token_limit = 16384 if name == "hivg" else 4096
+    if not (256 <= tokens <= token_limit and 0 <= seed <= 2**32-1 and 1 <= threshold <= 50):
         raise ValueError("SVG options are outside their allowed ranges.")
     extra = omni_arguments(omni, tokens=tokens, seed=seed) if name == "omnisvg" else []
     output = settings.OUTPUT_DIR / ("svg-" + uuid.uuid4().hex[:12])
+    diagnostic = output.with_name("svg-diagnostic-" + output.name.removeprefix("svg-"))
     with JOB.session(), tempfile.TemporaryDirectory(prefix="turboslop-svg-") as temporary:
         work = Path(temporary)
         if not text_mode:
@@ -105,9 +116,17 @@ def run(mode, source, prompt, tokens=2048, seed=0, threshold=5, log=print, *, om
         if name in {"hivg", "omnisvg"}:
             command += ["--prompt", prompt, "--tokens", str(tokens), "--seed", str(seed)]
             command += extra
+            if name == "hivg":
+                command += ["--diagnostics-dir", str(diagnostic)]
         else:
             command += ["--threshold", str(threshold)]
-        JOB.run(command, log, cwd=work, env=settings.child_env(_gen_gpu_index()))
+        try:
+            JOB.run(command, log, cwd=work, env=settings.child_env(_gen_gpu_index()))
+        except RuntimeError as exc:
+            if name == "hivg" and not JOB.cancelled.is_set() and (diagnostic / "diagnostics.zip").is_file():
+                report = json.loads((diagnostic / "diagnostic.json").read_text(encoding="utf-8"))
+                raise SVGDiagnosticError(report["error"], diagnostic) from exc
+            raise
         JOB.check()
         for filename in ("result.svg", "preview.png", "vectors.zip", "manifest.json"):
             file = work / "export" / filename

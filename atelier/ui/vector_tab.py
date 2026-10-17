@@ -10,8 +10,8 @@ from . import widgets
 from .media_tabs import stream_task
 
 CHOICES = [("VTracer · image → SVG · CPU", "trace"),
-           ("HiVG · image → SVG · AI", "hivg-image"),
-           ("HiVG · text → SVG · AI", "hivg-text"),
+           ("HiVG (experimental) · image → SVG · AI", "hivg-image"),
+           ("HiVG (experimental) · text → SVG · AI", "hivg-text"),
            ("OmniSVG 1.1 4B · image → SVG · AI", "omnisvg-image"),
            ("OmniSVG 1.1 4B · text → SVG · AI", "omnisvg-text"),
            ("LayerTracer · 4-panel drawing sequence → layers", "layer4"),
@@ -21,8 +21,8 @@ CHOICES = [("VTracer · image → SVG · CPU", "trace"),
 def mode_help(mode):
     descriptions = {
         "trace": "CPU tracing follows the source colors and contours. Best for logos and flat illustrations.",
-        "hivg-image": "HiVG reconstructs an SVG from the image. Shapes, lettering and small details may change.",
-        "hivg-text": "Describe a simple illustration or icon for HiVG to generate as vector shapes.",
+        "hivg-image": "Experimental HiVG reconstruction. Shapes and lettering may change. Some compressed outputs cannot be decoded by the public release; failures provide a diagnostic ZIP. Try OmniSVG for those cases.",
+        "hivg-text": "Experimental HiVG illustration generation. Some compressed outputs cannot be decoded by the public release. Start with a simple icon; failures provide a diagnostic ZIP.",
         "omnisvg-image": "OmniSVG reconstructs SVG shapes from your image. Compare lettering and small details. Variants run one at a time; memory is checked again before loading.",
         "omnisvg-text": "Describe an illustration or icon. OmniSVG generates vector paths with the controls below. Variants run one at a time.",
         "layer4": "Import a prepared 2 × 2 sequence of the same drawing. Order: top left → top right → bottom right → bottom left. Equal cells, no gutters.",
@@ -31,7 +31,8 @@ def mode_help(mode):
     ai = mode.startswith(("hivg", "omnisvg"))
     text = mode.endswith("-text")
     return (descriptions[mode], gr.update(visible=not text),
-            gr.update(visible=text), gr.update(visible=ai),
+            gr.update(visible=text), gr.update(visible=ai, maximum=16384 if mode.startswith("hivg") else 4096,
+                                             value=4096 if mode.startswith("hivg") else 2048),
             gr.update(visible=ai), gr.update(visible=mode.startswith("layer")),
             gr.update(visible=mode.startswith("omnisvg")))
 
@@ -114,7 +115,7 @@ def build_svg_tab():
                 preview = gr.Image(label="Vector render preview", interactive=False, height=400,
                                    buttons=widgets.IMAGE_VIEW_ONLY)
                 svg = gr.File(label="SVG document", interactive=False)
-                bundle = gr.File(label="ZIP · vectors, layers and preview", interactive=False)
+                bundle = gr.File(label="ZIP · vectors or failure diagnostics", interactive=False)
                 variant = gr.Dropdown([], label="Generated SVG variant", value=None, visible=False)
                 result_info = gr.Markdown()
                 result_directory = gr.State(None)
@@ -144,10 +145,21 @@ def build_svg_tab():
                 yield message, lines
 
         def run_svg(mode, source, prompt, tokens, seed, threshold, *values):
-            for message, directory, lines in stream_task(lambda logger:
-                    vectorize.run(mode, source, prompt, tokens, seed, threshold, logger,
-                                  omni=dict(zip(keys, values)))):
+            def execute(logger):
+                try:
+                    return vectorize.run(mode, source, prompt, tokens, seed, threshold, logger,
+                                         omni=dict(zip(keys, values)))
+                except vectorize.SVGDiagnosticError as exc:
+                    return exc.directory
+
+            for message, directory, lines in stream_task(execute):
                 folder = Path(directory) if directory else None
+                if folder and (folder / "diagnostic.json").is_file():
+                    report = json.loads((folder / "diagnostic.json").read_text(encoding="utf-8"))
+                    yield ("Failed: " + report["error"], None, None, str(folder / "diagnostics.zip"), lines,
+                           gr.update(choices=[], value=None, visible=False), None,
+                           "No SVG was exported. The diagnostic ZIP contains the raw model output and stop reason.")
+                    continue
                 metadata = json.loads((folder / "manifest.json").read_text(encoding="utf-8")) if folder else {}
                 choices = [(f"Variant {item['number']} · seed {item['seed']}", item["number"])
                            for item in metadata.get("variants", [])]

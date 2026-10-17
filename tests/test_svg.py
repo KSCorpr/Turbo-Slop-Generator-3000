@@ -57,7 +57,9 @@ class SVGValidationTests(unittest.TestCase):
         calls = []
         result = {"success": True, "svg": SVG, "raw_output": "<svg><path></path></svg>"}
         processor = Mock()
+        processor.from_pretrained.return_value.tokenizer.get_vocab.return_value = {"</svg>": 151689}
         model = Mock()
+        model.from_pretrained.return_value.generation_config.eos_token_id = [151645, 151643]
         torch = SimpleNamespace(manual_seed=Mock(), inference_mode=nullcontext)
 
         class OfficialPipelineContract:
@@ -65,11 +67,12 @@ class SVGValidationTests(unittest.TestCase):
                 calls.append(("constructor", kwargs))
                 self._load_model(path, None, None, None, None)
 
-            def img2svg(self, path):
+            def img2svg(self, path, **kwargs):
                 calls.append(("image", path))
+                calls.append(("generation", kwargs))
                 return result
 
-            def text2svg(self, prompt):
+            def text2svg(self, prompt, **kwargs):
                 calls.append(("text", prompt))
                 return result
 
@@ -79,7 +82,7 @@ class SVGValidationTests(unittest.TestCase):
         args = SimpleNamespace(seed=7, output=Path("export"), addon_root=Path("addon"),
                                tokens=1024, source=Path("source.png"), mode="hivg-image", prompt="red square")
         with patch.dict(sys.modules, modules), patch.object(hivg, "memory_plan", return_value=("auto", "bf16", {0: 10})), \
-             patch.object(hivg, "export") as export:
+             patch.object(hivg, "export") as export, patch.object(hivg, "save_diagnostic") as diagnostic:
             hivg.generate(args)
             args.mode = "hivg-text"
             hivg.generate(args)
@@ -90,11 +93,17 @@ class SVGValidationTests(unittest.TestCase):
             self.assertTrue(load["local_files_only"])
             self.assertFalse(load["trust_remote_code"])
             self.assertEqual(load["attn_implementation"], "sdpa")
+            self.assertEqual(load["dtype"], "bf16")
+            self.assertNotIn("torch_dtype", load)
             self.assertEqual(calls[0][1]["max_new_tokens"], 1024)
+            self.assertFalse(calls[0][1]["do_sample"])
+            generated = next(data for kind, data in calls if kind == "generation")
+            self.assertEqual(generated["eos_token_id"], [151645, 151643, 151689])
             result["raw_output"] = "<svg><path>"
             with self.assertRaisesRegex(RuntimeError, "before completing"):
                 hivg.generate(args)
             self.assertEqual(export.call_count, 2)
+            diagnostic.assert_called_once()
 
     def test_inventory_separates_weights_and_runtimes(self):
         items = {item.key: item for item in inventory.items()}

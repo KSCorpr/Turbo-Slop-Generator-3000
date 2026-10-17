@@ -302,6 +302,29 @@ class StudioWiringTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertLess(len(response.content), 1_520_000)
 
+    def test_failed_hivg_exposes_diagnostics_and_never_a_completed_svg(self):
+        from atelier.engine import vectorize
+        from atelier.ui import vector_tab
+        function = next(fn.fn for fn in self.demo.fns.values()
+                        if getattr(fn.fn, "__name__", "") == "run_svg")
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "diagnostic.json").write_text(json.dumps({"failed": True, "error": "Incomplete SVG"}))
+            (folder / "diagnostics.zip").write_bytes(b"diagnostic bundle")
+
+            def stream(action):
+                path = action(lambda line: None)
+                yield "Completed.", str(path), "output log"
+
+            with patch.object(vectorize, "run", side_effect=vectorize.SVGDiagnosticError("Incomplete SVG", folder)), \
+                 patch.object(vector_tab, "stream_task", side_effect=stream):
+                result = list(function("hivg-text", None, "square", 4096, 0, 5))[-1]
+            self.assertEqual(result[0], "Failed: Incomplete SVG")
+            self.assertIsNone(result[1])
+            self.assertIsNone(result[2])
+            self.assertEqual(result[3], str(folder / "diagnostics.zip"))
+            self.assertIsNone(result[6])
+
 
 if __name__ == "__main__":
     unittest.main()

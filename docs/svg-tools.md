@@ -101,8 +101,9 @@ The runner uses Transformers, SDPA and local files only. No vLLM, FlashAttention
 build or remote model code is required. CUDA loading reserves 2 GiB of currently
 free VRAM and 2 GiB of available system RAM; Accelerate can place weights in RAM
 or temporary disk storage. This budget is for weights: activation/KV memory also
-depends on image complexity and token count. Default output budget is 2,048 tokens
-(256–4,096 selectable), input processing is capped at 512 × 512 pixels, and each
+depends on image complexity and token count. Default output budget is 4,096 tokens
+(256–16,384 selectable for HiVG; OmniSVG keeps its independent 4,096 limit),
+input processing is capped at 512 × 512 pixels, and each
 job exits to release its model. CPU inference uses FP32 and requires at least
 19 GiB free system RAM; it can be slow. CUDA needs a compatible driver for the
 isolated PyTorch CUDA 12.8 build.
@@ -111,6 +112,30 @@ HiVG reconstructs illustrations. It can change lettering, contours and fine
 details; compare with the input. Use CPU tracing when following the source is
 more important than generative simplification. An unfinished SVG token sequence
 is reported as a failure rather than silently exported as a repaired result.
+The runner uses deterministic greedy generation instead of overriding the
+checkpoint's near-zero-temperature preset with sampling at temperature 0.7.
+It retains the checkpoint EOS tokens and also stops at the tokenizer's single
+`</svg>` token. `dtype` replaces the deprecated `torch_dtype` loading argument.
+Complete native SVG XML is accepted when the model emits XML instead of its
+atomic token format; no missing drawing commands or closing tags are invented.
+
+**HiVG remains experimental.** Its checkpoint vocabulary contains 500 `<SEG_N>`
+tokens, but the public release has no matching segment-to-atomic-token dictionary
+or expansion step. This is documented in the open upstream
+[segment-decoding issue](https://github.com/ximinng/HiVG/issues/5). If any such
+tokens are generated, the runner refuses to silently discard their geometry and
+recommends OmniSVG or VTracer. Raising the token budget cannot supply this missing
+dictionary. The original traceback alone cannot distinguish missing output from
+an upstream detokenizer failure: the official decoder can also lose the outer
+closing tag when an atomic path is missing its own closing token.
+
+Failures in output validation preserve a downloadable `diagnostics.zip` under
+`outputs/svg-diagnostic-*`, containing `raw-output.txt` and `diagnostic.json`.
+The report distinguishes a hard token limit, chat EOS, SVG completion or an
+unknown stop; it records generated token count and the upstream decoder error.
+The UI displays **Failed** and offers that ZIP, with no successful SVG/preview.
+Raw diagnostics stay local. No reinstall or model download is needed for these
+runner/UI changes: update the application, then retry.
 End-to-end HiVG GPU generation has not been validated on an RTX 3060 here.
 
 ## LayerTracer: supported stage and limits
