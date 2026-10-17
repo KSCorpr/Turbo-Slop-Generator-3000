@@ -263,7 +263,7 @@ class StudioWiringTests(unittest.TestCase):
                  "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
                  "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
                  "run_views", "convert_panorama", "install_view_caption", "run_svg",
-                 "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory"}
+                 "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:
@@ -324,6 +324,31 @@ class StudioWiringTests(unittest.TestCase):
             self.assertIsNone(result[2])
             self.assertEqual(result[3], str(folder / "diagnostics.zip"))
             self.assertIsNone(result[6])
+
+    def test_recovered_partial_is_labeled_and_downloads_its_marked_filename(self):
+        from atelier.engine import vectorize
+        from atelier.ui import vector_tab
+        function = next(fn.fn for fn in self.demo.fns.values()
+                        if getattr(fn.fn, "__name__", "") == "recover_svg")
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "svg-recovered-test"
+            folder.mkdir()
+            (folder / "manifest.json").write_text(json.dumps({"complete": False, "default_variant": 1,
+                "recovered_from_diagnostics": True, "variants": [{"number": 1, "seed": None, "paths": 2,
+                "complete": False, "file_stem": "01.partial"}]}))
+
+            def stream(action):
+                yield "Completed.", str(action(lambda line: None)), "recovery log"
+
+            with patch.object(settings, "OUTPUT_DIR", Path(directory)), \
+                 patch.object(vectorize, "recover", return_value=folder), \
+                 patch.object(vector_tab, "stream_task", side_effect=stream):
+                result = list(function("old-diagnostics.zip"))[-1]
+            self.assertIn("Partial SVG exported", result[0])
+            self.assertTrue(result[1].endswith("01.partial.png"))
+            self.assertTrue(result[2].endswith("01.partial.svg"))
+            self.assertIn("PARTIAL SVG", result[7])
+            self.assertIn("no model inference", result[7])
 
 
 if __name__ == "__main__":

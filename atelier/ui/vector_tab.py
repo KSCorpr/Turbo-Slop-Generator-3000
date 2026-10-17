@@ -1,6 +1,7 @@
 """Local image/text to SVG and prepared LayerTracer sequence reconstruction."""
 from pathlib import Path
 import json
+import re
 
 import gradio as gr
 
@@ -53,12 +54,20 @@ def variant_result(number, directory):
     selected = next((item for item in metadata.get("variants", []) if item["number"] == number), None)
     if selected is None:
         raise ValueError("Choose a generated SVG variant.")
-    info = f"Variant {number} · seed {selected['seed']} · {selected['paths']} paths."
+    seed_label = f"seed {selected['seed']}" if selected.get("seed") is not None else "saved tokens"
+    info = f"Variant {number} · {seed_label} · {selected['paths']} paths."
+    if not selected.get("complete", True):
+        info = "PARTIAL SVG · generation did not finish. " + info + " Missing shapes may remain; only finished color-delimited paths were kept."
+    if metadata.get("recovered_from_diagnostics"):
+        info += " Recovered on CPU from saved tokens; no model inference was run."
     if selected.get("pixel_difference_percent") is not None:
         info += (f" Pixel difference: {selected['pixel_difference_percent']}% "
                  "(lower is closer in pixel colors; this does not measure semantic or text accuracy).")
-    base = folder / "candidates" / f"{number:02d}"
-    return str(base.with_suffix(".png")), str(base.with_suffix(".svg")), info
+    stem = selected.get("file_stem", f"{number:02d}")
+    if not isinstance(stem, str) or not re.fullmatch(r"\d{2}(?:\.partial)?", stem):
+        raise ValueError("Invalid SVG variant filename.")
+    base = folder / "candidates" / stem
+    return str(base)+".png", str(base)+".svg", info
 
 
 def build_svg_tab():
@@ -108,6 +117,10 @@ def build_svg_tab():
                             label="Generation time budget (seconds, 0 = no time limit)")
                     cache = gr.Checkbox(value=True, label="KV cache (faster, uses more VRAM)")
                     keep_aspect = gr.Checkbox(value=True, label="Keep source proportions (white padding)")
+                    gr.Markdown("If generation reaches a limit, finished paths can be exported as an explicitly **partial SVG**. "
+                                "A partial drawing may be missing shapes. Recover an older failed run below without loading GPU weights.")
+                    recovery_file = gr.File(label="Saved OmniSVG diagnostic ZIP (optional)", file_types=[".zip"], type="filepath")
+                    recover_button = gr.Button("Recover SVG from saved tokens · CPU", size="sm")
                 with gr.Row():
                     start = gr.Button("Create SVG", variant="primary")
                     stop = gr.Button("Stop")
@@ -144,15 +157,8 @@ def build_svg_tab():
                     vectorize.diagnose(dict(zip(keys, values)), logger)):
                 yield message, lines
 
-        def run_svg(mode, source, prompt, tokens, seed, threshold, *values):
-            def execute(logger):
-                try:
-                    return vectorize.run(mode, source, prompt, tokens, seed, threshold, logger,
-                                         omni=dict(zip(keys, values)))
-                except vectorize.SVGDiagnosticError as exc:
-                    return exc.directory
-
-            for message, directory, lines in stream_task(execute):
+        def present_svg(action):
+            for message, directory, lines in stream_task(action):
                 folder = Path(directory) if directory else None
                 if folder and (folder / "diagnostic.json").is_file():
                     report = json.loads((folder / "diagnostic.json").read_text(encoding="utf-8"))
@@ -161,20 +167,37 @@ def build_svg_tab():
                            "No SVG was exported. The diagnostic ZIP contains the raw model output and stop reason.")
                     continue
                 metadata = json.loads((folder / "manifest.json").read_text(encoding="utf-8")) if folder else {}
-                choices = [(f"Variant {item['number']} · seed {item['seed']}", item["number"])
+                choices = [(f"Variant {item['number']}" + (" · PARTIAL" if not item.get("complete", True) else ""), item["number"])
                            for item in metadata.get("variants", [])]
-                info = variant_result(1, directory)[2] if choices else ""
-                yield (message, str(folder / "preview.png") if folder else None,
-                       str(folder / "result.svg") if folder else None,
+                selected = metadata.get("default_variant", 1)
+                preview_path, svg_path, info = variant_result(selected, directory) if choices else (
+                    str(folder / "preview.png") if folder else None, str(folder / "result.svg") if folder else None, "")
+                if folder and not metadata.get("complete", True):
+                    message = "Partial SVG exported. Generation did not finish; the drawing may be incomplete."
+                yield (message, preview_path, svg_path,
                        str(folder / "vectors.zip") if folder else None, lines,
-                       gr.update(choices=choices, value=1 if choices else None, visible=bool(choices)),
+                       gr.update(choices=choices, value=selected if choices else None, visible=bool(choices)),
                        directory, info)
+
+        def run_svg(mode, source, prompt, tokens, seed, threshold, *values):
+            def execute(logger):
+                try:
+                    return vectorize.run(mode, source, prompt, tokens, seed, threshold, logger,
+                                         omni=dict(zip(keys, values)))
+                except vectorize.SVGDiagnosticError as exc:
+                    return exc.directory
+            yield from present_svg(execute)
+
+        def recover_svg(path):
+            yield from present_svg(lambda logger: vectorize.recover(path, logger))
 
         install_cpu.click(install_svg_cpu, outputs=[status, log, installed], **widgets.GPU_QUEUE)
         install_ai.click(install_svg_ai, outputs=[status, log, installed], **widgets.GPU_QUEUE)
         install_omni.click(install_svg_omni, outputs=[status, log, installed], **widgets.GPU_QUEUE)
         check_memory.click(check_svg_memory, controls, [status, log], **widgets.GPU_QUEUE)
         start.click(run_svg, [mode, source, prompt, tokens, seed, threshold, *controls],
+                    [status, preview, svg, bundle, log, variant, result_directory, result_info], **widgets.GPU_QUEUE)
+        recover_button.click(recover_svg, recovery_file,
                     [status, preview, svg, bundle, log, variant, result_directory, result_info], **widgets.GPU_QUEUE)
         variant.change(variant_result, [variant, result_directory], [preview, svg, result_info], queue=False)
         stop.click(vectorize.JOB.cancel, outputs=status, queue=False)

@@ -117,7 +117,7 @@ class RealGenerationTests(unittest.TestCase):
                     "mode": "omnisvg-text", "addon_root": root, "output": output,
                     "source": None, "prompt": "square", "timeout": 300, "diagnostics_dir": root / "diagnostic"})
                 plan = {"mode": "cpu", "dtype": "float32", "ram_budget": 32*omni.GIB, "ram_required": 24*omni.GIB}
-                with patch.object(omni, "load_tokenizer", return_value=Mock()), \
+                with patch.object(omni, "load_tokenizer", return_value=Mock(COLOR_COORD_BOUNDARY=191947, MAX_COLOR_TOKENS=4098)), \
                      patch.object(omni, "load_model", return_value=model), \
                      patch.object(AutoProcessor, "from_pretrained", return_value=processor) as load:
                     with self.assertRaisesRegex(RuntimeError, "No complete SVG"):

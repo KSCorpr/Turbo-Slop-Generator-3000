@@ -68,6 +68,28 @@ def install(name, log=print):
                 env=settings.child_env(_gen_gpu_index()))
 
 
+def recover(source, log=print):
+    if not addons.ready("omnisvg"):
+        raise RuntimeError("Install OmniSVG first to use its CPU decoder.")
+    source = Path(source) if source else None
+    if source is None or not source.is_file() or source.stat().st_size > 2_000_000:
+        raise ValueError("Import an OmniSVG diagnostic ZIP up to 2 MB.")
+    output = settings.OUTPUT_DIR / ("svg-recovered-" + uuid.uuid4().hex[:12])
+    with JOB.session(), tempfile.TemporaryDirectory(prefix="turboslop-svg-recovery-") as temporary:
+        work = Path(temporary)
+        shutil.copyfile(source, work / "diagnostics.zip")
+        JOB.run([addons.python("omnisvg"), "-u", settings.ROOT / "scripts/tools/run_omnisvg.py",
+            "--addon-root", addons.root("omnisvg"), "--recover-diagnostics", "diagnostics.zip",
+            "--output", "export"], log, cwd=work, env=settings.child_env(_gen_gpu_index()))
+        JOB.check()
+        for name in ("result.svg", "preview.png", "vectors.zip", "manifest.json"):
+            if not (work / "export" / name).is_file():
+                raise RuntimeError("The saved tokens did not create a usable SVG export.")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(work / "export"), output)
+    return output
+
+
 def run(mode, source, prompt, tokens=None, seed=0, threshold=5, log=print, *, omni=None):
     if mode not in MODES:
         raise ValueError("Choose a listed SVG mode.")
@@ -131,7 +153,8 @@ def run(mode, source, prompt, tokens=None, seed=0, threshold=5, log=print, *, om
             file = work / "export" / filename
             if not file.is_file() or not file.stat().st_size:
                 raise RuntimeError("The engine did not create a complete SVG export.")
-        # Only complete results enter persistent history. Temporary offload tensors are removed.
+        # Only validated exports (complete or explicitly partial) enter history.
+        # Temporary offload tensors are removed.
         offload = work / "export/offload"
         if offload.exists():
             shutil.rmtree(offload)

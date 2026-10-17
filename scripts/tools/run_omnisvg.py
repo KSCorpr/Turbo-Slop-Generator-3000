@@ -9,6 +9,7 @@ import math
 import sys
 import time
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageOps, ImageStat
@@ -219,25 +220,124 @@ def prepare_inputs(processor, mode, source, prompt, keep_aspect=True):
     return processor(**kwargs), reference
 
 
-def decode_svg(tokenizer, generated, stats=None):
+def decode_svg(tokenizer, generated, stats=None, *, allow_partial=False):
     import torch
     ids = generated.detach().cpu().reshape(-1)
     eos = (ids == 196999).nonzero().reshape(-1)
+    complete = bool(len(eos))
     if not len(eos):
-        raise ValueError(incomplete_message(stats or stop_statistics(ids.tolist(), len(ids)+1, 0)))
-    ids = ids[:int(eos[0])]
+        message = incomplete_message(stats or stop_statistics(ids.tolist(), len(ids)+1, 0))
+        if not allow_partial:
+            raise ValueError(message)
+        # Retain only a prefix ending at an actual path-color token. The
+        # official decoder can serialize truncated output, but an unfinished
+        # tail must not acquire invented geometry or a default fill here.
+        start = tokenizer.COLOR_COORD_BOUNDARY
+        end = start + tokenizer.MAX_COLOR_TOKENS
+        positions = ((ids >= start) & (ids < end)).nonzero().reshape(-1)
+        if not len(positions):
+            raise ValueError(message + " No finished color-delimited path is available for a partial SVG.")
+        retained = int(positions[-1])+1
+        if stats is not None:
+            stats.update(complete=False, retained_tokens=retained, discarded_tail_tokens=len(ids)-retained,
+                         warning=message)
+        ids = ids[:retained]
+    else:
+        ids = ids[:int(eos[0])]
+        if stats is not None:
+            stats["complete"] = True
     wrapped = torch.cat([torch.tensor([196998]), ids, torch.tensor([196999])]).unsqueeze(0)
     xy = tokenizer.process_generated_tokens(wrapped)
     tensors, colors = tokenizer.raster_svg(xy)
     if not tensors or not tensors[0]:
         raise ValueError("OmniSVG produced no vector paths.")
+    if not complete and len(colors) != len(tensors[0]):
+        raise ValueError("No finished color-delimited path is available for a partial SVG.")
     colors += [40012] * max(0, len(tensors[0]) - len(colors))
     svg = tokenizer.apply_colors_to_svg(tensors[0], colors).to_str()
     root = parse_svg(svg)
     paths = sum(node.tag.split("}")[-1] == "path" for node in root.iter())
     if not paths:
         raise ValueError("OmniSVG produced no drawable paths.")
+    if not complete:
+        description = ET.Element("{http://www.w3.org/2000/svg}desc")
+        description.text = "PARTIAL SVG: generation ended without EOS. Only finished color-delimited paths were retained; the drawing may be incomplete."
+        root.insert(0, description)
+        svg = ET.tostring(root, encoding="unicode")
     return svg, paths
+
+
+def export_variants(args, variants, files, plan, attempts, started, raw_outputs, *, recovered=False):
+    import torch
+    selected = next((item for item in variants if item["complete"]), variants[0])
+    for index, ids in enumerate(raw_outputs, 1):
+        path = args.output / f"generated-token-ids-{index:02d}.json"
+        path.write_text(json.dumps(ids), encoding="utf-8")
+        files.append(path)
+    metadata = {"engine": "OmniSVG1.1_4B", "revision": "117d4c4541839e02943554fe71c0a0d54fcef819",
+        "mode": args.mode, "variants": variants, "memory_plan": plan, "attempts": attempts,
+        "complete": selected["complete"], "default_variant": selected["number"],
+        "recovered_from_diagnostics": recovered,
+        "controls": {key: getattr(args, key, None) for key in ("tokens", "seed", "temperature", "top_p", "top_k",
+                     "repetition", "variants", "timeout", "cache", "keep_aspect")},
+        "elapsed_seconds": round(time.monotonic()-started, 2),
+        "prompt": args.prompt if args.mode == "omnisvg-text" else None,
+        "peak_torch_vram": torch.cuda.max_memory_allocated(0) if plan and plan["mode"] != "cpu" else 0}
+    export((args.output / "candidates" / (selected["file_stem"]+".svg")).read_text(encoding="utf-8"),
+           args.output, metadata, files)
+    partial = sum(not item["complete"] for item in variants)
+    print(f"Exported {len(variants)} SVG variant(s), including {partial} explicitly marked partial drawing(s).", flush=True)
+
+
+def recover_diagnostics(args):
+    """Decode saved IDs on CPU; never instantiate or load the vision model."""
+    import torch
+    import re
+    started = time.monotonic()
+    with zipfile.ZipFile(args.recover_diagnostics) as archive:
+        if len(archive.infolist()) > 12 or sum(item.file_size for item in archive.infolist()) > 2_000_000:
+            raise ValueError("The OmniSVG diagnostic ZIP is too large.")
+        report = json.loads(archive.read("diagnostic.json"))
+        if not isinstance(report, dict) or report.get("engine") != "OmniSVG1.1_4B":
+            raise ValueError("Import an OmniSVG 4B diagnostic ZIP containing generated token IDs.")
+        budget = report.get("token_budget")
+        if type(budget) is not int or not 256 <= budget <= 16384:
+            raise ValueError("Invalid token budget in OmniSVG diagnostic ZIP.")
+        names = sorted(name for name in archive.namelist() if re.fullmatch(r"generated-token-ids-\d{2}\.json", name))
+        if not 1 <= len(names) <= 4 or len(set(names)) != len(names):
+            raise ValueError("The ZIP must contain one to four OmniSVG token sequences.")
+        raw_outputs = [json.loads(archive.read(name)) for name in names]
+    for ids in raw_outputs:
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 16384 or any(type(token) is not int or not 0 <= token < 197000 for token in ids):
+            raise ValueError("Invalid OmniSVG token sequence in diagnostic ZIP.")
+    tokenizer = load_tokenizer(args.addon_root / "source")
+    folder = args.output / "candidates"
+    folder.mkdir(parents=True, exist_ok=True)
+    variants, files, attempts = [], [], []
+    for index, ids in enumerate(raw_outputs):
+        stats = stop_statistics(ids, budget, 0)
+        stats.update(attempt=index+1, seed=None)
+        try:
+            svg, count = decode_svg(tokenizer, torch.tensor(ids), stats, allow_partial=True)
+            preview = render_candidate(svg)
+            number = len(variants)+1
+            stem = f"{number:02d}" + ("" if stats["complete"] else ".partial")
+            path = folder / (stem+".svg")
+            path.write_text(svg, encoding="utf-8")
+            preview.save(path.with_suffix(".png"))
+            # with_suffix replaces '.svg', preserving the '.partial' marker.
+            files += [path, path.with_suffix(".png")]
+            variants.append({"number": number, "seed": None, "paths": count, "pixel_difference_percent": None,
+                             "complete": stats["complete"], "file_stem": stem, "generation": stats.copy()})
+        except (ValueError, RuntimeError) as exc:
+            stats["error"] = str(exc)
+            print(f"Saved attempt {index+1} cannot be recovered: {exc}", flush=True)
+        attempts.append(stats)
+    if not variants:
+        raise RuntimeError("The saved tokens contain no recoverable, nonempty vector drawing. No model was loaded.")
+    print("Recovered saved tokens on CPU. No inference model or GPU weights were loaded.", flush=True)
+    args.mode = "omnisvg-recovery"
+    export_variants(args, variants, files, None, attempts, started, raw_outputs, recovered=True)
 
 
 def render_candidate(svg):
@@ -293,10 +393,11 @@ def generate(args, plan):
         print(f"Variant {attempt+1} stopped: {stats['stop_reason']} · "
               f"{stats['generated_tokens']}/{args.tokens} tokens · {stats['elapsed_seconds']}s.", flush=True)
         try:
-            svg, count = decode_svg(tokenizer, ids, stats)
+            svg, count = decode_svg(tokenizer, ids, stats, allow_partial=True)
             preview = render_candidate(svg)
             number = len(successful) + 1
-            path = folder / f"{number:02d}.svg"
+            stem = f"{number:02d}" + ("" if stats["complete"] else ".partial")
+            path = folder / (stem+".svg")
             path.write_text(svg, encoding="utf-8")
             preview.save(path.with_suffix(".png"))
             files += [path, path.with_suffix(".png")]
@@ -305,8 +406,10 @@ def generate(args, plan):
                 diff = ImageChops.difference(reference.resize(preview.size), preview)
                 score = round(sum(ImageStat.Stat(diff).mean) / (3*255)*100, 2)
             successful.append({"number": number, "seed": (args.seed+attempt) % 2**32,
-                               "paths": count, "pixel_difference_percent": score, "generation": stats.copy()})
-            print(f"Variant {number}: {count} paths; pixel difference {score} percent.", flush=True)
+                               "paths": count, "pixel_difference_percent": score, "generation": stats.copy(),
+                               "complete": stats["complete"], "file_stem": stem})
+            label = "complete sequence" if stats["complete"] else "PARTIAL drawing (no EOS)"
+            print(f"Variant {number}: {label}; {count} paths; pixel difference {score} percent.", flush=True)
         except (ValueError, RuntimeError) as exc:
             stats["error"] = str(exc)
             print(f"Variant {attempt+1} rejected: {exc}", flush=True)
@@ -322,16 +425,7 @@ def generate(args, plan):
     if reference is not None:
         reference.save(args.output / "reference.png")
         files.append(args.output / "reference.png")
-    metadata = {"engine": "OmniSVG1.1_4B", "revision": "117d4c4541839e02943554fe71c0a0d54fcef819",
-        "mode": args.mode, "variants": successful, "memory_plan": plan,
-        "attempts": attempts,
-        "controls": {key: getattr(args, key) for key in ("tokens", "seed", "temperature", "top_p", "top_k",
-                     "repetition", "variants", "timeout", "cache", "keep_aspect")},
-        "elapsed_seconds": round(time.monotonic()-started, 2),
-        "prompt": args.prompt if args.mode == "omnisvg-text" else None,
-        "peak_torch_vram": torch.cuda.max_memory_allocated(0) if device != "cpu" else 0}
-    export((folder / "01.svg").read_text(encoding="utf-8"), args.output, metadata, files)
-    print(f"Exported {len(successful)} complete variant(s). Compare them with the source.", flush=True)
+    export_variants(args, successful, files, plan, attempts, started, raw_outputs)
 
 
 def parser():
@@ -344,6 +438,7 @@ def parser():
     cli.add_argument("--prompt", default="")
     cli.add_argument("--output", type=Path)
     cli.add_argument("--diagnostics-dir", type=Path)
+    cli.add_argument("--recover-diagnostics", type=Path)
     cli.add_argument("--memory", choices=["auto", "offload", "cpu"], default="auto")
     for name, default, kind in (("tokens", 4096, int), ("seed", 0, int), ("variants", 1, int),
         ("temperature", .3, float), ("top-p", .9, float), ("top-k", 50, int), ("repetition", 1.05, float),
@@ -360,6 +455,11 @@ if __name__ == "__main__":
         import torch, accelerate, transformers, resvg_py
         load_tokenizer(args.addon_root / "source")
         print("OmniSVG inference and official SVG decoder imports ready.", flush=True)
+    elif args.recover_diagnostics:
+        if not args.output:
+            raise ValueError("Choose an output folder for recovered SVG files.")
+        args.output.mkdir(parents=True, exist_ok=True)
+        recover_diagnostics(args)
     else:
         import torch
         import psutil

@@ -70,30 +70,45 @@ an enabled time budget after each token step; it is not a hard process deadline.
 the whole subprocess tree, including during loading.
 
 Request **1–4 variants**. They run sequentially, without upstream's extra hidden
-candidates or simultaneous batches. Seeds increment per attempt. An incomplete
-token sequence (missing EOS), invalid SVG or blank render is rejected. Completed
-variants survive a generation-time limit if at least one is valid; user Stop or
-an inference failure discards the unfinished job. The ZIP includes all completed
-candidate SVGs/PNGs, settings, memory plan and peak Torch VRAM in `manifest.json`.
-Select any completed variant to preview/download it separately. The default
-`result.svg` and `preview.png` refer to variant 1.
+candidates or simultaneous batches. Seeds increment per attempt. A sequence
+without EOS can retain the prefix ending at its last actual path-color token;
+the unfinished tail is discarded. It must still decode into nonempty, valid
+vector paths with matching colors. Invalid SVG and blank renders are rejected.
+These drawings are explicitly labeled **PARTIAL** in the UI, filenames
+(`NN.partial.svg` / `.png`), SVG description and manifest. They can be missing
+shapes: valid XML does not establish that generation finished or followed the source.
+
+Valid complete or partial variants survive an enabled generation-time limit;
+user Stop or an inference failure discards the unfinished job. The ZIP includes
+candidate SVGs/PNGs, original numeric token sequences, settings, memory plan and
+peak Torch VRAM in `manifest.json`. Select a variant to preview/download it
+separately. Default `result.svg` and `preview.png` prefer the first complete
+variant, falling back to the first explicitly marked partial drawing.
 
 The original 2,048-token / 300-second defaults could stop a slow or complex
 generation before its real EOS token **196999**, even when memory admission and
 model placement succeeded. The 4B training token configuration and inference
-code agree on this EOS: it is retained, not replaced with a fabricated end token.
+code agree on this EOS. Only a real model-generated EOS marks completion.
+Upstream inference wraps even unfinished output with BOS/EOS for serialization;
+Turbo Slop uses that decoder but labels such output partial and drops its unfinished tail.
 Progress reports generated tokens, elapsed time and tokens/second about every
 10 seconds. Completion reports distinguish EOS, token limit, time limit, both
 limits or an unknown stop. The user's RTX 3060 log confirmed successful loading
-with all weights on GPU (`{"": 0}`); it did not record which generation limit was
-reached. No GPU output-quality claim follows from successful model loading.
+with all weights on GPU (`{"": 0}`); a later log confirmed a 4,096-token stop
+without EOS. No GPU output-quality claim follows from successful model loading.
 
 If all attempts fail, the UI offers `diagnostics.zip` instead of losing the
 generation. It contains `diagnostic.json` with per-attempt stop statistics and
 `generated-token-ids-NN.json` containing the numeric output of each attempt.
-There is no SVG success/preview for an incomplete sequence. The diagnostic
-folder is under `outputs/svg-diagnostic-*`. Successful exports also record their
-attempt statistics in `manifest.json`. The saved slow processor is selected
+The diagnostic folder is under `outputs/svg-diagnostic-*`. To recover a previous
+failed run, select an OmniSVG mode, import its `diagnostics.zip` in **Saved
+OmniSVG diagnostic ZIP**, then click **Recover SVG from saved tokens · CPU**.
+This runs only the installed official CPU decoder and renderer: no model weights,
+processor, CUDA memory admission or new inference. If the saved output contains
+no recoverable paths it still fails; recovery does not complete missing shapes
+or solve the model's failure to emit EOS. It needs no model download or engine
+reinstall. Successful exports also record their attempt statistics in
+`manifest.json`. The saved slow processor is selected
 explicitly with `use_fast=False` to retain preprocessing parity and avoid the
 default-change warning. These changes need an application update only.
 
