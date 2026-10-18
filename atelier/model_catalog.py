@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-from . import addons, downloader, model_store, registry, settings, transfers
+from . import addons, downloader, model_store, registry, settings, transfers, moss_dmd
 from .engine import tools
 from .engine.local_jobs import LocalJob
 
@@ -38,7 +38,9 @@ def packages(prefs=None):
         ("upscalers", "ESRGAN upscalers · GGUF", "Shared ESRGAN weights for the image engine; no extra image-generation model."),
         ("modern", "Modern upscalers · Spandrel", "Shared modern upscale weights and their runtime (SwinIR / RealPLKSR / DAT)."),
     ]
-    return images + [Package("tool:"+key,name,"Toolkit",note) for key,name,note in toolkit] + [
+    return images + [Package("moss:dmd", "MOSS SFT · DMD 8-step adapter", "Image generation",
+                            "Optional 1.19 GB LoRA for MOSS-Image SFT. Select DMD fast (8 steps) in Images after downloading. "
+                            "Reuses the installed image model, encoder and VAE; no second base checkpoint.")] + [Package("tool:"+key,name,"Toolkit",note) for key,name,note in toolkit] + [
         Package("addon:sam2","SAM 2.1 small","Layers & SVG","Click cut-out and automatic/manual layers share the same 184 MB checkpoint."),
         Package("addon:qwen-layered","Qwen-Image-Layered Q4","Layers & SVG","RGBA decomposition: selected Q4 transformer + text encoder + VAE (~30 GB). Separate from Qwen Image Turbo."),
         Package("addon:svg","VTracer / LayerTracer · CPU","Layers & SVG","CPU runtime and official source only; no neural weights."),
@@ -83,6 +85,8 @@ def ready(key, variant=None):
         return False
     if key.startswith("image:"):
         return registry.model_is_ready(registry.get_base_model(key[6:],settings.load_prefs()))
+    if key == "moss:dmd":
+        return moss_dmd.ready()
     if key.startswith("tool:"):
         name=key[5:]
         if name in {"modern","upscalers"}:
@@ -135,7 +139,9 @@ def install(key, variant=None, log=print):
     _variant(p,variant)
     command=None
     with JOB.session(), transfers.cancel_scope(JOB.check):
-        if key.startswith("tool:"):
+        if key == "moss:dmd":
+            moss_dmd.install(log)
+        elif key.startswith("tool:"):
             name=key[5:]
             if name in {"modern","upscalers"}:
                 if name == "modern":

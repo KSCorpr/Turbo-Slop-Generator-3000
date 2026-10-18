@@ -421,9 +421,11 @@ def rationale(model_family: str) -> str:
                 "**22** in the negative CFG branch. This preset is not "
                 "distilled: CFG uses two network evaluations per step and "
                 "negative prompts can affect the result. Its Qwen3.5-9B "
-                "encoder requires the external tokenizer. Community DMD "
-                "8/4-step adapters require their own runtime support; "
-                "lowering Steps alone does not enable them.")
+                "encoder requires the external tokenizer. **DMD fast (8 steps)** "
+                "instead uses **CFG 1**, Euler/Auto and the separately downloaded "
+                "lodestones adapter at **0.7**, applied at runtime without merging. "
+                "Choose that preset to activate it; lowering Steps alone does "
+                "not load the adapter. Negative prompts have no effect at CFG 1.")
     if fam == "krea2_realism":
         return ("**Krea 2 Realism** is a full RudySen checkpoint, with the "
                 "realism LoRA already merged. The author recommends "

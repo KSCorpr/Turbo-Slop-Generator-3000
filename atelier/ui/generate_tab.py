@@ -200,8 +200,9 @@ def build_generative_tab(model_id: str, title: str,
                 "Text and object boxes use pixel coordinates relative to the canvas "
                 "center; set the matching output dimensions. Style additions are "
                 "skipped for JSON layouts. Start at 1024 px with automatic memory "
-                "placement. The standard preset uses 50 steps; DMD adapters are "
-                "not enabled here.")
+                "placement. For **8 steps**, download **MOSS SFT · DMD 8-step "
+                "adapter** in Models, then select **DMD fast (8 steps)** below. "
+                "The adapter is applied automatically at strength 0.7, CFG 1.")
 
         def refresh_model_status():
             current = registry.get_base_model(model_id, settings.load_prefs())
@@ -935,18 +936,21 @@ def build_generative_tab(model_id: str, title: str,
                           outputs=[width, height, ratio])
 
         if preset_list:
+            preset_outputs = [sampler, schedule, steps, cfg] + ([flow_shift] if family == "moss_image" else [])
+
             def apply_preset(name):
                 name = i18n.to_source(name)
                 for p in preset_list:
                     if p["name"] == name:
-                        return (gr.update(value=p.get("sampler", "euler")),
+                        values = (gr.update(value=p.get("sampler", "euler")),
                                 gr.update(value=p.get("scheduler", "auto")),
                                 gr.update(value=int(p.get("steps", 8))),
                                 gr.update(value=float(p.get("cfg_scale", 1.0))))
-                return gr.update(), gr.update(), gr.update(), gr.update()
+                        return (*values, gr.update(value=0)) if family == "moss_image" else values
+                return tuple(gr.update() for _ in preset_outputs)
 
             preset.change(apply_preset, inputs=[preset],
-                          outputs=[sampler, schedule, steps, cfg])
+                          outputs=preset_outputs)
 
         def do_generate(selected_model_id, system_prompt, prompt, negative,
                         photo_styles, art_styles,
@@ -954,7 +958,8 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc, extra_references=None):
+                        custom_diff, custom_vae, custom_enc, extra_references=None,
+                        generation_preset=None):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
             # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
@@ -1065,6 +1070,8 @@ def build_generative_tab(model_id: str, title: str,
 
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
+            use_moss_dmd = family == "moss_image" and any(
+                p.get("moss_dmd") and p["name"] == generation_preset for p in preset_list)
 
             preview_path = settings.TMP_DIR / f"preview_{time.time_ns()}_%03d.png"
 
@@ -1084,6 +1091,7 @@ def build_generative_tab(model_id: str, title: str,
                         init_image=init_path, strength=float(strength),
                         ref_image=(ref_paths or None), circular=bool(circular),
                         loras=loras,
+                        **({"moss_dmd": True} if use_moss_dmd else {}),
                         diffusion_override=gen_engine.custom_path(custom_diff),
                         vae_override=gen_engine.custom_path(custom_vae),
                         encoder_override=gen_engine.custom_path(custom_enc),
@@ -1214,6 +1222,8 @@ def build_generative_tab(model_id: str, title: str,
         )
         _gen_io.update(widgets.GPU_QUEUE, show_progress="minimal",
                        show_progress_on=[status_md], stream_every=0.15)
+        if family == "moss_image":
+            _gen_io["inputs"].append(preset)
         gen_evt = run.click(**_gen_io)
         # QOL : Ctrl+Entrée (ou Cmd+Entrée) depuis le prompt lance la
         # génération. Un champ multiligne n'a pas de « validation » naturelle,

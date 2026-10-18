@@ -50,13 +50,47 @@ The official preset is **Euler, 50 steps, CFG 3, Auto scheduler, flow shift 0
 22 in the negative CFG branch. Dimensions must be multiples of 16. Negative
 prompts can affect the image at CFG 3. This SFT checkpoint is not distilled.
 
-Community DMD [8-step adapters](https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd)
-and [Rapid-MOSS 4-step adapters](https://huggingface.co/darask0/MOSS-Image_4-step_adapter_lora)
-exist. Their application, precision and sampling requirements need validation
-with the native backend. This integration does not download or enable them,
-and does not claim that reducing Steps reproduces their acceleration/quality.
-The adapter author's older 8-step instructions are explicitly deprecated;
-they should not be treated as the current loader contract.
+## DMD fast: 8 steps
+
+1. In **Models**, find and select **MOSS SFT · DMD 8-step adapter**, then click
+   **Install / repair selected package**. This downloads only the 1.19 GB
+   adapter; it does not download another diffusion model, encoder or VAE.
+2. Open **Images → MOSS-Image SFT** and choose **DMD fast (8 steps)** under
+   **Quality preset**, then Generate. The preset sets Euler, Auto scheduler,
+   8 steps, CFG 1 and automatic flow shift 5.
+3. Select **Recommended (50 steps)** to return to ordinary generation. The DMD
+   adapter is not injected in that mode. Changing the step slider alone does
+   not activate DMD.
+
+The adapter is `lora_latest.safetensors` from
+[`lodestones/MOSS-Image-SFT-8-steps-dmd`](https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd),
+pinned at `f95df83b5e90ae91ea412434b3f9b7f1c8c6314f`:
+
+- Size: 1,189,176,800 bytes; SHA-256:
+  `be82ab2bef78194651815bb6de443cec67553e01c14559f2ad365449445f0452`.
+- Stored once in `loras/moss-image-sft-dmd/lora_latest.safetensors`; resumable,
+  rate-limited download with Hub checksum verification.
+- All 756 tensor names/shapes/F32 types are validated before use. The native
+  build-975 name converter maps all targets, including split Q/K/V projections,
+  onto the 252 model linears without collisions. The source file is not converted.
+- Strength **0.7**, **`--lora-apply-mode at_runtime`**: the adapter is applied
+  separately, without merging its small changes into BF16/INT8 weights.
+- The memory planner includes the adapter's weight size. Missing/incomplete
+  adapters, unsupported runtime application and incompatible fast settings
+  fail before model loading. Standard generation remains available without it.
+- Sidecar metadata records DMD and its strength, while keeping the reusable
+  prompt/JSON free of the injected LoRA tag.
+
+This follows the author's [current demo](https://huggingface.co/spaces/hugging-apps/moss-image-8-step-dmd/blob/main/app.py):
+stock Euler/shift-5 inference plus `lora_latest` at 0.7, CFG disabled. It does
+not use the older data-space timestep/latent-mix files. The older model-card
+instructions are explicitly deprecated. Rapid-MOSS 4-step adapters are a
+different integration and are not enabled here.
+
+The author's reference demo uses BF16 base weights; this implementation also
+allows the catalog's INT8 weights through native runtime LoRA application.
+Speed and image-quality differences on consumer GPUs have not been measured
+here. The adapter is a community work-in-progress checkpoint.
 
 ## Layout prompts
 
@@ -92,7 +126,11 @@ CPU tests cover catalog selection, exact dependency paths, shared VAE reuse,
 required tokenizer, engine-version/capability guards, text/image-to-image CLI
 arguments, ADetailer, 3060 placement planning with sparse weight files, sampling
 defaults, and unchanged/invalid JSON through the actual UI callback. They do
-not load pretrained weights or verify image quality on a GPU.
+not load pretrained weights or verify image quality on a GPU. DMD tests use
+the real pinned checkpoint header with sparse dummy payloads, test both
+presets, ensure runtime application and include its memory in planning. The
+upstream native name-conversion code was also compiled and run against all
+756 real header names; this checks loader mapping, not GPU image quality.
 
 - [OpenMOSS model card](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
 - [Native sd.cpp MOSS guide](https://github.com/leejet/stable-diffusion.cpp/blob/95b3090664d019fcf8fa032a44d1d4793ba244b8/docs/moss_image.md)

@@ -179,8 +179,8 @@ base_models:
       Flux.2 VAE. Euler, 50 steps, CFG 3 and automatic flow shift 5.
       Keep automatic system placement enabled on 12 GB GPUs to stage text
       weights in RAM. Requires sd.cpp build 975 or newer. Apache-2.0.
-      Community 8/4-step adapters are not validated with this backend and
-      are not enabled by this preset.
+      Optional DMD fast preset: 8 steps, CFG 1, LoRA at 0.7 applied at runtime.
+      Download its 1.19 GB adapter separately from the Models catalog.
     sources:
       diffusion:
         repo: Comfy-Org/MOSS-Image
@@ -213,6 +213,7 @@ base_models:
       supports_negative: true
     presets:
       - {name: "Recommended (50 steps)", sampler: euler, scheduler: auto, steps: 50, cfg_scale: 3.0}
+      - {name: "DMD fast (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0, moss_dmd: true}
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------

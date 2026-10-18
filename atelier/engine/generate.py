@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .. import hardware, registry, settings, system_profile
+from .. import hardware, registry, settings, system_profile, moss_dmd as moss_adapter
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -211,7 +211,11 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
     for i, p in enumerate(paths):
         seed = base_seed + i if (base_seed is not None and base_seed >= 0) \
             else base_seed
-        lines = [req.prompt or ""]
+        saved_prompt = req.prompt or ""
+        is_moss_dmd = model.id == "moss-image-sft" and moss_adapter.strip_tag(saved_prompt) != saved_prompt
+        if is_moss_dmd:
+            saved_prompt = moss_adapter.strip_tag(saved_prompt)
+        lines = [saved_prompt]
         if req.negative:
             lines.append(f"Negative prompt: {req.negative}")
         lines.append(f"Model: {model.name} ({model.id})")
@@ -219,6 +223,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             f"Steps: {req.steps}, CFG: {req.cfg_scale}, Sampler: {req.sampler}, "
             f"Scheduler: {req.schedule or 'auto'}, Size: {req.width}x{req.height}, "
             f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
+        if is_moss_dmd:
+            lines.append(f"MOSS DMD: 8 steps, LoRA strength {moss_adapter.STRENGTH}, at_runtime")
         if req.init_image:
             lines.append(f"img2img strength: {req.strength}")
         lines.append(f"Date: {date}")
@@ -226,12 +232,13 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             atomic_write_text(Path(p).with_suffix(".txt"), "\n".join(lines))
             atomic_write_text(Path(p).with_suffix(".json"), json.dumps({
                 "schema_version": 1, "model_id": model.id,
-                "model_name": model.name, "prompt": req.prompt or "",
+                "model_name": model.name, "prompt": saved_prompt,
                 "negative": req.negative or "", "seed": seed,
                 "steps": req.steps, "cfg_scale": req.cfg_scale,
                 "width": req.width, "height": req.height,
                 "sampler": req.sampler, "schedule": req.schedule or "auto",
                 "flow_shift": req.flow_shift, "date": date,
+                **({"moss_dmd": True, "dmd_lora_strength": moss_adapter.STRENGTH} if is_moss_dmd else {}),
             }, ensure_ascii=False, indent=2))
         except OSError:
             pass
@@ -439,6 +446,7 @@ def generate(
     log: Callable[[str], None] | None = None,
     # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
     prefs_override: dict | None = None,
+    moss_dmd: bool = False,
 ) -> list[Path]:
     # A benchmark supplies an in-memory placement deliberately. It must not
     # inherit the saved automatic mode, which would erase the tested flags.
@@ -456,6 +464,18 @@ def generate(
 
     _check_engine_build(model)
     _check_tokenizer_engine(model, sd_cli)
+    if moss_dmd:
+        if model.id != "moss-image-sft":
+            raise sdcpp.EngineError("The MOSS DMD adapter is only for MOSS-Image SFT.")
+        if (steps != 8 or cfg_scale != 1 or sampler not in (None, "", "euler")
+                or schedule not in (None, "", "auto", "discrete") or flow_shift not in (0, 5)):
+            raise sdcpp.EngineError("Use DMD fast: 8 steps, CFG 1, Euler, Auto scheduler and flow shift 0 (auto) or 5.")
+        if "--lora-apply-mode" not in sdcpp.supported_options(sd_cli):
+            raise sdcpp.EngineError("MOSS DMD requires --lora-apply-mode at_runtime. Run update.bat.")
+        try:
+            moss_adapter.require()
+        except (OSError, ValueError) as exc:
+            raise sdcpp.EngineError(str(exc)) from exc
     if model.family == "flux3":
         references = [ref_image] if isinstance(ref_image, (str, Path)) else (ref_image or [])
         if len(references) > model.defaults.get("max_references", 10):
@@ -469,6 +489,8 @@ def generate(
             raise sdcpp.EngineError("Use the official Qwen Turbo preset: 8 steps, CFG 1, Euler, Auto schedule and no flow shift.")
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image))
+    if moss_dmd:
+        files["image_adapter"] = moss_adapter.path()
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
                                   files["vae"])
     enc, uncond = files["enc"], files["uncond"]
@@ -487,7 +509,14 @@ def generate(
             f"{plan.available_gib:.1f} GiB free VRAM."
             if plan.image_gib is not None and plan.available_gib is not None
             else f"System auto ({model.name}): {plan.placement}.")
-    loras = loras or []
+    loras = list(loras or [])
+    if moss_dmd:
+        prompt = moss_adapter.strip_tag(prompt)
+        loras = [(name, strength) for name, strength in loras
+                 if name not in (moss_adapter.LORA_NAME, moss_adapter.LORA_NAME + ".safetensors")]
+        loras.append((moss_adapter.LORA_NAME, moss_adapter.STRENGTH))
+        if log:
+            log("MOSS DMD: 8 Euler steps, CFG 1, LoRA 0.7 applied at runtime (unmerged).")
 
     # Placement. auto-fit laisse sd.cpp planifier la résidence de chaque module
     # (prioritaire) ; sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les
@@ -553,7 +582,8 @@ def generate(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
         text_encoder=enc, tokenizer=files["tokenizer"], llm_vision=llm_vision,
         t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
-        extra_flags=list(model.defaults.get("extra_flags", [])),
+        extra_flags=list(model.defaults.get("extra_flags", [])) +
+                    (["--lora-apply-mode", "at_runtime"] if moss_dmd else []),
         prompt=final_prompt, negative=negative,
         steps=steps, cfg_scale=cfg_scale,
         sampler=sampler or model.defaults.get("sampler", "euler"),
