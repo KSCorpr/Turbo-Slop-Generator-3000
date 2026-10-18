@@ -34,11 +34,17 @@ class Item:
         return any(p.exists() for p in self.paths)
 
 
-def path_size(p: Path) -> int:
+def path_size(p: Path, *, seen=None) -> int:
     """Taille d'un fichier ou d'un dossier (récursif), 0 s'il n'existe pas."""
     try:
         if p.is_file():
-            return p.stat().st_size
+            st=p.stat()
+            key=(st.st_dev,st.st_ino)
+            if seen is not None:
+                if key in seen:
+                    return 0
+                seen.add(key)
+            return st.st_size
         if p.is_dir():
             total = 0
             pending = [p]
@@ -53,7 +59,12 @@ def path_size(p: Path) -> int:
                                     if not getattr(os.path, "isjunction", lambda _: False)(entry.path):
                                         pending.append(entry.path)
                                 elif entry.is_file(follow_symlinks=False):
-                                    total += entry.stat(follow_symlinks=False).st_size
+                                    st=entry.stat(follow_symlinks=False)
+                                    key=(st.st_dev,st.st_ino)
+                                    if seen is None or key not in seen:
+                                        total += st.st_size
+                                        if seen is not None:
+                                            seen.add(key)
                             except OSError:
                                 continue
                 except OSError:
@@ -231,7 +242,31 @@ def by_key(key: str, prefs: dict | None = None) -> Item | None:
 
 
 def total_size(prefs: dict | None = None) -> int:
-    return sum(i.size for i in items(prefs))
+    seen=set()
+    return sum(path_size(p,seen=seen) for i in items(prefs) for p in i.paths)
+
+
+def reclaimable_size(path):
+    """Bytes freed only when this deletion removes the last hard link."""
+    path=Path(path)
+    counts={}
+    candidates=[path] if path.is_file() else []
+    if path.is_dir():
+        for folder,dirs,files in os.walk(path,followlinks=False):
+            dirs[:]=[d for d in dirs if not Path(folder,d).is_symlink() and
+                     not getattr(os.path,"isjunction",lambda _:False)(Path(folder,d))]
+            candidates.extend(Path(folder,f) for f in files)
+    for file in candidates:
+        if file.is_symlink():
+            continue
+        try:
+            st=file.stat()
+            key=(st.st_dev,st.st_ino)
+            size,links,n=counts.get(key,(st.st_size,st.st_nlink,0))
+            counts[key]=(size,links,n+1)
+        except OSError:
+            continue
+    return sum(size for size,links,n in counts.values() if n >= links)
 
 
 def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
@@ -263,16 +298,20 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
             if rp == root:
                 continue
             try:
+                reclaimable=reclaimable_size(rp)
                 if rp.is_dir():
                     shutil.rmtree(rp, ignore_errors=True)
                 elif rp.exists():
                     rp.unlink()
+                if rp.exists():
+                    msgs.append(f"• {item.label}: some files remain in {p.name}.")
+                    continue
+                freed += reclaimable
                 ok += 1
             except OSError as exc:
                 msgs.append(f"• {item.label}: failed on {p.name} ({exc}).")
         if ok:
-            freed += size
-            msgs.append(f"✓ {item.label} — {human(size)} freed.")
+            msgs.append(f"✓ {item.label} removed ({human(size)} logical file size; shared data may remain).")
     # Les dossiers de base doivent continuer d'exister.
     settings.ensure_dirs()
     return msgs, freed

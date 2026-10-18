@@ -21,6 +21,7 @@ def _choices_and_summary():
     choices: list[tuple[str, str]] = []
     rows: list[str] = []
     total = 0
+    seen=set()
     for cat in CATEGORIES:
         cat_items = [i for i in its if i.category == cat]
         if not cat_items:
@@ -30,7 +31,7 @@ def _choices_and_summary():
         rows.append("|---|---|---|")
         for i in cat_items:
             size = i.size
-            total += size
+            total += sum(inventory.path_size(p,seen=seen) for p in i.paths)
             mark = "✅" if i.installed else "—"
             warn = " ⚠️" if (i.protected and i.installed) else ""
             rows.append(f"| {mark} | {i.label}{warn} | "
@@ -40,7 +41,8 @@ def _choices_and_summary():
                 if i.protected:
                     label = "⚠️ " + label
                 choices.append((label, i.key))
-    rows.append(f"\n**Total in use: {inventory.human(total)}**")
+    rows.append(f"\n**Total unique file data: {inventory.human(total)}** "
+                "(shared files counted once; item rows show logical sizes).")
     return choices, "\n".join(rows)
 
 

@@ -159,8 +159,8 @@ def install_depth():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading the depth model ({DEPTH_REPO})…")
-    from atelier.transfers import snapshot_download
-    snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
+    from atelier.transfers import model_snapshot_download
+    model_snapshot_download(repo_id=DEPTH_REPO, local_dir=str(model_dir))
     pin_numpy()  # transformers peut réintroduire NumPy 2 -> on re-fige
     print("\n[OK] Depth Anything V2 installed (depth + normals).")
 
@@ -172,8 +172,8 @@ def install_bg():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "scikit-image", "pillow"])
     print(f"\nDownloading the background-removal model ({BG_REPO})…")
-    from atelier.transfers import snapshot_download
-    snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
+    from atelier.transfers import model_snapshot_download
+    model_snapshot_download(repo_id=BG_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] RMBG-1.4 installed. Available in the Toolkit tab.")
 
@@ -185,8 +185,8 @@ def install_clip():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading CLIP ({CLIP_REPO})…")
-    from atelier.transfers import snapshot_download
-    snapshot_download(repo_id=CLIP_REPO, local_dir=str(model_dir))
+    from atelier.transfers import model_snapshot_download
+    model_snapshot_download(repo_id=CLIP_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] CLIP installed — splitting into layers can now name and "
           "group the regions.")
@@ -199,8 +199,8 @@ def install_sam():
     sh([sys.executable, "-m", "pip", "install",
         TRANSFORMERS_PIN, NUMPY_PIN, "pillow"])
     print(f"\nDownloading Segment Anything ({SAM_REPO})…")
-    from atelier.transfers import snapshot_download
-    snapshot_download(repo_id=SAM_REPO, local_dir=str(model_dir))
+    from atelier.transfers import model_snapshot_download
+    model_snapshot_download(repo_id=SAM_REPO, local_dir=str(model_dir))
     pin_numpy()
     print("\n[OK] Segment Anything installed. Available in the Toolkit tab.")
 
@@ -290,8 +290,12 @@ def _fetch_release_file(url: str, dest: Path, desc: str, sha256: str) -> None:
     """
     import time
     import urllib.request
+    from atelier import model_store
+    if model_store.reuse(sha256, None, dest):
+        return
     if dest.is_file():
         if _sha256(dest) == sha256:
+            model_store.remember(dest, sha256)
             print(f"  [OK] {desc} already there and verified.")
             return
         print(f"  [!] {dest.name} incomplete or corrupt — downloading again.")
@@ -309,6 +313,7 @@ def _fetch_release_file(url: str, dest: Path, desc: str, sha256: str) -> None:
             if got != sha256:
                 raise RuntimeError(f"empreinte inattendue ({got[:12]}…)")
             part.replace(dest)
+            model_store.remember(dest, sha256)
             print(f"  [OK] {dest.name} verified.")
             return
         except Exception as exc:  # noqa: BLE001
@@ -432,7 +437,7 @@ def install_upscale():
         print(f"\nDownloading the fp16-fix VAE ({VAE_FIX_REPO})…")
         _hf_fetch(lambda: snapshot_download(repo_id=VAE_FIX_REPO,
                                             local_dir=str(base / "vae"),
-                                            allow_patterns=["*.json", "*.safetensors"]),
+                                            allow_patterns=["config.json", "diffusion_pytorch_model.safetensors"]),
                   "VAE fp16-fix",
                   f"https://huggingface.co/{VAE_FIX_REPO}/tree/main",
                   base / "vae")
@@ -447,7 +452,7 @@ def install_upscale():
         try:
             _hf_fetch(lambda: snapshot_download(repo_id=CN_TILE_REPO,
                                                 local_dir=str(base / "controlnet"),
-                                                allow_patterns=["*.json", "*.safetensors"]),
+                                                allow_patterns=["config.json", "diffusion_pytorch_model.safetensors"]),
                       "ControlNet Tile",
                       f"https://huggingface.co/{CN_TILE_REPO}/tree/main",
                       base / "controlnet")

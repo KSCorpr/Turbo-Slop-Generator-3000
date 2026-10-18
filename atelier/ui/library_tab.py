@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings
+from .. import downloader, registry, settings, model_catalog, transfers
+from . import widgets
+from .media_tabs import stream_task
+import math
 from ..i18n import t
 
 _AUTO = "__auto__"
@@ -54,147 +57,159 @@ def _card_md(model: registry.BaseModel, recos: dict[str, list[str]]) -> str:
 
 
 def build_library_tab():
+    def image_model(key):
+        if not key or not key.startswith("image:"):
+            return None
+        return registry.get_base_model(key[6:], settings.load_prefs())
+
+    def weight_updates(model, variants=None):
+        updates=[]
+        for role in ("diffusion", "text_encoder", "vae"):
+            component=next((c for c in model.components if c.role == role),None) if model else None
+            visible=bool(component and (role != "vae" or component.alternatives))
+            choices,selected=_weight_menu(model,role,(variants or {}).get(role)) if visible else ([],None)
+            updates.append(gr.update(choices=choices,value=selected,visible=visible))
+        return updates
+
+    def shared_panel(key):
+        text=("**Shared files:** identical downloaded weights are reused by checksum. "
+              "Consolidate existing installations once below. Unique weights and runtime versions are retained.")
+        model=image_model(key)
+        return text+"\n\n"+model_catalog.component_details(model) if model else text
+
     with gr.Tab("Models", id="models"):
-        gr.Markdown("### Base models\nChoose the exact weights for each "
-                    "model below, or keep the automatic VRAM/RAM choice. "
-                    "Click **Load weights and sizes** to see the real "
-                    "file sizes before downloading.")
-        gr.Markdown(
-            "> ℹ️ The quantization shown (Settings) is a **target**. If the "
-            "repo doesn't offer it, the closest available quant **below** it "
-            "is downloaded (to fit your VRAM) — shown in the log and flagged "
-            "after the download. Text encoders are reused when a compatible "
-            "weight is already installed. Flux.3 Klein and Krea 2 share the "
-            "Qwen3-VL-4B encoder; Flux.2, Qwen Image Turbo and Z-Image use "
-            "other encoder weights.")
-
-        prefs = settings.load_prefs()
-        models = registry.load_base_models(prefs)
-        recos = registry.recommend(prefs)
-
-        cards: list[gr.Markdown] = []
-        log = gr.Textbox(label="Download log", lines=8,
-                         autoscroll=True, elem_classes="log-box")
-
-        for m in models:
+        gr.Markdown("### Models & toolkits\nChoose a package for image generation, Toolkit, layers, video or 3D. "
+                    "Automatic choices reuse compatible installed weights. Load sizes to select exact weights.")
+        prefs=settings.load_prefs()
+        models=registry.load_base_models(prefs)
+        initial="image:"+models[0].id if models else None
+        category=gr.Radio(model_catalog.CATEGORIES,value="All",label="Usage")
+        search=gr.Textbox(label="Find a model or tool",placeholder="SAM, upscale, Qwen, video…")
+        package=gr.Dropdown(model_catalog.choices(),value=initial,label="Model or toolkit package",filterable=True)
+        limit=gr.Number(value=prefs.get("download_limit_mbps",5),minimum=0,maximum=10000,
+                        label="Download limit (MB/s; 0 = unlimited)",info="Shared by image and toolkit downloads.")
+        model=image_model(initial)
+        with gr.Group(visible=bool(model)) as image_group:
+            card=gr.Markdown(_card_md(model,registry.recommend(prefs)) if model else "")
+            scan=gr.Button("Load weights and sizes",size="sm")
+            d_choices,d_value=_weight_menu(model,"diffusion") if model else ([],None)
+            e_choices,e_value=_weight_menu(model,"text_encoder") if model else ([],None)
+            diffusion=gr.Dropdown(d_choices,value=d_value,label="Image model · weights")
+            encoder=gr.Dropdown(e_choices,value=e_value,label="Text encoder · weights")
+            v_visible=bool(model and any(c.role == "vae" and c.alternatives for c in model.components))
+            v_choices,v_value=_weight_menu(model,"vae") if v_visible else ([],None)
+            vae=gr.Dropdown(v_choices,value=v_value,label="VAE · textures",visible=v_visible)
             with gr.Row():
-                with gr.Column(scale=5):
-                    card = gr.Markdown(_card_md(m, recos))
-                    with gr.Group():
-                        gr.Markdown("**Weights and file sizes**")
-                        scan_btn = gr.Button("Load weights and sizes",
-                                             size="sm")
-                        d_menu, d_selected = _weight_menu(m, "diffusion")
-                        e_menu, e_selected = _weight_menu(m, "text_encoder")
-                        diffusion_file = gr.Dropdown(
-                            choices=d_menu, value=d_selected,
-                            label="Image model · weights",
-                            interactive=True)
-                        encoder_file = gr.Dropdown(
-                            choices=e_menu, value=e_selected,
-                            label="Text encoder · weights",
-                            interactive=True)
-                        vae_file = None
-                        if any(c.role == "vae" and c.alternatives for c in m.components):
-                            v_menu, v_selected = _weight_menu(m, "vae")
-                            vae_file = gr.Dropdown(
-                                choices=v_menu, value=v_selected,
-                                label="VAE · textures", interactive=True)
-                with gr.Column(scale=1, min_width=170):
-                    btn = gr.Button("⬇️ Download", variant="primary")
-                    del_btn = gr.Button("🗑️ Delete", size="sm")
-            cards.append(card)
+                download=gr.Button("Download selected image weights",variant="primary")
+                delete=gr.Button("Delete selected image model",size="sm")
+        with gr.Group(visible=False) as tool_group:
+            tool_note=gr.Markdown("")
+            variant=gr.Dropdown([],value=None,label="Weight variant",visible=False)
+            install_tool=gr.Button("Install / repair selected package",variant="primary")
+        shared_note=gr.Markdown(shared_panel(initial))
+        with gr.Row():
+            refresh=gr.Button("Refresh status",size="sm")
+            consolidate=gr.Button("Consolidate existing identical weights",size="sm")
+            stop=gr.Button("Stop download / installation",variant="stop")
+        gr.Markdown("Consolidation reads existing weights and can take several minutes. "
+                    "Only byte-identical files share storage; different formats and quantizations remain separate.")
+        log=gr.Textbox(label="Download log",lines=8,autoscroll=True,elem_classes="log-box")
 
-            def make_scanner(model_id, roles):
-                def scan():
-                    model = registry.get_base_model(model_id, settings.load_prefs())
-                    try:
-                        variants = downloader.weight_choices(model)
-                    except Exception as exc:  # noqa: BLE001
-                        return (*[gr.update() for _ in roles],
-                                f"Cannot read weight file sizes: {exc}")
-                    if not variants.get("diffusion"):
-                        return (*[gr.update() for _ in roles],
-                                "No matching image-model weight was found in the repository.")
-                    updates = []
-                    for role in roles:
-                        menu, selected = _weight_menu(model, role, variants.get(role))
-                        updates.append(gr.update(choices=menu, value=selected))
-                    return (*updates, "Actual file sizes loaded. Pick the weights "
-                            "then click Download.")
-                return scan
+        def filter_packages(usage,query,current):
+            choices=model_catalog.choices(usage,query)
+            value=current if current in {v for _,v in choices} else (choices[0][1] if choices else None)
+            return gr.update(choices=choices,value=value)
+        category.change(filter_packages,[category,search,package],package,queue=False)
+        search.input(filter_packages,[category,search,package],package,queue=False)
 
-            def make_handler(model_id):
-                def handler(diff_choice, enc_choice, vae_choice=None):
-                    p = settings.load_prefs()
-                    files = dict(p.get("model_files") or {})
-                    selected = dict(files.get(model_id) or {})
-                    choices = [("diffusion", diff_choice), ("text_encoder", enc_choice)]
-                    if vae_choice is not None:
-                        choices.append(("vae", vae_choice))
-                    for role, choice in choices:
-                        if choice and choice != _AUTO:
-                            selected[role] = choice
-                        else:
-                            selected.pop(role, None)
-                    if selected:
-                        files[model_id] = selected
-                    else:
-                        files.pop(model_id, None)
-                    p["model_files"] = files
-                    settings.save_prefs(p)
-                    model = registry.get_base_model(model_id, p)
-                    lines: list[str] = []
-                    for msg in downloader.download_model(model, log=lines.append):
-                        lines.append(msg)
-                        yield "\n".join(lines), gr.update()
-                    yield "\n".join(lines), gr.update(
-                        value=_card_md(model, registry.recommend(p)))
-                    # Avertit visiblement si un quant a été remplacé par un repli.
-                    if any("unavailable" in line for line in lines):
-                        gr.Warning(t("Quantization adjusted: the repo doesn't "
-                                     "offer the target quant, fell back to "
-                                     "the closest available (see the log)."))
-                return handler
+        def select_package(key):
+            selected=image_model(key)
+            entry=model_catalog.get(key)
+            choices=list(entry.variants) if entry else []
+            value=choices[0][1] if choices else None
+            return (gr.update(visible=bool(selected)),gr.update(visible=bool(entry and not selected)),
+                    _card_md(selected,registry.recommend(settings.load_prefs())) if selected else "",
+                    *weight_updates(selected),model_catalog.details(key,value),
+                    gr.update(choices=choices,value=value,visible=bool(choices)),shared_panel(key))
+        package.change(select_package,package,
+            [image_group,tool_group,card,diffusion,encoder,vae,tool_note,variant,shared_note],queue=False)
+        variant.change(model_catalog.details,[package,variant],tool_note,queue=False)
 
-            def make_deleter(model_id):
-                def deleter():
-                    p = settings.load_prefs()
-                    model = registry.get_base_model(model_id, p)
-                    deleted = registry.delete_model(model, p)
-                    msg = (t("🗑️ “{name}” deleted: {n} file(s) removed.").format(name=model.name, n=len(deleted))
-                           if deleted else
-                           t("Nothing to delete for “{name}” (not installed "
-                             "or shared files).").format(name=model.name))
-                    return _card_md(model, registry.recommend(p)), msg
-                return deleter
+        def scan_weights(key):
+            selected=image_model(key)
+            if not selected:
+                return gr.update(),gr.update(),gr.update(),"Choose an image model first."
+            try:
+                variants=downloader.weight_choices(selected)
+                return (*weight_updates(selected,variants),"Actual file sizes loaded. Pick weights, then download.")
+            except Exception as exc:
+                return gr.update(),gr.update(),gr.update(),f"Cannot read weight file sizes: {exc}"
+        scan.click(scan_weights,package,[diffusion,encoder,vae,log])
 
-            weight_inputs = [diffusion_file, encoder_file]
-            roles = ["diffusion", "text_encoder"]
-            if vae_file is not None:
-                weight_inputs.append(vae_file)
-                roles.append("vae")
-            scan_btn.click(make_scanner(m.id, roles),
-                           outputs=[*weight_inputs, log])
-            btn.click(make_handler(m.id),
-                      inputs=weight_inputs,
-                      outputs=[log, card])
-            del_btn.click(make_deleter(m.id), outputs=[card, log])
+        def handler(key,diff_choice,enc_choice,vae_choice=None):
+            selected_model=image_model(key)
+            if selected_model is None:
+                raise gr.Error("Choose an image model first.")
+            model_id=selected_model.id
+            prefs=settings.load_prefs()
+            files=dict(prefs.get("model_files") or {})
+            selected=dict(files.get(model_id) or {})
+            choices=[("diffusion",diff_choice),("text_encoder",enc_choice)]
+            if any(c.role == "vae" and c.alternatives for c in selected_model.components):
+                choices.append(("vae",vae_choice))
+            for role,choice in choices:
+                if choice and choice != _AUTO:
+                    selected[role]=choice
+                else:
+                    selected.pop(role,None)
+            if selected:
+                files[model_id]=selected
+            else:
+                files.pop(model_id,None)
+            prefs["model_files"]=files
+            settings.save_prefs(prefs)
+            selected_model=registry.get_base_model(model_id,prefs)
+            lines=[]
+            with model_catalog.JOB.session(),transfers.cancel_scope(model_catalog.JOB.check):
+                for message in downloader.download_model(selected_model,log=lines.append):
+                    model_catalog.JOB.check()
+                    lines.append(message)
+                    yield "\n".join(lines),gr.update()
+            yield "\n".join(lines),gr.update(value=_card_md(selected_model,registry.recommend(prefs)))
+        download.click(handler,[package,diffusion,encoder,vae],[log,card],**widgets.GPU_QUEUE)
 
-        refresh = gr.Button("↻ Refresh status")
+        def deleter(key):
+            selected=image_model(key)
+            if not selected:
+                raise gr.Error("Choose an image model first.")
+            prefs=settings.load_prefs()
+            removed=registry.delete_model(selected,prefs)
+            return _card_md(selected,registry.recommend(prefs)),f"Removed {len(removed)} file(s); required shared files are retained."
+        delete.click(deleter,package,[card,log],**widgets.GPU_QUEUE)
 
-        def refresh_cards():
-            p = settings.load_prefs()
-            r = registry.recommend(p)
-            ups = [gr.update(value=_card_md(m, r))
-                   for m in registry.load_base_models(p)]
-            # Avec une seule carte, Gradio attend une valeur unique (pas une
-            # liste), sinon la liste est passée telle quelle au Markdown.
-            return ups[0] if len(ups) == 1 else ups
+        def refresh_status(key,choice):
+            selected=image_model(key)
+            return (_card_md(selected,registry.recommend(settings.load_prefs())) if selected else "",
+                    model_catalog.details(key,choice),shared_panel(key))
+        refresh.click(refresh_status,[package,variant],[card,tool_note,shared_note],queue=False)
 
-        refresh.click(refresh_cards, outputs=cards)
+        def install_catalog_package(key,choice):
+            for status,_,lines in stream_task(lambda logger:model_catalog.install(key,choice,logger)):
+                yield status+"\n"+lines,model_catalog.details(key,choice)
+        install_tool.click(install_catalog_package,[package,variant],[log,tool_note],**widgets.GPU_QUEUE)
 
+        def consolidate_catalog_weights():
+            def action(logger):
+                model_catalog.consolidate(logger)
+            for status,_,lines in stream_task(action):
+                yield status+"\n"+lines
+        consolidate.click(consolidate_catalog_weights,outputs=log,**widgets.GPU_QUEUE)
+        stop.click(model_catalog.JOB.cancel,outputs=log,queue=False)
 
-        gr.Markdown(
-            "---\n*The tools (depth, background removal, SAM, prompt "
-            "improver, enlargement) live in the Toolkit tab.*")
+        def set_download_limit(value):
+            if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not 0 <= value <= 10000:
+                raise gr.Error("Enter a download limit between 0 and 10000 MB/s.")
+            prefs=settings.load_prefs()
+            prefs["download_limit_mbps"]=value
+            settings.save_prefs(prefs)
+        limit.change(set_download_limit,limit,queue=False)

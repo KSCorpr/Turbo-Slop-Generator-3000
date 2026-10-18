@@ -57,6 +57,7 @@ class DownloadTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(settings, "USERDATA_DIR", self.root / "user"))
+        self.stack.enter_context(patch.object(settings, "MODELS_DIR", self.root / "models"))
         self.stack.enter_context(patch.object(settings, "load_prefs", side_effect=lambda: {
             "download_limit_mbps": self.limit}))
         self.stack.enter_context(patch("huggingface_hub.constants.HF_HUB_OFFLINE", False))
@@ -140,6 +141,38 @@ class DownloadTests(unittest.TestCase):
         hub.assert_called_once()
         from huggingface_hub import constants
         self.assertTrue(constants.HF_HUB_DISABLE_XET)
+
+    def test_identical_weights_from_another_repo_reuse_bytes_without_another_get(self):
+        first = self.download()
+        second = Path(transfers.hf_hub_download(repo_id="another/repo",filename="shared/encoder.safetensors",
+                                               local_dir=str(self.root/"models")))
+        self.assertEqual(self.requests,[0])
+        self.assertTrue(first.samefile(second))
+        first.unlink()
+        self.assertEqual(second.read_bytes(),self.data)
+
+    def test_same_size_changed_revision_replaces_only_the_selected_alias(self):
+        first = self.download()
+        alias = self.download("copy.gguf")
+        self.data = b"x"*len(self.data)
+        self.meta.etag = hashlib.sha256(self.data).hexdigest()
+        changed = self.download()
+        self.assertEqual(changed.read_bytes(),self.data)
+        self.assertNotEqual(alias.read_bytes(),self.data)
+        self.assertFalse(changed.samefile(alias))
+        self.assertEqual(self.requests,[0,0])
+
+    def test_cancelled_transfer_remains_partial_and_can_resume(self):
+        calls=[0]
+        def check():
+            calls[0]+=1
+            if calls[0] >= 4:
+                raise RuntimeError("cancelled")
+        with self.assertRaisesRegex(RuntimeError,"cancelled"), transfers.cancel_scope(check):
+            self.download()
+        self.assertFalse((self.root/"models/weight.gguf").exists())
+        self.assertTrue((self.root/"models/weight.gguf.download").exists())
+        self.assertEqual(self.download().read_bytes(),self.data)
 
     def test_snapshot_filters_and_pins_every_download_to_same_commit(self):
         info = SimpleNamespace(sha="fixed", siblings=[SimpleNamespace(rfilename=s)

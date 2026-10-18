@@ -16,11 +16,7 @@ class ModelWeightTests(unittest.TestCase):
 
         demo = app.build_app()
         handler = next(f.fn for f in demo.fns.values()
-                       if getattr(f.fn, "__name__", "") == "handler" and
-                       getattr(f.fn, "__closure__", None) and any(
-                           k == "model_id" and c.cell_contents == "flux2-klein-9b"
-                           for k, c in zip(f.fn.__code__.co_freevars,
-                                           f.fn.__closure__)))
+                       if getattr(f.fn, "__name__", "") == "handler")
         prefs = {"model_files": {}}
         captured = []
 
@@ -34,7 +30,7 @@ class ModelWeightTests(unittest.TestCase):
              patch.object(library_tab.downloader, "download_model",
                           side_effect=download), \
              patch.object(library_tab.registry, "recommend", return_value={}):
-            list(handler("flux-2-klein-9b-Q6_K.gguf",
+            list(handler("image:flux2-klein-9b", "flux-2-klein-9b-Q6_K.gguf",
                          "Qwen3-8B-Q4_K_M.gguf"))
         self.assertEqual(prefs["model_files"]["flux2-klein-9b"], {
             "diffusion": "flux-2-klein-9b-Q6_K.gguf",

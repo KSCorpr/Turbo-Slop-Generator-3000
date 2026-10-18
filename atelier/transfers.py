@@ -12,11 +12,30 @@ import re
 import socket
 import time
 from pathlib import Path
+from contextlib import contextmanager
+import threading
 
 from . import settings
 from .fileio import atomic_write_text
 
 CHUNK_SIZE = 64 * 1024
+_CANCEL = threading.local()
+
+
+@contextmanager
+def cancel_scope(check):
+    previous = getattr(_CANCEL, "check", None)
+    _CANCEL.check = check
+    try:
+        yield
+    finally:
+        _CANCEL.check = previous
+
+
+def _check_cancelled():
+    check = getattr(_CANCEL, "check", None)
+    if check:
+        check()
 
 
 def download_limit() -> float:
@@ -114,6 +133,7 @@ def _verify(path: Path, size: int, etag: str) -> None:
         digest = hashlib.sha256()
         with path.open("rb") as source:
             for chunk in iter(lambda: source.read(4 * 1024 * 1024), b""):
+                _check_cancelled()
                 digest.update(chunk)
         if digest.hexdigest() != etag:
             path.unlink(missing_ok=True)
@@ -125,26 +145,42 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
     settings.configure_hf_env()
     from huggingface_hub import constants, get_hf_file_metadata, hf_hub_url
     from huggingface_hub.utils import build_hf_headers
-
-    if constants.HF_HUB_OFFLINE or not download_limit():
-        from huggingface_hub import hf_hub_download as hub_download
-        with transfer_lock():
-            return hub_download(repo_id=repo_id, filename=filename,
-                                local_dir=local_dir, revision=revision, **kwargs)
-    from tqdm.auto import tqdm
+    from . import model_store
 
     root = Path(local_dir).resolve()
     dest = (root / filename).resolve()
     if not dest.is_relative_to(root):
         raise ValueError("Download filename must stay inside local_dir.")
+    if constants.HF_HUB_OFFLINE:
+        from huggingface_hub import hf_hub_download as hub_download
+        with transfer_lock():
+            result = hub_download(repo_id=repo_id, filename=filename,
+                                  local_dir=local_dir, revision=revision, **kwargs)
+            model_store.remember(result)
+            return result
+    from tqdm.auto import tqdm
+
     with transfer_lock():
+        _check_cancelled()
         url = hf_hub_url(repo_id, filename, revision=revision,
                          endpoint=constants.ENDPOINT)
         meta = get_hf_file_metadata(url, token=kwargs.get("token"))
         if meta.size is None or not meta.etag or not meta.commit_hash:
             raise RuntimeError("Hub download metadata is incomplete.")
-        if dest.is_file() and dest.stat().st_size == meta.size:
+        sha = meta.etag if re.fullmatch(r"[0-9a-f]{64}", meta.etag) else None
+        if sha and model_store.reuse(sha, meta.size, dest):
             return str(dest)
+        if dest.is_file() and dest.stat().st_size == meta.size:
+            valid = not sha or model_store.known(dest, sha) or model_store.digest(dest, _check_cancelled) == sha
+            if valid:
+                model_store.remember(dest, sha)
+                return str(dest)
+        if not download_limit() and not getattr(_CANCEL, "check", None):
+            from huggingface_hub import hf_hub_download as hub_download
+            result = hub_download(repo_id=repo_id, filename=filename,
+                                  local_dir=local_dir, revision=revision, **kwargs)
+            model_store.remember(result)
+            return result
         dest.parent.mkdir(parents=True, exist_ok=True)
         partial = dest.with_name(dest.name + ".download")
         marker = partial.with_name(partial.name + ".etag")
@@ -190,6 +226,7 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
                         desc=filename) as progress:
                     chunks = response.iter_content(chunk_size=CHUNK_SIZE)
                     while True:
+                        _check_cancelled()
                         limiter.wait(min(CHUNK_SIZE, max(0, meta.size - target.tell())))
                         chunk = next(chunks, None)
                         if chunk is None:
@@ -204,8 +241,10 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
                       f"({speed * 8:.1f} Mbit/s). Verifying the file; "
                       "the model transfer has ended.", flush=True)
         _verify(partial, meta.size, meta.etag)
+        _check_cancelled()
         partial.replace(dest)
         marker.unlink(missing_ok=True)
+        model_store.remember(dest, sha)
         return str(dest)
 
 
@@ -213,7 +252,7 @@ def snapshot_download(*, repo_id: str, local_dir: str,
                       allow_patterns=None, ignore_patterns=None, **kwargs) -> str:
     settings.configure_hf_env()
     from huggingface_hub import HfApi, constants
-    if constants.HF_HUB_OFFLINE or not download_limit():
+    if constants.HF_HUB_OFFLINE:
         from huggingface_hub import snapshot_download as hub_snapshot
         with transfer_lock():
             return hub_snapshot(repo_id=repo_id, local_dir=local_dir,
@@ -235,3 +274,23 @@ def snapshot_download(*, repo_id: str, local_dir: str,
         hf_hub_download(repo_id=repo_id, filename=name, local_dir=local_dir,
                         revision=info.sha, **kwargs)
     return str(Path(local_dir))
+
+
+def model_snapshot_download(*, repo_id, local_dir, **kwargs):
+    """One Transformers checkpoint format, not every ONNX/TF/bin export."""
+    from huggingface_hub import HfApi, constants
+    if constants.HF_HUB_OFFLINE:
+        root=Path(local_dir)
+        weights = "model*.safetensors" if any(root.glob("model*.safetensors")) else "pytorch_model*.bin"
+        return snapshot_download(repo_id=repo_id,local_dir=local_dir,
+            allow_patterns=[weights,"*.json","*.txt","*.py","*.model","*.jinja"],**kwargs)
+    info = HfApi().model_info(repo_id, revision=kwargs.get("revision", "main"), token=kwargs.get("token"))
+    names = [file.rfilename for file in info.siblings or []]
+    safe = [name for name in names if re.fullmatch(r"model(?:-\d+-of-\d+)?\.safetensors", name)]
+    binary = [name for name in names if re.fullmatch(r"pytorch_model(?:-\d+-of-\d+)?\.bin", name)]
+    weights = safe or binary
+    if not weights:
+        raise RuntimeError(f"No supported Transformers checkpoint found in {repo_id}.")
+    configs = [name for name in names if "/" not in name and name.endswith((".json", ".txt", ".py", ".model", ".jinja"))]
+    return snapshot_download(repo_id=repo_id, local_dir=local_dir, allow_patterns=weights+configs,
+                             **{**kwargs, "revision": info.sha})

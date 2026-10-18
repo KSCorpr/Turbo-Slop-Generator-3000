@@ -264,7 +264,8 @@ class StudioWiringTests(unittest.TestCase):
                  "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
                  "run_views", "convert_panorama", "install_view_caption", "run_svg",
                  "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg",
-                 "install_layer_model", "check_layer_memory"}
+                 "install_layer_model", "check_layer_memory", "handler", "deleter",
+                 "install_catalog_package", "consolidate_catalog_weights"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 29)
         for fn in found:
@@ -281,6 +282,23 @@ class StudioWiringTests(unittest.TestCase):
             self.assertGreater(len(photo["choices"]) + len(art["choices"]), 500)
             self.assertTrue(loaded)
             self.assertNotIn("choices", fn.fn(True)[0])
+
+    def test_unified_catalog_switches_image_weights_and_tool_controls_without_network(self):
+        from atelier import model_store
+        select = next(fn.fn for fn in self.demo.fns.values()
+                      if getattr(fn.fn,"__name__","") == "select_package")
+        with patch.object(model_store,"digest",side_effect=AssertionError("startup weight hash")), \
+             patch("huggingface_hub.HfApi.model_info",side_effect=AssertionError("automatic network request")):
+            flux=select("image:flux2-klein-9b")
+            qwen=select("image:qwen-image-2.1-turbo")
+            layers=select("addon:qwen-layered")
+        self.assertTrue(flux[0]["visible"])
+        self.assertNotEqual(flux[4]["choices"],qwen[4]["choices"])
+        self.assertFalse(layers[0]["visible"])
+        self.assertTrue(layers[1]["visible"])
+        self.assertFalse(layers[3]["visible"])
+        self.assertIn("Qwen-Image-Layered",layers[6])
+        self.assertFalse(layers[7]["visible"])
 
     def test_transfers_are_direct_and_do_not_wait_for_the_gpu_queue(self):
         functions = [fn for fn in self.demo.fns.values()

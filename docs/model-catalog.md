@@ -1,0 +1,89 @@
+# Unified Models catalog
+
+Open **Models** to install image-generation weights and the models used by the
+Toolkit, layers/SVG tools, video and 3D. Filter by usage or search, then choose
+a package. The page renders one image-weight form, not one copy per model.
+Switching images restores that model's saved weight choices.
+
+- **Image generation:** select exact diffusion/encoder/VAE weights, or keep
+  automatic choices. **Load weights and sizes** performs the metadata request
+  only when clicked. A component table identifies dependencies shared with
+  other image models. Delete retains files required by another image model.
+- **Toolkit:** depth/normals, background removal, image descriptions, prompt
+  enhancement, CLIP region naming, legacy SAM, face restoration, SDXL creative
+  upscale, ADetailer, ESRGAN and modern Spandrel upscalers.
+- **Layers & SVG:** SAM 2.1, Qwen-Image-Layered, VTracer/LayerTracer CPU runtime,
+  HiVG and OmniSVG. Runtime-only packages are explicitly identified.
+- **Video & 3D:** ConvRot and classic SeedVR2, LTX 2.5, TRELLIS.2, Pixal3D and
+  Brush. Choose the requested variant before installing. SeedVR2's selected
+  DiT and shared VAE can now be downloaded here before the first inference.
+
+Toolkit installation buttons remain available as contextual shortcuts; they
+use the same weight paths and transfer helpers. Image description and
+multi-view captioning share one Qwen-VL model. Prompt enhancement and Xanax
+share their language model. Generation and conversion constraints remain those
+of each engine: the catalog does not make their checkpoint formats interchangeable.
+Some large tools also install a separate Python/CUDA runtime. Those versions
+are retained independently to avoid dependency conflicts.
+
+**Download limit (MB/s; 0 = unlimited)** is the existing global transfer setting,
+also available under System. Installation, image download, deletion and
+consolidation use the shared job queue. **Stop download / installation** stops
+catalog subprocess trees, or aborts a managed HTTP transfer between chunks.
+Interrupted Hub weights retain their separate resumable partial files.
+Refresh status after an install; tool pages already opened may need a refresh
+or application restart to show newly available controls.
+
+## Reusing identical weights
+
+The transfer layer indexes completed weight files by **SHA-256**, not by their
+names. A Hub LFS checksum can therefore reuse the exact file even when another
+repository or tool expects it under a different name/path. It reuses the local
+file before another HTTP body transfer. Content variants of the same size are
+kept distinct. Downloads replace files atomically, preserving aliases used by
+another model.
+
+On the same filesystem, identical files are joined with hard links. Both
+engine paths remain valid and the payload occupies disk space once. This
+requires a filesystem supporting hard links, such as NTFS on Windows; it does
+not need administrator privileges or symbolic links. Across volumes, a verified
+local copy can avoid another download but still consumes separate disk space.
+Unsupported hard links and copies retained during consolidation are reported.
+
+No permanent extra weight copy is created by the index. `userdata/shared-weights.json`
+records file fingerprints and hashes; missing or changed files are not reused
+from stale records. Losing this index does not lose model weights. Sharing
+assumes weights are immutable: updates should replace files, rather than edit
+their bytes in place.
+
+## Existing installations
+
+Click **Consolidate existing identical weights** once to hash weights under the
+configured model directory and `tools_repo`. This is an explicit disk-reading
+operation that can take several minutes on large collections. It does not run
+at startup. Stop is checked while hashing. Python environments, source trees,
+temporary offload folders and download caches are excluded.
+
+Only byte-identical completed weight files are linked. Unique files are retained.
+Different GGUF quantizations, Safetensors/PyTorch serializations and precision
+variants are separate assets. Existing unused formats are not guessed and
+deleted automatically. In the Toolkit's Transformers installations, new
+downloads now select one native checkpoint format (Safetensors preferred,
+PyTorch fallback), along with required configs/tokenizers/Python model code.
+They exclude ONNX, TF, redundant `.pth` copies and alternate exports. SDXL VAE
+and Tile ControlNet likewise request only the checkpoint actually loaded.
+
+System storage totals count shared file data once. Individual item rows show
+logical file sizes, which can overlap. Deleting one hard-link alias does not
+claim its bytes freed until the last link is removed. Independent engine paths
+remain usable when another model's alias is deleted.
+
+## Validation
+
+Tests cover real temporary-file hard links, modified weights, atomic replacement,
+last-link deletion accounting, cancellation, and unsupported-link fallback.
+Local HTTP tests verify reuse across different repository paths without a
+second GET, different bytes with the same size, and safe resume after stopping.
+UI tests cover model-specific saved weights, package selection, the shared queue,
+lazy metadata, and the existing browser configuration-size budget. No pretrained
+model or GPU inference changes are required by this catalog/storage update.

@@ -147,18 +147,18 @@ class TextureVaeTests(unittest.TestCase):
                 library_tab.build_library_tab()
             handler = next(f.fn for f in demo.fns.values()
                            if getattr(f.fn, "__name__", "") == "handler")
-            list(handler(library_tab._AUTO, library_tab._AUTO, ORIGINAL_FILE))
+            list(handler("image:" + MODEL, library_tab._AUTO, library_tab._AUTO, ORIGINAL_FILE))
             self.assertEqual(prefs["model_files"][MODEL]["vae"], ORIGINAL_FILE)
-            list(handler(library_tab._AUTO, library_tab._AUTO, library_tab._AUTO))
+            list(handler("image:" + MODEL, library_tab._AUTO, library_tab._AUTO, library_tab._AUTO))
             self.assertNotIn(MODEL, prefs["model_files"])
             scanner = next(f.fn for f in demo.fns.values()
-                           if getattr(f.fn, "__name__", "") == "scan")
+                           if getattr(f.fn, "__name__", "") == "scan_weights")
             with patch.object(downloader, "weight_choices", side_effect=RuntimeError("offline")):
-                self.assertEqual(len(scanner()), 4)
+                self.assertEqual(len(scanner("image:" + MODEL)), 4)
             with patch.object(downloader, "weight_choices", return_value={
                     "diffusion": [("Turbo", "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors")],
                     "vae": [("Texture Fix", FIX_FILE), ("Original", ORIGINAL_FILE)]}):
-                updates = scanner()
+                updates = scanner("image:" + MODEL)
                 self.assertEqual(len(updates), 4)
                 self.assertEqual(updates[2]["value"], FIX_FILE)
         self.assertEqual([c.repo for c in downloaded], [ORIGINAL_REPO, FIX_REPO])

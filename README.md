@@ -103,7 +103,7 @@ LoRA settings expand when needed.
 | **Video** | LTX 2.5 text/image-to-video generation and AVI recovery. |
 | **Tools & 3D** | Image-to-prompt, depth, cutouts, layers, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
-| **Models** | Hardware-aware model catalog and on-demand downloads. |
+| **Models** | Searchable catalog for image models, Toolkit, layers, video and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |
 | **System** | Settings, disk management, help and GGUF conversion. |
 
 ---
