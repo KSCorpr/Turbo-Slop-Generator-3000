@@ -307,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "flux3", "krea2", "krea2_realism", "z_image", "qwen21")
+FAMILIES = ("flux2", "flux3", "krea2", "krea2_realism", "z_image", "qwen21", "moss_image")
 
 
 def _family(model_family: str) -> str:
@@ -325,7 +325,7 @@ def level(kind: str, key: str, model_family: str) -> str:
         if (kind, key) == ("schedule", "auto"):
             return OK
         return entry[4].get("krea2", OK)
-    if model_family == "flux3":
+    if model_family in {"flux3", "moss_image"}:
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
         if key in ("lcm", "tcd"):
@@ -414,6 +414,16 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam == "moss_image":
+        return ("**MOSS-Image SFT** uses **Euler, 50 steps and CFG 3**. "
+                "Keep the scheduler on **Auto** and flow shift at **0 (auto)**: "
+                "sd.cpp applies the native shift of **5** and skips layer "
+                "**22** in the negative CFG branch. This preset is not "
+                "distilled: CFG uses two network evaluations per step and "
+                "negative prompts can affect the result. Its Qwen3.5-9B "
+                "encoder requires the external tokenizer. Community DMD "
+                "8/4-step adapters require their own runtime support; "
+                "lowering Steps alone does not enable them.")
     if fam == "krea2_realism":
         return ("**Krea 2 Realism** is a full RudySen checkpoint, with the "
                 "realism LoRA already merged. The author recommends "

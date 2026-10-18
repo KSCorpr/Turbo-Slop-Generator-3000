@@ -61,6 +61,14 @@ def _check_qwen_engine(model: registry.BaseModel,
             "on Linux/Mac) to update the engine.")
 
 
+def _check_tokenizer_engine(model: registry.BaseModel, sd_cli: Path) -> None:
+    if (any(c.role == "tokenizer" and not c.optional for c in model.components)
+            and "--tokenizer" not in sdcpp.supported_options(sd_cli)):
+        raise sdcpp.EngineError(
+            f"{model.name} requires an engine with --tokenizer. Run update.bat "
+            "(or ./update.sh on Linux/Mac), then restart the app.")
+
+
 
 
 def cancel() -> str:
@@ -322,6 +330,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
     _check_engine_build(model)
+    _check_tokenizer_engine(model, sd_cli)
     if model.id == "qwen-image-2.1-turbo":
         if steps not in (0, 8):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
@@ -339,7 +348,7 @@ def adetailer_command(model_id: str, source: Path, output: Path,
                         _resolved_flags(prefs))
     req = GenRequest(
         model_path=files["model_path"], diffusion_model=files["diffusion"],
-        vae=files["vae"], text_encoder=files["enc"],
+        vae=files["vae"], text_encoder=files["enc"], tokenizer=files.get("tokenizer"),
         uncond_model=files["uncond"], t5xxl=files["t5xxl"],
         clip_l=files["clip_l"],
         prompt=prompt, negative=negative,
@@ -370,6 +379,8 @@ def adetailer_command(model_id: str, source: Path, output: Path,
             cmd += ["--uncond-diffusion-model", str(req.uncond_model)]
         if req.text_encoder:
             cmd += ["--llm", str(req.text_encoder)]
+        if req.tokenizer:
+            cmd += ["--tokenizer", str(req.tokenizer)]
         if req.t5xxl:
             cmd += ["--t5xxl", str(req.t5xxl)]
         if req.clip_l:
@@ -444,6 +455,7 @@ def generate(
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     _check_engine_build(model)
+    _check_tokenizer_engine(model, sd_cli)
     if model.family == "flux3":
         references = [ref_image] if isinstance(ref_image, (str, Path)) else (ref_image or [])
         if len(references) > model.defaults.get("max_references", 10):

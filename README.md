@@ -99,7 +99,7 @@ LoRA settings expand when needed.
 
 | Tab | What it does |
 |---|---|
-| **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, Krea 2 Turbo, Z-Image Turbo and Xanax; sampling controls follow each model's requirements. |
+| **Images** | Flux.2/3 Klein, Qwen Image 2.1 Turbo, [MOSS-Image SFT](docs/moss-image.md), Krea 2, Z-Image Turbo and Xanax; sampling controls follow each model's requirements. |
 | **Video** | LTX 2.5 text/image-to-video generation and AVI recovery. |
 | **Tools & 3D** | Image-to-prompt, depth, cutouts, layers, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |

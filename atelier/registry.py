@@ -131,6 +131,10 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
             ) if spec.get("alternatives") else ()
             if "{enc_quant}" in template:
                 q = q_enc
+                # Some large encoders have a model-specific default. Explicit
+                # manual/global or per-model weight choices still take priority.
+                if prefs.get("system_mode") == "auto" or not prefs.get("enc_quant"):
+                    q = spec.get("auto_quant") or q
             elif "{quant}" in template:
                 # `quant_bias` : ce modèle est-il plus petit (ou plus gros) que
                 # ce que l'échelle VRAM suppose ? Voir quant.shift().

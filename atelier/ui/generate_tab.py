@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import random
 import re
+import json
 
 import gradio as gr
 
@@ -193,6 +194,14 @@ def build_generative_tab(model_id: str, title: str,
                 "Around **2 MP** is recommended by the author. The checkpoint "
                 "alone is over **13 GB**; keep automatic system placement "
                 "enabled on 12 GB cards to use RAM as well as VRAM.")
+        if family == "moss_image":
+            gr.Markdown(
+                "**MOSS layout control:** paste a layout JSON directly into Prompt. "
+                "Text and object boxes use pixel coordinates relative to the canvas "
+                "center; set the matching output dimensions. Style additions are "
+                "skipped for JSON layouts. Start at 1024 px with automatic memory "
+                "placement. The standard preset uses 50 steps; DMD adapters are "
+                "not enabled here.")
 
         def refresh_model_status():
             current = registry.get_base_model(model_id, settings.load_prefs())
@@ -961,7 +970,15 @@ def build_generative_tab(model_id: str, title: str,
                                  "change to apply)."))
 
             full_prompt = prompt or ""
-            if (system_prompt or "").strip():
+            layout_prompt = family == "moss_image" and full_prompt.lstrip().startswith("{")
+            if layout_prompt:
+                try:
+                    layout = json.loads(full_prompt)
+                except ValueError as exc:
+                    raise gr.Error(f"Invalid MOSS layout JSON: {exc}") from exc
+                if not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict):
+                    raise gr.Error("MOSS layout JSON needs a summary object and an items list.")
+            if not layout_prompt and (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")
 
             # 📷 Styles photo Krea 2 (cumulables) : le sujet est inséré dans
@@ -970,7 +987,7 @@ def build_generative_tab(model_id: str, title: str,
             # modèle distillé CFG 1.0 (Krea 2 Turbo, champ négatif masqué) ils
             # seraient du poids mort : on les laisse tomber.
             neg_text = negative or ""
-            if photo_styles:
+            if photo_styles and not layout_prompt:
                 full_prompt, photo_negs = styles.apply_photo_styles(
                     full_prompt, photo_styles)
                 if d.get("supports_negative", False) and photo_negs:
@@ -979,7 +996,7 @@ def build_generative_tab(model_id: str, title: str,
                                 if neg_text.strip() else extra)
             # 🎨 Styles artistiques (sans négatifs) : ajoutés après le sujet,
             # après d'éventuels styles photo (les deux banques s'empilent).
-            if art_styles:
+            if art_styles and not layout_prompt:
                 full_prompt, _ = styles.apply_style_bank(
                     full_prompt, art_styles, styles.ART_STYLES_FILE)
 

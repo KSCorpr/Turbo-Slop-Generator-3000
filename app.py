@@ -327,6 +327,10 @@ def build_app() -> gr.Blocks:
                         "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    prompt_boxes["moss-image-sft"] = build_generative_tab(
+                        "moss-image-sft", "MOSS-Image SFT",
+                        pending_toolkit=pending_toolkit, tabs=tabs,
+                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["krea2-turbo"] = build_generative_tab(
                         "krea2-turbo", "Krea 2 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,

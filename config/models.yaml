@@ -167,6 +167,55 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: moss-image-sft
+    name: "MOSS-Image SFT"
+    family: moss_image
+    tags: [layout, text, int8, apache-2.0]
+    description: >
+      OpenMOSS 5B image generator with native JSON layout control and text
+      placement. SFT INT8 ConvRot (5.41 GB) by default; BF16 (10.16 GB)
+      remains selectable. Qwen3.5-9B GGUF encoder defaults to Q4_K_M
+      (5.68 GB), with its required external tokenizer. Reuses the installed
+      Flux.2 VAE. Euler, 50 steps, CFG 3 and automatic flow shift 5.
+      Keep automatic system placement enabled on 12 GB GPUs to stage text
+      weights in RAM. Requires sd.cpp build 975 or newer. Apache-2.0.
+      Community 8/4-step adapters are not validated with this backend and
+      are not enabled by this preset.
+    sources:
+      diffusion:
+        repo: Comfy-Org/MOSS-Image
+        match: "diffusion_models/moss_image_sft_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/moss_image_sft_int8_convrot.safetensors"
+          - "diffusion_models/moss_image_sft_bf16.safetensors"
+      text_encoder:
+        repo: unsloth/Qwen3.5-9B-GGUF
+        match: "Qwen3.5-9B-{enc_quant}.gguf"
+        quantizable: true
+        auto_quant: Q4_K_M
+      tokenizer:
+        repo: OpenMOSS-Team/MOSS-Image-Base
+        match: "tokenizer/tokenizer.json"
+      vae:
+        # SHA-256 identical to Comfy-Org/MOSS-Image/vae/flux2-vae.safetensors.
+        repo: Comfy-Org/flux2-klein-9B
+        match: "split_files/vae/flux2-vae.safetensors"
+    defaults:
+      min_engine_build: 975
+      steps: 50
+      benchmark_steps: 50
+      cfg_scale: 3.0
+      sampler: euler
+      scheduler: auto
+      flow_shift: 0.0
+      width: 1024
+      height: 1024
+      supports_negative: true
+    presets:
+      - {name: "Recommended (50 steps)", sampler: euler, scheduler: auto, steps: 50, cfg_scale: 3.0}
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
   - id: krea2-turbo
     name: "Krea 2 Turbo"
     family: krea2

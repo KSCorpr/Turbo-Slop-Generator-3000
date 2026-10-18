@@ -319,7 +319,9 @@ class StudioWiringTests(unittest.TestCase):
         with TestClient(App.create_app(self.demo)) as client:
             response = client.get("/config")
         self.assertEqual(response.status_code, 200)
-        self.assertLess(len(response.content), 1_520_000)
+        # Seven full image workspaces now include MOSS. Keep a bounded budget
+        # below the original 1.9 MB, allowing the added model's controls/schema.
+        self.assertLess(len(response.content), 1_650_000)
 
     def test_failed_hivg_exposes_diagnostics_and_never_a_completed_svg(self):
         from atelier.engine import vectorize
