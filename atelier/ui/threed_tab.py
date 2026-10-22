@@ -71,7 +71,7 @@ def _ready_models(prefs: dict) -> list[tuple[str, str]]:
     """Modèles d'image TÉLÉCHARGÉS. Proposer les autres serait un piège :
     on clique, et la génération échoue sur un fichier absent."""
     return [(m.name, m.id) for m in registry.load_base_models(prefs)
-            if registry.model_is_ready(m)]
+            if registry.model_is_ready(m) and not m.defaults.get("requires_reference")]
 
 
 def _res_choices():

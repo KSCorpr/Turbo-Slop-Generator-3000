@@ -338,6 +338,8 @@ def adetailer_command(model_id: str, source: Path, output: Path,
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
     _check_engine_build(model)
     _check_tokenizer_engine(model, sd_cli)
+    if not model.defaults.get("supports_adetailer", True):
+        raise sdcpp.EngineError(f"{model.name}: native masked ADetailer is not supported. Choose another repair model.")
     if model.id == "qwen-image-2.1-turbo":
         if steps not in (0, 8):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
@@ -476,10 +478,17 @@ def generate(
             moss_adapter.require()
         except (OSError, ValueError) as exc:
             raise sdcpp.EngineError(str(exc)) from exc
-    if model.family == "flux3":
-        references = [ref_image] if isinstance(ref_image, (str, Path)) else (ref_image or [])
-        if len(references) > model.defaults.get("max_references", 10):
-            raise sdcpp.EngineError("Flux.3 Image Klein supports at most 10 reference images.")
+    references = sdcpp._ref_list(ref_image)
+    reference_limit = model.defaults.get("max_references")
+    if reference_limit and len(references) > reference_limit:
+        raise sdcpp.EngineError(f"{model.name} supports at most {reference_limit} reference images.")
+    if model.defaults.get("requires_reference") and not references:
+        raise sdcpp.EngineError(f"{model.name} requires at least one reference image. Use Fibo 2.0 Dev for text-to-image.")
+    if model.family.startswith("fibo2"):
+        if width <= 0 or height <= 0 or width % 16 or height % 16:
+            raise sdcpp.EngineError("Fibo 2.0 dimensions must be positive multiples of 16.")
+        if mask_image is not None:
+            raise sdcpp.EngineError("Fibo 2.0 native mask preprocessing is not supported by sd.cpp. Use reference-image editing.")
     _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":
         if "--sigmas" not in sdcpp.supported_options(sd_cli):

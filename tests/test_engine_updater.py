@@ -167,9 +167,10 @@ class ReleaseCheckTests(unittest.TestCase):
             self.assertTrue(U._installed_release_is_current(release, asset))
 
     def test_update_installs_a_new_release_and_skips_the_current_one(self):
-        release = {"tag_name": "master-924", "assets": [{
-            "name": "sd-master-924-bin-win-cuda12-x64.zip",
-            "browser_download_url": "https://github.com/example/sd.zip", "id": 924,
+        build = U.MIN_OFFICIAL_BUILD + 1
+        release = {"tag_name": f"master-{build}", "assets": [{
+            "name": f"sd-master-{build}-bin-win-cuda12-x64.zip",
+            "browser_download_url": "https://github.com/example/sd.zip", "id": build,
         }]}
         with patch.object(U.sys, "argv", ["get_sdcpp.py", "--update"]), \
              patch.object(U, "_force_ipv4"), \

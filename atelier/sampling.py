@@ -307,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "flux3", "krea2", "krea2_realism", "z_image", "qwen21", "moss_image")
+FAMILIES = ("flux2", "flux3", "krea2", "krea2_realism", "z_image", "qwen21", "moss_image", "fibo2", "fibo2_turbo")
 
 
 def _family(model_family: str) -> str:
@@ -325,7 +325,7 @@ def level(kind: str, key: str, model_family: str) -> str:
         if (kind, key) == ("schedule", "auto"):
             return OK
         return entry[4].get("krea2", OK)
-    if model_family in {"flux3", "moss_image"}:
+    if model_family in {"flux3", "moss_image", "fibo2", "fibo2_turbo"}:
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
         if key in ("lcm", "tcd"):
@@ -414,6 +414,16 @@ _MODEL = {
 
 def rationale(model_family: str) -> str:
     fam = _family(model_family)
+    if fam in {"fibo2", "fibo2_turbo"}:
+        return ("**Fibo 2.0** uses flow-matching Euler and the model's **Auto scheduler**. "
+                "Leave **flow shift at 0 (auto)**: sd.cpp applies its native shift of **3**. "
+                + ("**Edit Turbo: 4 steps, CFG 1**, with at least one reference image. "
+                   "Negative prompts have no effect at CFG 1. " if fam == "fibo2_turbo" else
+                   "**Dev: 20 steps, CFG 5**, matching sd.cpp's server recipe. "
+                   "Dev supports both text-to-image and reference editing. ") +
+                "Both use the shared **Flux.2 VAE and Qwen3-VL 4B encoder**; reference "
+                "editing also requires its vision projector. Other samplers are experimental "
+                "here: no measured quality advantage is claimed. Requires sd.cpp build **985+**.")
     if fam == "moss_image":
         return ("**MOSS-Image SFT** uses **Euler, 50 steps and CFG 3**. "
                 "Keep the scheduler on **Auto** and flow shift at **0 (auto)**: "

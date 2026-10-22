@@ -1,5 +1,12 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Fibo 2.0:** native **Dev** generation/editing (20 steps, CFG 5) and
+**Edit Turbo** reference editing (4 steps, CFG 1), with INT8 ConvRot weights,
+shared Flux.2 VAE / Qwen3-VL 4B components and structured JSON captions.
+Run `update.bat`, download the chosen variant in **Models**, then use its
+**Images** tab. Requires sd.cpp build 985+. Weights are CC BY-NC 4.0;
+commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
+
 **SVG & layers:** HiVG and OmniSVG 1.1 4B image/text → SVG, CPU image tracing, and LayerTracer
 reconstruction from prepared 4-/9-panel drawing sequences are available under
 **Tools & 3D → SVG & layers**. OmniSVG includes memory checks, GPU/RAM budgets,

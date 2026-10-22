@@ -332,6 +332,11 @@ def build_app() -> gr.Blocks:
                         "moss-image-sft", "MOSS-Image SFT",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
+                    for model_id, label in (("fibo2-dev", "Fibo 2.0 Dev"),
+                                            ("fibo2-edit-turbo", "Fibo 2.0 Edit Turbo")):
+                        prompt_boxes[model_id] = build_generative_tab(
+                            model_id, label, pending_toolkit=pending_toolkit, tabs=tabs,
+                            pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["krea2-turbo"] = build_generative_tab(
                         "krea2-turbo", "Krea 2 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,

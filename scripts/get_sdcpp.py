@@ -42,9 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = ROOT / "bin"
 PREVIOUS_DIR = ROOT / ".engine-previous"
 ENGINE_MANIFEST = "engine-manifest.json"
-# Ming Image est arrivé avec la build 924. Les flags de sd-cli ne suffisent
+# Fibo 2.0 est arrivé avec la build 985. Les flags de sd-cli ne suffisent
 # pas à vérifier le support d'une nouvelle architecture.
-MIN_OFFICIAL_BUILD = 924
+MIN_OFFICIAL_BUILD = 985
 RELEASES = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=10"
 _UA = {"User-Agent": "atelier"}
 
@@ -663,7 +663,7 @@ def main():
     if offered is not None and offered < MIN_OFFICIAL_BUILD:
         sys.exit(
             f"Release too old ({rel.get('tag_name')}) : build "
-            f"{MIN_OFFICIAL_BUILD}+ required for Ming Image support.")
+            f"{MIN_OFFICIAL_BUILD}+ required for Fibo 2.0 support.")
     if args.list:
         for a in assets:
             print(" ", a["name"])

@@ -185,9 +185,18 @@ def build_generative_tab(model_id: str, title: str,
         status = (f"<span class='status-ok'>{t('● model ready')}</span>" if ready
                   else "<span class='status-missing'>Download weights in Models to start</span>")
         _mode = t("image editing") if is_edit else t("image-to-image")
+        _task = _mode if d.get("requires_reference") else f"text to image & {_mode}"
         model_status = gr.Markdown(
-            f"**{title}** · text to image & {_mode} · {status}",
+            f"**{title}** · {_task} · {status}",
             elem_classes="model-summary")
+        if family.startswith("fibo2"):
+            gr.Markdown(
+                "**Fibo 2.0:** " + ("Edit Turbo needs at least one reference: **4 steps, CFG 1**. "
+                if d.get("requires_reference") else "Dev generates and edits images: **20 steps, CFG 5**. ") +
+                "Use Euler / Auto. Plain instructions and structured JSON captions are accepted; "
+                "JSON is sent unchanged, without style additions. For editing, refer to "
+                "`<image_1>`, `<image_2>`, etc. Keep automatic memory placement enabled on 12 GB cards. "
+                "Weights are **CC BY-NC 4.0**; commercial work requires Bria's license terms.")
         if family == "krea2_realism":
             gr.Markdown(
                 "**Realism preset:** Euler + Simple, 6 steps, CFG 1. "
@@ -208,7 +217,7 @@ def build_generative_tab(model_id: str, title: str,
             current = registry.get_base_model(model_id, settings.load_prefs())
             available = current is not None and registry.model_is_ready(current)
             label = "Weights ready" if available else "Download weights in Models to start"
-            return f"**{title}** · text to image & {_mode} · {label}"
+            return f"**{title}** · {_task} · {label}"
 
         model_tab.select(refresh_model_status, outputs=[model_status],
                          queue=False, show_progress="hidden")
@@ -438,6 +447,13 @@ def build_generative_tab(model_id: str, title: str,
                                 "Add further images below; their order follows "
                                 "references 1–3. More references use more memory. "
                                 "Use **16 steps, CFG 1, Euler and Auto scheduler**.")
+                        if family.startswith("fibo2"):
+                            gr.Markdown(
+                                "**Fibo:** up to **10 ordered references** in TurboSlop. "
+                                "The vision projector is required for editing and is shared with "
+                                "the catalog's Qwen3-VL 4B tools. A single reference is scaled "
+                                "and center-cropped to the output aspect; choose a matching "
+                                "aspect ratio to retain its edges. Native masked repair is unavailable.")
                         if family == "qwen21":
                             gr.Markdown(
                                 "**Qwen 2.1 Turbo:** editing requires the vision "
@@ -470,6 +486,7 @@ def build_generative_tab(model_id: str, title: str,
                                 "headroom it needs.")
                     init_image = gr.Image(
                         label="Image to edit" if is_edit else "Starting image",
+                        elem_id=(f"{model_id}-reference" if family.startswith("fibo2") else None),
                         type="pil", image_mode=("RGBA" if family == "qwen21"
                                                 else "RGB"),
                         buttons=widgets.IMAGE_VIEW_ONLY)
@@ -488,9 +505,9 @@ def build_generative_tab(model_id: str, title: str,
                     else:
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
-                    if family == "flux3":
+                    if int(d.get("max_references", 3)) > 3:
                         extra_references = gr.File(
-                            label="Additional references (10 images total)",
+                            label=f"Additional references ({d['max_references']} images total)",
                             file_count="multiple", file_types=["image"],
                             type="filepath", allow_reordering=True)
                     else:
@@ -936,7 +953,8 @@ def build_generative_tab(model_id: str, title: str,
                           outputs=[width, height, ratio])
 
         if preset_list:
-            preset_outputs = [sampler, schedule, steps, cfg] + ([flow_shift] if family == "moss_image" else [])
+            reset_flow = family == "moss_image" or family.startswith("fibo2")
+            preset_outputs = [sampler, schedule, steps, cfg] + ([flow_shift] if reset_flow else [])
 
             def apply_preset(name):
                 name = i18n.to_source(name)
@@ -946,7 +964,7 @@ def build_generative_tab(model_id: str, title: str,
                                 gr.update(value=p.get("scheduler", "auto")),
                                 gr.update(value=int(p.get("steps", 8))),
                                 gr.update(value=float(p.get("cfg_scale", 1.0))))
-                        return (*values, gr.update(value=0)) if family == "moss_image" else values
+                        return (*values, gr.update(value=0)) if reset_flow else values
                 return tuple(gr.update() for _ in preset_outputs)
 
             preset.change(apply_preset, inputs=[preset],
@@ -973,15 +991,18 @@ def build_generative_tab(model_id: str, title: str,
             if not (prompt or "").strip():
                 raise gr.Error(t("Enter a prompt (describe the image, or the "
                                  "change to apply)."))
+            if (d.get("requires_reference") and all(image is None for image in
+                    (init_image, ref_image2, ref_image3)) and not extra_references):
+                raise gr.Error("Fibo 2.0 Edit Turbo requires at least one reference image. Use Fibo 2.0 Dev for text-to-image.")
 
             full_prompt = prompt or ""
-            layout_prompt = family == "moss_image" and full_prompt.lstrip().startswith("{")
+            layout_prompt = (family == "moss_image" or family.startswith("fibo2")) and full_prompt.lstrip().startswith("{")
             if layout_prompt:
                 try:
                     layout = json.loads(full_prompt)
                 except ValueError as exc:
-                    raise gr.Error(f"Invalid MOSS layout JSON: {exc}") from exc
-                if not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict):
+                    raise gr.Error(f"Invalid {'MOSS layout' if family == 'moss_image' else 'Fibo caption'} JSON: {exc}") from exc
+                if family == "moss_image" and (not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict)):
                     raise gr.Error("MOSS layout JSON needs a summary object and an items list.")
             if not layout_prompt and (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")

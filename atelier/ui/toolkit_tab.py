@@ -864,6 +864,7 @@ def build_toolkit_tab(tab_id="toolkit", pending_toolkit=None, tabs=None,
                                       for m in registry.load_base_models(
                                           settings.load_prefs())
                                       if registry.model_is_ready(m)
+                                      and m.defaults.get("supports_adetailer", True)
                                       and m.defaults.get("supports_img2img", True)]
                         ad_model = gr.Dropdown(
                             choices=_ad_models,

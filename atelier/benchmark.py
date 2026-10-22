@@ -183,6 +183,9 @@ def _run_case(model_id: str, prefs: dict, label: str,
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         return {"label": label, "ok": False, "error": f"Unknown model: {model_id}"}
+    if model.defaults.get("requires_reference"):
+        return {"label": label, "ok": False,
+                "error": "This text-to-image benchmark requires a generation model; choose Fibo 2.0 Dev."}
     if not registry.model_is_ready(model):
         missing = [c.role for c in registry.missing_components(model)]
         return {"label": label, "ok": False,
@@ -229,7 +232,8 @@ def _run_case(model_id: str, prefs: dict, label: str,
 
 
 def _pick_model(prefs: dict) -> str | None:
-    models = {m.id: m for m in registry.load_base_models(prefs)}
+    models = {m.id: m for m in registry.load_base_models(prefs)
+              if not m.defaults.get("requires_reference")}
     for wanted in ("krea2-turbo", "flux2-klein-9b"):
         model = models.get(wanted)
         if model and registry.model_is_ready(model):
