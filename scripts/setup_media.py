@@ -199,6 +199,34 @@ def _install_source(repo, commit, target):
         shutil.move(str(source), target)
 
 
+def install_vosr():
+    from atelier import vosr
+    target = addons.root("vosr")
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / "installed.json"
+    marker.unlink(missing_ok=True)
+    py = environment("vosr")
+    # Plain PyTorch SDPA: no Triton, xFormers, Diffusers or CUDA 13 requirement.
+    constraints = target / "constraints.txt"
+    constraints.write_text("torch==2.7.1+cu126\n", encoding="utf-8")
+    pip(py, "torch==2.7.1+cu126", "--index-url", "https://download.pytorch.org/whl/cu126")
+    pip(py, "-c", constraints, "safetensors>=0.5,<0.8", "einops>=0.8,<0.9",
+        "numpy>=1.26,<3", "Pillow>=10.2,<13", "huggingface_hub>=0.26,<1",
+        "requests>=2.31,<3", "filelock>=3.12", "tqdm>=4.42", "PyYAML>=6")
+    _install_source(vosr.SOURCE_REPO, vosr.SOURCE_COMMIT, target / "source")
+    vosr.adapt_source(target / "source")
+    wrapper = ROOT / "scripts/tools/run_vosr.py"
+    # Check the selected GPU and native SDPA before the 6.97 GB download.
+    run(py, wrapper, "--addon-root", target, "--probe")
+    vosr.download_models()
+    vosr.load_args(vosr.model_dir())
+    marker.write_text(json.dumps({"commit": vosr.SOURCE_COMMIT,
+                                 "revision": vosr.MODEL_REVISION,
+                                 "adapter": 1}), encoding="utf-8")
+    print("VOSR 2.0 installed. Use Tools & 3D → VOSR 2.0 upscale. "
+          "All inference runs offline; models are stored once.", flush=True)
+
+
 def install_seed_convrot(precision="w4a8"):
     target = addons.root("seedvr2-convrot")
     target.mkdir(parents=True, exist_ok=True)
@@ -310,7 +338,7 @@ def install_ltx(quant):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "splat", "ltx25"])
+    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "splat", "ltx25"])
     parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
     parser.add_argument("--quant", choices=["Q3_K_M", "Q4_K_M"], default="Q3_K_M")
     parser.add_argument("--optimizations", action="store_true",
@@ -319,6 +347,7 @@ def main(argv=None):
     if args.optimizations and args.tool != "seedvr2":
         parser.error("--optimizations is available for seedvr2 only")
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
+     "vosr": install_vosr,
      "seedvr2-convrot": lambda: install_seed_convrot(args.precision),
      "ltx25": lambda: install_ltx(args.quant)}[args.tool]()
 

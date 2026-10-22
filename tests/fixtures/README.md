@@ -9,3 +9,12 @@ The original model file SHA-256 is
 
 The tests construct sparse dummy payloads to check parsing and integration
 without downloading pretrained weights or requiring Torch/CUDA.
+
+## VOSR checkpoint headers
+
+`vosr_headers.json.gz` contains only the 849 DiT and 186 VAE tensor headers,
+`VOSR2/args.json` and the dedicated 2D VAE config from `CSWRY/VOSR` revision
+`f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3`. No pretrained tensor payload is
+included. Source architecture commit: `ylchen333/ComfyUI-VOSR2` at
+`6a21810b3f4f1a0ffc477c55330db0ac03c671f0` (Apache-2.0 package).
+`verify_vosr_runtime.py` uses it to check exact checkpoint compatibility on meta.

@@ -1,9 +1,17 @@
-# SeedVR2, LTX 2.5 et capture Gaussian Splatting
+# SeedVR2, VOSR 2.0, LTX 2.5 et capture Gaussian Splatting
 
-Ces trois fonctions sont disponibles dans `main` et dans le téléchargement Studio.
+Ces fonctions sont disponibles dans `main` et dans le téléchargement Studio.
 Le canal de mise à jour suit `main`.
 
 ## Utilisation
+
+### VOSR 2.0
+
+Installer **VOSR 2.0 · image restoration** dans **Models**, puis ouvrir
+**Tools & 3D → VOSR 2.0 upscale**. Restauration d'images ×1 / ×2 / ×4,
+FP16, tuiles DiT/VAE et offload par phase. Le bundle de poids (~6,97 Go) est
+téléchargé une seule fois, avec reprise et plafond réseau commun. Voir
+[les réglages, le stockage et les limites](vosr.md).
 
 ### SeedVR2
 

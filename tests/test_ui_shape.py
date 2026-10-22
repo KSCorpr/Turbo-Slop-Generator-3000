@@ -150,17 +150,18 @@ class AccordionBudgetTests(unittest.TestCase):
             ", ".join(f"{t} = {n}" for t, n in counts.items()))
 
     def test_the_rest_of_the_app_does_not_grow_with_the_catalogue(self):
-        """Le total HORS génération : lui n'a aucune raison d'augmenter.
+        """Le total HORS génération ne suit pas le nombre de modèles.
 
-        Ajouter un modèle ajoute un onglet, pas un réglage système. Si ce
-        chiffre bouge, c'est une vraie dérive et non une répétition.
+        Ajouter un modèle ajoute un onglet, pas un réglage système.
+        VOSR ajoute un espace de restauration distinct avec un seul repli
+        mémoire/couleur ; cela ne change pas les écrans de génération.
         """
         per_tab = self._per_tab(self.settled)
         rest = {tab: labels for tab, labels in per_tab.items()
                 if tab not in set(self.generative)}
         total = sum(len(labels) for labels in rest.values())
         self.assertLessEqual(
-            total, 26,
+            total, 27,
             "trop de replis hors génération :\n" +
             "\n".join(f"  {tab} : {len(labels)}"
                        for tab, labels in sorted(rest.items())))

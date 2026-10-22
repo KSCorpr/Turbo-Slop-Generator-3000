@@ -42,6 +42,10 @@ def packages(prefs=None):
                             "Optional 1.19 GB LoRA for MOSS-Image SFT. Select DMD fast (8 steps) in Images after downloading. "
                             "Reuses the installed image model, encoder and VAE; no second base checkpoint.")] + [Package("tool:"+key,name,"Toolkit",note) for key,name,note in toolkit] + [
         Package("addon:sam2","SAM 2.1 small","Layers & SVG","Click cut-out and automatic/manual layers share the same 184 MB checkpoint."),
+        Package("addon:vosr", "VOSR 2.0 · image restoration", "Toolkit",
+                "One-step ×1 / ×2 / ×4 restoration. Isolated CUDA 12.6 runtime; "
+                "6.97 GB of pinned DiT, DINOv2 and dedicated Qwen 2D VAE weights. "
+                "FP16, tiled inference and stage offload by default; no ComfyUI server."),
         Package("addon:qwen-layered","Qwen-Image-Layered Q4","Layers & SVG","RGBA decomposition: selected Q4 transformer + text encoder + VAE (~30 GB). Separate from Qwen Image Turbo."),
         Package("addon:svg","VTracer / LayerTracer · CPU","Layers & SVG","CPU runtime and official source only; no neural weights."),
         Package("addon:hivg","HiVG · experimental","Layers & SVG","Pinned HiVG weights (~8.14 GB) and isolated inference runtime. Public compressed outputs can be undecodable."),
@@ -93,6 +97,9 @@ def ready(key, variant=None):
             entries = registry.modern_upscaler_files() if name == "modern" else registry.upscaler_config().get("files",[])
             return bool(entries) and all((registry.upscalers_dir() / (e['file'] if isinstance(e,dict) else e)).is_file() for e in entries)
         return bool(getattr(tools,name+"_is_installed")())
+    if key == "addon:vosr":
+        from . import vosr
+        return vosr.ready()
     if key.startswith("addon:"):
         return addons.ready(key[6:])
     if key.startswith("seed:"):
@@ -154,7 +161,7 @@ def install(key, variant=None, log=print):
         elif key.startswith("addon:"):
             name=key[6:]
             command=["setup_layers.py",name] if name in {"sam2","qwen-layered"} else (
-                     ["setup_media.py",name] if name == "splat" else ["setup_svg.py",name])
+                     ["setup_media.py",name] if name in {"splat", "vosr"} else ["setup_svg.py",name])
         elif key.startswith("seed:"):
             addon="seedvr2-convrot" if key.endswith("convrot") else "seedvr2"
             command=["setup_media.py",addon]

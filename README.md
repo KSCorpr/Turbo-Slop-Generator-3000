@@ -11,9 +11,14 @@ image-to-sequence stage is not included. [Setup and limits](docs/svg-tools.md).
 from one image using any image engine in the catalogue. Scene views can be
 reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](docs/multiview-360.md).
 
-**Local media engines:** SeedVR2, LTX 2.5 and COLMAP + Brush are available on
+**Local media engines:** SeedVR2, VOSR 2.0, LTX 2.5 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See
 [the setup guide and GPU validation limits](docs/media-engines.md).
+
+**VOSR 2.0:** install the package from **Models**, then open **Tools & 3D →
+VOSR 2.0 upscale** for tiled ×1 / ×2 / ×4 image restoration. It uses its own
+CUDA 12.6 environment and one 6.97 GB weight bundle. See [VOSR controls and
+validation limits](docs/vosr.md).
 
 **Studio — available on `main`.** A calmer, responsive
 workspace with six navigation tabs, a local image gallery, lighter previews,
@@ -1062,8 +1067,9 @@ from the app.
 ## Upscaling
 
 **Toolkit → SDXL upscale** is the only Toolkit enlargement path.
-Faces and Details remain available for local repair. **SeedVR2 upscale** has
-its own workspace in Tools & 3D for image/video restoration. The standalone
+Faces and Details remain available for local repair. **SeedVR2 upscale** and
+**VOSR 2.0 upscale** have their own workspaces in Tools & 3D for restoration
+(SeedVR2: images/videos; VOSR: images). The standalone
 ESRGAN, native HD and Flux.2 High resolution tabs have been removed.
 
 ### 🙂 Faces (GFPGAN · RestoreFormer++ · CodeFormer)
