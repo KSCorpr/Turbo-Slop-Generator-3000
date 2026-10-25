@@ -142,6 +142,7 @@ def _verify(path: Path, size: int, etag: str) -> None:
 
 def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
                     revision: str = "main", **kwargs) -> str:
+    tracking_revision = kwargs.pop("_tracking_revision", revision)
     settings.configure_hf_env()
     from huggingface_hub import constants, get_hf_file_metadata, hf_hub_url
     from huggingface_hub.utils import build_hf_headers
@@ -168,19 +169,27 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
         if meta.size is None or not meta.etag or not meta.commit_hash:
             raise RuntimeError("Hub download metadata is incomplete.")
         sha = meta.etag if re.fullmatch(r"[0-9a-f]{64}", meta.etag) else None
+        def tracked(result):
+            from . import model_updates
+            try:
+                model_updates.record(result, repo=repo_id, filename=filename,
+                    revision=tracking_revision, commit=meta.commit_hash, etag=meta.etag)
+            except OSError as exc:
+                print(f"[models] Download verified; provenance could not be saved: {exc}", flush=True)
+            return result
         if sha and model_store.reuse(sha, meta.size, dest):
-            return str(dest)
+            return tracked(str(dest))
         if dest.is_file() and dest.stat().st_size == meta.size:
             valid = not sha or model_store.known(dest, sha) or model_store.digest(dest, _check_cancelled) == sha
             if valid:
                 model_store.remember(dest, sha)
-                return str(dest)
+                return tracked(str(dest))
         if not download_limit() and not getattr(_CANCEL, "check", None):
             from huggingface_hub import hf_hub_download as hub_download
             result = hub_download(repo_id=repo_id, filename=filename,
-                                  local_dir=local_dir, revision=revision, **kwargs)
+                                  local_dir=local_dir, revision=meta.commit_hash, **kwargs)
             model_store.remember(result)
-            return result
+            return tracked(result)
         dest.parent.mkdir(parents=True, exist_ok=True)
         partial = dest.with_name(dest.name + ".download")
         marker = partial.with_name(partial.name + ".etag")
@@ -245,7 +254,7 @@ def hf_hub_download(*, repo_id: str, filename: str, local_dir: str,
         partial.replace(dest)
         marker.unlink(missing_ok=True)
         model_store.remember(dest, sha)
-        return str(dest)
+        return tracked(str(dest))
 
 
 def snapshot_download(*, repo_id: str, local_dir: str,
@@ -260,6 +269,7 @@ def snapshot_download(*, repo_id: str, local_dir: str,
                                 ignore_patterns=ignore_patterns,
                                 max_workers=1, **kwargs)
     revision = kwargs.pop("revision", "main")
+    tracking_revision = kwargs.pop("_tracking_revision", revision)
     info = HfApi().model_info(repo_id, revision=revision, token=kwargs.get("token"))
     def matches(name, patterns):
         if isinstance(patterns, str):
@@ -272,7 +282,7 @@ def snapshot_download(*, repo_id: str, local_dir: str,
         if matches(name, ignore_patterns):
             continue
         hf_hub_download(repo_id=repo_id, filename=name, local_dir=local_dir,
-                        revision=info.sha, **kwargs)
+                        revision=info.sha, _tracking_revision=tracking_revision, **kwargs)
     return str(Path(local_dir))
 
 
@@ -293,4 +303,5 @@ def model_snapshot_download(*, repo_id, local_dir, **kwargs):
         raise RuntimeError(f"No supported Transformers checkpoint found in {repo_id}.")
     configs = [name for name in names if "/" not in name and name.endswith((".json", ".txt", ".py", ".model", ".jinja"))]
     return snapshot_download(repo_id=repo_id, local_dir=local_dir, allow_patterns=weights+configs,
-                             **{**kwargs, "revision": info.sha})
+                             **{**kwargs, "revision": info.sha,
+                                "_tracking_revision": kwargs.get("_tracking_revision", kwargs.get("revision", "main"))})

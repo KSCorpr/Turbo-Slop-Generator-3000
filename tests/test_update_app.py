@@ -365,7 +365,7 @@ class OneButtonTests(unittest.TestCase):
 
     def test_the_declared_order_is_the_one_that_is_documented(self):
         """`STEPS` est ce que la doc et les messages décrivent."""
-        self.assertEqual(U.STEPS, ("code", "clean", "engine", "trellis"))
+        self.assertEqual(U.STEPS, ("code", "clean", "engine", "trellis", "models"))
 
     def test_check_mode_chains_nothing(self):
         """`--check` promet de ne rien écrire. Mettre à jour un moteur

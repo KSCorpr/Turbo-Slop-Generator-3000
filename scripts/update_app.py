@@ -33,7 +33,7 @@ que rien n'indiquait, dont trois qu'on oubliait — donc un moteur en retard,
 un dossier qui grossit, et des pannes dont la cause était une mise à jour
 faite à moitié trois semaines plus tôt.
 
-Il n'en reste qu'un. Les quatre étapes s'enchaînent ici, dans l'ordre (voir
+Il n'en reste qu'un. Les cinq étapes s'enchaînent ici, dans l'ordre (voir
 `STEPS`), et chacune reste atteignable seule par son drapeau quand on veut
 vraiment l'une sans les autres.
 
@@ -41,6 +41,7 @@ vraiment l'une sans les autres.
     update.bat --clean      le ménage seul
     update.bat --engine     le moteur sd.cpp seul
     update.bat --trellis    le moteur 3D seul
+    update.bat --models     vérifier les modèles installés, sans téléchargement
     update.bat --code       le code seul
     update.bat --check      dit ce que le code changerait, n'écrit rien
     update.bat --rollback   annule la dernière mise à jour du code
@@ -585,7 +586,7 @@ def update(check_only: bool = False) -> int:
     return 0
 
 
-def run_rest(engine: bool, trellis: bool, clean: bool) -> int:
+def run_rest(engine: bool, trellis: bool, clean: bool, models: bool = False) -> int:
     """Les trois étapes qui suivent le code, dans le même sous-processus.
 
     En SOUS-PROCESSUS, et ce n'est pas un détail de style. Ce programme vient
@@ -618,6 +619,8 @@ def run_rest(engine: bool, trellis: bool, clean: bool) -> int:
         args.append("--update-trellis")
     if clean:
         args.append("--ask-purge")
+    if models:
+        args.append("--check-models")
     _say("")
     _say("=" * 60)
     _say("  Now the engines and the cleanup")
@@ -630,7 +633,7 @@ def run_rest(engine: bool, trellis: bool, clean: bool) -> int:
         return 1
 
 
-#  Les quatre étapes, dans l'ORDRE, et l'ordre est le sujet.
+#  Les cinq étapes, dans l'ORDRE, et l'ordre est le sujet.
 #
 #    1. le CODE          — tout ce qui suit doit tourner sur le code neuf :
 #                          la nouvelle table des fonctions retirées, la
@@ -641,10 +644,11 @@ def run_rest(engine: bool, trellis: bool, clean: bool) -> int:
 #                          dit ce que le code exige d'eux ;
 #    3. le moteur sd.cpp — remis au niveau de ce code ;
 #    4. le moteur 3D     — même chose, et seulement s'il est déjà installé.
+#    5. les modèles     — comparaison avec les empreintes publiées sur HF.
 #
 #  Les étapes 2 à 4 vivent dans `maintenance.py`, qui les enchaîne déjà dans
 #  cet ordre-là. On ne les rejoue donc pas ici : on l'appelle une fois.
-STEPS = ("code", "clean", "engine", "trellis")
+STEPS = ("code", "clean", "engine", "trellis", "models")
 
 
 def selected_steps(args) -> dict:
@@ -658,7 +662,7 @@ def selected_steps(args) -> dict:
     `update-trellis.bat`) : ils existaient pour faire une partie sans les
     autres, ce besoin est réel, il ne méritait juste pas trois fichiers.
     """
-    asked = {name: bool(getattr(args, name)) for name in STEPS}
+    asked = {name: bool(getattr(args, name, False)) for name in STEPS}
     if any(asked.values()):
         return asked
     return {name: True for name in STEPS}
@@ -672,7 +676,7 @@ def main() -> int:
     ap.add_argument("--rollback", action="store_true",
                     help="undo the last ZIP code update")
     steps = ap.add_argument_group(
-        "one step only (default: all four, in order)")
+        "one step only (default: all five, in order)")
     steps.add_argument("--code", action="store_true",
                        help="the application code, from GitHub")
     steps.add_argument("--clean", action="store_true",
@@ -682,6 +686,8 @@ def main() -> int:
                        help="the sd.cpp engine (images and video)")
     steps.add_argument("--trellis", action="store_true",
                        help="the trellis.cpp engine (3D), if it is installed")
+    steps.add_argument("--models", action="store_true",
+                       help="check installed model files for upstream updates; no weight download")
     args = ap.parse_args()
     if args.rollback:
         return _rollback()
@@ -696,9 +702,14 @@ def main() -> int:
         #  suite n'ajouterait que du bruit sous un message d'erreur.
         if code != 0 or args.check:
             return code
+    if args.check:
+        return code
+    if want["models"] and not any(want[name] for name in ("clean", "engine", "trellis")):
+        import subprocess
+        return subprocess.call([sys.executable, str(ROOT / "scripts/check_model_updates.py")], cwd=str(ROOT))
     if any(want[name] for name in ("clean", "engine", "trellis")):
         code = run_rest(engine=want["engine"], trellis=want["trellis"],
-                        clean=want["clean"]) or code
+                        clean=want["clean"], models=want["models"]) or code
     _say("")
     _say(INFO + "start the app again with run.bat.")
     return code

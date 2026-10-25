@@ -90,6 +90,7 @@ class EveryEntryPointIsReachableTests(unittest.TestCase):
                 # donnait l'impression d'avoir tout fait. `update.bat`
                 # l'appelle, `update.bat --clean` ne fait qu'elle.
                 "maintenance.py",
+                "check_model_updates.py",  # update.bat --models, via update_app.py
                 "_torch_setup.py", "convert_gguf.py", "setup_layers.py"}
 
     @staticmethod

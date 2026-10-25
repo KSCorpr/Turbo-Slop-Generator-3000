@@ -1,7 +1,7 @@
 @echo off
 setlocal DisableDelayedExpansion
 REM ===========================================================================
-REM  LE bouton de mise a jour. Il n'y en a plus qu'un, et il fait les QUATRE
+REM  LE bouton de mise a jour. Il n'y en a plus qu'un, et il fait les CINQ
 REM  etapes, dans l'ordre :
 REM
 REM    1. le CODE de l'application, depuis GitHub ;
@@ -11,6 +11,8 @@ REM       DEMANDE avant de supprimer quoi que ce soit ;
 REM    3. le MOTEUR sd.cpp (images et video), remis au niveau du code ;
 REM    4. le MOTEUR 3D trellis.cpp — le binaire seul, et seulement s'il est
 REM       deja installe (les ~16 Go de modeles 3D ne sont PAS retelecharges).
+REM    5. les MODELES installes : verifie les empreintes publiees sur Hugging
+REM       Face et affiche les mises a jour disponibles, sans remplacer les poids.
 REM
 REM  Le code ne touche pas a vos donnees ; l'etape moteur met bin\ a jour
 REM  en gardant l'ancien moteur pour rollback.
@@ -19,6 +21,7 @@ REM    update.bat                   tout, dans l'ordre
 REM    update.bat --clean           le menage seul
 REM    update.bat --engine          le moteur sd.cpp seul
 REM    update.bat --trellis         le moteur 3D seul
+REM    update.bat --models          verifier les modeles installes seulement
 REM    update.bat --code            le code seul
 REM    update.bat --check           dit ce que le code changerait, n'ecrit rien
 REM    update.bat --rollback        annule la derniere mise a jour du code

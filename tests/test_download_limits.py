@@ -183,7 +183,7 @@ class DownloadTests(unittest.TestCase):
             transfers.snapshot_download(repo_id="test/model", local_dir="models",
                                         allow_patterns="*.gguf", ignore_patterns=["q4/*"])
         download.assert_called_once_with(repo_id="test/model", local_dir="models",
-                                         filename="a.gguf", revision="fixed")
+                                         filename="a.gguf", revision="fixed", _tracking_revision="main")
 
     def test_live_limit_and_invalid_values(self):
         for value, expected in [(None, 5), ("bad", 5), (float("nan"), 5), (-1, 0), (3, 3)]:

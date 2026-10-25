@@ -1,5 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Installed model updates:** `update.bat` now checks installed Hugging Face
+files after updating the code and engines. `update.bat --models` runs only
+that check. It reports changed files and pinned toolkit versions, preserving
+the installed weights. [How model checks work](docs/model-updates.md).
+
 **Fibo 2.0:** native **Dev** generation/editing (20 steps, CFG 5) and
 **Edit Turbo** reference editing (4 steps, CFG 1), with INT8 ConvRot weights,
 shared Flux.2 VAE / Qwen3-VL 4B components and structured JSON captions.

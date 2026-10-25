@@ -1065,6 +1065,13 @@ def main() -> int:
     #  hors ligne a déjà été dit quand la connexion lâche.
     engine_stale = check_engine(update_engine)
     trellis_stale = check_trellis(update_trellis)
+    if "--check-models" in sys.argv:
+        print("• Installed model updates (metadata only)…")
+        try:
+            from atelier.model_updates import check
+            check()
+        except Exception as exc:
+            print(WARN + f"model check unavailable: {exc}; retry update.bat --models.")
     print("-" * 60)
     if recoverable > 0:
         # Un chiffre global, puis la commande exacte : c'est tout ce qu'il faut
