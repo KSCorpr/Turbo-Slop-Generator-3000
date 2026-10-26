@@ -1,5 +1,22 @@
 # Unified Models catalog
 
+Every Images workspace has a **Model variant (installed weights)** selector
+above the resolution controls. Choose an installed GGUF or approved
+INT8 / BF16 / FP16 variant for that specific model before generating.
+**Encoder, VAE & local files** contains the corresponding component choices.
+Menus show precision, format, actual disk size and filenames without contacting
+Hugging Face. Install additional variants in Models, then click
+**Refresh installed variants** or return to the image model's tab.
+
+Selections are saved per model and shared with the Models catalog. Automatic
+uses the usual hardware target and compatible installed-weight fallback.
+An explicitly selected file must still be installed: generation reports a
+missing file instead of silently substituting another variant. Each request
+captures its file paths before starting; later menu changes do not alter that
+generation. Files placed in `models/custom` appear as **Local / custom** entries
+in the same menus; select the matching component and architecture. These local
+selections are saved separately from catalog download choices.
+
 Open **Models** to install image-generation weights and the models used by the
 Toolkit, layers/SVG tools, video and 3D. Filter by usage or search, then choose
 a package. The page renders one image-weight form, not one copy per model.

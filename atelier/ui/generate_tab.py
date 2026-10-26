@@ -9,7 +9,7 @@ import json
 
 import gradio as gr
 
-from .. import downloader, i18n, registry, sampling, settings, styles
+from .. import downloader, generation_weights, i18n, registry, sampling, settings, styles
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -219,13 +219,6 @@ def build_generative_tab(model_id: str, title: str,
             label = "Weights ready" if available else "Download weights in Models to start"
             return f"**{title}** · {_task} · {label}"
 
-        model_tab.select(refresh_model_status, outputs=[model_status],
-                         queue=False, show_progress="hidden")
-
-        # `variant_model` a existé pour proposer une seconde forme du même
-        # modèle (l'INT8 ConvRot de Krea 2, retiré). L'état reste : c'est ce
-        # que l'événement de génération lit, et le rendre constant coûte moins
-        # qu'un renommage à travers toute la chaîne d'entrées.
         variant_model = gr.State(model_id)
 
         with gr.Row():
@@ -242,6 +235,14 @@ def build_generative_tab(model_id: str, title: str,
                                     elem_classes="studio-prompt")
                 negative = gr.Textbox(label="Negative prompt", lines=1,
                                       visible=d.get("supports_negative", False))
+
+                weight_menus = generation_weights.menus(model_id)
+                diffusion_variant = gr.Dropdown(
+                    **weight_menus[0], label="Model variant (installed weights)",
+                    info="Choose GGUF / INT8 / BF16 / FP16 weights installed for this model. "
+                         "Download more in Models. Local / custom entries require the same architecture.",
+                    elem_id=f"{model_id}-weight-variant", allow_custom_value=False)
+                refresh_variants = gr.Button("Refresh installed variants", size="sm")
 
                 ratio = gr.Dropdown(
                     [t(k) for k in ratios],
@@ -565,24 +566,20 @@ def build_generative_tab(model_id: str, title: str,
                         civitai_btn = gr.Button("⬇️ Import", scale=1)
                     civitai_msg = gr.Markdown("")
 
-                with gr.Accordion("📂 Local files (custom model)", open=False):
+                with gr.Accordion("Encoder, VAE & local files", open=False):
+                    encoder_variant = gr.Dropdown(
+                        **weight_menus[1], label="Encoder variant (installed)",
+                        allow_custom_value=False)
+                    vae_variant = gr.Dropdown(
+                        **weight_menus[2], label="VAE variant (installed)",
+                        allow_custom_value=False)
+                    gr.Markdown("Selections are saved for this model. Choose Automatic to restore "
+                                "the hardware target. Local / custom entries use files from the folder below.")
                     gr.Markdown(t(
                         "To use a model **downloaded elsewhere**: drop the "
-                        "file(s) into `{dir}` then select it below. Empty = "
-                        "catalog model.")
+                        "file(s) into `{dir}`, refresh installed variants, then choose a "
+                        "Local / custom entry in the model, encoder or VAE menu.")
                         .format(dir=settings.CUSTOM_DIR))
-                    custom_diff = gr.Dropdown(gen_engine.list_custom_models(),
-                                              value=None, label="Diffusion (local)")
-                    with gr.Row():
-                        custom_vae = gr.Dropdown(gen_engine.list_custom_models(),
-                                                 value=None, label="VAE (local)")
-                        custom_enc = gr.Dropdown(gen_engine.list_custom_models(),
-                                                 value=None, label="Encoder (local)")
-                    with gr.Row():
-                        refresh_custom = gr.Button("↻ Refresh local files",
-                                                   size="sm")
-                        clear_custom = gr.Button("✖ Clear custom fields",
-                                                 size="sm")
 
                 with gr.Accordion("Resolution & sampling · advanced", open=False):
                     with gr.Row():
@@ -694,6 +691,28 @@ def build_generative_tab(model_id: str, title: str,
         sel_index = gr.State(0)
 
         # ----- Comportements -----
+        variant_controls = [diffusion_variant, encoder_variant, vae_variant]
+
+        def refresh_generation_variants():
+            return (*[gr.update(**menu) for menu in generation_weights.menus(model_id)],
+                    refresh_model_status())
+
+        gr.on(triggers=[model_tab.select, refresh_variants.click],
+              fn=refresh_generation_variants, outputs=[*variant_controls, model_status],
+              queue=False, show_progress="hidden")
+
+        def save_generation_variants(diffusion_choice, encoder_choice, vae_choice):
+            try:
+                generation_weights.save_selections(model_id, dict(zip(
+                    generation_weights.ROLES, (diffusion_choice, encoder_choice, vae_choice))))
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
+            return refresh_model_status()
+
+        gr.on(triggers=[control.input for control in variant_controls],
+              fn=save_generation_variants, inputs=variant_controls, outputs=[model_status],
+              queue=False, show_progress="hidden", trigger_mode="always_last")
+
         def refresh_loras():
             choices = gen_engine.list_loras()
             return (gr.update(choices=choices), gr.update(choices=choices), "")
@@ -742,19 +761,6 @@ def build_generative_tab(model_id: str, title: str,
             edit_lora_btn.click(_get_edit_lora,
                                 outputs=[lora1, lora2, lora1_w, edit_mode,
                                          edit_lora_msg])
-
-        def _refresh_custom():
-            c = gen_engine.list_custom_models()
-            return gr.update(choices=c), gr.update(choices=c), gr.update(choices=c)
-
-        refresh_custom.click(_refresh_custom,
-                             outputs=[custom_diff, custom_vae, custom_enc])
-
-        def _clear_custom():
-            return gr.update(value=None), gr.update(value=None), gr.update(value=None)
-
-        clear_custom.click(_clear_custom,
-                           outputs=[custom_diff, custom_vae, custom_enc])
 
         # --- Styles enregistrés (prompt système) ---
         # « — Aucun — » n'est pas un style enregistré : le choisir VIDE le champ
@@ -976,7 +982,9 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image2, ref_image3, strength, outpaint, edit_mode,
                         width, height, steps, cfg, sampler, schedule, flow_shift,
                         seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
-                        custom_diff, custom_vae, custom_enc, extra_references=None,
+                        diffusion_variant=generation_weights.AUTO,
+                        encoder_variant=generation_weights.AUTO,
+                        vae_variant=generation_weights.AUTO, extra_references=None,
                         generation_preset=None):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
@@ -994,6 +1002,12 @@ def build_generative_tab(model_id: str, title: str,
             if (d.get("requires_reference") and all(image is None for image in
                     (init_image, ref_image2, ref_image3)) and not extra_references):
                 raise gr.Error("Fibo 2.0 Edit Turbo requires at least one reference image. Use Fibo 2.0 Dev for text-to-image.")
+
+            try:
+                variant_paths = generation_weights.resolve(
+                    model_id, (diffusion_variant, encoder_variant, vae_variant))
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
 
             full_prompt = prompt or ""
             layout_prompt = (family == "moss_image" or family.startswith("fibo2")) and full_prompt.lstrip().startswith("{")
@@ -1113,9 +1127,9 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image=(ref_paths or None), circular=bool(circular),
                         loras=loras,
                         **({"moss_dmd": True} if use_moss_dmd else {}),
-                        diffusion_override=gen_engine.custom_path(custom_diff),
-                        vae_override=gen_engine.custom_path(custom_vae),
-                        encoder_override=gen_engine.custom_path(custom_enc),
+                        diffusion_override=variant_paths.get("diffusion"),
+                        vae_override=variant_paths.get("vae"),
+                        encoder_override=variant_paths.get("text_encoder"),
                         preview_path=preview_path, log=q.put)
                     state["outs"] = [str(p) for p in outs]
                 except Exception as exc:  # noqa: BLE001
@@ -1237,7 +1251,7 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     circular,
                     lora1, lora1_w, lora2, lora2_w,
-                    custom_diff, custom_vae, custom_enc, extra_references],
+                    diffusion_variant, encoder_variant, vae_variant, extra_references],
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )

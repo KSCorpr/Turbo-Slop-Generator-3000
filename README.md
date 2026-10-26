@@ -1,5 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Choose weights before generating:** every Images workspace now offers an
+installed model variant selector, plus encoder and VAE choices. Selections are
+saved per model; exact chosen files are passed to generation. Install more
+variants in Models, then refresh the generation selectors.
+
 **GPU-aware weight choices:** Models now explains INT8, BF16, FP16, FP32 and
 GGUF precision separately from file formats. Load sizes for memory suggestions
 on your selected GPU. Krea 2 Turbo and Z-Image Turbo offer INT8/BF16 Safetensors
