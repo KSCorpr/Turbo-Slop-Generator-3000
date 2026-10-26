@@ -339,6 +339,14 @@ base_models:
         # visé existe vraiment — et les petites cartes ont enfin une marche.
         repo: vantagewithai/Krea-2-Turbo-GGUF
         match: "krea2_turbo-{quant}.gguf"
+        label: "GGUF · hardware profile"
+        alternatives:
+          - repo: Comfy-Org/Krea-2
+            match: "diffusion_models/krea2_turbo_int8_convrot.safetensors"
+            label: "INT8 ConvRot"
+          - repo: Comfy-Org/Krea-2
+            match: "diffusion_models/krea2_turbo_bf16.safetensors"
+            label: "BF16"
         quantizable: true
       text_encoder:
         # Encodeur officiel Qwen (doc krea2.md). Nom de fichier « Qwen3VL » sans
@@ -445,6 +453,14 @@ base_models:
       diffusion:
         repo: leejet/Z-Image-Turbo-GGUF
         match: "z_image_turbo-{quant}.gguf"
+        label: "GGUF · hardware profile"
+        alternatives:
+          - repo: Comfy-Org/z_image_turbo
+            match: "split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors"
+            label: "INT8 ConvRot"
+          - repo: Comfy-Org/z_image_turbo
+            match: "split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+            label: "BF16"
         quantizable: true
         # 6B au lieu de 9B+ : sans ce décalage l'échelle VRAM, calibrée sur
         # Flux.2 / Krea 2, brimerait le modèle de trois crans (Q5 au lieu de Q8

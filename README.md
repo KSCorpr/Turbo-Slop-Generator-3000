@@ -1,5 +1,11 @@
 # Turbo Slop Generator 3000 · Studio
 
+**GPU-aware weight choices:** Models now explains INT8, BF16, FP16, FP32 and
+GGUF precision separately from file formats. Load sizes for memory suggestions
+on your selected GPU. Krea 2 Turbo and Z-Image Turbo offer INT8/BF16 Safetensors
+alongside GGUF; saved selections and shared files are retained.
+[Precision and memory advice](docs/model-catalog.md#gpu-and-weight-precision).
+
 **Installed model updates:** `update.bat` now checks installed Hugging Face
 files after updating the code and engines. `update.bat --models` runs only
 that check. It reports changed files and pinned toolkit versions, preserving

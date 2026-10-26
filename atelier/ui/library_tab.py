@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .. import downloader, registry, settings, model_catalog, transfers
+from .. import downloader, registry, settings, model_catalog, transfers, weight_precision
 from . import widgets
 from .media_tabs import stream_task
 import math
@@ -13,23 +13,53 @@ from ..i18n import t
 _AUTO = "__auto__"
 
 
+def _selection_prefs(prefs, model, diff_choice, enc_choice, vae_choice=None):
+    prefs = dict(prefs)
+    files = dict(prefs.get("model_files") or {})
+    selected = dict(files.get(model.id) or {})
+    choices = [("diffusion", diff_choice), ("text_encoder", enc_choice)]
+    if any(c.role == "vae" and c.alternatives for c in model.components):
+        choices.append(("vae", vae_choice))
+    for role, choice in choices:
+        if choice and choice != _AUTO:
+            selected[role] = choice
+        else:
+            selected.pop(role, None)
+    if selected:
+        files[model.id] = selected
+    else:
+        files.pop(model.id, None)
+    prefs["model_files"] = files
+    return prefs
+
+
 def _weight_menu(model: registry.BaseModel, role: str,
                  variants: list[tuple[str, str]] | None = None):
     comp = next((c for c in model.components if c.role == role), None)
     if comp is None:
         return [], _AUTO
-    auto_label = (f"Default ({comp.alternatives[0].label})" if comp.alternatives else
-                  f"Automatic (target: {comp.requested()})" if comp.token else
+    prof = weight_precision.profile()
+    auto_label = (f"Automatic (target: {comp.requested()})" if comp.token else
+                  f"Default ({comp.alternatives[0].label})" if comp.alternatives else
                   f"Default ({comp.requested()})")
     menu = [(auto_label, _AUTO)]
     menu.extend(variants or [])
-    if not variants and comp.alternatives:
-        menu.extend((f"{v.label} (load sizes)", v.template)
-                    for v in comp.alternatives)
-    elif not variants and comp.token is None:
+    if not variants:
+        known = [(v.template, v.label) for v in comp.alternatives
+                 if not any(token in v.template for token in ("{quant}", "{enc_quant}"))]
+        known += [(name, "") for name in comp.selectable]
+        seen = set()
+        for name, label in known:
+            if name in seen:
+                continue
+            seen.add(name)
+            detail = weight_precision.describe(name, prof, label=label,
+                recommended=weight_precision.is_target(comp, name))
+            menu.append((f"{label or name} — {detail} (load sizes)", name))
+    if comp.token is None and comp.requested() not in {v for _, v in menu}:
         # Un choix enregistré doit déjà figurer dans le menu avant même la
         # requête de métadonnées, sinon Gradio le réinitialise au lancement.
-        menu.append((f"Selected: {comp.requested()} (load sizes)",
+        menu.append((f"Selected: {comp.requested()} (size unavailable)",
                      comp.requested()))
     selected = comp.requested() if comp.token is None else _AUTO
     if variants and selected not in {value for _, value in menu}:
@@ -71,15 +101,22 @@ def build_library_tab():
             updates.append(gr.update(choices=choices,value=selected,visible=visible))
         return updates
 
-    def shared_panel(key):
+    def shared_panel(key, diff_choice=None, enc_choice=None, vae_choice=None):
         text=("**Shared files:** identical downloaded weights are reused by checksum. "
               "Consolidate existing installations once below. Unique weights and runtime versions are retained.")
         model=image_model(key)
-        return text+"\n\n"+model_catalog.component_details(model) if model else text
+        if model:
+            if diff_choice is not None:
+                prefs = _selection_prefs(settings.load_prefs(), model, diff_choice, enc_choice, vae_choice)
+                model = registry.get_base_model(model.id, prefs)
+            return (text+"\n\n"+weight_precision.model_advice(model)+"\n\n"
+                    +model_catalog.component_details(model))
+        return text
 
     with gr.Tab("Models", id="models"):
         gr.Markdown("### Models & toolkits\nChoose a package for image generation, Toolkit, layers, video or 3D. "
-                    "Automatic choices reuse compatible installed weights. Load sizes to select exact weights.")
+                    "Choose GGUF or approved INT8 / BF16 / FP16 / FP32 weights where published. "
+                    "GPU advice distinguishes hardware support from memory needs. Load sizes for exact files.")
         prefs=settings.load_prefs()
         models=registry.load_base_models(prefs)
         initial="image:"+models[0].id if models else None
@@ -107,6 +144,8 @@ def build_library_tab():
             variant=gr.Dropdown([],value=None,label="Weight variant",visible=False)
             install_tool=gr.Button("Install / repair selected package",variant="primary")
         shared_note=gr.Markdown(shared_panel(initial))
+        for control in (diffusion, encoder, vae):
+            control.change(shared_panel,[package,diffusion,encoder,vae],shared_note,queue=False)
         with gr.Row():
             refresh=gr.Button("Refresh status",size="sm")
             consolidate=gr.Button("Consolidate existing identical weights",size="sm")
@@ -151,22 +190,7 @@ def build_library_tab():
             if selected_model is None:
                 raise gr.Error("Choose an image model first.")
             model_id=selected_model.id
-            prefs=settings.load_prefs()
-            files=dict(prefs.get("model_files") or {})
-            selected=dict(files.get(model_id) or {})
-            choices=[("diffusion",diff_choice),("text_encoder",enc_choice)]
-            if any(c.role == "vae" and c.alternatives for c in selected_model.components):
-                choices.append(("vae",vae_choice))
-            for role,choice in choices:
-                if choice and choice != _AUTO:
-                    selected[role]=choice
-                else:
-                    selected.pop(role,None)
-            if selected:
-                files[model_id]=selected
-            else:
-                files.pop(model_id,None)
-            prefs["model_files"]=files
+            prefs=_selection_prefs(settings.load_prefs(),selected_model,diff_choice,enc_choice,vae_choice)
             settings.save_prefs(prefs)
             selected_model=registry.get_base_model(model_id,prefs)
             lines=[]

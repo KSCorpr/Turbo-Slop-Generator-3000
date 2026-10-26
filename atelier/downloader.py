@@ -132,57 +132,57 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
     settings.configure_hf_env()
     from huggingface_hub import HfApi
 
+    from . import weight_precision
+    prof = weight_precision.profile()
     api = HfApi()
     repos: dict[str, list] = {}
     result: dict[str, list[tuple[str, str]]] = {}
     for comp in model.components:
-        if comp.role == "vae" and comp.alternatives:
-            options = []
-            for variant in comp.alternatives:
-                if variant.repo not in repos:
-                    repos[variant.repo] = api.model_info(
-                        repo_id=variant.repo, files_metadata=True).siblings or []
-                sibling = next((s for s in repos[variant.repo]
-                                if s.rfilename == variant.template), None)
-                if sibling is None:
+        if comp.role not in ("diffusion", "text_encoder", "vae"):
+            continue
+        if comp.role == "vae" and not comp.alternatives:
+            continue
+        # Keep the original GGUF source visible after selecting a Safetensors
+        # alternative from another repository. Never enumerate unrelated models.
+        base_repo = comp.catalog_repo or comp.repo
+        base_pattern = (comp.catalog_template or comp.base_glob()).replace(
+            "{quant}", "*").replace("{enc_quant}", "*")
+        base_label = (comp.alternatives[0].label if comp.alternatives and
+                      not comp.selectable and not any(t in base_pattern for t in ("*", "?")) else "")
+        sources = [(base_repo, base_pattern, base_label, bool(comp.selectable))]
+        sources += [(v.repo, v.template, v.label, False)
+                    for v in comp.alternatives if v.template != comp.catalog_template]
+        options = []
+        candidates = []
+        seen = set()
+        for repo, pattern, label, selectable in sources:
+            if repo not in repos:
+                repos[repo] = api.model_info(
+                    repo_id=repo, files_metadata=True).siblings or []
+            for sibling in repos[repo]:
+                name = sibling.rfilename
+                if (name not in comp.selectable if selectable else not _fn(name, pattern)):
                     continue
+                if comp.role == "text_encoder" and "mmproj" in name.lower():
+                    continue
+                if name in seen:
+                    continue
+                seen.add(name)
                 size = getattr(sibling, "size", None)
                 if size is None and getattr(sibling, "lfs", None):
                     size = getattr(sibling.lfs, "size", None)
                 human = f"{size / 1e9:.2f} GB" if size is not None else "size unknown"
-                here = settings.model_repo_dir(variant.repo) / variant.template
+                here = settings.model_repo_dir(repo) / name
                 installed = " · installed" if here.is_file() else ""
-                options.append((f"{variant.label} — {human}{installed}",
-                                variant.template))
-            result[comp.role] = options
-            continue
-        if comp.role not in ("diffusion", "text_encoder") or not (
-                comp.base_glob().lower().endswith((".gguf", ".safetensors"))
-                or comp.selectable):
-            continue
-        if comp.repo not in repos:
-            repos[comp.repo] = api.model_info(
-                repo_id=comp.repo, files_metadata=True).siblings or []
-        # Une sélection persistée est un nom exact, mais les AUTRES versions
-        # doivent rester visibles via le motif du catalogue d'origine.
-        pattern = comp.base_glob()
-        options = []
-        for sibling in repos[comp.repo]:
-            name = sibling.rfilename
-            if comp.selectable:
-                if name not in comp.selectable:
-                    continue
-            elif not _fn(name, pattern):
-                continue
-            if comp.role == "text_encoder" and "mmproj" in name.lower():
-                continue
-            size = getattr(sibling, "size", None)
-            if size is None and getattr(sibling, "lfs", None):
-                size = getattr(sibling.lfs, "size", None)
-            human = f"{size / 1e9:.2f} GB" if size is not None else "size unknown"
-            here = settings.model_repo_dir(comp.repo) / name
-            installed = " · installed" if here.is_file() else ""
-            options.append((f"{name} — {human}{installed}", name))
+                precision = weight_precision.describe(name, prof, label=label, size=size,
+                    role=comp.role, recommended=repo == comp.repo and weight_precision.is_target(comp, name))
+                title = label or name
+                options.append((f"{title} — {precision} — {human}{installed}", name))
+                candidates.append((name, size, label))
+        suggested = weight_precision.suggest(comp, candidates, prof)
+        if suggested:
+            options = [(label + " · suggested for GPU memory" if name == suggested else label, name)
+                       for label, name in options]
         options.sort(key=lambda row: (
             quant._idx(quant.find_quant(row[1])) or -1, row[1]))
         result[comp.role] = options

@@ -35,6 +35,8 @@ class Component:
     source_template: str | None = None  # motif de toutes les variantes GGUF
     selectable: tuple[str, ...] = ()    # choix explicites non GGUF autorisés
     alternatives: tuple[ComponentVariant, ...] = ()  # inclut le choix par défaut
+    catalog_repo: str | None = None
+    catalog_template: str | None = None
 
     @property
     def token(self) -> str | None:
@@ -166,7 +168,9 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
                                    optional=bool(spec.get("optional")),
                                    source_template=source_template,
                                    selectable=selectable,
-                                   alternatives=alternatives))
+                                   alternatives=alternatives,
+                                   catalog_repo=spec["repo"],
+                                   catalog_template=spec["match"]))
         out.append(BaseModel(
             id=m["id"], name=m["name"], family=m["family"],
             tags=m.get("tags", []), description=(m.get("description") or "").strip(),

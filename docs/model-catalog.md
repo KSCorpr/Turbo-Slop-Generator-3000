@@ -34,6 +34,45 @@ Interrupted Hub weights retain their separate resumable partial files.
 Refresh status after an install; tool pages already opened may need a refresh
 or application restart to show newly available controls.
 
+## GPU and weight precision
+
+Image packages show a device-specific table for **INT8, BF16, FP16, FP32**
+and GGUF quantizations. The generation GPU selected in System is used, including
+on multi-GPU PCs. CUDA compute capability reported by the driver takes precedence
+over architecture names. Native BF16 is identified on Ampere and newer NVIDIA
+GPUs; Turing/Pascal can load supported BF16 files through sd.cpp's conversion
+path, but are not presented as native BF16 devices. Unknown and CPU-only devices
+are explicitly identified instead of assuming support.
+
+GGUF and Safetensors are containers, not compute precisions. An INT8 ConvRot
+checkpoint does not promise end-to-end INT8 arithmetic. The backend chooses
+kernels, dequantization, intermediate precision and accumulation. Likewise,
+FP32 weight storage is not an automatic image-quality improvement.
+
+**Load weights and sizes** lists only files approved for the chosen model,
+with their storage type, format, actual download size, installation state and
+memory advice. A **suggested for GPU memory** label uses a conservative heuristic:
+16-bit weights with native support and room under 70% of total GPU memory, then
+INT8, then the profile's GGUF target or a GGUF fitting that budget. No suggestion
+is made when sizes or GPU capability are unknown. Encoders retain their existing
+RAM-aware target. This heuristic is not a measured VRAM peak or speed/quality
+benchmark; the generation placement planner remains responsible for offload.
+Weights alone approaching/exceeding GPU memory receive an explicit offload note.
+
+INT8/BF16 choices for MOSS, Qwen 2.1 Turbo, Fibo 2 and Krea Realism are visible
+before any metadata query. Krea 2 Turbo and Z-Image Turbo also offer their
+Comfy-Org INT8 ConvRot/BF16 Safetensors alongside the existing GGUF source.
+Cross-repository choices persist across restarts, download and generation;
+loading sizes still shows the original GGUF variants after selecting Safetensors.
+FP16/FP32 files are offered only where published and matched by the approved
+catalog sources; unavailable precisions are not fabricated or converted on disk.
+Suggestions label a choice; they do not overwrite saved selections or download
+additional precision variants automatically.
+
+Backend references: [Krea 2](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/krea2.md),
+[Z-Image](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/z_image.md),
+[NVIDIA compute capabilities](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html).
+
 ## Reusing identical weights
 
 The transfer layer indexes completed weight files by **SHA-256**, not by their
