@@ -14,7 +14,7 @@ import threading
 
 import gradio as gr
 
-from .. import benchmark, diagnostics, hardware, registry, settings, system_profile
+from .. import benchmark, diagnostics, hardware, registry, settings, system_profile, taesd
 from ..i18n import t
 from .theme import THEME_JS
 from . import widgets
@@ -156,13 +156,17 @@ def _system_table(prefs: dict | None = None) -> str:
         by_role = {c.role: registry.resolve_component_path(c)
                    for c in model.components if not c.optional}
         image = by_role.get("diffusion") or by_role.get("model")
-        vae = by_role.get("vae")
-        if not registry.model_is_ready(model) or not image:
+        tiny_mode = taesd.selected_mode(model.id, prefs)
+        tiny = taesd.for_model(model)
+        vae = None if tiny_mode == "full" else by_role.get("vae")
+        if not taesd.model_ready(model, prefs) or not image:
             lines.append(f"| {model.name} | Download required | — | "
                          "Computed after download |")
             continue
         files = {"diffusion": image, "vae": vae,
                  "enc": by_role.get("text_encoder")}
+        if tiny and tiny_mode != "off":
+            files["taesd"] = tiny.path()
         plan = system_profile.plan_for_model(
             model, files, prefs, sd_cli,
             width=int(model.defaults.get("width", 1024)),

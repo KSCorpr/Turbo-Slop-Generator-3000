@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .. import hardware, registry, settings, system_profile, moss_dmd as moss_adapter
+from .. import hardware, registry, settings, system_profile, taesd, moss_dmd as moss_adapter
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -225,6 +225,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
         if is_moss_dmd:
             lines.append(f"MOSS DMD: 8 steps, LoRA strength {moss_adapter.STRENGTH}, at_runtime")
+        if req.taesd:
+            lines.append(f"TAE: {req.taesd.name}, " + ("preview only" if req.taesd_preview_only else "full encoding/decoding"))
         if req.init_image:
             lines.append(f"img2img strength: {req.strength}")
         lines.append(f"Date: {date}")
@@ -238,6 +240,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
                 "width": req.width, "height": req.height,
                 "sampler": req.sampler, "schedule": req.schedule or "auto",
                 "flow_shift": req.flow_shift, "date": date,
+                **({"taesd": req.taesd.name, "taesd_mode": "preview" if req.taesd_preview_only else "full"}
+                   if req.taesd else {}),
                 **({"moss_dmd": True, "dmd_lora_strength": moss_adapter.STRENGTH} if is_moss_dmd else {}),
             }, ensure_ascii=False, indent=2))
         except OSError:
@@ -246,7 +250,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
 
 def resolve_model_files(model: "registry.BaseModel",
                         diffusion_override=None, vae_override=None,
-                        encoder_override=None, want_vision: bool = False
+                        encoder_override=None, want_vision: bool = False,
+                        require_vae: bool = True
                         ) -> dict:
     """Chemins des fichiers d'UN modèle du catalogue, ou une erreur lisible.
 
@@ -289,7 +294,7 @@ def resolve_model_files(model: "registry.BaseModel",
         # de l'encodeur llm. Robuste et sans hypothèse sur l'architecture.
         declared = {c.role for c in model.components}
         need: dict[str, "Path | None"] = {"diffusion": diffusion}
-        if "vae" in declared:
+        if "vae" in declared and require_vae:
             need["vae"] = vae
         if "text_encoder" in declared:
             need["text_encoder"] = enc
@@ -449,6 +454,7 @@ def generate(
     # Banc d'essai : préférences en mémoire, sans toucher au fichier utilisateur.
     prefs_override: dict | None = None,
     moss_dmd: bool = False,
+    taesd_mode: str | None = None,
 ) -> list[Path]:
     # A benchmark supplies an in-memory placement deliberately. It must not
     # inherit the saved automatic mode, which would erase the tested flags.
@@ -463,6 +469,12 @@ def generate(
     model = registry.get_base_model(model_id, prefs)
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
+
+    tiny_mode = taesd.selected_mode(model_id, prefs) if taesd_mode is None else taesd_mode
+    # A preview-only choice does not load an extra network for jobs without previews.
+    if tiny_mode == "preview" and preview_path is None:
+        tiny_mode = "off"
+    tiny_path = taesd.require(model, tiny_mode, sd_cli, vae_override)
 
     _check_engine_build(model)
     _check_tokenizer_engine(model, sd_cli)
@@ -497,7 +509,16 @@ def generate(
                 or schedule not in (None, "", "auto") or flow_shift):
             raise sdcpp.EngineError("Use the official Qwen Turbo preset: 8 steps, CFG 1, Euler, Auto schedule and no flow shift.")
     files = resolve_model_files(model, diffusion_override, vae_override,
-                                encoder_override, want_vision=bool(ref_image))
+                                encoder_override, want_vision=bool(ref_image),
+                                require_vae=tiny_mode != "full")
+    if tiny_path:
+        files["taesd"] = tiny_path
+        if tiny_mode == "full":
+            files["vae"] = None
+        if log:
+            log(f"TAE: {taesd.for_model(model).name}; " +
+                ("previews only, original VAE retained for the final image."
+                 if tiny_mode == "preview" else "fast encoding and final decoding; fine detail may change."))
     if moss_dmd:
         files["image_adapter"] = moss_adapter.path()
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
@@ -589,6 +610,7 @@ def generate(
 
     req = GenRequest(
         diffusion_model=diffusion, vae=vae, model_path=model_path,
+        taesd=tiny_path, taesd_preview_only=tiny_mode == "preview",
         text_encoder=enc, tokenizer=files["tokenizer"], llm_vision=llm_vision,
         t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
         extra_flags=list(model.defaults.get("extra_flags", [])) +
@@ -604,7 +626,7 @@ def generate(
         lora_dir=lora_dir, preview_path=preview_path,
         # Depuis la build 901, sd.cpp projette aussi les 64 canaux RGBA de
         # Qwen 2.1. La projection légère autorise l'aperçu à CHAQUE pas.
-        preview_method="proj",
+        preview_method="tae" if tiny_path else "proj",
         preview_interval=1,
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,

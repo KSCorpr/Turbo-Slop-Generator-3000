@@ -9,7 +9,7 @@ import json
 
 import gradio as gr
 
-from .. import downloader, generation_weights, i18n, registry, sampling, settings, styles
+from .. import downloader, generation_weights, i18n, registry, sampling, settings, styles, taesd
 from ..engine import generate as gen_engine
 from ..engine import tools
 from ..i18n import t
@@ -168,7 +168,7 @@ def build_generative_tab(model_id: str, title: str,
     # change avec la langue — le retour tomberait à côté en anglais.
     with gr.Tab(title, id=model_id, elem_classes="generation-workspace") as model_tab:
         m = registry.get_base_model(model_id, settings.load_prefs())
-        ready = m is not None and registry.model_is_ready(m)
+        ready = taesd.model_ready(m)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
         size_step = 32 if family == "qwen21" else 16
@@ -215,7 +215,7 @@ def build_generative_tab(model_id: str, title: str,
 
         def refresh_model_status():
             current = registry.get_base_model(model_id, settings.load_prefs())
-            available = current is not None and registry.model_is_ready(current)
+            available = taesd.model_ready(current)
             label = "Weights ready" if available else "Download weights in Models to start"
             return f"**{title}** · {_task} · {label}"
 
@@ -573,6 +573,11 @@ def build_generative_tab(model_id: str, title: str,
                     vae_variant = gr.Dropdown(
                         **weight_menus[2], label="VAE variant (installed)",
                         allow_custom_value=False)
+                    tiny_mode = gr.Dropdown(
+                        list(taesd.MODES), value=taesd.selected_mode(model_id),
+                        label="Tiny autoencoder (TAESD)", info=taesd.info(m),
+                        interactive=taesd.for_model(m) is not None,
+                        elem_id=f"{model_id}-taesd-mode")
                     gr.Markdown("Selections are saved for this model. Choose Automatic to restore "
                                 "the hardware target. Local / custom entries use files from the folder below.")
                     gr.Markdown(t(
@@ -695,22 +700,24 @@ def build_generative_tab(model_id: str, title: str,
 
         def refresh_generation_variants():
             return (*[gr.update(**menu) for menu in generation_weights.menus(model_id)],
+                    gr.update(value=taesd.selected_mode(model_id)),
                     refresh_model_status())
 
         gr.on(triggers=[model_tab.select, refresh_variants.click],
-              fn=refresh_generation_variants, outputs=[*variant_controls, model_status],
+              fn=refresh_generation_variants, outputs=[*variant_controls, tiny_mode, model_status],
               queue=False, show_progress="hidden")
 
-        def save_generation_variants(diffusion_choice, encoder_choice, vae_choice):
+        def save_generation_variants(diffusion_choice, encoder_choice, vae_choice, tae_mode):
             try:
                 generation_weights.save_selections(model_id, dict(zip(
                     generation_weights.ROLES, (diffusion_choice, encoder_choice, vae_choice))))
+                taesd.save_mode(model_id, tae_mode)
             except ValueError as exc:
                 raise gr.Error(str(exc)) from exc
             return refresh_model_status()
 
-        gr.on(triggers=[control.input for control in variant_controls],
-              fn=save_generation_variants, inputs=variant_controls, outputs=[model_status],
+        gr.on(triggers=[control.input for control in [*variant_controls, tiny_mode]],
+              fn=save_generation_variants, inputs=[*variant_controls, tiny_mode], outputs=[model_status],
               queue=False, show_progress="hidden", trigger_mode="always_last")
 
         def refresh_loras():
@@ -984,7 +991,7 @@ def build_generative_tab(model_id: str, title: str,
                         seed, batch, circular, lora1, lora1_w, lora2, lora2_w,
                         diffusion_variant=generation_weights.AUTO,
                         encoder_variant=generation_weights.AUTO,
-                        vae_variant=generation_weights.AUTO, extra_references=None,
+                        vae_variant=generation_weights.AUTO, tae_mode="off", extra_references=None,
                         generation_preset=None):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
@@ -1127,6 +1134,7 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image=(ref_paths or None), circular=bool(circular),
                         loras=loras,
                         **({"moss_dmd": True} if use_moss_dmd else {}),
+                        taesd_mode=tae_mode,
                         diffusion_override=variant_paths.get("diffusion"),
                         vae_override=variant_paths.get("vae"),
                         encoder_override=variant_paths.get("text_encoder"),
@@ -1251,7 +1259,7 @@ def build_generative_tab(model_id: str, title: str,
                     height, steps, cfg, sampler, schedule, flow_shift, seed, batch,
                     circular,
                     lora1, lora1_w, lora2, lora2_w,
-                    diffusion_variant, encoder_variant, vae_variant, extra_references],
+                    diffusion_variant, encoder_variant, vae_variant, tiny_mode, extra_references],
             outputs=[status_md, preview_img, gallery, logbox,
                      last_paths, last_seeds],
         )

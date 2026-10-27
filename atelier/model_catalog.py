@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-from . import addons, downloader, model_store, registry, settings, transfers, moss_dmd
+from . import addons, downloader, model_store, registry, settings, transfers, moss_dmd, taesd
 from .engine import tools
 from .engine.local_jobs import LocalJob
 
@@ -38,7 +38,11 @@ def packages(prefs=None):
         ("upscalers", "ESRGAN upscalers · GGUF", "Shared ESRGAN weights for the image engine; no extra image-generation model."),
         ("modern", "Modern upscalers · Spandrel", "Shared modern upscale weights and their runtime (SwinIR / RealPLKSR / DAT)."),
     ]
-    return images + [Package("moss:dmd", "MOSS SFT · DMD 8-step adapter", "Image generation",
+    tiny = [Package("taesd:"+s.key, "TAESD / "+s.name, "Image generation",
+                    f"Optional tiny autoencoder ({s.size / 1e6:.2f} MB). One shared file per VAE architecture. "
+                    "Preview-only keeps the original final VAE; full encoding/decoding trades detail for speed.")
+            for s in taesd.SPECS.values()]
+    return images + tiny + [Package("moss:dmd", "MOSS SFT · DMD 8-step adapter", "Image generation",
                             "Optional 1.19 GB LoRA for MOSS-Image SFT. Select DMD fast (8 steps) in Images after downloading. "
                             "Reuses the installed image model, encoder and VAE; no second base checkpoint.")] + [Package("tool:"+key,name,"Toolkit",note) for key,name,note in toolkit] + [
         Package("addon:sam2","SAM 2.1 small","Layers & SVG","Click cut-out and automatic/manual layers share the same 184 MB checkpoint."),
@@ -91,6 +95,8 @@ def ready(key, variant=None):
         return registry.model_is_ready(registry.get_base_model(key[6:],settings.load_prefs()))
     if key == "moss:dmd":
         return moss_dmd.ready()
+    if key.startswith("taesd:"):
+        return taesd.ready(taesd.SPECS[key[6:]])
     if key.startswith("tool:"):
         name=key[5:]
         if name in {"modern","upscalers"}:
@@ -148,6 +154,8 @@ def install(key, variant=None, log=print):
     with JOB.session(), transfers.cancel_scope(JOB.check):
         if key == "moss:dmd":
             moss_dmd.install(log)
+        elif key.startswith("taesd:"):
+            taesd.install(key[6:], log)
         elif key.startswith("tool:"):
             name=key[5:]
             if name in {"modern","upscalers"}:

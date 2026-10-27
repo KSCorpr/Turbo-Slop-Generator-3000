@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import addons, registry, settings
+from . import addons, registry, settings, taesd
 from .engine import tools, trellis
 
 
@@ -186,6 +186,9 @@ def items(prefs: dict | None = None) -> list[Item]:
                              "Model catalog.")
 
     # --- Autres modèles ----------------------------------------------------
+    for spec in taesd.SPECS.values():
+        out.append(Item("taesd_"+spec.key, "TAESD / "+spec.name, "Models", [spec.path().parent],
+                        note="Shared tiny autoencoder. Reinstallable from Models → TAESD."))
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Models",
                     [registry.upscalers_dir()],
                     note="Optional pre-upscalers used inside Toolkit → SDXL creative upscale."))

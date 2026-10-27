@@ -60,7 +60,8 @@ def plan_for_model(model: registry.BaseModel, files: dict, prefs: dict,
     image_gib = _size_gib(image_path)
     vae_gib = _size_gib(files.get("vae")) or 0.0
     if image_gib is not None:
-        image_gib += vae_gib + (_size_gib(files.get("image_adapter")) or 0.0)
+        image_gib += (vae_gib + (_size_gib(files.get("image_adapter")) or 0.0)
+                      + (_size_gib(files.get("taesd")) or 0.0))
     encoder_gib = _size_gib(files.get("enc"))
     vision_gib = _size_gib(files.get("llm_vision")) if has_reference else None
 

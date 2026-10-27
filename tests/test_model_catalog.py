@@ -118,7 +118,8 @@ class CatalogTests(unittest.TestCase):
         names=['model.safetensors','pytorch_model.bin','onnx/model.onnx','tf_model.h5','model.pth',
                'config.json','briarmbg.py','tokenizer.json']
         info=SimpleNamespace(sha='fixed',siblings=[SimpleNamespace(rfilename=n) for n in names])
-        with patch('huggingface_hub.HfApi') as api,patch.object(transfers,'snapshot_download') as snapshot:
+        with patch('huggingface_hub.constants.HF_HUB_OFFLINE', False), \
+             patch('huggingface_hub.HfApi') as api,patch.object(transfers,'snapshot_download') as snapshot:
             api.return_value.model_info.return_value=info
             transfers.model_snapshot_download(repo_id='test/model',local_dir='unused')
         chosen=snapshot.call_args.kwargs

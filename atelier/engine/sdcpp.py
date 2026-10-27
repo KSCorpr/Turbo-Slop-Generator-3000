@@ -85,6 +85,8 @@ class HiresParams:
 class GenRequest:
     diffusion_model: Path | None = None   # modèle de diffusion seul (GGUF flow)
     vae: Path | None = None
+    taesd: Path | None = None
+    taesd_preview_only: bool = False
     model_path: Path | None = None        # checkpoint complet -> -m
     text_encoder: Path | None = None       # --llm (modèles à encodeur LLM)
     tokenizer: Path | None = None          # --tokenizer
@@ -443,7 +445,8 @@ def stream_layers_possible(sd_cli: "Path | None", flags: dict,
 
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
-    _require(req.model_path, req.diffusion_model, req.vae, req.text_encoder,
+    vae = req.vae if not (req.taesd and not req.taesd_preview_only) else None
+    _require(req.model_path, req.diffusion_model, vae, req.taesd, req.text_encoder,
              req.tokenizer, req.llm_vision, req.t5xxl, req.clip_l,
              req.uncond_model,
              req.init_image, req.mask_image, *refs)
@@ -452,14 +455,14 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     if req.model_path:
         # Checkpoint complet : CLIP + VAE inclus.
         cmd += ["-m", str(req.model_path)]
-        if req.vae:
-            cmd += ["--vae", str(req.vae)]
+        if vae:
+            cmd += ["--vae", str(vae)]
     else:
         cmd += ["--diffusion-model", str(req.diffusion_model)]
         if req.uncond_model:
             cmd += ["--uncond-diffusion-model", str(req.uncond_model)]
-        if req.vae:
-            cmd += ["--vae", str(req.vae)]
+        if vae:
+            cmd += ["--vae", str(vae)]
         if req.text_encoder:
             cmd += ["--llm", str(req.text_encoder)]
         if req.tokenizer:
@@ -503,6 +506,12 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
         cmd += ["--lora-model-dir", str(req.lora_dir)]
 
     known = supported_options(sd_cli)
+    if req.taesd:
+        if "--taesd" not in known or (req.taesd_preview_only and "--taesd-preview-only" not in known):
+            raise EngineError("This TAE mode needs a newer sd.cpp engine. Run update.bat.")
+        cmd += ["--taesd", str(req.taesd)]
+        if req.taesd_preview_only:
+            cmd += ["--taesd-preview-only"]
     if req.hires and hires_supported(sd_cli):
         cmd += hires_args(req.hires)
     if req.preview_path:

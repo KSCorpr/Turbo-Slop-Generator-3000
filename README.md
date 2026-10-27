@@ -1,5 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
+**TAESD / tiny autoencoders:** optional per-model TAE previews or fast final
+encoding/decoding, with shared downloads in Models. Preview-only keeps the
+original final VAE; full mode may soften detail. Supports the nine catalog
+image models. [Install and choose a mode](docs/taesd.md).
+
 **Choose weights before generating:** every Images workspace now offers an
 installed model variant selector, plus encoder and VAE choices. Selections are
 saved per model; exact chosen files are passed to generation. Install more
