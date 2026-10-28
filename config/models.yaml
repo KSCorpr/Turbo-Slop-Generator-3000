@@ -62,10 +62,31 @@ base_models:
       edit: full          # modèle d'édition natif : UI « images de référence »
     presets:
       # Aligné sur docs/flux2.md : euler, cfg 1.0, 4 pas, scheduler = défaut moteur
-      # (la doc ne force jamais de scheduler). Variantes = plus de pas seulement.
+      # (la doc ne force jamais de scheduler). Experimental entries below are comparison starting points.
       - {name: "⚡ Recommandé (doc, 4 pas)", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
       - {name: "Équilibré (6 pas)",          sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
       - {name: "Qualité (8 pas)",            sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+      - name: "Res 2S / Flux.2 (6)"
+        sampler: "res_2s"
+        scheduler: "flux2"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order solver without multistep warm-up; more evaluations than Euler. Keeps the Flux.2 schedule."
+      - name: "Euler / SGM Uniform (8)"
+        sampler: "euler"
+        scheduler: "sgm_uniform"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Change only the sigma spacing with a larger step budget; compare structure and fine detail at the same seed."
+      - name: "Euler / Beta (8)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Alternative Beta sigma spacing at CFG 1; a composition and texture experiment, not a quality upgrade."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -112,6 +133,27 @@ base_models:
       max_references: 10
     presets:
       - {name: "Recommended (16 steps)", sampler: euler, scheduler: auto, steps: 16, cfg_scale: 1.0}
+      - name: "Res Multistep / Discrete (16)"
+        sampler: "res_multistep"
+        scheduler: "discrete"
+        steps: 16
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with enough steps to build history; keeps the native discrete schedule and automatic shift."
+      - name: "Heun / Discrete (16)"
+        sampler: "heun"
+        scheduler: "discrete"
+        steps: 16
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order correction on the native schedule; usually close to twice the evaluations of Euler."
+      - name: "Euler / Beta (20)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 20
+        cfg_scale: 1.0
+        experimental: true
+        note: "Alternative Beta sigma spacing with 20 steps; compare composition at the same seed."
     vram_min_gb: 8
 
   # --------------------------------------------------------------------------
@@ -164,6 +206,27 @@ base_models:
       extra_flags: ["--sigmas", "1.0,0.978453,0.95418,0.926626,0.89508,0.845148,0.704534,0.414568,0.0"]
     presets:
       - {name: "Official Turbo (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
+      - name: "Heun / Turbo sigmas (8)"
+        sampler: "heun"
+        scheduler: "auto"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order correction on the exact official eight-step Turbo sigmas; usually close to twice the evaluations of Euler."
+      - name: "Res 2S / Turbo sigmas (8)"
+        sampler: "res_2s"
+        scheduler: "auto"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order exponential solver on the exact official eight-step Turbo sigmas; more evaluations than Euler."
+      - name: "DPM++ 2M / Turbo sigmas (8)"
+        sampler: "dpm++2m"
+        scheduler: "auto"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver on the exact official eight-step Turbo sigmas. The distilled checkpoint may still prefer Euler."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -214,6 +277,34 @@ base_models:
     presets:
       - {name: "Recommended (50 steps)", sampler: euler, scheduler: auto, steps: 50, cfg_scale: 3.0}
       - {name: "DMD fast (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0, moss_dmd: true}
+      - name: "Euler / Simple (50)"
+        sampler: "euler"
+        scheduler: "simple"
+        steps: 50
+        cfg_scale: 3.0
+        experimental: true
+        note: "Baseline Euler with Simple sigma spacing. Uses the standard SFT checkpoint, CFG 3 and no DMD adapter."
+      - name: "ER SDE / Bong Tangent (40)"
+        sampler: "er_sde"
+        scheduler: "bong_tangent"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Stochastic solver plus tangent sigma spacing for a different noise trajectory. Uses standard SFT, not the eight-step DMD adapter."
+      - name: "DPM++ 2M / Beta (40)"
+        sampler: "dpm++2m"
+        scheduler: "beta"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Deterministic multistep solver with Beta sigma spacing and a longer step budget; standard SFT, no DMD adapter."
+      - name: "Res Multistep / SGM Uniform (40)"
+        sampler: "res_multistep"
+        scheduler: "sgm_uniform"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Deterministic multistep alternative with SGM Uniform spacing; standard SFT and CFG 3, no DMD adapter."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -264,6 +355,27 @@ base_models:
       max_references: 10  # TurboSlop's practical cap; not a native engine limit.
     presets:
       - {name: "Recommended (20 steps)", sampler: euler, scheduler: auto, steps: 20, cfg_scale: 5.0}
+      - name: "Heun / Discrete (20)"
+        sampler: "heun"
+        scheduler: "discrete"
+        steps: 20
+        cfg_scale: 5.0
+        experimental: true
+        note: "Second-order correction on the native discrete schedule, CFG 5 and automatic shift; more evaluations than Euler."
+      - name: "Res Multistep / Discrete (24)"
+        sampler: "res_multistep"
+        scheduler: "discrete"
+        steps: 24
+        cfg_scale: 5.0
+        experimental: true
+        note: "Deterministic multistep solver with 24 steps to build history; keeps CFG 5 and the native schedule."
+      - name: "Euler / Beta (24)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 24
+        cfg_scale: 5.0
+        experimental: true
+        note: "Alternative Beta sigma spacing at CFG 5. Compare prompt adherence and reference preservation at the same seed."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -313,6 +425,27 @@ base_models:
       max_references: 10
     presets:
       - {name: "Edit Turbo (4 steps)", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0}
+      - name: "Res 2S / Discrete (4)"
+        sampler: "res_2s"
+        scheduler: "discrete"
+        steps: 4
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order solver over four steps, CFG 1 and the native discrete schedule. Requires a reference; more evaluations than Euler."
+      - name: "Euler / SGM Uniform (6)"
+        sampler: "euler"
+        scheduler: "sgm_uniform"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Six-step edit with alternative sigma spacing and CFG 1. Requires a reference; the distilled four-step preset remains the baseline."
+      - name: "Euler / Beta (8)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Eight-step edit with Beta sigma spacing and CFG 1. Compare reference preservation; extra steps do not guarantee a better edit."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -383,6 +516,27 @@ base_models:
       - {name: "⚡ Officiel (8 pas)",   sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
       - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - name: "Res Multistep / Discrete (12)"
+        sampler: "res_multistep"
+        scheduler: "discrete"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with a longer 12-step budget, native discrete schedule and CFG 1."
+      - name: "DPM++ 2M / SGM Uniform (12)"
+        sampler: "dpm++2m"
+        scheduler: "sgm_uniform"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with SGM Uniform sigma spacing; compare texture and edges at CFG 1."
+      - name: "Euler / Beta (12)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Alternative Beta sigma spacing over 12 steps, keeping CFG 1. Compare composition at the same seed."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
@@ -432,6 +586,27 @@ base_models:
       - {name: "Recommended (6 steps)", sampler: euler, scheduler: simple, steps: 6, cfg_scale: 1.0}
       - {name: "Fast (4 steps)", sampler: euler, scheduler: simple, steps: 4, cfg_scale: 1.0}
       - {name: "Detailed (8 steps)", sampler: euler, scheduler: simple, steps: 8, cfg_scale: 1.0}
+      - name: "Res Multistep / Simple (8)"
+        sampler: "res_multistep"
+        scheduler: "simple"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver while retaining the author-recommended Simple schedule and CFG 1."
+      - name: "DPM++ 2M / SGM Uniform (8)"
+        sampler: "dpm++2m"
+        scheduler: "sgm_uniform"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with alternative sigma spacing; compare photographic texture at CFG 1."
+      - name: "Euler / Bong Tangent (8)"
+        sampler: "euler"
+        scheduler: "bong_tangent"
+        steps: 8
+        cfg_scale: 1.0
+        experimental: true
+        note: "Tangent sigma spacing with Euler and CFG 1 for a different rendering. The author baseline remains Euler / Simple."
     vram_min_gb: 12
 
   # --------------------------------------------------------------------------
@@ -488,6 +663,27 @@ base_models:
       - {name: "⚡ Officiel (8 pas)",  sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
       - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - name: "Res Multistep / Discrete (12)"
+        sampler: "res_multistep"
+        scheduler: "discrete"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with a longer 12-step budget, native discrete schedule and CFG 1."
+      - name: "DPM++ 2M / SGM Uniform (12)"
+        sampler: "dpm++2m"
+        scheduler: "sgm_uniform"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic multistep solver with SGM Uniform spacing; compare texture and text rendering at CFG 1."
+      - name: "Euler / Beta (12)"
+        sampler: "euler"
+        scheduler: "beta"
+        steps: 12
+        cfg_scale: 1.0
+        experimental: true
+        note: "Alternative Beta sigma spacing over 12 steps, keeping CFG 1. Compare composition at the same seed."
     vram_min_gb: 6
 
 

@@ -128,7 +128,7 @@ class MossDMDTests(unittest.TestCase):
         inputs = [component.value for component in binding.inputs]
         inputs[2] = '{"summary":{"caption":"A poster"},"items":[]}'
         for preset, fast in (("DMD fast (8 steps)", True), ("Recommended (50 steps)", False)):
-            sampler, schedule, steps, cfg, shift = apply(preset)
+            sampler, schedule, steps, cfg, shift, note = apply(preset)
             inputs[14:18] = [steps["value"], cfg["value"], sampler["value"], schedule["value"]]
             inputs[-1] = preset
             inputs[18] = shift["value"]

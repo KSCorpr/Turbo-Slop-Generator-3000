@@ -29,7 +29,7 @@ from PIL import Image, ImageDraw
 from playwright.sync_api import expect, sync_playwright
 
 import app
-from atelier import settings
+from atelier import registry, settings
 from atelier.engine import generate as engine
 from atelier.engine import seedvr2
 from atelier.ui import media_tabs
@@ -144,6 +144,32 @@ def main():
                 prompt = page.locator(".studio-prompt textarea:visible")
                 expect(prompt).to_be_visible()
                 ready_seconds = time.perf_counter() - started
+                # Exercise every experimental choice through the real dropdown:
+                # the explanation must track the selected preset, including Qwen.
+                model_tabs = {
+                    "flux2-klein-9b": "Flux.2 Klein", "flux3-klein": "Flux.3 Klein",
+                    "qwen-image-2.1-turbo": "Qwen Image 2.1 Turbo", "moss-image-sft": "MOSS-Image SFT",
+                    "fibo2-dev": "Fibo 2.0 Dev", "fibo2-edit-turbo": "Fibo 2.0 Edit Turbo",
+                    "krea2-turbo": "Krea 2 Turbo", "krea2-realism": "Krea 2 Realism",
+                    "z-image-turbo": "Z-Image Turbo",
+                }
+                preset_checks = 0
+                for model in registry.load_base_models({}):
+                    page.get_by_role("tab", name=model_tabs[model.id], exact=True).click()
+                    picker = page.locator(f'[id="{model.id}-sampling-preset"] input')
+                    note = page.locator(f'[id="{model.id}-sampling-preset"]')
+                    for preset in model.presets:
+                        if not preset.get("experimental"):
+                            continue
+                        picker.click()
+                        page.get_by_role("option", name=preset["name"], exact=True).click()
+                        expect(note).to_contain_text(preset["note"])
+                        preset_checks += 1
+                    picker.click()
+                    page.get_by_role("option", name=model.presets[0]["name"], exact=True).click()
+                    expect(note).to_contain_text("Baseline preset")
+                page.get_by_role("tab", name="Flux.2 Klein", exact=True).click()
+                prompt.scroll_into_view_if_needed()
                 page.screenshot(path=str(screenshots / "studio-light.png"))
 
                 # Optional media workspaces must mount correctly and report
@@ -311,6 +337,7 @@ def main():
             print(json.dumps({"build_seconds": round(build_seconds, 3), "browser_ready_seconds": round(ready_seconds, 3),
                               "config_bytes": len(json.dumps(demo.config, default=str)), "page_errors": errors,
                               "simulated_generations": len(calls), "peak_concurrent_generations": peak,
+                              "experimental_presets_checked": preset_checks,
                               "simulated_seedvr2_restorations": len(seed_calls),
                               "screenshots": str(screenshots)}, indent=2))
         finally:

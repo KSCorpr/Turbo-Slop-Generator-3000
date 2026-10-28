@@ -62,7 +62,7 @@ class MossTests(unittest.TestCase):
                          (self.components["vae"].repo, self.components["vae"].requested()))
         self.assertEqual((self.model.defaults["steps"], self.model.defaults["cfg_scale"]), (50, 3))
         self.assertTrue(self.model.defaults["supports_negative"])
-        self.assertEqual([p["steps"] for p in self.model.presets], [50, 8])
+        self.assertEqual([p["steps"] for p in self.model.presets[:2]], [50, 8])
         self.assertTrue(self.model.presets[1]["moss_dmd"])
 
     def test_manual_and_model_specific_weight_choices_override_encoder_default(self):

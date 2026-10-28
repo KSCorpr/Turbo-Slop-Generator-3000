@@ -505,9 +505,10 @@ def generate(
     if model.id == "qwen-image-2.1-turbo":
         if "--sigmas" not in sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo needs sd.cpp with --sigmas. Run update.bat.")
-        if (steps != 8 or cfg_scale != 1.0 or sampler not in (None, "", "euler")
+        allowed_samplers = {p.get("sampler", "euler") for p in model.presets}
+        if (steps != 8 or cfg_scale != 1.0 or sampler not in {None, "", *allowed_samplers}
                 or schedule not in (None, "", "auto") or flow_shift):
-            raise sdcpp.EngineError("Use the official Qwen Turbo preset: 8 steps, CFG 1, Euler, Auto schedule and no flow shift.")
+            raise sdcpp.EngineError("Use a Qwen Turbo preset: 8 steps, CFG 1, a listed sampler, Auto schedule (official sigmas) and no flow shift.")
     files = resolve_model_files(model, diffusion_override, vae_override,
                                 encoder_override, want_vision=bool(ref_image),
                                 require_vae=tiny_mode != "full")

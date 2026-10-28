@@ -54,12 +54,12 @@ class QwenEngineTests(unittest.TestCase):
                 with self.assertRaisesRegex(sdcpp.EngineError, "--sigmas"):
                     generate.generate("qwen-image-2.1-turbo", "cat", "", 8, 1, 1024, 1024, 42, 1)
             with patch.object(generate.sdcpp, "supported_options", return_value={"--sigmas"}):
-                for options in ({"steps": 40}, {"cfg_scale": 6}, {"sampler": "heun"},
+                for options in ({"steps": 40}, {"cfg_scale": 6}, {"sampler": "lcm"},
                                 {"schedule": "karras"}, {"flow_shift": 1.15}):
                     args = dict(model_id="qwen-image-2.1-turbo", prompt="cat", negative="",
                                 steps=8, cfg_scale=1, width=1024, height=1024, seed=42, batch_count=1)
                     args.update(options)
-                    with self.subTest(options=options), self.assertRaisesRegex(sdcpp.EngineError, "official Qwen Turbo"):
+                    with self.subTest(options=options), self.assertRaisesRegex(sdcpp.EngineError, "Qwen Turbo preset"):
                         generate.generate(**args)
             resolve.assert_not_called()
 

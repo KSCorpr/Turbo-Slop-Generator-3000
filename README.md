@@ -818,17 +818,25 @@ image generation and SDXL upscale always stay on the generation GPU). The GPU
 picker and these strategies live in **Settings**.
 
 ### Samplers & schedulers
-The built-in **presets follow the official sd.cpp docs** (`docs/flux2.md`,
-`docs/krea2.md`): **Euler** sampler with the **scheduler left to the engine
-default** (the docs never force one), at each model's documented steps/CFG
-(Flux.2 Klein 4 steps · CFG 1.0; Krea 2 Turbo 8 steps · CFG 1.0). The dropdowns
-still expose the full sd.cpp list for manual experimentation, **annotated per
-model** — with a description card and a fold-out rationale right in the tab.
-New entries need a recent engine (`update.bat`).
-Qwen Image 2.1 Turbo uses Euler / CFG 1 / 8 steps with its official custom
-sigma sequence. Its sampling controls are fixed, including in outpaint; the
-benchmark uses all eight steps. The comparison below concerns **Flux.2 Klein
-and Krea 2 Turbo**.
+The **Quality preset** menu keeps the existing baseline settings first and adds
+**28 experimental sampler / scheduler combinations across all nine image
+models**. Each alternative names its sampler, scheduler and step count, with
+a short explanation displayed with the menu. Selecting a preset applies its
+sampler, scheduler, steps and CFG together and restores the native automatic
+flow shift, clearing a previous manual shift. No extra weights are needed.
+See the [per-model preset table and comparison advice](docs/sampling-presets.md).
+
+Alternatives are comparison starting points, not measured quality upgrades.
+Keep the seed, prompt and resolution unchanged to compare them. Heun and Res 2S
+usually need more network evaluations per step than Euler. The recommended
+presets and benchmark defaults are unchanged; new engine features may require
+`update.bat`.
+
+Qwen Image 2.1 Turbo keeps **CFG 1, eight steps and the exact official custom
+sigma sequence** for every preset. Its experimental presets change only the
+sampler (Heun, Res 2S or DPM++ 2M); the generic scheduler and flow shift remain
+fixed. Outpaint and the benchmark retain their official Euler settings.
+The comparison below concerns **Flux.2 Klein and Krea 2 Turbo**.
 
 #### Why most of the menu does not apply here
 Three properties of the two models compared below — read off sd.cpp itself —

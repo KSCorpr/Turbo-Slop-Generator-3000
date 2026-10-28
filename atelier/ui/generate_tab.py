@@ -367,6 +367,8 @@ def build_generative_tab(model_id: str, title: str,
                     [t(p["name"]) for p in preset_list],
                     value=(t(preset_list[0]["name"]) if preset_list else None),
                     label="Quality preset",
+                    elem_id=f"{model_id}-sampling-preset",
+                    info=sampling.preset_description(preset_list[0]) if preset_list else None,
                     visible=bool(preset_list))
                 with gr.Row():
                     seed = gr.Number(value=-1, label="Seed (-1 = random)",
@@ -612,15 +614,19 @@ def build_generative_tab(model_id: str, title: str,
                     # propriétés qui disqualifient la moitié du menu.
                     with gr.Row():
                         sampler = gr.Dropdown(
-                            sampling.choices("sampler", family),
-                            value=d.get("sampler", "euler"), label="Sampler", interactive=family != "qwen21",
+                            [choice for choice in sampling.choices("sampler", family)
+                             if family != "qwen21" or choice[1] in
+                             {p["sampler"] for p in preset_list}],
+                            value=d.get("sampler", "euler"), label="Sampler", interactive=True,
                             info="⭐ recommended · △ poorly suited · ⚠️ "
                                  "discouraged for THIS model")
                         schedule = gr.Dropdown(
                             sampling.choices("schedule", family),
                             value=d.get("scheduler", "auto"),
                             label="Scheduler (sigmas)", interactive=family != "qwen21",
-                            info="How the denoising steps are spread out")
+                            info=("Fixed official Turbo sigmas for all Qwen presets; Auto does not replace them."
+                                  if family == "qwen21" else
+                                  "How the denoising steps are spread out"))
                     with gr.Row():
                         sampler_doc = gr.Markdown(
                             sampling.describe("sampler", d.get("sampler", "euler"),
@@ -965,8 +971,7 @@ def build_generative_tab(model_id: str, title: str,
                           outputs=[width, height, ratio])
 
         if preset_list:
-            reset_flow = family == "moss_image" or family.startswith("fibo2")
-            preset_outputs = [sampler, schedule, steps, cfg] + ([flow_shift] if reset_flow else [])
+            preset_outputs = [sampler, schedule, steps, cfg, flow_shift, preset]
 
             def apply_preset(name):
                 name = i18n.to_source(name)
@@ -976,11 +981,13 @@ def build_generative_tab(model_id: str, title: str,
                                 gr.update(value=p.get("scheduler", "auto")),
                                 gr.update(value=int(p.get("steps", 8))),
                                 gr.update(value=float(p.get("cfg_scale", 1.0))))
-                        return (*values, gr.update(value=0)) if reset_flow else values
+                        return (*values, gr.update(value=float(p.get("flow_shift", 0))),
+                                gr.update(info=sampling.preset_description(p)))
                 return tuple(gr.update() for _ in preset_outputs)
 
-            preset.change(apply_preset, inputs=[preset],
-                          outputs=preset_outputs)
+            # Input is user-only: updating this dropdown's explanation must not
+            # start another preset request through its own output.
+            preset.input(apply_preset, inputs=[preset], outputs=preset_outputs)
 
         def do_generate(selected_model_id, system_prompt, prompt, negative,
                         photo_styles, art_styles,

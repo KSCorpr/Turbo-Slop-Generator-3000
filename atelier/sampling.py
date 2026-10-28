@@ -455,8 +455,9 @@ def rationale(model_family: str) -> str:
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "
-                "and are passed to sd.cpp explicitly. Keep the Turbo preset; "
-                "a generic scheduler changes the distilled sampling trajectory. "
+                "and are passed to sd.cpp explicitly for every preset. "
+                "Experimental Heun, Res 2S and DPM++ 2M presets change only the "
+                "solver; the eight steps, CFG and sigma sequence stay fixed. "
                 "Negative prompts have no effect at CFG 1.")
     name, steps, cfg = _MODEL[fam]
     # Traduire AVANT de formater : les placeholders survivent (garanti par
@@ -465,12 +466,28 @@ def rationale(model_family: str) -> str:
                                      advice=i18n.t(_ADVICE[fam]))
 
 
+def preset_description(preset: dict) -> str:
+    """Explain the selected comparison without claiming measured image quality."""
+    if preset.get("experimental"):
+        return ("Experimental preset. " + preset["note"] +
+                " Compare with the baseline at the same seed and resolution; "
+                "no measured quality gain is claimed.")
+    if preset.get("moss_dmd"):
+        return ("DMD fast: requires the MOSS SFT adapter, applied automatically "
+                "at strength 0.7. Euler / Auto, 8 steps, CFG 1.")
+    return "Baseline preset. Alternatives below are experimental; steps are in brackets."
+
+
 def describe(kind: str, key: str, model_family: str) -> str:
     """Fiche Markdown de l'option choisie : résumé, pour, contre, verdict."""
     table = SAMPLERS if kind == "sampler" else SCHEDULES
     entry = table.get(key)
     if not entry:
         return ""
+    if model_family == "qwen21" and kind == "schedule" and key == "auto":
+        return ("**Official Turbo sigmas** — the eight-step sequence is passed explicitly "
+                "to sd.cpp. Auto does not generate a different schedule here; "
+                "experimental presets change only the sampler.")
     name, summary, pro, con, _lv = entry
     lv = level(kind, key, model_family)
     return (f"**{i18n.t(name)}** — {i18n.t(summary)}\n\n"
