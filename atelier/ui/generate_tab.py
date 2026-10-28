@@ -233,6 +233,119 @@ def build_generative_tab(model_id: str, title: str,
                 prompt = gr.Textbox(label="Prompt", lines=3,
                                     placeholder="Describe your image, or the change to make…",
                                     elem_classes="studio-prompt")
+
+                _acc_title = ("🖼️ Reference images (image editing)" if is_edit
+                              else "🖼️ Reference / starting image (image-to-image)")
+                # Keep the upload visible directly below the prompt for every model.
+                with gr.Accordion(_acc_title, open=True):
+                    init_image = gr.Image(
+                        label="Image to edit" if is_edit else "Starting image",
+                        elem_id=(f"{model_id}-reference" if family.startswith("fibo2") else None),
+                        type="pil", image_mode=("RGBA" if family == "qwen21"
+                                                else "RGB"),
+                        buttons=widgets.IMAGE_VIEW_ONLY)
+                    if is_edit:
+                        with gr.Row():
+                            ref_image2 = gr.Image(
+                                label="Reference 2 (optional)", type="pil",
+                                image_mode=("RGBA" if family == "qwen21"
+                                            else "RGB"),
+                                buttons=widgets.IMAGE_VIEW_ONLY)
+                            ref_image3 = gr.Image(
+                                label="Reference 3 (optional)", type="pil",
+                                image_mode=("RGBA" if family == "qwen21"
+                                            else "RGB"),
+                                buttons=widgets.IMAGE_VIEW_ONLY)
+                    else:
+                        ref_image2 = gr.State(None)
+                        ref_image3 = gr.State(None)
+                    if int(d.get("max_references", 3)) > 3:
+                        extra_references = gr.File(
+                            label=f"Additional references ({d['max_references']} images total)",
+                            file_count="multiple", file_types=["image"],
+                            type="filepath", allow_reordering=True)
+                    else:
+                        extra_references = gr.State(None)
+                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
+                                         label="Transformation strength",
+                                         visible=not is_edit)
+                    if edit_optional:
+                        edit_mode = gr.Checkbox(
+                            value=False,
+                            label="✏️ Edit mode (editing LoRA required)")
+                        if d.get("edit_lora"):
+                            edit_lora_btn = gr.Button(
+                                "⬇️ Install the official editing LoRA (one click)",
+                                size="sm")
+                            edit_lora_msg = gr.Markdown("")
+                    else:
+                        edit_mode = gr.State(False)
+                    if is_edit:
+                        outpaint = gr.Slider(
+                            1.0, 2.0, value=1.0, step=0.1,
+                            label="🧩 Centred outpaint — extend the canvas "
+                                  "(1.0 = off; ⚠️ experimental)",
+                            info="Enlarges the canvas symmetrically and lets "
+                                 "the model fill the borders. For a "
+                                 "directional outpaint "
+                                 "(left/right/top/bottom), with no prompt and "
+                                 "with any model, use the “🖼️ Outpaint” tab.")
+                    else:
+                        outpaint = gr.State(1.0)
+                    if is_edit:
+                        gr.Markdown(
+                            "**Edit an image**: load it and describe **the "
+                            "change** in the prompt (e.g. *“change the car "
+                            "color to red”*, *“add snow”*). Editing is "
+                            "prompt-driven (no strength slider). The output "
+                            "aspect follows your image. You can add **2 extra "
+                            "reference images** to combine elements (e.g. "
+                            "*“put the character from image 1 into the scene "
+                            "of image 2”*).")
+                        if family == "flux3":
+                            gr.Markdown(
+                                "**Flux.3 Klein:** up to **10 references** in total. "
+                                "Add further images above; their order follows "
+                                "references 1–3. More references use more memory. "
+                                "Use **16 steps, CFG 1, Euler and Auto scheduler**.")
+                        if family.startswith("fibo2"):
+                            gr.Markdown(
+                                "**Fibo:** up to **10 ordered references** in TurboSlop. "
+                                "The vision projector is required for editing and is shared with "
+                                "the catalog's Qwen3-VL 4B tools. A single reference is scaled "
+                                "and center-cropped to the output aspect; choose a matching "
+                                "aspect ratio to retain its edges. Native masked repair is unavailable.")
+                        if family == "qwen21":
+                            gr.Markdown(
+                                "**Qwen 2.1 Turbo:** editing requires the vision "
+                                "projector downloaded with the model; no "
+                                "editing LoRA is needed. For a transparent "
+                                "PNG, use: `This is an RGBA image with "
+                                "transparency. <your description>. The image "
+                                "has alpha channel and the background is "
+                                "transparent.` 2K formats need more VRAM.")
+                    else:
+                        gr.Markdown(
+                            "**Reference image** (image-to-image): load a "
+                            "photo, describe the desired result, and set the "
+                            "**transformation strength** — **low (0.2–0.4)** "
+                            "= keeps the reference's structure; **high "
+                            "(0.7–1.0)** = reinvented. The output aspect "
+                            "follows your image.")
+                        if edit_optional:
+                            gr.Markdown(
+                                "✏️ **Or: Edit mode (Ostris Edit)** — the "
+                                "image becomes a **context reference** "
+                                "(style, subject…) instead of a starting "
+                                "point. Requires a **Krea 2 editing LoRA** — "
+                                "one-click install button above — and an "
+                                "up-to-date sd.cpp engine "
+                                "(`update.bat`). 💡 Editing costs more "
+                                "VRAM (reference tokens): the reference is "
+                                "downscaled automatically, and the automatic "
+                                "quantization (Q4_K_M on 11–12 GB) leaves the "
+                                "headroom it needs.")
+
                 negative = gr.Textbox(label="Negative prompt", lines=1,
                                       visible=d.get("supports_negative", False))
 
@@ -259,8 +372,7 @@ def build_generative_tab(model_id: str, title: str,
                     seed = gr.Number(value=-1, label="Seed (-1 = random)",
                                      precision=0)
                     batch = gr.Slider(1, 8, value=1, step=1, label="Images")
-                # GÉNÉRER juste sous le prompt : c'est l'action principale, elle
-                # ne doit pas être au bout d'une colonne de réglages.
+                # Keep the main action above the optional styling and advanced settings.
                 with gr.Row(elem_classes="go-row"):
                     # Libellé court : le modèle est déjà écrit sur l'onglet.
                     run = gr.Button("Generate", variant="primary", size="lg",
@@ -426,119 +538,6 @@ def build_generative_tab(model_id: str, title: str,
                                 yield msg
 
                         enh_inst.click(_install_enh, outputs=[enh_log])
-
-                _acc_title = ("🖼️ Reference images (image editing)" if is_edit
-                              else "🖼️ Reference / starting image (image-to-image)")
-                # Ouvert par défaut sur un modèle d'édition (Flux.2) : l'édition
-                # est une capacité phare, on la met en avant.
-                with gr.Accordion(_acc_title, open=False):
-                    if is_edit:
-                        gr.Markdown(
-                            "**Edit an image**: load it and describe **the "
-                            "change** in the prompt (e.g. *“change the car "
-                            "color to red”*, *“add snow”*). Editing is "
-                            "prompt-driven (no strength slider). The output "
-                            "aspect follows your image. You can add **2 extra "
-                            "reference images** to combine elements (e.g. "
-                            "*“put the character from image 1 into the scene "
-                            "of image 2”*).")
-                        if family == "flux3":
-                            gr.Markdown(
-                                "**Flux.3 Klein:** up to **10 references** in total. "
-                                "Add further images below; their order follows "
-                                "references 1–3. More references use more memory. "
-                                "Use **16 steps, CFG 1, Euler and Auto scheduler**.")
-                        if family.startswith("fibo2"):
-                            gr.Markdown(
-                                "**Fibo:** up to **10 ordered references** in TurboSlop. "
-                                "The vision projector is required for editing and is shared with "
-                                "the catalog's Qwen3-VL 4B tools. A single reference is scaled "
-                                "and center-cropped to the output aspect; choose a matching "
-                                "aspect ratio to retain its edges. Native masked repair is unavailable.")
-                        if family == "qwen21":
-                            gr.Markdown(
-                                "**Qwen 2.1 Turbo:** editing requires the vision "
-                                "projector downloaded with the model; no "
-                                "editing LoRA is needed. For a transparent "
-                                "PNG, use: `This is an RGBA image with "
-                                "transparency. <your description>. The image "
-                                "has alpha channel and the background is "
-                                "transparent.` 2K formats need more VRAM.")
-                    else:
-                        gr.Markdown(
-                            "**Reference image** (image-to-image): load a "
-                            "photo, describe the desired result, and set the "
-                            "**transformation strength** — **low (0.2–0.4)** "
-                            "= keeps the reference's structure; **high "
-                            "(0.7–1.0)** = reinvented. The output aspect "
-                            "follows your image.")
-                        if edit_optional:
-                            gr.Markdown(
-                                "✏️ **Or: Edit mode (Ostris Edit)** — the "
-                                "image becomes a **context reference** "
-                                "(style, subject…) instead of a starting "
-                                "point. Requires a **Krea 2 editing LoRA** — "
-                                "one-click install button below — and an "
-                                "up-to-date sd.cpp engine "
-                                "(`update.bat`). 💡 Editing costs more "
-                                "VRAM (reference tokens): the reference is "
-                                "downscaled automatically, and the automatic "
-                                "quantization (Q4_K_M on 11–12 GB) leaves the "
-                                "headroom it needs.")
-                    init_image = gr.Image(
-                        label="Image to edit" if is_edit else "Starting image",
-                        elem_id=(f"{model_id}-reference" if family.startswith("fibo2") else None),
-                        type="pil", image_mode=("RGBA" if family == "qwen21"
-                                                else "RGB"),
-                        buttons=widgets.IMAGE_VIEW_ONLY)
-                    if is_edit:
-                        with gr.Row():
-                            ref_image2 = gr.Image(
-                                label="Reference 2 (optional)", type="pil",
-                                image_mode=("RGBA" if family == "qwen21"
-                                            else "RGB"),
-                                buttons=widgets.IMAGE_VIEW_ONLY)
-                            ref_image3 = gr.Image(
-                                label="Reference 3 (optional)", type="pil",
-                                image_mode=("RGBA" if family == "qwen21"
-                                            else "RGB"),
-                                buttons=widgets.IMAGE_VIEW_ONLY)
-                    else:
-                        ref_image2 = gr.State(None)
-                        ref_image3 = gr.State(None)
-                    if int(d.get("max_references", 3)) > 3:
-                        extra_references = gr.File(
-                            label=f"Additional references ({d['max_references']} images total)",
-                            file_count="multiple", file_types=["image"],
-                            type="filepath", allow_reordering=True)
-                    else:
-                        extra_references = gr.State(None)
-                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
-                                         label="Transformation strength",
-                                         visible=not is_edit)
-                    if edit_optional:
-                        edit_mode = gr.Checkbox(
-                            value=False,
-                            label="✏️ Edit mode (editing LoRA required)")
-                        if d.get("edit_lora"):
-                            edit_lora_btn = gr.Button(
-                                "⬇️ Install the official editing LoRA (one click)",
-                                size="sm")
-                            edit_lora_msg = gr.Markdown("")
-                    else:
-                        edit_mode = gr.State(False)
-                    if is_edit:
-                        outpaint = gr.Slider(
-                            1.0, 2.0, value=1.0, step=0.1,
-                            label="🧩 Centred outpaint — extend the canvas "
-                                  "(1.0 = off; ⚠️ experimental)",
-                            info="Enlarges the canvas symmetrically and lets "
-                                 "the model fill the borders. For a "
-                                 "directional outpaint "
-                                 "(left/right/top/bottom), with no prompt and "
-                                 "with any model, use the “🖼️ Outpaint” tab.")
-                    else:
-                        outpaint = gr.State(1.0)
 
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():
