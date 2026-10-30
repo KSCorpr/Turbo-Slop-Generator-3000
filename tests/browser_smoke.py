@@ -32,7 +32,9 @@ import app
 from atelier import registry, settings
 from atelier.engine import generate as engine
 from atelier.engine import seedvr2
+from atelier.engine import image_splats as splat_engine
 from atelier.ui import media_tabs
+from tests.test_image_splats import write_ply
 
 
 def main():
@@ -43,6 +45,7 @@ def main():
     calls = []
     seed_calls = []
     seed_installs = []
+    splat_calls = []
     cancelled = threading.Event()
     interrupted = threading.Event()
     engine_started = threading.Event()
@@ -116,6 +119,21 @@ def main():
 
         stack.enter_context(patch.object(engine, "generate", generate))
         stack.enter_context(patch.object(engine, "cancel", cancel))
+        def generate_splats(source, backend, count, steps, cfg, shift, mode, seed, log):
+            if not source:
+                raise ValueError("Import an image first.")
+            splat_calls.append((backend, count, steps, mode))
+            folder = settings.OUTPUT_DIR / ("splat-simulated-" + str(len(splat_calls)))
+            folder.mkdir()
+            write_ply(folder / "object.ply", int(count))
+            sample.save(folder / "input.png")
+            (folder / "request.json").write_text(json.dumps({"backend":backend}))
+            if backend == "triposplat":
+                (folder / "object.splat").write_bytes(b"fixture" * 32)
+            else:
+                (folder / "camera.json").write_text('{}')
+            return folder / "object.ply"
+        stack.enter_context(patch.object(splat_engine, "generate", generate_splats))
         stack.enter_context(patch.object(seedvr2, "restore", restore_seed))
         def install_seed(name, job, log, quant=None, *, optimizations=False, precision=None):
             seed_installs.append((name, optimizations, precision))
@@ -332,12 +350,46 @@ def main():
                 page.wait_for_function("document.documentElement.scrollWidth <= window.innerWidth + 1")
                 assert page.locator("#studio-nav").bounding_box()["width"] >= 350
                 page.screenshot(path=str(screenshots / "studio-mobile.png"))
+                # A fresh browser page keeps the GPU-heavy 3D journey separate
+                # from the long image/video history journey above.
+                page.close()
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.on("pageerror", record_error)
+                page.goto(f"http://127.0.0.1:{port}/?__theme=light", wait_until="domcontentloaded")
+                page.get_by_role("tab", name="Tools & 3D", exact=True).click()
+                page.get_by_role("tab", name="Image → splats", exact=True).click()
+                page.get_by_role("button", name="Generate splats", exact=True).click()
+                expect(page.locator("#image-splats-status")).to_contain_text("Import an image first")
+                splat_source = folder / "objet_é_日本.png"
+                sample.save(splat_source)
+                page.locator("#image-splats-source input[type=file]").set_input_files(str(splat_source))
+                expect(page.locator("#image-splats-source img")).to_be_visible()
+                for model_name in ("TripoSplat", "Idol"):
+                    page.locator("#image-splats-model input").click()
+                    page.get_by_role("option", name=model_name, exact=True).click()
+                    if model_name == "Idol":
+                        expect(page.locator("#image-splats-info")).to_contain_text("HF_TOKEN")
+                    page.locator("#image-splats-count input").click()
+                    page.get_by_role("option", name="32,768", exact=True).click()
+                    page.get_by_role("button", name="Generate splats", exact=True).click()
+                    expect(page.locator("#image-splats-status")).to_contain_text("Completed.")
+                    expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"object\s*\.ply"))
+                    expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"request\s*\.json"))
+                assert [call[0] for call in splat_calls] == ["triposplat", "idol"], splat_calls
+                assert [call[2] for call in splat_calls] == [20, 50], splat_calls
+                page.screenshot(path=str(screenshots / "studio-image-splats.png"))
+                page.get_by_role("button", name="Unload 3D preview", exact=True).click()
+                expect(page.locator("#image-splats-status")).to_contain_text("preview unloaded")
+
+                page.goto(f"http://127.0.0.1:{port}/?__theme=dark", wait_until="domcontentloaded", timeout=60000)
+                expect(page.get_by_role("tab", name="Images", exact=True)).to_be_visible()
                 assert not errors, errors
                 browser.close()
             print(json.dumps({"build_seconds": round(build_seconds, 3), "browser_ready_seconds": round(ready_seconds, 3),
                               "config_bytes": len(json.dumps(demo.config, default=str)), "page_errors": errors,
                               "simulated_generations": len(calls), "peak_concurrent_generations": peak,
                               "experimental_presets_checked": preset_checks,
+                              "simulated_image_splats": splat_calls,
                               "simulated_seedvr2_restorations": len(seed_calls),
                               "screenshots": str(screenshots)}, indent=2))
         finally:

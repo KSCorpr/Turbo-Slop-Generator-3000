@@ -817,6 +817,16 @@ A separate **prompt-enhancer GPU** can also be chosen (the text LLM runs there;
 image generation and SDXL upscale always stay on the generation GPU). The GPU
 picker and these strategies live in **Settings**.
 
+### Single image to Gaussian splats
+
+**TripoSplat and Idol** are available in **Tools & 3D → Image → splats** and
+in the Models catalog. Import one object image, install the selected model,
+then export a Gaussian PLY (plus SPLAT for TripoSplat or camera JSON for Idol).
+These are generated Gaussian objects, not polygon meshes. Idol requires prior
+Hugging Face access to its DINOv3 and FLUX.2 image encoders. Both use an isolated
+CUDA runtime; the main installation stays light.
+See [installation, GPU precision, downloads and validation limits](docs/image-splats.md).
+
 ### Samplers & schedulers
 The **Quality preset** menu keeps the existing baseline settings first and adds
 **28 experimental sampler / scheduler combinations across all nine image

@@ -262,6 +262,7 @@ class StudioWiringTests(unittest.TestCase):
                  "do_describe", "do_upscale", "do_layers", "do_hd", "do_highres", "do_face",
                  "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
                  "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
+                 "generate_image_splats", "install_image_splats",
                  "run_views", "convert_panorama", "install_view_caption", "run_svg",
                  "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg",
                  "install_layer_model", "check_layer_memory", "handler", "deleter",
@@ -309,7 +310,7 @@ class StudioWiringTests(unittest.TestCase):
             self.assertFalse(fn.queue)
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))
 
-    def test_payload_stays_below_the_original_1_9_mb(self):
+    def test_payload_with_image_splats_stays_below_2_mb(self):
         # Measure the UTF-8 payload served to the browser, including schemas.
         # json.dumps() defaults add whitespace and escape every Unicode glyph,
         # overstating actual download size as more model workspaces are added.
@@ -320,8 +321,9 @@ class StudioWiringTests(unittest.TestCase):
             response = client.get("/config")
         self.assertEqual(response.status_code, 200)
         # Nine full image workspaces now include Fibo Dev and Edit Turbo.
-        # Keep their controls/schema within the original 1.9 MB budget.
-        self.assertLess(len(response.content), 1_900_000)
+        # One additional shared TripoSplat / Idol workspace: allow 100 KB for
+        # its upload, Gaussian viewer, controls and callback schemas.
+        self.assertLess(len(response.content), 2_000_000)
 
     def test_failed_hivg_exposes_diagnostics_and_never_a_completed_svg(self):
         from atelier.engine import vectorize

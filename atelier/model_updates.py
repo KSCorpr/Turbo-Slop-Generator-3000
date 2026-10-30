@@ -70,9 +70,11 @@ def _roots():
         (base / "hivg/model", "xingxm/HiVG-3B-Base", addons.HIVG_REVISION),
         (base / "upscale/vae", "madebyollin/sdxl-vae-fp16-fix", "main"),
         (base / "upscale/controlnet", "xinsir/controlnet-tile-sdxl-1.0", "main")]
-    from . import moss_dmd, taesd
+    from . import moss_dmd, taesd, image_splats
     return entries + [(moss_dmd.path().parent, moss_dmd.REPO, moss_dmd.REVISION)] + [
-        (spec.path().parent, spec.repo, spec.revision) for spec in taesd.SPECS.values()]
+        (spec.path().parent, spec.repo, spec.revision) for spec in taesd.SPECS.values()] + list({
+        (settings.model_repo_dir(s.repo), s.repo, s.revision)
+        for backend in image_splats.BACKENDS for s in image_splats.artifacts(backend)})
 
 
 def _files(root):

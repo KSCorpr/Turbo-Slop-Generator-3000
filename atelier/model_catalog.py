@@ -63,6 +63,11 @@ def packages(prefs=None):
         Package("3d:pixal","Pixal3D","Video & 3D","3D engine, selected Pixal3D flows and required TRELLIS shared components.",
                 tuple((f"{v.upper()} · {r}",f"{v}:{r}") for v in ("q4","q8","f16") for r in (512,1024))),
         Package("addon:splat","Gaussian splats · Brush","Video & 3D","Brush runtime only; no pretrained model weights."),
+        Package("splat:triposplat", "TripoSplat · image to splats", "Video & 3D",
+                "Single image to 32k–262k Gaussian splats, PLY + SPLAT. MIT. ~3.78 GB of selected weights; no unused 3D encoder download."),
+        Package("splat:idol", "Idol · image to splats", "Video & 3D",
+                "Single image to 32k–1M Gaussian splats, PLY + camera. Apache-2.0 core; gated DINOv3 / FLUX.2 terms required. "
+                "~6.78 GB including encoders. Shares the CUDA runtime with TripoSplat; identical VAE payloads can be reused."),
     ]
 
 
@@ -103,6 +108,9 @@ def ready(key, variant=None):
             entries = registry.modern_upscaler_files() if name == "modern" else registry.upscaler_config().get("files",[])
             return bool(entries) and all((registry.upscalers_dir() / (e['file'] if isinstance(e,dict) else e)).is_file() for e in entries)
         return bool(getattr(tools,name+"_is_installed")())
+    if key.startswith("splat:"):
+        from . import image_splats
+        return image_splats.ready(key[6:])
     if key == "addon:vosr":
         from . import vosr
         return vosr.ready()
@@ -170,6 +178,8 @@ def install(key, variant=None, log=print):
             name=key[6:]
             command=["setup_layers.py",name] if name in {"sam2","qwen-layered"} else (
                      ["setup_media.py",name] if name in {"splat", "vosr"} else ["setup_svg.py",name])
+        elif key.startswith("splat:"):
+            command=["setup_image_splats.py",key[6:]]
         elif key.startswith("seed:"):
             addon="seedvr2-convrot" if key.endswith("convrot") else "seedvr2"
             command=["setup_media.py",addon]

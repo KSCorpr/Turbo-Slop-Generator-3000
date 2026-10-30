@@ -221,6 +221,7 @@ from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
 from atelier.ui.vosr_tab import build_vosr_tab
+from atelier.ui.image_splats_tab import build_image_splats_tab
 from atelier.ui.multiview_tab import build_multiview_tab
 from atelier.ui.vector_tab import build_svg_tab
 from atelier.ui.xanax_tab import build_xanax_tab
@@ -370,6 +371,7 @@ def build_app() -> gr.Blocks:
                     build_seedvr2_tab()
                     build_vosr_tab()
                     build_splat_tab()
+                    build_image_splats_tab()
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
                                       tabs=tabs, parent_tabs=tool_tabs,
                                       prompt_boxes=prompt_boxes,

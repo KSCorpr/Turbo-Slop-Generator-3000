@@ -89,7 +89,9 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue({'tool:depth','tool:bg','tool:sam','tool:clip','tool:face','tool:upscale','tool:adetailer',
                          'tool:enhance','tool:describe','tool:upscalers','tool:modern','seed:classic','seed:convrot',
                          'video:ltx','3d:trellis','3d:pixal'}.issubset(ids))
-        self.assertTrue({'addon:'+name for name in addons.ADDON_NAMES if not name.startswith('seedvr2')}.issubset(ids))
+        self.assertTrue({'addon:'+name for name in addons.ADDON_NAMES
+                         if not name.startswith('seedvr2') and name != 'image-splats'}.issubset(ids))
+        self.assertTrue({'splat:triposplat', 'splat:idol'}.issubset(ids))
         self.assertEqual([v for _,v in model_catalog.choices('Layers & SVG','Layered')],['addon:qwen-layered'])
 
     def test_tool_install_routes_through_existing_script_and_generation_gpu(self):

@@ -138,6 +138,13 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item("vosr_models", "VOSR 2.0 weights (~6.97 GB)", "Models",
                     [addons.root("vosr") / "models"],
                     note="DiT, DINOv2 and dedicated Qwen 2D VAE; one shared bundle for all VOSR controls."))
+    from . import image_splats
+    out.append(Item("engine_image_splats", "TripoSplat / Idol shared runtime", "Engines",
+                    [image_splats.root()], note="Shared isolated runtime and source; weights are listed separately."))
+    for backend in image_splats.BACKENDS:
+        out.append(Item("image_splats_" + backend, image_splats.BACKENDS[backend] + " weights and encoders", "Models",
+                        sorted({s.path().parent for s in image_splats.artifacts(backend)}),
+                        note="Reinstall from Models. Identical weight files may share disk storage."))
     for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG"),
                         ("sam2", "SAM 2.1"), ("qwen-layered", "Qwen-Image-Layered")):
         folder = addons.root(name)
