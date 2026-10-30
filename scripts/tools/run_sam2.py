@@ -36,36 +36,3 @@ def predict(model, processor, image, points, device, embeddings=None):
     masks = processor.post_process_masks(outputs.pred_masks.cpu(), inputs["original_sizes"].cpu())[0]
     scores = outputs.iou_scores.detach().cpu()[0]
     return masks, scores
-
-
-def auto_masks(model_dir, image, points_per_side, batch, log, iou_max=.75):
-    from _device import pick_device, label
-    from atelier.engine import masks as M
-    import torch
-    device = pick_device(torch)
-    log(f"[layers] loading SAM 2.1 small on {label(device)}")
-    model, processor = load(model_dir, device)
-    with torch.inference_mode():
-        pixel_values = processor(images=image, return_tensors="pt")["pixel_values"].to(device)
-        embeddings = model.get_image_embeddings(pixel_values)
-        del pixel_values
-    w, h = image.size
-    points = [[int(w*(x+1)/(points_per_side+1)), int(h*(y+1)/(points_per_side+1))]
-              for y in range(points_per_side) for x in range(points_per_side)]
-    kept, seen = [], []
-    for start in range(0, len(points), batch):
-        masks, scores = predict(model, processor, image, points[start:start+batch], device, embeddings)
-        for candidates, confidence in zip(masks, scores):
-            best = int(confidence.argmax())
-            if float(confidence[best]) < .80:
-                continue
-            mask = candidates[best].numpy().astype(bool)
-            if not mask.any():
-                continue
-            grid = M.coverage_grid(mask)
-            if any(M.grid_iou(grid, other) > iou_max for other in seen):
-                continue
-            kept.append(mask)
-            seen.append(grid)
-        log(f"[layers] SAM 2: {min(start+batch, len(points))}/{len(points)} probes; {len(kept)} regions")
-    return kept

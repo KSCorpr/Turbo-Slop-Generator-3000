@@ -1,8 +1,15 @@
 # Turbo Slop Generator 3000 · Studio
 
+**Removed modules:** Z-Image Turbo, Flux.3 Klein, SDXL creative upscale,
+ADetailer, Prompt improver, 10 views / 360°, SVG & layers, Layers and Faces.
+They no longer appear in the UI or download catalog. Existing dedicated files
+are listed under **System → Manage → Removed features** when present; cleanup
+is optional. Shared encoders and VAEs used by active models are retained, as
+are generated outputs. SDXL custom checkpoints are marked as personal data.
+
 **TAESD / tiny autoencoders:** optional per-model TAE previews or fast final
 encoding/decoding, with shared downloads in Models. Preview-only keeps the
-original final VAE; full mode may soften detail. Supports the nine catalog
+original final VAE; full mode may soften detail. Supports the seven catalog
 image models. [Install and choose a mode](docs/taesd.md).
 
 **Choose weights before generating:** every Images workspace now offers an
@@ -12,7 +19,7 @@ variants in Models, then refresh the generation selectors.
 
 **GPU-aware weight choices:** Models now explains INT8, BF16, FP16, FP32 and
 GGUF precision separately from file formats. Load sizes for memory suggestions
-on your selected GPU. Krea 2 Turbo and Z-Image Turbo offer INT8/BF16 Safetensors
+on your selected GPU. Krea 2 Turbo offers INT8/BF16 Safetensors
 alongside GGUF; saved selections and shared files are retained.
 [Precision and memory advice](docs/model-catalog.md#gpu-and-weight-precision).
 
@@ -27,17 +34,6 @@ shared Flux.2 VAE / Qwen3-VL 4B components and structured JSON captions.
 Run `update.bat`, download the chosen variant in **Models**, then use its
 **Images** tab. Requires sd.cpp build 985+. Weights are CC BY-NC 4.0;
 commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
-
-**SVG & layers:** HiVG and OmniSVG 1.1 4B image/text → SVG, CPU image tracing, and LayerTracer
-reconstruction from prepared 4-/9-panel drawing sequences are available under
-**Tools & 3D → SVG & layers**. OmniSVG includes memory checks, GPU/RAM budgets,
-CPU offload, generation controls and selectable sequential variants.
-Engines install on demand. LayerTracer's FLUX
-image-to-sequence stage is not included. [Setup and limits](docs/svg-tools.md).
-
-**10 views / 360°:** generate ten object angles or fixed-camera scene views
-from one image using any image engine in the catalogue. Scene views can be
-reprojected to an equirectangular 360×180 PNG. [Usage and engine limitations](docs/multiview-360.md).
 
 **Local media engines:** SeedVR2, VOSR 2.0, LTX 2.5 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See
@@ -76,28 +72,15 @@ cd turbo-slop-studio
 
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
-CUDA, GGUF). Generate with **Flux.3 Image Klein**, **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
-**Krea 2 Turbo** and **Z-Image Turbo**, with an
+CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
+**MOSS SFT**, **Fibo 2 Dev / Edit Turbo** and **Krea 2 Turbo / Realism**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
-resolution presets, saved styles, an AI prompt enhancer, multi-reference image
-editing, SDXL creative upscaling, SeedVR2 restoration, and a utility toolkit.
+resolution presets, saved styles, multi-reference image editing, SeedVR2 and
+VOSR restoration, and a utility toolkit.
 
 A clean web UI without a node editor. SeedVR2 ConvRot uses Comfy internals
 in its isolated command-line runtime; image generation still uses sd.cpp.
 A future replacement of sd.cpp is described in [the backend migration plan](docs/backend-migration.md).
-
-**Flux.3 Image Klein:** close the app and run `update.bat` (or `./update.sh`)
-to update both the app and sd.cpp. Build **968 or newer** is required; a code-only
-update leaves older engines unable to load Flux.3. In **Models**, download
-**Flux.3 Image Klein**, then open **Images → Flux.3 Klein**. The distilled
-checkpoint uses **16 steps, CFG 1, Euler, Auto scheduler and flow shift 0 (auto)**;
-sd.cpp applies the upstream time shift of 6.93. The catalogue offers community
-[GGUF weights](https://huggingface.co/akhaliq/flux-3-image-klein-sd-gguf)
-(Q5 ~3.95 GB, Q8 ~5.99 GB), shares Flux.2's VAE and Krea 2's Qwen3-VL-4B
-encoder, and accepts up to **10 reference images**. No vision projector or
-editing LoRA is needed. This entry is the step-distilled Klein, not Klein Base.
-See the [sd.cpp guide](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/flux3.md).
-GPU output quality and speed have not been validated in this project.
 
 **Krea 2 Realism:** [RudySen's full checkpoint](https://huggingface.co/RudySen/Krea2-Realism-Checkpoint)
 is available in **Models → Krea 2 Realism** and **Images → Krea 2 Realism**.
@@ -132,11 +115,11 @@ LoRA settings expand when needed.
 
 | Tab | What it does |
 |---|---|
-| **Images** | Flux.2/3 Klein, Qwen Image 2.1 Turbo, [MOSS-Image SFT](docs/moss-image.md), Krea 2, Z-Image Turbo and Xanax; sampling controls follow each model's requirements. |
+| **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, [MOSS-Image SFT](docs/moss-image.md), Fibo 2, Krea 2 and Xanax; sampling controls follow each model's requirements. |
 | **Video** | LTX 2.5 text/image-to-video generation and AVI recovery. |
-| **Tools & 3D** | Image-to-prompt, depth, cutouts, layers, upscaling, restoration, Outpaint and textured 3D. |
+| **Tools & 3D** | Image-to-prompt, depth, cutouts, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
-| **Models** | Searchable catalog for image models, Toolkit, layers, video and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |
+| **Models** | Searchable catalog for image models, Toolkit, video and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |
 | **System** | Settings, disk management, help and GGUF conversion. |
 
 ---
@@ -158,15 +141,10 @@ LoRA settings expand when needed.
   - [Updating the engines](#updating-the-engines)
   - [Interface language & theme](#interface-language--theme)
 - [Upscaling](#upscaling)
-  - [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer)
-  - [🖐️ Details — hands and faces](#-details--hands-faces-and-anything-a-detector-finds)
-  - [✨ Creative (SDXL)](#-creative-sdxl-ultimate-sd-upscale)
 - [Outpaint](#outpaint)
 - [Text / Image → 3D](#text--image--3d)
 - [Toolkit](#toolkit)
   - [Image → prompt](#-image--prompt)
-  - [Layers → PSD](#layers--psd)
-  - [Prompt enhancer](#prompt-enhancer-ai)
 - [Convert to GGUF](#convert-to-gguf)
 - [Managing disk space & uninstalling](#managing-disk-space--uninstalling)
 - [Why it only listens on 127.0.0.1](#why-it-only-listens-on-127001)
@@ -227,7 +205,7 @@ stable-diffusion.cpp instead of the CUDA one. What differs on a Mac:
 
 Generation runs through stable-diffusion.cpp (no heavy PyTorch for image
 generation). **PyTorch is only installed on demand** for the optional Toolkit
-tools (depth, background removal, SAM, prompt enhancer, creative SDXL upscale),
+tools (depth, background removal, SAM and image → prompt),
 each via its own one-click installer.
 
 ### Updating the app itself
@@ -410,8 +388,6 @@ starting with an `ImportError` naming the module but not the cause.
 2. Open the **📚 Model Catalog** tab and download **Flux.2 Klein 9B** (or **Krea
    2 Turbo**). Quantization is picked automatically for your VRAM/RAM.
 3. Go to the model's **generation tab**, type a prompt, click **🎨 Generate**.
-4. (Optional) Install the **prompt enhancer** and click **✨ Enhance prompt** to
-   turn a rough idea into a detailed English prompt.
 
 ---
 
@@ -430,9 +406,9 @@ An already installed compatible encoder is reused in Automatic mode even if
 the preferred quantization has changed, avoiding another multi-GB copy. An
 explicit weight choice always takes precedence.
 
-The four catalog image models require four distinct encoder checkpoints:
-Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1 Turbo), Qwen3-VL-4B (Krea 2),
-and Qwen3-4B-Instruct-2507 (Z-Image). Similar names do not make their
+The seven catalog image models use four encoder families:
+Qwen3-8B (Flux.2), Qwen3-VL-8B (Qwen Image 2.1 Turbo), Qwen3-VL-4B (Krea 2 / Fibo),
+and Qwen3.5-9B (MOSS). Similar names do not make their
 weights interchangeable. Compatible files from the *same* Hugging Face repo
 are stored only once and shared by any model that uses them.
 
@@ -480,13 +456,6 @@ Generation tabs share prompt, styles, size, sampler and preview controls.
 ### Prompt & system style
 - **Prompt** — your description. For **edit models** (Flux.2 Klein, Qwen 2.1 Turbo) describe the
   *modification* to apply to the reference image.
-- **✨ Enhance prompt (AI)** — see [Prompt enhancer](#prompt-enhancer-ai). Note
-  that a **style preset translates nothing** — it is a prefix glued in front of
-  your text, so writing in French leaves you with French plus an English header.
-  The enhancer is what translates and shapes the prompt, and it is **given the
-  active preset as a constraint**: it describes the subject without adding
-  camera, lens, lighting or processing wording that would contradict the style.
-  Pick the preset first, then enhance.
 - **Negative prompt** — hidden on the current catalog models at CFG 1.0,
   where it has no effect. Custom models can expose it when guidance is enabled.
 - **System / style prefix** (🎨 Styles → *Custom preset*) — a prefix prepended
@@ -563,8 +532,7 @@ best on these):
   1568×672… (+ a 2K option).
 - **Krea 2** — 1024 family (multiples of 64): 1024², 1216×832, 1152×896,
   1344×768… (+ a 2K option).
-- **Z-Image Turbo** — 1024 family on a **16-px grid** (patch size 2 × VAE
-  factor 8): 1024², 1216×832, 1152×896, 1344×768… (+ a 2K option).
+
 - **Qwen 2.1 Turbo** — a 32-px grid with 1024-class presets and native 2K formats
   (2048², 2400×1792, 2752×1536…).
 
@@ -604,61 +572,17 @@ for Qwen). Loading a reference image auto-fits width/height to its aspect.
 - **Seed** — the selected image's seed shows in a copy-button box; **Reuse this
   seed** drops it back into the seed field. Clearing the seed field resets it to -1.
 - **Send to Toolkit** — push the selected image straight into a Toolkit tool
-  (depth, background removal, SAM or SDXL creative upscale).
+  (depth, background removal or SAM).
 - **Saved prompts** — every image gets an A1111-style `.txt` sidecar in
   `outputs/` with the prompt, negative, model, sampler/scheduler, seed and size.
 
 ## Xanax tab
 
-**💊 Xanax** takes **one sentence about your day and returns one photo**. Pick
-the model with a radio button (Z-Image Turbo, Krea 2 Turbo or Flux.2 Klein —
-the tab opens on the first one you already have installed); everything else is
-compiled in. No style dropdown, no system-prompt box, no preset menu — **the
-style cannot be changed**. That is the point of the tab; the normal generation
-tabs are there when you want to tune something.
-
-The fixed style: amateur snapshot, provincial France, 1995–2005, cheap
-point-and-shoot, ordinary people, unstaged, always overcast, no grain, no filter,
-no post-processing, **4:3** on each model's native grid (1184×880 for Flux.2,
-1152×896 for Krea 2 and for Z-Image — that pair happens to sit on both the
-64-px and the 16-px grid).
-
-### Write a diary line, not an image description
-This is the part that decides whether the result works:
-
-> **not** *"a man waiting for the bus outside a supermarket"*
-> **but** *"had lunch at the motorway cafeteria with Gran"*, *"rubbish day but
-> at least I got my cigarettes"*
-
-A description is already framed — it says what to show, so the model centres the
-subject and composes it. A diary line does not say what to show: the place, the
-hour and the bystanders have to be worked out from it, and what comes back looks
-like a photo taken in passing. Which is the whole aesthetic.
-
-The **🎲 A random day** button fills the box from a bank of ready-made banal
-sentences — as much to show the register expected as to unblock you. Edit the
-line it gives you and generate.
-
-### Why the enhancer matters more here
-The style is an English prefix glued in front of your text — on its own it
-translates nothing, and the image model has never heard of Flunch. With the
-enhancer installed, the checkbox turns your sentence into *what the photo would
-show*: the self-service cafeteria with its plastic trays and fluorescent
-ceiling, the tobacconist's red sign.
-
-It runs on **its own system prompt** (`xanax`), separate from the two used by
-the normal tabs. Those ask for a named lens, a lighting setup and a composition —
-applied here they would produce a *good* photograph, which is exactly this tab's
-failure mode. The Xanax one bans photographic craft outright, forbids
-beautifying, and keeps the output to two or three flat sentences: a long prompt
-makes the model compose.
-
-Without the enhancer the tab says so, and your sentence is sent **as is** —
-write in English then, and say what is visible rather than what you did.
-
-The exact prompt that produced the image is shown under it, a fixed seed replays
-the same photo, and the usual `.txt` sidecar lands next to it in `outputs/`.
-
+Choose **Krea 2 Turbo** or **Flux.2 Klein**, then enter an English sentence
+about your day. Xanax adds its fixed amateur-photo style: provincial France,
+1995–2005, overcast daylight, cheap camera and no post-processing. It does not
+rewrite or translate your input. The random-day button supplies an example.
+The generated prompt and seed are shown with the result.
 
 ## Hardware & optimization
 
@@ -744,7 +668,7 @@ per installed image model, without applying one fixed profile to every model:
 
 | Profile | Cards | What it sets that the automatic profile cannot guess |
 |---|---|---|
-| 🏠 **Home** | RTX 3060 12 GB + GTX 1080 Ti | the Pascal card **never encodes text**; it runs the prompt improver and holds weights |
+| 🏠 **Home** | RTX 3060 12 GB + GTX 1080 Ti | the Pascal card **never encodes generation text**; it runs Image → prompt and holds weights |
 | 🏢 **Office** | RTX 2080 Ti | the encoder's **weights stay in RAM**, and the engine gets a **compute budget** |
 
 Both are measurements, not preferences. Getting the first wrong costs **38 s of
@@ -813,8 +737,8 @@ single mutually-exclusive strategy:
   upstream states that auto-fit does not select per-layer/row multi-GPU
   computation, so the option had no effect there.
 
-A separate **prompt-enhancer GPU** can also be chosen (the text LLM runs there;
-image generation and SDXL upscale always stay on the generation GPU). The GPU
+A separate **Image → prompt GPU** can also be chosen (the vision-language model runs there;
+image generation always stays on the generation GPU). The GPU
 picker and these strategies live in **Settings**.
 
 ### Single image to Gaussian splats
@@ -1095,11 +1019,6 @@ was on screen, one click on any Install button away, while a guard scoped to
 `atelier/` reported everything clean. The 346 strings they held are translated
 and the guard now covers them.
 
-One string is deliberately French and listed as an explicit exception: the
-Xanax enhancer's system prompt quotes French diary lines as *examples of the
-input it must handle*. Translating them would remove the demonstration they
-exist for.
-
 **Code comments and docstrings are still French** and deliberately out of scope:
 they are the source's own language, not the interface's, and nobody reads them
 from the app.
@@ -1112,182 +1031,8 @@ from the app.
 
 ## Upscaling
 
-**Toolkit → SDXL upscale** is the only Toolkit enlargement path.
-Faces and Details remain available for local repair. **SeedVR2 upscale** and
-**VOSR 2.0 upscale** have their own workspaces in Tools & 3D for restoration
-(SeedVR2: images/videos; VOSR: images). The standalone
-ESRGAN, native HD and Flux.2 High resolution tabs have been removed.
-
-### 🙂 Faces (GFPGAN · RestoreFormer++ · CodeFormer)
-Rebuilds **faces only** — the rest of the image is untouched. This is the step
-that no upscaler can do: once a face is small or blurry, nothing can
-put clean eyes and a clean mouth back. Run it **last**, after the upscale; the
-Upscale and Restore tabs both carry a **→ 🙂 Fix the faces** button that hands
-the result straight over, so there is no file to find and re-upload.
-
-**Three restorers**, installed together (~1.5 GB with the shared detector and
-face parser) because none of them wins on every image:
-
-| Model | Licence | Character |
-|---|---|---|
-| **GFPGAN v1.4** (default) | **Apache-2.0** | Gentler, preserves identity best |
-| **RestoreFormer++** | **Apache-2.0** | Better on genuinely damaged photos, more aggressive |
-| **CodeFormer** | **S-Lab 1.0 — non-commercial** | The only one with a fidelity dial |
-
-The licence is shown **next to each model**, not buried in a footnote: it
-decides what you may do with the result. If you sell your images, CodeFormer is
-the one to avoid — which is why the default is GFPGAN.
-
-**Faithfulness to the original face** (CodeFormer's `w`) applies to CodeFormer
-only; 0.5 is almost always right, lower it for a badly damaged face and the
-model invents more, raise it if the person stops looking like themselves. The
-other two have no such dial and the runner says so instead of pretending. A
-checkbox limits the pass to the main face instead of every detected one.
-
-Each architecture has its own input convention, and getting it wrong is silent:
-CodeFormer's reference pipeline works in `[-1, 1]` and is called directly (it is
-the only one taking `weight=`), while GFPGAN and RestoreFormer go through
-spandrel's descriptor, which knows each architecture's normalisation and returns
-`[0, 1]`.
-
-The implementation deliberately avoids `basicsr`, which the original CodeFormer
-repository depends on: `basicsr` imports `torchvision.transforms.functional_tensor`,
-removed in torchvision 0.17, so it no longer installs on our torch 2.4.1 base.
-Instead the network comes from [`spandrel`](https://github.com/chaiNNer-org/spandrel)
-(pure torch) and the detection / FFHQ-512 alignment / segmentation-masked
-paste-back from [`facexlib`](https://github.com/xinntao/facexlib) — which is
-exactly what upstream CodeFormer uses for that half. Three weights (~570 MB:
-restorer, detector, face parser) are downloaded from the **official releases**
-and **SHA-256 verified**, and facexlib is installed with `--no-deps` because its
-`numba`/`filterpy` requirements only serve its video face tracker and would fight
-our NumPy pin.
-
-⚠️ CodeFormer is **non-commercial** (S-Lab License 1.0).
-
-### 🖐️ Details — hands, faces, and anything a detector finds
-
-Finds a region with a **YOLOv8 detector**, redraws just that region with **your
-own generation model**, and blends it back. Native to sd.cpp (`-M adetailer`) —
-no PyTorch, no add-on beyond a 6 MB detector.
-
-**This is the only tool here that repairs hands.** GFPGAN and RestoreFormer are
-trained on faces and can do nothing else, and a hand with six fingers has
-nothing to *restore* — it has to be redrawn. That is also the honest limit of
-this tool: on a **face**, prefer [🙂 Faces](#-faces-gfpgan--restoreformer--codeformer),
-because restoring keeps the person and redrawing can quietly change them.
-
-Run it **last**, after the upscale, for the same reason as the face restorer:
-the region is bigger, so it is better detected and better blended.
-
-**Installing the detectors is the awkward part, and it is handled once.**
-sd.cpp will not read Ultralytics `.pt` files — it needs a safetensors with its
-own tensor names and BatchNorm already fused into the convolutions, and nobody
-publishes those. The conversion needs `ultralytics`, which is AGPL-3.0, pulls
-opencv/pandas/scipy and wants a NumPy the other add-ons do not have; installing
-it beside them would cause exactly the breakage the cleanup spends its
-time reporting. So the one-click install builds a **throwaway environment,
-converts, and deletes it**: about 12 MB of detectors stay, and nothing
-permanent — nor anything AGPL — is added to the application.
-
-Four detectors, all YOLOv8 **detection** models from
-[`Bingsu/adetailer`](https://huggingface.co/Bingsu/adetailer): faces and hands,
-each in a fast and a more accurate variant. The `-seg` segmentation models and
-the YOLOv9 ones in that same repo are deliberately **not** offered — sd.cpp
-does not support them, so listing them would guarantee a failure on the first
-click.
-
-| Control | What it does |
-| --- | --- |
-| **Generation model** | the region is redrawn by this model — use the one that made the image, or the seam shows |
-| **What to look for** | which detector runs (faces / hands) |
-| **Prompt for the region** | *optional*, and it describes the **region**, not the picture |
-| **How much it redraws** | 0.4 is the reference. Below 0.3 it barely changes anything; above 0.6 the region stops matching its surroundings |
-| **Confidence** | lower finds more, including things that are not hands |
-| **Padding** | context given to the model — too little and it redraws a hand without a wrist |
-| **Blend feather** | width of the join with the untouched image |
-| **Keep only the N largest** | ignore the small detections; 0 keeps all |
-
-Regions are processed **one after another**, each result feeding the next, and
-the seed is incremented per region. Requires a recent engine: on an `sd-cli`
-that predates `--ad-model`, the tab says so and points at `update.bat`
-instead of failing at the first click.
-
-### ✨ Creative (SDXL, *Ultimate SD Upscale*)
-Creative, Magnific-style upscale: pre-enlarge, then **refine tile by tile** with
-SDXL img2img at low denoise. The model stays **resident** on the GPU so tiles are
-fast; overlapping tiles are blended with a cosine feather for seamless joins, with
-a **real-time preview**. Invents fine detail. This is an A1111-free
-re-implementation. PyTorch + diffusers (**~9.5 GB**: SDXL base + fp16-fix VAE +
-ControlNet Tile), installed in one click.
-
-Controls:
-- **SDXL model** — use the bundled SDXL Base 1.0, or drop your own SDXL
-  checkpoint (`.safetensors`) into `tools_repo/upscale/checkpoints/` and pick it.
-  **VAE** choice: external fp16-fix (recommended, avoids black images) or the
-  checkpoint's **built-in VAE**.
-- **Pre-upscale** — base enlargement before the SDXL tile refine: **Lanczos**
-  (default) or any installed **ESRGAN** model (sharper, real detail). It runs
-  **exactly one pass, never two**. Chaining is what manufactures the artifacts
-  and aliasing this pass is supposed to avoid, and a soft base is the cheaper
-  mistake: SDXL's refine puts detail back onto a soft base, but it *freezes*
-  stair-stepped edges instead of fixing them. So when the model's factor falls
-  short of the target the runner finishes in Lanczos and the log says so — and
-  when the factor **overshoots** (a ×4 model for a ×2 target) the downscale that
-  follows is free supersampling, which is the cleanest case available. Picking a
-  pre-upscaler whose factor is *above* your target is the single best setting
-  here.
-- **Presets** — a dropdown that sets **the whole recipe**, not just a prompt:
-  prompt, negative prompt, creativity, CFG, steps, structure locking and
-  pre-upscaler. A line under the menu states what it just applied. See
-  [Upscaling illustrations](#upscaling-illustrations-without-interpolation)
-  below.
-- **Creativity (denoise)** — 0.15 faithful → 0.75 inventive.
-- **Negative prompt** — what SDXL is forbidden to add. The default is
-  photo-oriented; on drawings it is what keeps grain and photo texture off the
-  flat color areas.
-- **🔒 ControlNet Tile** (optional) — conditions each tile on the source so you can
-  push creativity higher **without drifting** from the original structure (the
-  Magnific trick). Toggle + a *ControlNet fidelity* slider appear once it's
-  installed (`xinsir/controlnet-tile-sdxl-1.0`, ~2.5 GB, included in the
-  installer). Without it, it's plain low-denoise img2img — already very good.
-- **Scale** — ×1.5 to ×8 (up to ~8K, capped at 8192 px). High factors mean many
-  tiles → slow, and ~1–2 GB system RAM for the final assembly; VRAM stays constant
-  (tiled).
-- **Steps / tile**, **CFG**, **tile size** (640–1280).
-- On < 12 GB VRAM, the model is automatically CPU-offloaded to avoid OOM.
-
-> **SDXL creative** can invent plausible detail and change the source.
-> Use low creativity for faithful enlargement; apply **Faces** last if needed.
-
-#### Upscaling illustrations without interpolation
-
-A photo-oriented upscale does three specific things to a drawing, and all three
-have to be fixed together — which is why this is a preset and not a prompt:
-
-1. **the base interpolates.** Lanczos does not add information, it averages
-   pixels: linework goes soft and flat fills go mushy. Only an ESRGAN *trained on
-   drawings* actually enlarges line art;
-2. **the default negative prompt does not defend flat areas**, so SDXL happily
-   lays photo grain and material texture over them;
-3. **denoise around 0.40 redraws the linework**, which then wobbles — lines stop
-   being the same lines.
-
-The **🖍️ Illustration / comics — crisp linework, no interpolation** preset sets:
-a **drawing ESRGAN** as the base (auto-picked from what you have installed,
-preferring `RealESRGAN_x4plus_anime_6B`), a negative prompt aimed at
-photorealism/grain/halos, **denoise 0.18**, **CFG 4.0**, and **ControlNet Tile at
-0.85** so the structure is locked. At that point SDXL is no longer redrawing
-anything — it only cleans up what the ESRGAN produced.
-
-If you have **no drawing upscaler installed**, the preset says so explicitly and
-warns that the base will stay on Lanczos: download the upscaler pack from the
-**🔼 Upscale** tab first, otherwise the preset cannot do its main job.
-
-For painted or brushwork illustration, **🎨 Painted illustration / concept art**
-is the looser variant (denoise 0.35, ControlNet 0.7) — it keeps some material,
-which is the point there.
-
----
+Use **Tools & 3D → SeedVR2 upscale** or **VOSR 2.0 upscale** for restoration.
+See [SeedVR2 and media engines](docs/media-engines.md) and [VOSR](docs/vosr.md).
 
 ## Outpaint
 
@@ -1530,11 +1275,7 @@ subprocesses so torch DLLs never lock the UI process):
 | **📝 Image → prompt** | hand it an image, get the prompt back ([below](#-image--prompt)) | Qwen2.5-VL-3B, ~7.5 GB |
 | **🌐 Depth** | depth map — *Depth Anything V2* | ~100 MB |
 | **✂️ Background removal** | cutout → transparent PNG — *RMBG-1.4* (**non-commercial**) | ~176 MB |
-| **🪄 Cut out (SAM)** | click an object, extract it — *Segment Anything* (`facebook/sam-vit-base`) | ~375 MB |
-| **🧩 Layers** | decompose into layers, write a PSD ([below](#layers--psd)) | shares SAM; CLIP optional (~600 MB) |
-| **🙂 Faces** | GFPGAN · RestoreFormer++ · CodeFormer ([Upscaling](#-faces-gfpgan--restoreformer--codeformer)) | ~1.5 GB, five weights |
-| **🖐️ Details** | redraws hands / faces found by a detector ([below](#-details--hands-faces-and-anything-a-detector-finds)) | ~12 MB, native engine |
-| **✨ SDXL upscale** | creative, tile-by-tile ([Upscaling](#-creative-sdxl-ultimate-sd-upscale)) | ~9.5 GB with ControlNet |
+| **🪄 Cut out (SAM)** | click an object, extract it — *Segment Anything* (SAM 2.1 small or legacy SAM 1) | ~184 MB / ~375 MB |
 
 Every generation tab has a **Send to Toolkit** control that pushes the selected
 image straight into one of these, so there is no file to find and re-upload.
@@ -1620,153 +1361,11 @@ The style mode's rule is strict on purpose: if the image is a red car in Rome,
 neither "car" nor "Rome" may appear. A style that names its subject is not
 transposable, and the mode would have no reason to exist.
 
-**Model**: **Qwen2.5-VL-3B-Instruct** (~7.5 GB), the same family as the prompt
-enhancer, loaded then unloaded per call so nothing stays in VRAM during
-generation. Like the enhancer, it is *text* work, so it runs on the secondary
-text GPU when you have one. It needs `transformers>=4.49` — the
+**Model**: **Qwen2.5-VL-3B-Instruct** (~7.5 GB), loaded then unloaded per call.
+It runs on the separately selected Image → prompt GPU when configured. It needs `transformers>=4.49` — the
 `Qwen2_5_VLForConditionalGeneration` class does not exist in 4.48, verified —
 so the installer pins that range for this add-on only. ⚠️ **Qwen Research
-licence: non-commercial**, the same condition as the already-shipped enhancer.
-
-### Layers → PSD
-
-Cuts an image into layers and writes a **PSD** (and/or separate transparent
-PNGs), either by letting SAM sweep the image or by **clicking the areas
-yourself**. Same add-on as click-to-cutout — nothing extra to download.
-
-**Read this before using it: the layers are flat cut-outs.** Move an object and
-you reveal a hole, because the background behind it never existed. This is for
-masking, retouching a region or exporting an element — *not* for recomposing a
-scene. Doing it properly would mean inpainting behind every layer, one diffusion
-pass each; that is a deliberate omission, not an oversight.
-
-**Writing the PSD is done in-house, and that was the surprise.** No usable
-library exists: [`psd-tools`](https://pypi.org/project/psd-tools/1.9.28) reads
-well but "does not support editing of layer structure, such as adding or removing
-a layer", and [`pytoshop`](https://pypi.org/project/pytoshop/) — the only writer
-— is from 2018 and no longer builds on a modern Python (verified: its `setup.py`
-fails against current setuptools). The format is documented and needs nothing but
-`struct`, so `atelier/engine/psd.py` writes it directly: ~180 lines, pure Python,
-no compiled dependency, runs as-is in the portable Python. Two decisions carry
-the file size — each layer is **cropped to its bounding box** (a PSD stores the
-layer position, so keeping the full canvas for a 200 px object would multiply the
-weight by twenty) and channels use the format's native **PackBits RLE**. A
-512×384 three-layer file lands at 44 KB instead of 1 MB uncompressed. The output
-is validated against `psd-tools` in the test suite — an independent reader is the
-only honest way to check you produced a valid file rather than one that merely
-pleases you.
-
-**The two real difficulties are not in the plumbing.** SAM segments *appearance*,
-not meaning: on a photo it happily returns forty to eighty nested masks — a
-shirt, a button, a fold, a reflection — and, worse, "zones" made of specks
-scattered across the whole frame. And SAM gives **no depth order**: that comes
-from Depth Anything V2 when it is installed — median depth under each mask, far
-to near. Without it, large areas go to the back, which is an approximation and is
-labelled as one rather than presented as a result.
-
-**Large images used to be the wall, and it was an ordering problem.** The two
-operations that decide the cut — *are these the same zone?* and *do they
-touch?* — are **quadratic** in the number of zones, and they were running at
-full resolution. Measured on a 4096×4096 image: one IoU costs **77 ms**, so 150
-zones spend **14 minutes** just de-duplicating, plus 70 s on adjacency. Two
-changes fixed it. Each mask is reduced **once** to a 256×256 *coverage grid*
-(the fraction of lit pixels per block, 262 KB instead of 16.8 MB) and every
-comparison happens there — 1770 IoU pairs drop from 136 s to **0.07 s**, and the
-approximation stays within 0.02 of the exact value, far from the 0.75 duplicate
-threshold. And near-duplicates are now dropped **before** cleaning rather than
-after: a 24-point sweep probes the image 576 times and returns the sky or the
-tarmac dozens of times over, while cleaning costs 0.7–1.8 s *per mask*. Filtering
-300 raw masks went from **3.4 minutes to 26 seconds**, and duplicates are
-rejected as SAM produces them, so memory stays near 400 MB instead of 5 GB.
-
-**Everything useful happens in the cleanup**, in `atelier/engine/masks.py` —
-written in plain numpy rather than pulling in scipy or OpenCV, since the
-segmentation add-on is heavy enough and these operations are a few dozen lines.
-Connected components use a union-find over per-row *runs*, not pixels: a
-million-pixel union-find in Python would take seconds, while the number of runs
-is in the thousands (18 ms on a 1200×900 mask).
-
-- **Split into connected pieces.** A "layer" made of thirty specks in the four
-  corners is not a layer, it is noise no editor can use. Each piece becomes its
-  own zone, and pieces under the minimum area vanish.
-- **Fill interior holes**, which is what gave the cut-outs their swiss-cheese
-  look. A notch *open to the edge* is kept — it is part of the silhouette.
-- **Keep contained zones.** Being inside a larger mask does not mean redundant,
-  it means *in front*: the car on the road, the figure against a wall, the
-  window on a façade. An earlier coverage filter deleted exactly those, and it
-  was the single worst behaviour of the first version.
-- **Merge only what actually touches.** With CLIP installed, pieces sharing a
-  label are glued back into one object — body, door and wheel become a car.
-  Adjacency is measured **pixel to pixel**, on a reduced grid. It used to be
-  measured on *bounding boxes*, and that was catastrophic: on a wide photo a
-  car's box covers half the frame, so a chain of boxes linked the car, the
-  spray at the far end and the fence in the background into a single 25.7%
-  "vehicle" layer. Two more guards came with the fix — an uncertain label never
-  merges (propagating a coin toss glues unrelated things), and no merged group
-  may exceed 35% of the image, because at that size it is a background, not an
-  object.
-- **Disjoint layers.** Fronts are subtracted from backs, so showing every layer
-  reproduces the source image exactly and no pixel is painted twice — verified
-  in the tests by compositing the PSD back and comparing to the original.
-  Cutting drops layers from the *middle* of the list, so it now reports which
-  ones survived: the caller used to truncate its label list from the end, which
-  shifted every name after the first casualty — the car took the wall's name.
-  Layers reduced to a thin fringe by whatever sits in front are dropped too.
-- **Feathered edges** (1 px), because a binary mask pasted as-is has the
-  staircase border that gives automatic cut-outs away.
-- **Names you can read.** "Zone 9 — 0.48%" teaches nobody anything; layers are
-  named from what is already known about them — depth band, position, dominant
-  colour, size: *"foreground · bottom · orange — 3.8%"*. Colour matching weights
-  lightness over hue, otherwise charcoal grey gets called dark green.
-
-**With CLIP installed, the tool stops seeing shapes and starts seeing objects.**
-It is an optional add-on (`openai/clip-vit-base-patch32`, ~600 MB, one click, on
-the same footing as Depth) and it does three things that change the result, not
-just the labels:
-
-- **It merges the pieces of one object.** SAM returns "body", "door" and "wheel"
-  as three masks. Labelled *vehicle* and adjacent, they become **one layer** —
-  what a human calls a car. Adjacency is required: two cars at opposite ends of
-  the frame share a label but are not the same object.
-- **It discards what is nothing.** A flat fill, a patch of blur, a meaningless
-  fragment. A zero-shot classifier cannot say "nothing" — forced to choose, it
-  labels a blurry piece of asphalt *car*. So the vocabulary carries deliberate
-  **junk categories** whose only job is to absorb those, plus a margin test:
-  a label that wins by a hair is a coin toss, not information.
-- **It orders the stack by meaning** when Depth is not installed — sky at the
-  back because it is the sky, not because it is large. Each vocabulary entry
-  declares a typical depth for exactly this.
-
-The vocabulary lives in `atelier/engine/vocab.py` as **data, not code**: that is
-the file to edit when labels land wide, with no change to the pipeline. Each
-entry carries several phrasings, because CLIP scores an image against a *text* —
-"a car" and "a racing car seen head-on" do not score alike on the same crop, and
-the best variant wins. Crops are fed as the bounding box with margin, with the
-outside of the mask **faded toward neutral grey** rather than cut to black: a raw
-box drowns a thin object in its surroundings, while a black cut-out strips the
-context CLIP was trained on.
-
-### Prompt enhancer (AI)
-The **✨ Enhance prompt** button (in each generation tab) runs a small instruct
-LLM (*Qwen2.5-3B-Instruct*, PyTorch ~6 GB, one-click install) that rewrites your
-idea into a detailed **English** prompt (subject, lighting, composition, style).
-The model is loaded then unloaded per call → **no VRAM conflict** with generation.
-It outputs only the enhanced prompt, injected straight into the prompt field. The
-system prompt **detects intent from keywords** (medium/style/subject/mood) and
-keeps the output medium-coherent; a **strength** selector (Light / Medium / Strong)
-controls how far it expands. Krea 2 uses a Krea-specific system prompt.
-
-**Several proposals at once.** Pick 1, 2 or 4 under **🎨 Enhancement options**;
-they are produced in a *single* model load (`num_return_sequences`), so four cost
-barely more than one. They appear under the prompt field and clicking one puts it
-in the prompt. A grey line under the menus states in plain words what the button
-will do before you press it.
-
-**The active style preset is passed in as a constraint**, so the LLM writes *with*
-it rather than against it — no camera, lens, lighting or processing wording that
-would contradict the style, and no restating of the prefix itself.
-
----
+licence: non-commercial**.
 
 ## Convert to GGUF
 
@@ -1863,29 +1462,6 @@ resolved from your hardware; the downloader picks the closest matching file.
 - text encoder — [`Qwen/Qwen3-VL-4B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF) (official Qwen3-VL-4B-Instruct, via `--llm`, offloaded to RAM)
 - VAE — [`Comfy-Org/Wan_2.1_ComfyUI_repackaged`](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (`wan_2.1_vae.safetensors`)
 
-**Z-Image Turbo** (family `z_image`, sd.cpp)
-- diffusion — [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (6B distilled, 8 steps, CFG 1.0)
-- text encoder — [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (via `--llm`, offloaded to RAM)
-- VAE — [`Comfy-Org/z_image_turbo`](https://huggingface.co/Comfy-Org/z_image_turbo) (`split_files/vae/ae.safetensors`)
-
-> **Why this model earns a tab.** Two reasons, and neither is “one more model”.
->
-> *It is the only chain that is Apache-2.0 from end to end* — diffusion model,
-> text encoder and VAE. Flux.2 Klein and Krea 2 both ship under
-> non-commercial or bespoke licences, which matters if you sell what you
-> generate. Note the VAE comes from `Comfy-Org/z_image_turbo` and **not** from
-> `black-forest-labs/FLUX.1-schnell`: that repo is gated, so a first run would
-> stop on an access request. The Comfy-Org mirror is the same 335 MB file,
-> ungated.
->
-> *It is 6B, not 9B.* On a 12 GB card it lands on **Q8_0 (6.58 GB)** — the top
-> of the ladder, not a compromise. This needed one fix in the catalog: the
-> VRAM → quantization ladder was calibrated on 9B-and-up models, so a 6B model
-> came out three rungs too low. The entry therefore carries `quant_bias: 3`,
-> which shifts it back up; the ladder itself is unchanged for every other
-> model.
-
-
 > Why the Klein source changed too: the previous repo
 > (`leejet/FLUX.2-klein-9B-GGUF`) publishes **only Q4_0 and Q8_0**. Measured
 > against the real fallback logic, *every* card ended up on Q4_0 (5.6 GB) — a
@@ -1909,7 +1485,7 @@ resolved from your hardware; the downloader picks the closest matching file.
 > or larger file at Q5.
 
 
-**Upscalers** — [`wbruna/upscalers-sdcpp-gguf`](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) (ESRGAN), `stabilityai/stable-diffusion-xl-base-1.0` + `madebyollin/sdxl-vae-fp16-fix` (creative), [`sczhou/CodeFormer`](https://github.com/sczhou/CodeFormer) + [`xinntao/facexlib`](https://github.com/xinntao/facexlib) (faces).
+**Upscalers** — [ESRGAN GGUF](https://huggingface.co/wbruna/upscalers-sdcpp-gguf) and Spandrel modern upscalers.
 
 To delete a model, use **🗑️ Delete** in the Model Catalog — shared files
 (encoders/VAEs used by another model) are preserved.
@@ -1965,8 +1541,8 @@ scripts/
   _torch_setup.py            # shared PyTorch-CUDA install helpers
   setup_tools.py             # installs the PyTorch add-ons
   tools/_device.py           # CUDA / Metal-MPS / CPU picker shared by the runners
-  tools/run_*.py             # inference runners (depth, rembg, sam, layers, describe,
-                             #   enhance, face, ultimate_upscale)
+  tools/run_*.py             # inference runners (depth, rembg, sam, describe,
+                             #   restoration, video, splats)
 tests/                       # 400+ unit tests, run with `python -m unittest discover -s tests`
 ```
 
@@ -1982,13 +1558,13 @@ into four categories:
 |---|---|
 | **Engines** | `sd-cli` (stable-diffusion.cpp) and the trellis.cpp 3D binary |
 | **Models** | each catalog model separately, the ESRGAN upscaler pack, the ~10 GB trellis 3D set |
-| **Toolkit add-ons** | depth, background removal, SAM, CLIP labelling, image → prompt, prompt enhancer, face restoration, creative SDXL upscale |
+| **Toolkit add-ons** | depth, background removal, SAM and image → prompt |
 | **Your data** ⚠️ | LoRAs, custom models, generated images/3D, temp files |
 
 Tick what you want to remove, tick **“I confirm”**, then delete. Sizes refresh
 after each operation.
 
-- Everything outside **Your data** is **re-downloadable** from inside the app
+- Active tools outside **Your data** are **re-downloadable** from inside the app
   (Model Catalog, one-click installers).
 - Items marked **⚠️** are *yours* — LoRAs, hand-placed/converted models and your
   generated images. Deleting them is not recoverable from the app.
@@ -2152,8 +1728,7 @@ required.
   reduce the resolution. For very tight setups, try a per-generation preset.
 - **A Toolkit tool runs on CPU (very slow)** → its installer prints
   `CUDA: True/False`; if False, fix NVIDIA drivers and reinstall the tool.
-- **Creative SDXL upscale OOM** → lower the scale or tile size (it auto-offloads
-  under 12 GB, but a huge target can still exceed memory).
+
 - **The console fills with `StarletteDeprecationWarning: 'HTTP_422_...' is
   deprecated`** → noise from Gradio's own code, one line per queued request, so
   a single generation buries the console. Nothing to fix on our side and it will
@@ -2236,12 +1811,6 @@ authors. Please read and respect each model's own license on its page.
   ([official GGUF](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF));
   **WAN 2.1** VAE by **Alibaba / Wan team**, repackaged by
   [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
-- **Z-Image Turbo** — base model by **Tongyi-MAI (Alibaba)**, Apache-2.0; GGUF
-  by [leejet](https://huggingface.co/leejet/Z-Image-Turbo-GGUF); text encoder
-  **Qwen3-4B-Instruct-2507** by **Alibaba / Qwen team**
-  ([GGUF by Unsloth](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF));
-  VAE repackaged by
-  [Comfy-Org](https://huggingface.co/Comfy-Org/z_image_turbo).
 - **TRELLIS.2 / trellis.cpp** — the native engine by
   [pwilkin](https://github.com/pwilkin/trellis.cpp); GGUF weights by
   [ilintar](https://huggingface.co/ilintar/trellis2-gguf); TRELLIS by
@@ -2253,19 +1822,6 @@ authors. Please read and respect each model's own license on its page.
   **Real-ESRGAN** (Xintao Wang et al., Tencent ARC) and community models
   (UltraSharp, foolhardy Remacri, Nomos, LSDIR, NickelbackFS, StarSample…). Credit
   to each upstream author; see the repo for individual sources/licenses.
-- **Face restoration:** **CodeFormer** by
-  [Shangchen Zhou et al. (S-Lab, NTU)](https://github.com/sczhou/CodeFormer),
-  non-commercial S-Lab License 1.0; detection, alignment and face parsing by
-  **facexlib** ([Xintao Wang](https://github.com/xinntao/facexlib)); network
-  implementation from **spandrel**
-  ([chaiNNer](https://github.com/chaiNNer-org/spandrel)).
-- **Creative upscale (Ultimate SD Upscale style):** **SDXL** by
-  [Stability AI](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0);
-  fp16-fix VAE by [Ollin Boer Bohan / madebyollin](https://huggingface.co/madebyollin/sdxl-vae-fp16-fix);
-  **ControlNet Tile** by [xinsir](https://huggingface.co/xinsir/controlnet-tile-sdxl-1.0).
-  The tiled-redraw method is inspired by **Ultimate SD Upscale**
-  ([Coyote-A](https://github.com/Coyote-A/ultimate-upscale-for-automatic1111)).
-
 ### Toolkit
 - **Depth Anything V2** —
   [depth-anything](https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf) team.
@@ -2276,10 +1832,6 @@ authors. Please read and respect each model's own license on its page.
 - **Image → prompt** — **Qwen2.5-VL-3B-Instruct** by **Alibaba / Qwen team**
   ([Qwen/Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)),
   Qwen Research licence (non-commercial).
-- **Prompt enhancer** — **Qwen2.5-3B-Instruct** by **Alibaba / Qwen team**
-  ([Qwen/Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct)).
-- The **Krea prompting guide** informed the Krea 2 enhancer system prompt.
-
 ### Built with
 - **[Claude](https://claude.ai/code)** (Anthropic) — vibe-coded iteratively in
   natural language.

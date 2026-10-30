@@ -11,7 +11,6 @@ import gradio as gr
 
 from .. import downloader, generation_weights, i18n, registry, sampling, settings, styles, taesd
 from ..engine import generate as gen_engine
-from ..engine import tools
 from ..i18n import t
 from . import preview, widgets
 
@@ -39,20 +38,6 @@ RATIOS_FLUX2: dict[str, tuple[int, int]] = {
     "Custom (sliders)": (0, 0),
 }
 RATIOS_KREA2: dict[str, tuple[int, int]] = {
-    "Square 1:1 — 1024×1024": (1024, 1024),
-    "Square 1:1 — 1536×1536 (2K)": (1536, 1536),
-    "Landscape 3:2 — 1216×832": (1216, 832),
-    "Portrait 2:3 — 832×1216": (832, 1216),
-    "Landscape 4:3 — 1152×896": (1152, 896),
-    "Portrait 3:4 — 896×1152": (896, 1152),
-    "Wide 16:9 — 1344×768": (1344, 768),
-    "Vertical 9:16 — 768×1344": (768, 1344),
-    "Custom (sliders)": (0, 0),
-}
-# Z-Image : latent 16 canaux, patch 2 -> grille de 16 px (VAE ×8 × patch 2).
-# Résolution native 1024². Les mêmes ratios que Krea 2 tombent tous sur 16 px,
-# donc on garde une grille familière plutôt que d'inventer des tailles.
-RATIOS_ZIMAGE: dict[str, tuple[int, int]] = {
     "Square 1:1 — 1024×1024": (1024, 1024),
     "Square 1:1 — 1536×1536 (2K)": (1536, 1536),
     "Landscape 3:2 — 1216×832": (1216, 832),
@@ -106,8 +91,6 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     # startswith et non == : toute variante Krea à venir partagera
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
-    if family.startswith("z_image"):
-        return RATIOS_ZIMAGE
     return RATIOS_KREA2 if family.startswith("krea2") else RATIOS_FLUX2
 
 
@@ -302,12 +285,6 @@ def build_generative_tab(model_id: str, title: str,
                             "reference images** to combine elements (e.g. "
                             "*“put the character from image 1 into the scene "
                             "of image 2”*).")
-                        if family == "flux3":
-                            gr.Markdown(
-                                "**Flux.3 Klein:** up to **10 references** in total. "
-                                "Add further images above; their order follows "
-                                "references 1–3. More references use more memory. "
-                                "Use **16 steps, CFG 1, Euler and Auto scheduler**.")
                         if family.startswith("fibo2"):
                             gr.Markdown(
                                 "**Fibo:** up to **10 ordered references** in TurboSlop. "
@@ -384,26 +361,6 @@ def build_generative_tab(model_id: str, title: str,
                     clear_prompt = gr.Button("Clear", scale=1,
                                              min_width=110)
                 status_md = gr.Markdown("Ready when you are. Ctrl / ⌘ + Enter to generate.", elem_classes="studio-status")
-
-                # ----- ✨ Amélioration du prompt -----
-                with gr.Row():
-                    enhance_btn = gr.Button("✨ Enhance prompt (AI)",
-                                            size="sm", scale=3)
-                    enh_level = gr.Dropdown(
-                        [(t("Light"), "light"), (t("Medium"), "medium"),
-                         (t("Strong"), "strong")],
-                        value="medium", label="Strength", scale=2)
-                # Récapitulatif VIVANT : dit en clair ce que le bouton va faire,
-                # AVANT de cliquer. Sans ça on règle des menus sans savoir ce
-                # qu'ils changent concrètement sur le prompt.
-                enh_recap = gr.Markdown("", elem_classes="hint")
-                enh_msg = gr.Markdown("", elem_classes="feedback")
-                enh_undo = gr.Button("↩️ Restore the original prompt",
-                                     size="sm", visible=False)
-                enh_props = gr.Radio([], label="Suggestions — click one to "
-                                               "use it", visible=False)
-                # Prompt d'avant amélioration, pour pouvoir revenir en arrière.
-                prompt_before = gr.State("")
 
                 # ----- 🎨 Styles : UN repli, puis des ONGLETS -----
                 # Il y avait ici trois accordéons dans un quatrième : choisir
@@ -497,49 +454,6 @@ def build_generative_tab(model_id: str, title: str,
                 styles_panel.expand(load_style_choices, inputs=[styles_loaded],
                                     outputs=[photo_pick, art_pick, styles_loaded],
                                     queue=False, show_progress="hidden")
-
-                # ----- ✨ Améliorateur : réglages ET installation ensemble -----
-                # C'était éclaté en deux accordéons séparés par le champ négatif.
-                # Ouvert d'office tant que l'add-on n'est pas installé.
-                _enh_ready = tools.enhance_is_installed()
-                with gr.Accordion("✨ Prompt improver — settings"
-                                  + ("" if _enh_ready else " & installation"),
-                                  open=False):
-                    gr.Markdown(
-                        "The grey line under the menus **says plainly what "
-                        "the button will do**.")
-                    with gr.Row():
-                        enh_variants = gr.Radio(
-                            [("1", 1), ("2", 2), ("4", 4)], value=4,
-                            label="Propositions",
-                            info="How many prompts to suggest. Produced in a "
-                                 "single model load: 4 cost almost the same "
-                                 "time as 1.")
-
-                    # Ce repli n'a d'objet que tant que l'add-on manque. Une
-                    # fois installé, « ⬇️ Installation ✅ déjà installé » est un
-                    # accordéon qui ne dit rien et qu'on ouvre pour rien : il
-                    # disparaît. La réinstallation passe par « 🧹 Gestion &
-                    # aide », qui est l'endroit prévu pour réparer.
-                    with gr.Accordion("⬇️ Installation (1 clic)",
-                                      open=not _enh_ready,
-                                      visible=not _enh_ready):
-                        gr.Markdown(
-                            "A small LLM (**Qwen2.5-3B-Instruct**, PyTorch, "
-                            "~6 GB) loaded and then unloaded on every call: "
-                            "**no VRAM conflict** with generation. Nothing to "
-                            "type.")
-                        enh_log = gr.Textbox(
-                            label="Install log", lines=6,
-                            autoscroll=True, elem_classes="log-box")
-                        enh_inst = gr.Button(
-                            "⬇️ Install the prompt enhancer")
-
-                        def _install_enh():
-                            for msg in tools.install_enhance_stream():
-                                yield msg
-
-                        enh_inst.click(_install_enh, outputs=[enh_log])
 
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():
@@ -682,8 +596,7 @@ def build_generative_tab(model_id: str, title: str,
                 send_tool = gr.Dropdown(
                     [(t("🌐 Depth"), "depth"),
                      (t("✂️ Background removal"), "bg"),
-                     (t("🪄 Cut out an object (SAM)"), "sam"),
-                     (t("✨ Creative upscale (SDXL)"), "creative")],
+                     (t("🪄 Cut out an object (SAM)"), "sam")],
                     value=None, label="📤 Send the selection to the Toolkit",
                     visible=pending_toolkit is not None)
                 send_3d = gr.Button("🧊 Send the selection to Image → 3D",
@@ -864,95 +777,7 @@ def build_generative_tab(model_id: str, title: str,
 
         ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
 
-        # --- Améliorateur de prompt (LLM) ---
-        # System prompt adapté au modèle : Krea 2 -> guide Krea ; sinon générique.
-        # Même guide de prompt pour Raw que pour le Turbo : c'est le même
-        # modèle, seule la distillation les sépare.
-        _enh_auto = "krea2" if family.startswith("krea2") else "generic"
-
-        def _enhance(sys_prompt, text, level, variants):
-            if not (text or "").strip():
-                raise gr.Error(t("Enter a prompt to enhance first."))
-            try:
-                props = tools.enhance_prompt_variants(
-                    text.strip(), style=_enh_auto, level=level or "medium",
-                    variants=int(variants or 1),
-                    style_constraint=(sys_prompt or "").strip())
-            except tools.ToolError as exc:
-                raise gr.Error(str(exc))
-            except Exception as exc:  # noqa: BLE001
-                raise gr.Error(f"Improvement failed: {exc}")
-
-            # Feedback : ce qui a été fait, en une ligne repérable.
-            bits = []
-            if len(props) > 1:
-                bits.append(t("{n} propositions").format(n=len(props)))
-            if (sys_prompt or "").strip():
-                bits.append(t("active style respected"))
-            msg = "✅ **" + t("Improved prompt") + "**"
-            if bits:
-                msg += " — " + " · ".join(bits)
-            if len(props) > 1:
-                msg += "  \n" + t("Click a suggestion below to use it instead.")
-            # La 1re proposition part dans le champ ; les autres restent
-            # cliquables. Libellés numérotés : un prompt long casse un Radio.
-            choices = [(f"{i + 1}. {p[:110]}{'…' if len(p) > 110 else ''}", p)
-                       for i, p in enumerate(props)]
-            return (gr.update(value=props[0]),
-                    gr.update(choices=choices, value=props[0],
-                              visible=len(props) > 1),
-                    gr.update(value=msg), text or "", gr.update(visible=True))
-
-        enhance_btn.click(
-            _enhance,
-            inputs=[system_prompt, prompt, enh_level, enh_variants],
-            outputs=[prompt, enh_props, enh_msg, prompt_before, enh_undo],
-            **widgets.GPU_QUEUE)
-
-        # --- Récapitulatif VIVANT : ce que « Améliorer » va faire ---------
-        # On traduit les réglages en une phrase lisible, sinon impossible de
-        # savoir ce qu'on règle sans lire la doc.
-        def _recap(level, variants):
-            n = int(variants or 1)
-            parts = [{"light": t("light touch-up"),
-                      "medium": t("balanced enrichment"),
-                      "strong": t("full expansion")}.get(level or "medium", "")]
-            parts.append(t("1 suggestion only") if n == 1 else
-                         t("{n} propositions au choix").format(n=n))
-            return "→ " + "  ·  ".join(p for p in parts if p)
-
-        _recap_in = [enh_level, enh_variants]
-        for _c in _recap_in:
-            _c.change(_recap, inputs=_recap_in, outputs=[enh_recap])
-        # Valeur de départ : la ligne doit être remplie AVANT toute interaction.
-        enh_recap.value = _recap(enh_level.value, enh_variants.value)
-
-        # --- Rétablir le prompt d'avant amélioration ---
-        def _undo_enhance(before):
-            return (gr.update(value=before or ""),
-                    gr.update(choices=[], value=None, visible=False),
-                    gr.update(value="↩️ " + t("Original prompt restored.")),
-                    gr.update(visible=False))
-
-        enh_undo.click(_undo_enhance, inputs=[prompt_before],
-                       outputs=[prompt, enh_props, enh_msg, enh_undo])
-
-        # --- Tout effacer (prompt + traces d'amélioration) ---
-        def _clear_all():
-            return (gr.update(value=""), gr.update(value=""),
-                    gr.update(choices=[], value=None, visible=False),
-                    gr.update(value=""), gr.update(visible=False), "")
-
-        clear_prompt.click(
-            _clear_all,
-            outputs=[prompt, negative, enh_props, enh_msg, enh_undo,
-                     prompt_before])
-
-        # Cliquer une proposition la met dans le champ Prompt (.input : ne se
-        # redéclenche pas quand l'améliorateur remplit le Radio lui-même).
-        enh_props.input(lambda p: gr.update(value=p) if p else gr.update(),
-                        inputs=[enh_props], outputs=[prompt])
-
+        clear_prompt.click(lambda: ("", ""), outputs=[prompt, negative], queue=False)
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ

@@ -12,7 +12,7 @@ from .. import inventory, settings, storage
 from ..i18n import t
 from . import widgets
 
-CATEGORIES = ["Engines", "Models", "Toolkit add-ons", "Your data"]
+CATEGORIES = ["Engines", "Models", "Toolkit add-ons", "Removed features", "Your data"]
 
 
 def _choices_and_summary():
@@ -72,8 +72,9 @@ def build_manage_tab():
             "### Disk space\nEverything the application has downloaded, with "
             "its size. Tick what you want to delete, then confirm. Items "
             "marked **⚠️** are **your data** (LoRAs, custom models, "
-            "creations) — think twice. Everything else can be **downloaded "
-            "again** from inside the app.")
+            "creations) — think twice. Active tools can be downloaded again. "
+            "**Removed features** lists unused files from retired modules; "
+            "delete them only if you no longer need them.")
 
         summary_md = gr.Markdown("Open this tab to measure disk usage.")
         picks = gr.CheckboxGroup(choices=[], value=[],
@@ -307,7 +308,7 @@ def build_manage_tab():
         # ------------------------------------------------------------------ #
         gr.Markdown("---\n### 📖 Help — what does each option do?")
 
-        with gr.Accordion("🎨 Generation tabs (Flux.2 / Qwen Turbo / Krea / Z-Image)",
+        with gr.Accordion("🎨 Generation tabs (Flux.2 / Qwen Turbo / MOSS / Fibo / Krea)",
                           open=False):
             gr.Markdown(
                 "**Prompt** — your description. On an **editing model** "
@@ -328,23 +329,7 @@ def build_manage_tab():
                 "cartoon, comics, drawing, design,\npainting; appended "
                 "*after* your subject. 🎲 picks one at random.\n\n**🎨 Generate "
                 "/ ⏹️ Stop / 🗑️ Clear** — right under the prompt. *Clear* "
-                "empties\nthe prompt, the negative and every trace of "
-                "improvement.\n**↩️ Restore the original prompt** — appears "
-                "after an improvement and puts back\nexactly what you had "
-                "written, `--` parameters included.\n\nℹ️ **A preset "
-                "translates nothing**: it is a prefix glued in front of your "
-                "text.\nWrite in French and you get French with an English "
-                "header. It is the **✨\nImprove** button that translates and "
-                "shapes — and it now takes the active\npreset into account: "
-                "it describes the subject without adding a camera, a lens,\na "
-                "light or a treatment that would contradict it. Recommended "
-                "order: **pick the\npreset, then improve**.\n\n**✨ Prompt "
-                "improver** — a small local LLM rewrites your idea as an "
-                "English\nprompt (add-on, installed on demand). **Intensity** "
-                "sets how far the rewrite\ngoes; **Suggestions** produces "
-                "several at once in a single model load — click\nthe one you "
-                "prefer. The **grey line** under the menus summarises what "
-                "the\nbutton will do before you click it.\n\n**Format / Width "
+                "empties the prompt and the negative.\n\n**Format / Width "
                 "/ Height** — presets aligned on the model's "
                 "**native\nresolutions** (it renders better "
                 "there).\n**Steps** — denoising steps. Distilled models are "
@@ -550,30 +535,9 @@ def build_manage_tab():
                 "(**no** k-quants here). `q5_1` is a good "
                 "default.\n\n**Toolkit** — *Image → prompt* (read an image, "
                 "get the prompt that would\nrecreate it), *Depth*, "
-                "*Background removal*, *Cut out (SAM)*, *Layers (PSD)*,\nand "
-                "the upscaling family, from the most faithful to the most "
-                "inventive:\n\n- **Enlarge (ESRGAN)** — fast, deterministic, "
-                "100% GPU. Pick a 🎨 **drawing /\n  anime** model for comics "
-                "or illustration: a photo model puts halos on line\n  art and "
-                "invents grain in flat areas. You can drop your own `.pth` "
-                "files from\n  OpenModelDB into the upscalers folder.\n- "
-                "**HD** — sd.cpp's native highres fix: your own generation "
-                "model re-denoises\n  the whole image, no tiles, so no seams "
-                "are possible.\n- **High resolution** — Flux.2 re-renders the "
-                "image at its native resolution,\n  using it as both "
-                "reference and starting latent. Best-looking, least "
-                "faithful.\n- **Faces** — GFPGAN, "
-                "RestoreFormer++ or CodeFormer on the detected faces only.\n  "
-                "Run it last.\n- **Details (ADetailer)** — the only tool "
-                "that repairs HANDS: a YOLOv8 detector finds the region and "
-                "your own generation model redraws it, natively in sd.cpp. On "
-                "a face prefer *Faces*, which restores instead of "
-                "redrawing.\n- **Creative upscale (SDXL)** — tiled img2img "
-                "that openly invents detail. Its *pre-upscale* menu takes either "
-                "family: a GGUF ESRGAN or a **modern** model (DAT, SPAN, "
-                "PLKSR…), which hands SDXL a cleaner base to refine."
-                "\n\nEach tool installs in one "
-                "click (PyTorch on demand — *Details* needs none).")
+                "*Background removal* and *Cut out (SAM)*. Install each tool "
+                "on demand. **SeedVR2** and **VOSR** have their own restoration "
+                "workspaces in Tools & 3D.")
 
         with gr.Accordion("🔄 Update the app",
                           open=False):

@@ -33,7 +33,7 @@ class AutomaticSystemTests(unittest.TestCase):
                       "tokenizer": None, "uncond": None, "t5xxl": None,
                       "clip_l": None, "llm_vision": None}
         self.model = registry.BaseModel(
-            "z-image-turbo", "Z-Image", "z_image", [], "", [],
+            "krea2-turbo", "Krea 2", "krea2", [], "", [],
             {"steps": 8, "sampler": "euler"}, 6, [])
         self.prefs = {**settings.DEFAULT_PREFS, "system_mode": "auto"}
         self.gpus = patch.object(hardware, "detect_gpus",
@@ -94,11 +94,11 @@ class AutomaticSystemTests(unittest.TestCase):
 
     def test_explicit_catalog_weight_survives_automatic_quantization(self):
         selected = {**self.prefs, "quant": "Q3_K_S",
-                    "model_files": {"z-image-turbo": {
-                        "diffusion": "z_image_turbo-Q8_0.gguf"}}}
-        model = registry.get_base_model("z-image-turbo", selected)
+                    "model_files": {"krea2-turbo": {
+                        "diffusion": "krea2_turbo-Q8_0.gguf"}}}
+        model = registry.get_base_model("krea2-turbo", selected)
         diffusion = next(c for c in model.components if c.role == "diffusion")
-        self.assertEqual(diffusion.requested(), "z_image_turbo-Q8_0.gguf")
+        self.assertEqual(diffusion.requested(), "krea2_turbo-Q8_0.gguf")
         self.assertEqual(registry.effective_quants(selected)[0], "Q4_K_M")
 
     def test_generation_rechecks_actual_weight_and_ignores_stale_manual_flags(self):

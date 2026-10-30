@@ -16,12 +16,10 @@ from .sdcpp import GenRequest
 # flags alone cannot distinguish an older binary from one that loads the model.
 QWEN21_MIN_BUILD = 896
 QWEN21_PREVIEW_BUILD = 901
-FLUX3_MIN_BUILD = 968
 
 
 def _check_engine_build(model: registry.BaseModel) -> None:
-    minimum = int(model.defaults.get("min_engine_build") or
-                  (FLUX3_MIN_BUILD if model.family == "flux3" else 0))
+    minimum = int(model.defaults.get("min_engine_build") or 0)
     if not minimum:
         return
     try:
@@ -67,8 +65,6 @@ def _check_tokenizer_engine(model: registry.BaseModel, sd_cli: Path) -> None:
         raise sdcpp.EngineError(
             f"{model.name} requires an engine with --tokenizer. Run update.bat "
             "(or ./update.sh on Linux/Mac), then restart the app.")
-
-
 
 
 def cancel() -> str:
@@ -315,107 +311,6 @@ def resolve_model_files(model: "registry.BaseModel",
     return {"model_path": model_path, "diffusion": diffusion, "vae": vae,
             "enc": enc, "uncond": uncond, "t5xxl": t5xxl, "clip_l": clip_l,
             "llm_vision": llm_vision, "tokenizer": tokenizer}
-
-
-def adetailer_command(model_id: str, source: Path, output: Path,
-                      detector: Path, prompt: str = "", negative: str = "",
-                      denoise: float = 0.4, steps: int = 0, seed: int = -1,
-                      extra: dict | None = None) -> list[str]:
-    """Commande `sd-cli -M adetailer` : détecter, redessiner, recoller.
-
-    Le modèle, sa quantification et le placement mémoire viennent du MÊME
-    chemin que la génération normale (`resolve_model_files` + `memory_args`).
-    C'est voulu : la zone redessinée doit sortir du modèle qui a fait l'image,
-    sinon le raccord se voit — et une seconde copie de cette résolution
-    dériverait, comme celle du serveur résident l'avait fait.
-    """
-    prefs = settings.load_prefs()
-    sd_cli = settings.find_sd_cli()
-    if sd_cli is None:
-        raise sdcpp.EngineError("The sd-cli binary was not found. "
-                                "Run install.bat.")
-    if not sdcpp.adetailer_supported(sd_cli):
-        raise sdcpp.EngineError(
-            "Your sd.cpp engine does not know ADetailer yet (the `--ad-model` "
-            "option). Run update.bat, then restart the application.")
-    model = registry.get_base_model(model_id, prefs)
-    if model is None:
-        raise sdcpp.EngineError(f"Unknown model: {model_id}")
-    _check_engine_build(model)
-    _check_tokenizer_engine(model, sd_cli)
-    if not model.defaults.get("supports_adetailer", True):
-        raise sdcpp.EngineError(f"{model.name}: native masked ADetailer is not supported. Choose another repair model.")
-    if model.id == "qwen-image-2.1-turbo":
-        if steps not in (0, 8):
-            raise sdcpp.EngineError("Qwen Image 2.1 Turbo requires 8 steps, including ADetailer.")
-        if "--sigmas" not in sdcpp.supported_options(sd_cli):
-            raise sdcpp.EngineError("Qwen Image 2.1 Turbo needs sd.cpp with --sigmas. Run update.bat.")
-    files = resolve_model_files(model)
-    d = dict(model.defaults)
-    automatic = prefs.get("system_mode") == "auto"
-    plan = (system_profile.plan_for_model(model, files, prefs, sd_cli,
-                                          width=int(d.get("width", 1024)),
-                                          height=int(d.get("height", 1024)),
-                                          has_reference=True)
-            if automatic else None)
-    flags, gpu_index = ((plan.flags, plan.gpu_index) if plan else
-                        _resolved_flags(prefs))
-    req = GenRequest(
-        model_path=files["model_path"], diffusion_model=files["diffusion"],
-        vae=files["vae"], text_encoder=files["enc"], tokenizer=files.get("tokenizer"),
-        uncond_model=files["uncond"], t5xxl=files["t5xxl"],
-        clip_l=files["clip_l"],
-        prompt=prompt, negative=negative,
-        steps=int(steps or d.get("steps", 8) or 8),
-        cfg_scale=float(d.get("cfg_scale", 1.0)),
-        sampler=d.get("sampler", "euler"),
-        schedule=("" if d.get("scheduler", "auto") == "auto" else
-                  d.get("scheduler", "")),
-        seed=int(seed), strength=float(denoise),
-        flags=flags, gpu_index=gpu_index,
-        params_backend=(plan.params_backend if plan else
-                        (prefs.get("params_backend") or "")),
-        auto_fit=plan.auto_fit if plan else bool(prefs.get("auto_fit")),
-        max_vram=plan.max_vram if plan else sdcpp.max_vram_arg(
-            prefs.get("max_vram") or ""),
-        stream_layers=plan.stream_layers if plan else bool(
-            prefs.get("stream_layers")),
-    )
-
-    cmd = [str(sd_cli), "-M", "adetailer",
-           "-i", str(source), "-o", str(output),
-           "--ad-model", str(detector)]
-    if req.model_path:
-        cmd += ["-m", str(req.model_path)]
-    else:
-        cmd += ["--diffusion-model", str(req.diffusion_model)]
-        if req.uncond_model:
-            cmd += ["--uncond-diffusion-model", str(req.uncond_model)]
-        if req.text_encoder:
-            cmd += ["--llm", str(req.text_encoder)]
-        if req.tokenizer:
-            cmd += ["--tokenizer", str(req.tokenizer)]
-        if req.t5xxl:
-            cmd += ["--t5xxl", str(req.t5xxl)]
-        if req.clip_l:
-            cmd += ["--clip_l", str(req.clip_l)]
-    if req.vae:
-        cmd += ["--vae", str(req.vae)]
-    cmd += ["-p", req.prompt, "--steps", str(req.steps),
-            "--cfg-scale", str(req.cfg_scale),
-            "--sampling-method", req.sampler,
-            "--strength", f"{req.strength:.2f}", "-s", str(req.seed)]
-    if req.negative and req.cfg_scale > 1.0:
-        cmd += ["-n", req.negative]
-    if req.schedule:
-        cmd += ["--scheduler", req.schedule]
-    cmd += d.get("extra_flags", [])
-    cmd += sdcpp.memory_args(sd_cli, req)
-    if extra:
-        cmd += ["--extra-ad-args",
-                ",".join(f"{k}={v}" for k, v in extra.items() if v != "")]
-    cmd += ["-v"]
-    return cmd
 
 
 def generate(

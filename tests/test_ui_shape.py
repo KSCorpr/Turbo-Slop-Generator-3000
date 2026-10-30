@@ -109,7 +109,7 @@ class AccordionBudgetTests(unittest.TestCase):
         self.assertLess(settled, fresh,
                         "aucun bloc d'installation ne disparaît une fois "
                         "les outils installés")
-        self.assertGreaterEqual(fresh - settled, 5)
+        self.assertGreaterEqual(fresh - settled, 4)
 
     def test_the_settled_machine_has_few_things_to_unfold(self):
         """C'est l'état dans lequel l'utilisateur passe sa vie.

@@ -117,7 +117,7 @@ class MossDMDTests(unittest.TestCase):
                 with self.assertRaisesRegex(sdcpp.EngineError, "Use DMD fast"):
                     generate.generate(**params)
             with self.assertRaisesRegex(sdcpp.EngineError, "only for MOSS"):
-                generate.generate("z-image-turbo", "cat", "", 8, 1, 1024, 1024, 42, 1, moss_dmd=True)
+                generate.generate("krea2-turbo", "cat", "", 8, 1, 1024, 1024, 42, 1, moss_dmd=True)
             resolve.assert_not_called()
 
     def test_ui_preset_selects_real_dmd_mode_and_standard_preset_clears_it(self):

@@ -63,9 +63,9 @@ class TinyAutoencoderTests(unittest.TestCase):
                               preview_path=self.root / "preview_%03d.png" if preview else None, **kwargs)
         return run.call_args.args[0], output
 
-    def test_all_nine_models_select_only_their_vae_architecture_and_share_weights(self):
-        expected = {"flux2-klein-9b": "taef2", "flux3-klein": "taef2", "moss-image-sft": "taef2",
-                    "fibo2-dev": "taef2", "fibo2-edit-turbo": "taef2", "z-image-turbo": "taef1",
+    def test_all_seven_models_select_only_their_vae_architecture_and_share_weights(self):
+        expected = {"flux2-klein-9b": "taef2", "moss-image-sft": "taef2",
+                    "fibo2-dev": "taef2", "fibo2-edit-turbo": "taef2",
                     "qwen-image-2.1-turbo": "taeqi2_1", "krea2-turbo": "taew2_1", "krea2-realism": "taew2_1"}
         for model in registry.load_base_models({}):
             self.assertEqual(taesd.for_model(model).key, expected[model.id])

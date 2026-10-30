@@ -6,8 +6,7 @@ Safetensors file. No Python neural runtime or weight conversion is needed.
 
 | Image models | Tiny autoencoder | Download |
 |---|---|---:|
-| Flux.2 Klein, Flux.3 Klein, MOSS SFT, Fibo 2 Dev / Edit Turbo | TAEF2 | 10.72 MB |
-| Z-Image Turbo | TAEF1 | 9.85 MB |
+| Flux.2 Klein, MOSS SFT, Fibo 2 Dev / Edit Turbo | TAEF2 | 10.72 MB |
 | Qwen Image 2.1 Turbo (RGBA) | TAEQI2.1 | 30.59 MB |
 | Krea 2 Turbo / Realism (Wan 2.1 VAE) | TAEW2.1 | 22.64 MB |
 

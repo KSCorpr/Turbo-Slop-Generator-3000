@@ -88,14 +88,13 @@ class DegradationTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
-    def test_both_click_based_tools_offer_it(self):
+    def test_click_segmentation_offers_it(self):
         """SAM et Calques se pilotent au CLIC sur l'image : ne pas la voir y
         est bloquant, pas seulement gênant."""
         src = (Path(__file__).resolve().parent.parent / "atelier" / "ui"
                / "toolkit_tab.py").read_text(encoding="utf-8")
         self.assertIn("s_image.change(preview.html", src)
-        self.assertIn("lay_image.change(preview.html", src)
-        self.assertEqual(src.count("_FALLBACK_TITLE"), 3)  # 1 def + 2 usages
+        self.assertEqual(src.count("_FALLBACK_TITLE"), 2)  # 1 def + 2 usages
 
 
 if __name__ == "__main__":

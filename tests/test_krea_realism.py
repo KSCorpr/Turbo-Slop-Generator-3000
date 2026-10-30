@@ -135,17 +135,6 @@ class KreaRealismTests(unittest.TestCase):
             self.assertIn("--vae", command)
             self.assertIn("--llm", command)
 
-    def test_adetailer_preserves_six_steps_and_simple_schedule(self):
-        for comp in self.model.components:
-            self.install(comp)
-        with patch.object(settings, "load_prefs", return_value=preferences()), \
-             patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
-             patch.object(generate, "_resolved_flags", return_value=({}, 0)), \
-             patch.object(sdcpp, "adetailer_supported", return_value=True), \
-             patch.object(sdcpp, "memory_args", return_value=[]):
-            command = generate.adetailer_command(MODEL, Path("in.png"), Path("out.png"), Path("detector"))
-        self.assertEqual(command[command.index("--steps") + 1], "6")
-        self.assertEqual(command[command.index("--scheduler") + 1], "simple")
 
     def test_old_engine_is_rejected_before_loading_thirteen_gb_checkpoint(self):
         (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-900-abcdef0"}')

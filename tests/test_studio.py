@@ -227,10 +227,36 @@ class StudioWiringTests(unittest.TestCase):
         toolkit = next(tab for tab in tabs if tab.id == "toolkit")
         children = next(block for block in toolkit.children if isinstance(block, gr.Tabs))
         self.assertEqual([tab.id for tab in children.children],
-                         ["describe", "depth", "bg", "sam", "layers", "face", "adetailer", "creative"])
+                         ["describe", "depth", "bg", "sam"])
         seed_model = next(b for b in self.demo.blocks.values()
                           if isinstance(b, gr.Dropdown) and b.label == "Restoration model")
         self.assertEqual(seed_model.value, "3b-w4a8")
+
+    def test_removed_features_have_no_tabs_controls_callbacks_or_catalog_entries(self):
+        from atelier import model_catalog
+        tabs = {b.id for b in self.demo.blocks.values() if isinstance(b, gr.Tab)}
+        self.assertTrue({"flux3-klein", "z-image-turbo", "multiview", "svg", "layers", "face",
+                         "adetailer", "creative"}.isdisjoint(tabs))
+        self.assertEqual({m.id for m in registry.load_base_models({})},
+                         {"flux2-klein-9b", "qwen-image-2.1-turbo", "moss-image-sft", "fibo2-dev",
+                          "fibo2-edit-turbo", "krea2-turbo", "krea2-realism"})
+        for package in ("image:flux3-klein", "image:z-image-turbo", "tool:enhance", "tool:face",
+                        "tool:upscale", "tool:adetailer", "tool:clip", "addon:qwen-layered",
+                        "addon:svg", "addon:hivg", "addon:omnisvg", "taesd:taef1"):
+            self.assertIsNone(model_catalog.get(package), package)
+            self.assertFalse(model_catalog.ready(package), package)
+            with self.assertRaises(ValueError):
+                model_catalog.install(package)
+        names = {getattr(f.fn, "__name__", "") for f in self.demo.fns.values()}
+        self.assertTrue({"_enhance", "do_face", "do_adetailer", "do_creative", "do_layers",
+                         "run_views", "run_svg", "recover_svg"}.isdisjoint(names))
+        for block in self.demo.blocks.values():
+            label = getattr(block, "label", "") or ""
+            self.assertNotIn("Prompt improver", label)
+            self.assertNotIn("Enhance prompt", label)
+            self.assertNotEqual(getattr(block, "value", None), "Send original to upscale")
+            if isinstance(block, gr.Dropdown) and label == "📤 Send the selection to the Toolkit":
+                self.assertEqual({v for _, v in block.choices}, {"depth", "bg", "sam"})
 
     def test_editing_controls_are_connected_to_generation(self):
         def generation_inputs(model_id):
@@ -259,16 +285,11 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
         names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_generate3d", "do_depth", "do_bg",
-                 "do_describe", "do_upscale", "do_layers", "do_hd", "do_highres", "do_face",
-                 "do_adetailer", "do_creative", "_enhance", "_do_bench", "_on_click", "_lay_click",
-                 "run_seed", "run_ltx", "run_splat", "install_seed", "install_ltx", "install_splat",
-                 "generate_image_splats", "install_image_splats",
-                 "run_views", "convert_panorama", "install_view_caption", "run_svg",
-                 "install_svg_cpu", "install_svg_ai", "install_svg_omni", "check_svg_memory", "recover_svg",
-                 "install_layer_model", "check_layer_memory", "handler", "deleter",
-                 "install_catalog_package", "consolidate_catalog_weights"}
+                 "do_describe", "_do_bench", "_on_click", "run_seed", "run_ltx", "run_splat",
+                 "install_seed", "install_ltx", "install_splat", "generate_image_splats", "install_image_splats",
+                 "install_sam2", "handler", "deleter", "install_catalog_package", "consolidate_catalog_weights"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
-        self.assertGreaterEqual(len(found), 29)
+        self.assertGreaterEqual(len(found), 24)
         for fn in found:
             self.assertEqual(fn.concurrency_id, widgets.GPU_QUEUE["concurrency_id"], fn.name)
             self.assertEqual(fn.concurrency_limit, 1, fn.name)
@@ -292,20 +313,20 @@ class StudioWiringTests(unittest.TestCase):
              patch("huggingface_hub.HfApi.model_info",side_effect=AssertionError("automatic network request")):
             flux=select("image:flux2-klein-9b")
             qwen=select("image:qwen-image-2.1-turbo")
-            layers=select("addon:qwen-layered")
+            sam=select("addon:sam2")
         self.assertTrue(flux[0]["visible"])
         self.assertNotEqual(flux[4]["choices"],qwen[4]["choices"])
-        self.assertFalse(layers[0]["visible"])
-        self.assertTrue(layers[1]["visible"])
-        self.assertFalse(layers[3]["visible"])
-        self.assertIn("Qwen-Image-Layered",layers[6])
-        self.assertFalse(layers[7]["visible"])
+        self.assertFalse(sam[0]["visible"])
+        self.assertTrue(sam[1]["visible"])
+        self.assertFalse(sam[3]["visible"])
+        self.assertIn("SAM 2.1",sam[6])
+        self.assertFalse(sam[7]["visible"])
 
     def test_transfers_are_direct_and_do_not_wait_for_the_gpu_queue(self):
         functions = [fn for fn in self.demo.fns.values()
                      if getattr(fn.fn, "__name__", "") == "transfer_image"]
         self.assertEqual(len(functions),
-                         3 * len(registry.load_base_models(settings.load_prefs())) + 1)
+                         3 * len(registry.load_base_models(settings.load_prefs())))
         for fn in functions:
             self.assertFalse(fn.queue)
             self.assertTrue(any(event in ("click", "input") for _, event in fn.targets))
@@ -320,79 +341,11 @@ class StudioWiringTests(unittest.TestCase):
         with TestClient(App.create_app(self.demo)) as client:
             response = client.get("/config")
         self.assertEqual(response.status_code, 200)
-        # Nine full image workspaces now include Fibo Dev and Edit Turbo.
+        # Seven image workspaces include Fibo Dev and Edit Turbo.
         # One additional shared TripoSplat / Idol workspace: allow 100 KB for
         # its upload, Gaussian viewer, controls and callback schemas.
         self.assertLess(len(response.content), 2_000_000)
 
-    def test_failed_hivg_exposes_diagnostics_and_never_a_completed_svg(self):
-        from atelier.engine import vectorize
-        from atelier.ui import vector_tab
-        function = next(fn.fn for fn in self.demo.fns.values()
-                        if getattr(fn.fn, "__name__", "") == "run_svg")
-        with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory)
-            (folder / "diagnostic.json").write_text(json.dumps({"failed": True, "error": "Incomplete SVG"}))
-            (folder / "diagnostics.zip").write_bytes(b"diagnostic bundle")
-
-            def stream(action):
-                path = action(lambda line: None)
-                yield "Completed.", str(path), "output log"
-
-            with patch.object(vectorize, "run", side_effect=vectorize.SVGDiagnosticError("Incomplete SVG", folder)), \
-                 patch.object(vector_tab, "stream_task", side_effect=stream):
-                result = list(function("hivg-text", None, "square", 4096, 0, 5))[-1]
-            self.assertEqual(result[0], "Failed: Incomplete SVG")
-            self.assertIsNone(result[1])
-            self.assertIsNone(result[2])
-            self.assertEqual(result[3], str(folder / "diagnostics.zip"))
-            self.assertIsNone(result[6])
-
-    def test_recovered_partial_is_labeled_and_downloads_its_marked_filename(self):
-        from atelier.engine import vectorize
-        from atelier.ui import vector_tab
-        function = next(fn.fn for fn in self.demo.fns.values()
-                        if getattr(fn.fn, "__name__", "") == "recover_svg")
-        with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory) / "svg-recovered-test"
-            folder.mkdir()
-            (folder / "manifest.json").write_text(json.dumps({"complete": False, "default_variant": 1,
-                "recovered_from_diagnostics": True, "variants": [{"number": 1, "seed": None, "paths": 2,
-                "complete": False, "file_stem": "01.partial"}]}))
-
-            def stream(action):
-                yield "Completed.", str(action(lambda line: None)), "recovery log"
-
-            with patch.object(settings, "OUTPUT_DIR", Path(directory)), \
-                 patch.object(vectorize, "recover", return_value=folder), \
-                 patch.object(vector_tab, "stream_task", side_effect=stream):
-                result = list(function("old-diagnostics.zip"))[-1]
-            self.assertIn("Partial SVG exported", result[0])
-            self.assertTrue(result[1].endswith("01.partial.png"))
-            self.assertTrue(result[2].endswith("01.partial.svg"))
-            self.assertIn("PARTIAL SVG", result[7])
-            self.assertIn("no model inference", result[7])
-
-    def test_qwen_layer_mode_dispatches_all_controls_and_returns_real_exports(self):
-        from atelier.engine import layer_decompose
-        from atelier.ui import toolkit_tab
-        function = next(fn.fn for fn in self.demo.fns.values()
-                        if getattr(fn.fn, "__name__", "") == "do_layers")
-        with tempfile.TemporaryDirectory() as temporary:
-            folder=Path(temporary)
-            (folder/'manifest.json').write_text(json.dumps({'layers':[{'file':'layer-01.png','name':'Layer 01'}]}))
-            def stream(action):
-                yield 'Completed.',str(action(lambda line:None)),'step 2/2'
-            options={**layer_decompose.DEFAULTS,'layers':2,'steps':2,'seed':42}
-            with patch.object(layer_decompose,'run',return_value=folder) as run, \
-                 patch.object(toolkit_tab,'stream_task',side_effect=stream):
-                result=list(function(Image.new('RGB',(32,32)),'qwen',[],12,.4,24,False,False,'sam2',
-                                     'a poster',*options.values()))[-1]
-            self.assertEqual(run.call_args.args[1],options)
-            self.assertEqual(run.call_args.args[2],'a poster')
-            self.assertEqual(result[0],[str(folder/'layers.psd'),str(folder/'layers.zip')])
-            self.assertEqual(result[2],str(folder/'composite.png'))
-            self.assertEqual(result[3],[(str(folder/'layer-01.png'),'Layer 01')])
 
 
 if __name__ == "__main__":

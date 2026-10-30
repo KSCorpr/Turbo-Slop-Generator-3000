@@ -10,7 +10,7 @@ from .engine import tools
 from .engine.local_jobs import LocalJob
 
 JOB = LocalJob()
-CATEGORIES = ["All", "Image generation", "Toolkit", "Layers & SVG", "Video & 3D"]
+CATEGORIES = ["All", "Image generation", "Toolkit", "Video & 3D"]
 
 
 @dataclass(frozen=True)
@@ -28,13 +28,8 @@ def packages(prefs=None):
     toolkit = [
         ("depth", "Depth Anything V2 Small", "Depth and normals; one shared installation for all depth tools."),
         ("bg", "RMBG 1.4", "Background removal. Includes the upstream Python model code."),
-        ("describe", "Image description · Qwen2.5-VL 3B", "One model for Image → prompt and multi-view captions (~7.5 GB)."),
-        ("enhance", "Prompt enhancer · Qwen2.5 3B", "Prompt enhancement and Xanax use the same local language model (~6 GB)."),
-        ("clip", "CLIP · region naming", "Optional semantic naming/merging for SAM layers (~600 MB)."),
-        ("sam", "SAM 1 base · legacy", "Legacy click segmentation and masks (~375 MB). SAM 2 is listed under Layers & SVG."),
-        ("face", "Face restoration pack", "GFPGAN, RestoreFormer++, CodeFormer and their shared detector/parser. CodeFormer is non-commercial."),
-        ("upscale", "Creative upscale · SDXL", "SDXL base, fp16-fix VAE and optional Tile ControlNet; existing checkpoints are retained."),
-        ("adetailer", "ADetailer detectors", "Face/person detectors, converted locally for the image engine."),
+        ("describe", "Image description · Qwen2.5-VL 3B", "Vision-language model for Image → prompt (~7.5 GB)."),
+        ("sam", "SAM 1 base · legacy", "Legacy click segmentation and masks (~375 MB). SAM 2.1 is also available."),
         ("upscalers", "ESRGAN upscalers · GGUF", "Shared ESRGAN weights for the image engine; no extra image-generation model."),
         ("modern", "Modern upscalers · Spandrel", "Shared modern upscale weights and their runtime (SwinIR / RealPLKSR / DAT)."),
     ]
@@ -45,15 +40,11 @@ def packages(prefs=None):
     return images + tiny + [Package("moss:dmd", "MOSS SFT · DMD 8-step adapter", "Image generation",
                             "Optional 1.19 GB LoRA for MOSS-Image SFT. Select DMD fast (8 steps) in Images after downloading. "
                             "Reuses the installed image model, encoder and VAE; no second base checkpoint.")] + [Package("tool:"+key,name,"Toolkit",note) for key,name,note in toolkit] + [
-        Package("addon:sam2","SAM 2.1 small","Layers & SVG","Click cut-out and automatic/manual layers share the same 184 MB checkpoint."),
+        Package("addon:sam2","SAM 2.1 small","Toolkit","Click-to-cutout segmentation (~184 MB checkpoint)."),
         Package("addon:vosr", "VOSR 2.0 · image restoration", "Toolkit",
                 "One-step ×1 / ×2 / ×4 restoration. Isolated CUDA 12.6 runtime; "
                 "6.97 GB of pinned DiT, DINOv2 and dedicated Qwen 2D VAE weights. "
                 "FP16, tiled inference and stage offload by default; no ComfyUI server."),
-        Package("addon:qwen-layered","Qwen-Image-Layered Q4","Layers & SVG","RGBA decomposition: selected Q4 transformer + text encoder + VAE (~30 GB). Separate from Qwen Image Turbo."),
-        Package("addon:svg","VTracer / LayerTracer · CPU","Layers & SVG","CPU runtime and official source only; no neural weights."),
-        Package("addon:hivg","HiVG · experimental","Layers & SVG","Pinned HiVG weights (~8.14 GB) and isolated inference runtime. Public compressed outputs can be undecodable."),
-        Package("addon:omnisvg","OmniSVG 1.1 4B","Layers & SVG","SVG model + Qwen processor (~7.71 GB); base Qwen weights are not downloaded."),
         Package("seed:convrot","SeedVR2 · ConvRot","Video & 3D","Installs the native ConvRot runtime and only the selected model. All SeedVR2 variants reuse one VAE.",
                 tuple((key,key) for key in addons.SEED_CONVROT_MODELS)),
         Package("seed:classic","SeedVR2 · classic GGUF","Video & 3D","Legacy GGUF runtime, selected model and the same shared SeedVR2 VAE.",tuple((key,key) for key in addons.SEED_MODELS)),
@@ -173,11 +164,10 @@ def install(key, variant=None, log=print):
                 for message in (downloader.download_modern_upscalers(log) if name == "modern" else downloader.download_upscalers(log)):
                     JOB.check();log(message)
             else:
-                command=["setup_adetailer.py"] if name == "adetailer" else ["setup_tools.py",name]
+                command=["setup_tools.py",name]
         elif key.startswith("addon:"):
             name=key[6:]
-            command=["setup_layers.py",name] if name in {"sam2","qwen-layered"} else (
-                     ["setup_media.py",name] if name in {"splat", "vosr"} else ["setup_svg.py",name])
+            command=["setup_sam2.py", name] if name == "sam2" else ["setup_media.py", name]
         elif key.startswith("splat:"):
             command=["setup_image_splats.py",key[6:]]
         elif key.startswith("seed:"):

@@ -137,12 +137,9 @@ class MossTests(unittest.TestCase):
     def test_old_build_and_missing_tokenizer_option_fail_before_loading(self):
         (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-974-abcdef0"}')
         with patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
-             patch.object(sdcpp, "adetailer_supported", return_value=True), \
              patch.object(generate, "resolve_model_files") as resolve:
             with self.assertRaisesRegex(sdcpp.EngineError, "975.*update.bat"):
                 generate.generate(MODEL, "cat", "", 50, 3, 1024, 1024, 42, 1)
-            with self.assertRaisesRegex(sdcpp.EngineError, "975.*update.bat"):
-                generate.adetailer_command(MODEL, Path("in.png"), Path("out.png"), Path("detector"))
             resolve.assert_not_called()
         (settings.BIN_DIR / "engine-manifest.json").unlink()
         with patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
@@ -152,17 +149,6 @@ class MossTests(unittest.TestCase):
                 generate.generate(MODEL, "cat", "", 50, 3, 1024, 1024, 42, 1)
             resolve.assert_not_called()
 
-    def test_adetailer_uses_the_same_tokenizer_and_sampling(self):
-        files = self.install_all()
-        with patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
-             patch.object(sdcpp, "adetailer_supported", return_value=True), \
-             patch.object(sdcpp, "supported_options", return_value=OPTIONS), \
-             patch.object(generate, "_resolved_flags", return_value=({}, 0)), \
-             patch.object(settings, "load_prefs", return_value={"auto_optimize": False}):
-            command = generate.adetailer_command(MODEL, Path("in.png"), Path("out.png"), Path("detector"))
-        self.assertEqual(command[command.index("--tokenizer") + 1], str(files["tokenizer"]))
-        self.assertEqual(command[command.index("--steps") + 1], "50")
-        self.assertEqual(command[command.index("--cfg-scale") + 1], "3.0")
 
     def test_3060_placement_stages_text_weights_and_keeps_image_on_gpu(self):
         for role, size in (("diffusion", 5_413_698_958), ("text_encoder", 5_680_522_464), ("vae", 336_211_292)):

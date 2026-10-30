@@ -361,11 +361,6 @@ def hires_supported(sd_cli: Path | None) -> bool:
     return "--hires" in supported_options(sd_cli)
 
 
-def adetailer_supported(sd_cli: Path | None) -> bool:
-    """Ce binaire sait-il détecter puis redessiner une zone (`--ad-model`) ?"""
-    return "--ad-model" in supported_options(sd_cli)
-
-
 # --------------------------------------------------------------------------- #
 #  Exécution SEGMENTÉE (« graph cut »).
 #
@@ -793,9 +788,8 @@ def _failure_error(code: int, cmd: list[str],
 def _hires_advice() -> str:
     return ("The HD pass re-denoises the WHOLE image: its cost climbs with "
             "the pixel count, and it adds to the model weights already on "
-            "the card.\n→ Lower the enlargement factor, or go through “🔼 "
-            "Enlarge (ESRGAN)” and then “✨ Creative upscale (SDXL)”, which "
-            "works in tiles and fits in far less VRAM.")
+            "the card.\n→ Lower the enlargement factor, or use tiled restoration "
+            "in Tools & 3D → SeedVR2 upscale / VOSR 2.0 upscale.")
 
 
 def _no_budget_advice(cmd: list[str]) -> str:

@@ -18,7 +18,7 @@ in the same menus; select the matching component and architecture. These local
 selections are saved separately from catalog download choices.
 
 Open **Models** to install image-generation weights and the models used by the
-Toolkit, layers/SVG tools, video and 3D. Filter by usage or search, then choose
+Toolkit, video and 3D. Filter by usage or search, then choose
 a package. The page renders one image-weight form, not one copy per model.
 Switching images restores that model's saved weight choices.
 
@@ -26,19 +26,14 @@ Switching images restores that model's saved weight choices.
   automatic choices. **Load weights and sizes** performs the metadata request
   only when clicked. A component table identifies dependencies shared with
   other image models. Delete retains files required by another image model.
-- **Toolkit:** depth/normals, background removal, image descriptions, prompt
-  enhancement, CLIP region naming, legacy SAM, face restoration, SDXL creative
-  upscale, ADetailer, ESRGAN and modern Spandrel upscalers.
-- **Layers & SVG:** SAM 2.1, Qwen-Image-Layered, VTracer/LayerTracer CPU runtime,
-  HiVG and OmniSVG. Runtime-only packages are explicitly identified.
+- **Toolkit:** depth/normals, background removal, image descriptions, SAM click-to-cutout, ESRGAN and modern Spandrel upscalers.
+- **Segmentation:** SAM 2.1 and legacy SAM for click-to-cutout.
 - **Video & 3D:** ConvRot and classic SeedVR2, LTX 2.5, TRELLIS.2, Pixal3D and
   Brush. Choose the requested variant before installing. SeedVR2's selected
   DiT and shared VAE can now be downloaded here before the first inference.
 
 Toolkit installation buttons remain available as contextual shortcuts; they
-use the same weight paths and transfer helpers. Image description and
-multi-view captioning share one Qwen-VL model. Prompt enhancement and Xanax
-share their language model. Generation and conversion constraints remain those
+use the same weight paths and transfer helpers. Generation and conversion constraints remain those
 of each engine: the catalog does not make their checkpoint formats interchangeable.
 Some large tools also install a separate Python/CUDA runtime. Those versions
 are retained independently to avoid dependency conflicts.
@@ -77,7 +72,7 @@ benchmark; the generation placement planner remains responsible for offload.
 Weights alone approaching/exceeding GPU memory receive an explicit offload note.
 
 INT8/BF16 choices for MOSS, Qwen 2.1 Turbo, Fibo 2 and Krea Realism are visible
-before any metadata query. Krea 2 Turbo and Z-Image Turbo also offer their
+before any metadata query. Krea 2 Turbo also offers their
 Comfy-Org INT8 ConvRot/BF16 Safetensors alongside the existing GGUF source.
 Cross-repository choices persist across restarts, download and generation;
 loading sizes still shows the original GGUF variants after selecting Safetensors.
@@ -87,7 +82,6 @@ Suggestions label a choice; they do not overwrite saved selections or download
 additional precision variants automatically.
 
 Backend references: [Krea 2](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/krea2.md),
-[Z-Image](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/z_image.md),
 [NVIDIA compute capabilities](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html).
 
 ## Reusing identical weights
@@ -126,8 +120,7 @@ variants are separate assets. Existing unused formats are not guessed and
 deleted automatically. In the Toolkit's Transformers installations, new
 downloads now select one native checkpoint format (Safetensors preferred,
 PyTorch fallback), along with required configs/tokenizers/Python model code.
-They exclude ONNX, TF, redundant `.pth` copies and alternate exports. SDXL VAE
-and Tile ControlNet likewise request only the checkpoint actually loaded.
+They exclude ONNX, TF, redundant `.pth` copies and alternate exports.
 
 System storage totals count shared file data once. Individual item rows show
 logical file sizes, which can overlap. Deleting one hard-link alias does not

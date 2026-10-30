@@ -58,8 +58,8 @@ rendu typographique parfait.
 
 Edit Turbo sans référence est refusé avant le lancement du moteur, y compris
 quand une entrée `init_image` classique lui est envoyée. Le masque natif Fibo
-n'est pas relié à `--mask` dans sd.cpp : les appels masqués et ADetailer sont
-refusés explicitement. Fibo n'apparaît pas dans le choix ADetailer. Edit Turbo
+n'est pas relié à `--mask` dans sd.cpp : les appels masqués sont
+refusés explicitement. Edit Turbo
 est aussi exclu des parcours qui génèrent sans image de référence, comme le
 benchmark texte seul et le générateur d'image initiale pour la 3D.
 
@@ -84,7 +84,7 @@ revenir au calcul CPU. Aucun environnement Torch supplémentaire n'est installé
 Le VAE conserve le dossier historique commun
 `Comfy-Org/flux2-klein-9B/split_files/vae/flux2-vae.safetensors` ; son SHA-256
 est identique au VAE republié avec Fibo. L'encodeur est celui déjà utilisé par
-Krea 2 et Flux.3 : `Qwen/Qwen3-VL-4B-Instruct-GGUF`, avec la quantification
+Krea 2 : `Qwen/Qwen3-VL-4B-Instruct-GGUF`, avec la quantification
 choisie par le profil ou l'utilisateur. Q4_K_M pèse 2,50 Go ; Q8_0, 4,28 Go.
 Un encodeur compatible déjà présent est conservé.
 

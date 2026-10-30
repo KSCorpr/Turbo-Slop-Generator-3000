@@ -85,7 +85,6 @@ class ModernUpscaleTests(unittest.TestCase):
                  patch.object(settings, "ensure_dirs", side_effect=lambda: (
                      (root / "tmp").mkdir(exist_ok=True), (root / "outputs").mkdir(exist_ok=True))), \
                  patch.object(registry, "upscaler_path", return_value=weights), \
-                 patch.object(tools, "face_is_installed", return_value=False), \
                  patch.object(tools, "_gen_gpu_index", return_value=1), \
                  patch.object(tools, "_run_tool", side_effect=run):
                 result = tools.modern_upscale(Image.new("RGB", (8, 4)), weights.name)
@@ -93,23 +92,3 @@ class ModernUpscaleTests(unittest.TestCase):
             self.assertIn("run_spandrel.py", commands[0][1])
             with Image.open(result) as image:
                 self.assertEqual(image.size, (32, 16))
-
-    def test_cancelled_pre_enlargement_does_not_continue_with_lanczos(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            source = Path(temporary) / "input.png"
-            Image.new("RGB", (8, 8)).save(source)
-
-            def cancelled(*args, **kwargs):
-                tools._CANCELLED = True
-                raise tools.ToolError("Cancelled by the user.")
-
-            logs = []
-            with patch.object(tools, "upscale_is_installed", return_value=True), \
-                 patch.object(tools, "_CANCELLED", False), \
-                 patch.object(tools, "modern_upscale", side_effect=cancelled), \
-                 patch.object(tools, "_run_tool") as run:
-                with self.assertRaisesRegex(tools.ToolError, "Cancelled"):
-                    tools.ultimate_upscale(source, base_model=source,
-                                           esrgan_model="4xNomos8kHAT-L_otf.pth", log=logs.append)
-            run.assert_not_called()
-            self.assertFalse(any("Lanczos fallback" in line for line in logs))

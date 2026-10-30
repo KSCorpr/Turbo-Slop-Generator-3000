@@ -2,7 +2,7 @@
 """Turbo Slop Generator 3000 — studio d'inférence d'images en local (Gradio).
 
 Onglets : Génération (Flux.2 Klein 9B / Qwen Image 2.1 Turbo /
-Krea 2 Turbo / Z-Image,
+MOSS / Fibo 2 / Krea 2,
 GGUF) · Xanax (style figé) ·
 Catalogue de modèles ·
 Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · Réglages.
@@ -222,8 +222,6 @@ from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
 from atelier.ui.vosr_tab import build_vosr_tab
 from atelier.ui.image_splats_tab import build_image_splats_tab
-from atelier.ui.multiview_tab import build_multiview_tab
-from atelier.ui.vector_tab import build_svg_tab
 from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
@@ -321,10 +319,6 @@ def build_app() -> gr.Blocks:
                         "flux2-klein-9b", "Flux.2 Klein",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["flux3-klein"] = build_generative_tab(
-                        "flux3-klein", "Flux.3 Klein",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     prompt_boxes["qwen-image-2.1-turbo"] = build_generative_tab(
                         "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
                         pending_toolkit=pending_toolkit, tabs=tabs,
@@ -346,13 +340,6 @@ def build_app() -> gr.Blocks:
                         "krea2-realism", "Krea 2 Realism",
                         pending_toolkit=pending_toolkit, tabs=tabs,
                         pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    # Z-Image Turbo : 6B distillé compact et le
-                    # seul dont TOUTE la chaîne (modèle, encodeur, VAE) soit en
-                    # Apache-2.0 — donc sans réserve pour un usage commercial.
-                    prompt_boxes["z-image-turbo"] = build_generative_tab(
-                        "z-image-turbo", "Z-Image Turbo",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
                     # « Xanax » : style figé, aucun réglage de style exposé. Un seul
                     # onglet pour les deux modèles — ils partagent tout sauf le moteur.
                     build_xanax_tab("Xanax")
@@ -366,8 +353,6 @@ def build_app() -> gr.Blocks:
             # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
             with gr.Tab("Tools & 3D", id="tools"):
                 with gr.Tabs() as tool_tabs:
-                    build_multiview_tab()
-                    build_svg_tab()
                     build_seedvr2_tab()
                     build_vosr_tab()
                     build_splat_tab()
@@ -382,7 +367,7 @@ def build_app() -> gr.Blocks:
                                      parent_tabs=tool_tabs)
 
             build_history_tab(tabs=tabs, generation_tabs=generation_tabs,
-                              prompt_boxes=prompt_boxes, pending_toolkit=pending_toolkit)
+                              prompt_boxes=prompt_boxes)
             build_library_tab()
 
             with gr.Tab("System", id="system"):

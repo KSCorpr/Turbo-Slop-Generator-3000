@@ -6,11 +6,6 @@ génération classiques, il n'y a ici ni menu de préréglages, ni banques de
 styles, ni prompt système modifiable — le style est « fixe et non négociable »,
 donc il n'est pas exposé.
 
-Un point mérite d'être explicité, parce qu'il surprend : **la traduction FR→EN
-a besoin de l'améliorateur**. Le style est un préfixe anglais collé devant le
-texte ; à lui seul il ne traduit rien. Si l'améliorateur est installé on s'en
-sert (avec le style transmis en contrainte, pour qu'il n'écrive rien qui le
-contredise) ; sinon on le dit clairement au lieu de laisser croire que ça marche.
 """
 from __future__ import annotations
 
@@ -23,7 +18,6 @@ import gradio as gr
 
 from .. import registry, settings
 from ..engine import generate as gen_engine
-from ..engine import tools
 from ..i18n import t
 from . import widgets
 
@@ -40,12 +34,8 @@ XANAX_STYLE = (
     "no filter, no post-processing"
 )
 
-# Format 4:3 imposé par le brief, sur la grille NATIVE de chaque modèle (32 px
-# pour Flux.2, 64 px pour Krea 2, 16 px pour Z-Image — sortir de la grille
-# dégrade le rendu). 1152×896 tombe juste sur les grilles de 64 ET de 16, d'où
-# la même paire pour les deux derniers.
-XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896),
-              "z_image": (1152, 896)}
+# Format 4:3 on each model’s native grid.
+XANAX_SIZE = {"flux2": (1184, 880), "krea2": (1152, 896)}
 
 # --------------------------------------------------------------------------- #
 #  DE QUOI ON PART : une phrase de la vie courante, pas une description
@@ -120,8 +110,7 @@ def build_prompt(subject: str) -> str:
 # pour tous : le style est identique, seul le moteur change — des onglets
 # jumeaux, c'était le même écran à maintenir plusieurs fois et autant de cases
 # de plus à lire dans la barre.
-XANAX_MODELS = [("🟢 Z-Image Turbo", "z-image-turbo"),
-                ("⚡ Krea 2 Turbo", "krea2-turbo"),
+XANAX_MODELS = [("⚡ Krea 2 Turbo", "krea2-turbo"),
                 ("🟣 Flux.2 Klein 9B", "flux2-klein-9b")]
 
 
@@ -185,7 +174,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                 prompt = gr.Textbox(
                     label="What you did", lines=3,
                     placeholder="had lunch at the motorway cafeteria with Gran…",
-                    info="One sentence about your day, in the first person. "
+                    info="Write in English. One sentence about your day, in the first person. "
                          "Not “a man waits for the bus” but “waited ages for "
                          "the bus”.")
                 dice = gr.Button("🎲 A random day", size="sm")
@@ -195,19 +184,6 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                     stop = gr.Button("⏹️ Stop", variant="stop", scale=1,
                                      min_width=90)
                 status = gr.Markdown("")
-                enhance = gr.Checkbox(
-                    value=tools.enhance_is_installed(),
-                    interactive=tools.enhance_is_installed(),
-                    label="✨ Turn my sentence into a photo (AI enhancer)",
-                    info=("Works out what the photo would SHOW: the place, "
-                          "the people, the time of day. Translates along the "
-                          "way, and knows what a French cafeteria chain is — "
-                          "the image model does not."
-                          if tools.enhance_is_installed() else
-                          "Enhancer not installed — install it from a "
-                          "generation tab. Without it your sentence is sent "
-                          "AS IS: write in English then, and say what is "
-                          "visible rather than what you did."))
                 seed = gr.Number(value=-1, precision=0,
                                  label="Seed (-1 = random)",
                                  info="A fixed seed replays exactly the same "
@@ -227,7 +203,7 @@ def build_xanax_tab(title: str = "💊 Xanax"):
         dice.click(lambda: random.choice([t(a) for a in ANECDOTES]),
                    outputs=[prompt])
 
-        def do_xanax(model_id, subject, use_enhance, seed_v):
+        def do_xanax(model_id, subject, seed_v):
             if not (subject or "").strip():
                 raise gr.Error(t("Tell us something first — one sentence is "
                                  "enough."))
@@ -244,23 +220,6 @@ def build_xanax_tab(title: str = "💊 Xanax"):
 
             logs: list[str] = []
             text = subject.strip()
-
-            if use_enhance and tools.enhance_is_installed():
-                yield (t("⏳ Working out what that moment looked like…"),
-                       gr.update(), gr.update(), "\n".join(logs))
-                try:
-                    # style « xanax » : le seul des trois qui parte d'une
-                    # phrase de journal au lieu d'une description, et le seul
-                    # qui n'ajoute PAS d'objectif, d'éclairage ni de
-                    # composition — ici, une belle photo serait ratée.
-                    out = tools.enhance_prompt_variants(
-                        text, style="xanax", level="medium", variants=1,
-                        style_constraint=XANAX_STYLE, log=logs.append)
-                    if out and out[0].strip():
-                        text = out[0].strip()
-                except Exception as exc:  # noqa: BLE001
-                    # Un échec de l'améliorateur ne doit pas empêcher de générer.
-                    logs.append(f"[improver unavailable] {exc}")
 
             full_prompt = build_prompt(text)
             q: "queue.Queue[str | None]" = queue.Queue()
@@ -318,9 +277,9 @@ def build_xanax_tab(title: str = "💊 Xanax"):
                    gr.update(value=f"**Prompt used:** {full_prompt}"),
                    "\n".join(logs[-400:]))
 
-        evt = run.click(do_xanax, inputs=[model_pick, prompt, enhance, seed],
+        evt = run.click(do_xanax, inputs=[model_pick, prompt, seed],
                         outputs=[status, result, used_md, log], **widgets.GPU_QUEUE)
         # QOL : Ctrl+Entrée depuis le champ de saisie lance la génération.
-        submit_evt = prompt.submit(do_xanax, inputs=[model_pick, prompt, enhance, seed],
+        submit_evt = prompt.submit(do_xanax, inputs=[model_pick, prompt, seed],
                       outputs=[status, result, used_md, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, gen_engine.cancel, status, [evt, submit_evt])

@@ -272,49 +272,8 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class PreUpscaleRoutingTests(unittest.TestCase):
-    """Le pré-agrandissement du SDXL Ultimate Upscale accepte les DEUX familles.
-
-    Le paramètre s'appelle encore `esrgan_model` pour ne pas casser les
-    appelants, mais c'est le FICHIER qui décide du moteur : un `.gguf` part
-    chez stable-diffusion.cpp, tout le reste chez spandrel. Avant cette règle,
-    choisir un agrandisseur moderne dans ce menu envoyait un `.pth` à sd.cpp,
-    qui ne sait pas le lire — l'erreur arrivait après le pré-agrandissement,
-    donc après l'attente.
-    """
-
-    def _route(self, name):
-        from unittest.mock import patch
-        from atelier import registry
-        from atelier.engine import tools
-        called = {}
-
-        def modern(src, model, log=None):
-            called["engine"] = "spandrel"
-            return Path("/tmp/modern.png")
-
-        def esrgan(src, model, repeats=1, log=None):
-            called["engine"] = "sdcpp"
-            return Path("/tmp/esrgan.png")
-
-        with patch.object(tools, "upscale_is_installed", return_value=True), \
-             patch.object(tools, "modern_upscale", side_effect=modern), \
-             patch.object(registry, "upscaler_factor", return_value=4.0), \
-             patch("atelier.engine.generate.upscale_image", side_effect=esrgan), \
-             patch.object(tools, "_to_src", return_value=Path("/tmp/in.png")), \
-             patch("PIL.Image.open") as _open, \
-             patch.object(tools, "_run_tool", side_effect=RuntimeError("stop")):
-            _open.return_value.__enter__.return_value.size = (512, 512)
-            with self.assertRaises(Exception):
-                tools.ultimate_upscale("/tmp/in.png", esrgan_model=name,
-                                       base_model=__file__)
-        return called.get("engine")
-
-    def test_a_gguf_goes_to_the_native_engine(self):
-        self.assertEqual(self._route("4x_anime.gguf"), "sdcpp")
-
-    def test_a_modern_model_goes_to_spandrel(self):
-        self.assertEqual(self._route("4xNomos8kDAT.pth"), "spandrel")
+class UpscalerChoiceTests(unittest.TestCase):
+    """Native and modern upscalers keep distinguishable file choices."""
 
     def test_the_menu_offers_both_families_labelled(self):
         """`upscaler_choices` marque « · modern » : sans ça les deux familles

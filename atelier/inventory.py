@@ -145,23 +145,12 @@ def items(prefs: dict | None = None) -> list[Item]:
         out.append(Item("image_splats_" + backend, image_splats.BACKENDS[backend] + " weights and encoders", "Models",
                         sorted({s.path().parent for s in image_splats.artifacts(backend)}),
                         note="Reinstall from Models. Identical weight files may share disk storage."))
-    for name, label in (("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG"),
-                        ("sam2", "SAM 2.1"), ("qwen-layered", "Qwen-Image-Layered")):
-        folder = addons.root(name)
-        out.append(Item(f"engine_{name}", f"{label} runtime", "Engines",
-                        [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],
-                        note=("Reinstallable: Toolkit → Layers." if name in {"sam2", "qwen-layered"}
-                              else "Reinstallable: Tools & 3D → SVG & layers.")))
-    for name, label, parts in (("sam2", "SAM 2.1 small weights (~184 MB)", ("model",)),
-                               ("qwen-layered", "Qwen-Image-Layered Q4 weights (~30 GB)", ("model", "quantized"))):
-        out.append(Item(name+"_models", label, "Models", [addons.root(name) / part for part in parts],
-                        note="Reinstallable: Toolkit → Layers → Install / repair."))
-    out.append(Item("hivg_models", "HiVG-3B-Base weights (~8.14 GB)", "Models",
-                    [addons.root("hivg") / "model"],
-                    note="Reinstallable: SVG & layers → Install / repair HiVG."))
-    out.append(Item("omnisvg_models", "OmniSVG 1.1 4B weights & processor (~7.71 GB)", "Models",
-                    [addons.root("omnisvg") / part for part in ("model", "processor")],
-                    note="Reinstallable: SVG & layers → Install / repair OmniSVG."))
+    folder = addons.root("sam2")
+    out.append(Item("engine_sam2", "SAM 2.1 runtime", "Engines",
+                    [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],
+                    note="Reinstallable: Toolkit → Cut out (SAM)."))
+    out.append(Item("sam2_models", "SAM 2.1 small weights (~184 MB)", "Models",
+                    [folder / "model"], note="Shared by click-to-cutout segmentation."))
     # Deux modèles peuvent vivre dans les MÊMES dossiers de dépôt (variantes
     # d'une même famille partageant encodeur ou VAE). Un dossier n'est listé
     # qu'une fois — sinon on compterait sa taille deux fois — mais l'élément
@@ -198,7 +187,7 @@ def items(prefs: dict | None = None) -> list[Item]:
                         note="Shared tiny autoencoder. Reinstallable from Models → TAESD."))
     out.append(Item("upscalers", "Upscalers ESRGAN (GGUF)", "Models",
                     [registry.upscalers_dir()],
-                    note="Optional pre-upscalers used inside Toolkit → SDXL creative upscale."))
+                    note="Optional upscalers for the image engine and high-resolution passes."))
     out.append(Item("seedvr2_models", "SeedVR2 weights (shared classic / ConvRot)", "Models",
                     [addons.root("seedvr2") / "models"],
                     note="Downloads on first restoration. Both runtimes share this cache."))
@@ -214,24 +203,30 @@ def items(prefs: dict | None = None) -> list[Item]:
              [tools.BG_MODEL_DIR], note="Reinstallable in one click."),
         Item("tool_sam", "Toolkit — SAM cut-out", "Toolkit add-ons",
              [tools.SAM_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_enhance", "Prompt improver (LLM)", "Toolkit add-ons",
-             [tools.ENHANCE_MODEL_DIR], note="Reinstallable in one click."),
-        # `clip` et `describe` manquaient à cet inventaire : le modèle
-        # image → prompt pèse 7,5 Go et n'apparaissait nulle part dans ce que
-        # l'utilisateur peut voir ou libérer.
-        Item("tool_clip", "Toolkit — CLIP labelling (layers)", "Toolkit add-ons",
-             [tools.CLIP_MODEL_DIR], note="Reinstallable in one click."),
         Item("tool_describe", "Toolkit — Image → prompt (~7.5 GB)",
              "Toolkit add-ons", [tools.DESCRIBE_MODEL_DIR],
              note="Reinstallable in one click."),
-        Item("tool_face", "Toolkit — Face restoration", "Toolkit add-ons",
-             [tools.FACE_MODEL_DIR], note="Reinstallable in one click."),
-        Item("tool_adetailer", "Toolkit — ADetailer detectors (YOLOv8)",
-             "Toolkit add-ons", [tools.ADETAILER_DIR],
-             note="Reinstallable in one click (~12 MB)."),
-        Item("tool_upscale", "Toolkit — Creative SDXL upscale", "Toolkit add-ons",
-             [tools.UPSCALE_DIR], note="Includes ControlNet and custom checkpoints."),
     ]
+
+    # Removed features stay manageable without deleting downloaded user data
+    # during an app update. Shared active encoders and VAEs are excluded.
+    retired = [
+        ("flux3", "Flux.3 diffusion", settings.model_repo_dir("akhaliq/flux-3-image-klein-sd-gguf")),
+        ("zimage", "Z-Image diffusion", settings.model_repo_dir("leejet/Z-Image-Turbo-GGUF")),
+        ("zimage_native", "Z-Image native weights / VAE", settings.model_repo_dir("Comfy-Org/z_image_turbo")),
+        ("zimage_encoder", "Z-Image text encoder", settings.model_repo_dir("unsloth/Qwen3-4B-Instruct-2507-GGUF")),
+        ("taef1", "Z-Image tiny autoencoder", settings.model_repo_dir("madebyollin/taef1")),
+        ("adetailer", "ADetailer detectors", settings.MODELS_DIR / "adetailer"),
+    ] + [(name, label, settings.ROOT / "tools_repo" / name) for name, label in (
+        ("upscale", "SDXL creative upscale (including custom checkpoints)"),
+        ("enhance", "Prompt improver"), ("face", "Face restoration"),
+        ("clip", "CLIP layer naming"), ("qwen-layered", "Qwen-Image-Layered"),
+        ("svg", "SVG tracing / LayerTracer"), ("hivg", "HiVG"), ("omnisvg", "OmniSVG"))]
+    for key, label, path in retired:
+        if path.exists():
+            out.append(Item("retired_" + key, label + " — removed", "Removed features", [path],
+                            note="No longer used by the app. Optional cleanup; generated images are kept.",
+                            protected=key == "upscale"))
 
     # --- Données utilisateur (prudence) -----------------------------------
     out += [

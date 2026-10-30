@@ -276,7 +276,7 @@ def build_settings_tab():
                     show_label=False)
         if multi_gpu:
             tools_gpu = gr.Dropdown(
-                label="Card for the prompt enhancer",
+                label="Card for Image → prompt",
                 choices=[(t("The same one as for the image"), None)] + _gpu_choices(),
                 value=prefs.get("text_gpu_index"))
         else:
@@ -493,7 +493,7 @@ def build_settings_tab():
 
             def _apply_tools_gpu(v):
                 _save(text_gpu_index=v)
-                return _said(_OK + t("Enhancer card saved."))
+                return _said(_OK + t("Image → prompt card saved."))
 
             tools_gpu.change(_apply_tools_gpu, inputs=[tools_gpu],
                              outputs=[status])

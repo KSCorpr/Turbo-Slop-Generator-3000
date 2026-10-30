@@ -165,11 +165,10 @@ def main():
                 # Exercise every experimental choice through the real dropdown:
                 # the explanation must track the selected preset, including Qwen.
                 model_tabs = {
-                    "flux2-klein-9b": "Flux.2 Klein", "flux3-klein": "Flux.3 Klein",
+                    "flux2-klein-9b": "Flux.2 Klein",
                     "qwen-image-2.1-turbo": "Qwen Image 2.1 Turbo", "moss-image-sft": "MOSS-Image SFT",
                     "fibo2-dev": "Fibo 2.0 Dev", "fibo2-edit-turbo": "Fibo 2.0 Edit Turbo",
                     "krea2-turbo": "Krea 2 Turbo", "krea2-realism": "Krea 2 Realism",
-                    "z-image-turbo": "Z-Image Turbo",
                 }
                 preset_checks = 0
                 for model in registry.load_base_models({}):
@@ -270,10 +269,9 @@ def main():
                 page.locator("#history-grid img").first.click()
                 expect(page.locator("#history-prompt textarea")).to_have_value("A studio browser test")
                 page.screenshot(path=str(screenshots / "studio-gallery.png"))
-                page.get_by_role("button", name="Send original to upscale", exact=True).click()
-                expect(page.get_by_role("tab", name="✨ SDXL upscale", exact=True)).to_have_attribute("aria-selected", "true")
-                expect(page.get_by_role("tab", name=re.compile("Ming|MiniMax H3"))).to_have_count(0)
+                expect(page.get_by_role("button", name="Send original to upscale", exact=True)).to_have_count(0)
 
+                page.get_by_role("tab", name="Images", exact=True).click()
                 page.get_by_role("tab", name="Gallery", exact=True).click()
                 expect(page.locator("#history-grid img")).to_have_count(24)
                 page.locator("#history-grid img").first.click()
@@ -289,7 +287,7 @@ def main():
                 page.get_by_role("button", name=re.compile("Styles — presets")).click()
 
                 # All model workspaces still exist and use the new navigation.
-                for title in ("Qwen Image 2.1 Turbo", "Krea 2 Turbo", "Z-Image Turbo", "Flux.2 Klein"):
+                for title in ("Qwen Image 2.1 Turbo", "Krea 2 Turbo", "MOSS-Image SFT", "Flux.2 Klein"):
                     page.get_by_role("tab", name=title, exact=True).click()
                     expect(prompt).to_be_visible()
 
@@ -304,40 +302,9 @@ def main():
                 assert interrupted.wait(5), "Stop did not interrupt the worker"
                 assert active == 0 and peak == 1, (active, peak)
 
-                # A full ten-view batch must stream, download and convert in
-                # the real browser using the same simulated image engine.
                 page.get_by_role("tab", name="Tools & 3D", exact=True).click()
-                page.get_by_role("tab", name="10 views / 360°", exact=True).click()
-                page.get_by_role("button", name="Generate 10 views", exact=True).click()
-                expect(page.get_by_text("Failed: Import a source image first.", exact=True)).to_be_visible()
-                expect(page.get_by_text("Also create an equirectangular 360×180 panorama", exact=True)).not_to_be_visible()
-                page.get_by_text("360 scene — camera rotates in place", exact=True).click()
-                expect(page.get_by_text("Also create an equirectangular 360×180 panorama", exact=True)).to_be_visible()
-                source_file = folder / "input.png"
-                sample.save(source_file)
-                page.locator("#views-source input[type=file]").set_input_files(str(source_file))
-                expect(page.locator("#views-source img")).to_be_visible()
-                start_calls = len(calls)
-                page.get_by_role("button", name="Generate 10 views", exact=True).click()
-                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=30000)
-                assert len(calls) == start_calls + 10, calls
-                assert active == 0 and peak == 1, (active, peak)
-                batches = list(settings.OUTPUT_DIR.glob("views-scene-*"))
-                directory = next(p for p in batches if p.is_dir())
-                assert len(list(directory.glob("[0-9][0-9]-*.png"))) == 10
-                page.screenshot(path=str(screenshots / "studio-multiview.png"))
-                page.get_by_text("Advanced and conversion tools", exact=True).click()
-                page.locator("#views-import input[type=file]").set_input_files(
-                    [str(p) for p in sorted(directory.glob("[0-9][0-9]-*.png"))])
-                # Gradio may collapse the tail of a multi-file list. Wait for
-                # its first entry; successful conversion verifies all ten.
-                expect(page.locator("#views-import")).to_contain_text("01-yaw-000.png", timeout=30000)
-                page.get_by_role("button", name="Convert views to 360 PNG", exact=True).click()
-                expect(page.locator("#views-log textarea")).to_have_value(re.compile("Reprojecting the fixed-camera views"))
-                expect(page.locator("#views-status")).to_contain_text("Completed.", timeout=60000)
-                assert len(calls) == start_calls + 10, "Conversion launched image generation"
-                assert list(settings.OUTPUT_DIR.glob("views-converted-*/equirectangular-360.png"))
-                page.screenshot(path=str(screenshots / "studio-panorama.png"))
+                for removed in ("10 views / 360°", "SVG & layers", "🧩 Layers", "🙂 Faces", "🖐️ Details", "✨ SDXL upscale"):
+                    assert page.get_by_role("tab", name=removed, exact=True).count() == 0, removed
 
                 for title in ("Video", "Tools & 3D", "Models", "System", "Images"):
                     page.get_by_role("tab", name=title, exact=True).click()

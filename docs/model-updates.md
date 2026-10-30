@@ -25,7 +25,7 @@ Les petits fichiers Git utilisent leur hash de blob Git ; les gros fichiers
 LFS utilisent SHA-256.
 
 Le contrôle couvre les dossiers des modèles d'image et upscalers, les outils
-HF du Toolkit, SeedVR2, VOSR, SAM 2, HiVG, OmniSVG, Qwen Layered, TRELLIS et
+HF du Toolkit, SeedVR2, VOSR, SAM 2, TRELLIS et
 Pixal3D, ainsi que les LoRA dont la provenance HF est enregistrée. Un fichier
 personnel ou provenant d'une release GitHub non identifié est signalé comme
 `unmapped`, sans inventer de version amont.

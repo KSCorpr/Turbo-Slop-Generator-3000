@@ -138,14 +138,7 @@ class FiboTests(unittest.TestCase):
                     generate.generate(model, "cat", "", 4, 1, width, 1024, 42, 1, **kwargs)
             resolve.assert_not_called()
 
-    def test_adetailer_and_text_only_benchmark_reject_turbo_without_starting(self):
-        with patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
-             patch.object(sdcpp, "adetailer_supported", return_value=True), \
-             patch.object(generate, "resolve_model_files") as resolve:
-            for model in (DEV, TURBO):
-                with self.assertRaisesRegex(sdcpp.EngineError, "masked ADetailer"):
-                    generate.adetailer_command(model, Path("in.png"), Path("out.png"), Path("detector"))
-            resolve.assert_not_called()
+    def test_text_only_benchmark_rejects_turbo_without_starting(self):
         with patch.object(registry, "model_is_ready", return_value=True), patch.object(benchmark, "_one_run") as run:
             self.assertNotEqual(benchmark._pick_model({}), TURBO)
             result = benchmark._run_case(TURBO, {}, "test")

@@ -72,21 +72,6 @@ class QwenEngineTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["steps"], 8)
         self.assertEqual(run.call_args.kwargs["cfg_scale"], 1.0)
 
-    def test_adetailer_includes_turbo_sigmas_and_rejects_longer_steps(self):
-        files = dict(model_path=None, diffusion=Path("turbo.safetensors"), vae=None,
-                     enc=None, uncond=None, t5xxl=None, clip_l=None)
-        with patch.object(generate.settings, "find_sd_cli", return_value=Path("sd-cli")), \
-             patch.object(generate.settings, "load_prefs", return_value={"system_mode": "manual"}), \
-             patch.object(generate, "resolve_model_files", return_value=files), \
-             patch.object(generate, "_resolved_flags", return_value=({}, 0)), \
-             patch.object(generate.sdcpp, "adetailer_supported", return_value=True), \
-             patch.object(generate.sdcpp, "supported_options", return_value={"--sigmas"}), \
-             patch.object(generate.sdcpp, "memory_args", return_value=[]):
-            command = generate.adetailer_command("qwen-image-2.1-turbo", Path("in.png"), Path("out.png"), Path("detector"))
-            self.assertIn("--sigmas", command)
-            self.assertTrue(command[command.index("--sigmas") + 1].endswith(",0.0"))
-            with self.assertRaisesRegex(sdcpp.EngineError, "requires 8 steps"):
-                generate.adetailer_command("qwen-image-2.1-turbo", Path("in.png"), Path("out.png"), Path("detector"), steps=20)
 
     def test_numbered_previews_recover_every_step_after_a_polling_delay(self):
         with tempfile.TemporaryDirectory() as tmp:

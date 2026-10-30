@@ -658,7 +658,7 @@ MACHINE_PRESETS: tuple = (
         key="home",
         label="🏠 Home — RTX 3060 12 GB + GTX 1080 Ti",
         summary="The 3060 draws and reads your text; the 1080 Ti runs the "
-                "prompt improver and holds weights.",
+                "Image → prompt tool and holds weights.",
         cards=((r"RTX\s*3060(?!\s*TI)", 11.5), (r"GTX\s*1080\s*TI", 10.0)),
         build=_home_prefs),
     MachinePreset(

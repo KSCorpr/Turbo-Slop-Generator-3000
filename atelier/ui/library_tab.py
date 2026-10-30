@@ -114,7 +114,7 @@ def build_library_tab():
         return text
 
     with gr.Tab("Models", id="models"):
-        gr.Markdown("### Models & toolkits\nChoose a package for image generation, Toolkit, layers, video or 3D. "
+        gr.Markdown("### Models & toolkits\nChoose a package for image generation, Toolkit, video or 3D. "
                     "Choose GGUF or approved INT8 / BF16 / FP16 / FP32 weights where published. "
                     "GPU advice distinguishes hardware support from memory needs. Load sizes for exact files.")
         prefs=settings.load_prefs()

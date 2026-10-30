@@ -86,13 +86,13 @@ class CatalogTests(unittest.TestCase):
     def test_all_addons_and_toolkit_models_have_one_catalog_entry(self):
         packages=model_catalog.packages();ids=[p.id for p in packages]
         self.assertEqual(len(ids),len(set(ids)))
-        self.assertTrue({'tool:depth','tool:bg','tool:sam','tool:clip','tool:face','tool:upscale','tool:adetailer',
-                         'tool:enhance','tool:describe','tool:upscalers','tool:modern','seed:classic','seed:convrot',
+        self.assertTrue({'tool:depth','tool:bg','tool:sam','tool:describe','tool:upscalers','tool:modern','seed:classic','seed:convrot',
                          'video:ltx','3d:trellis','3d:pixal'}.issubset(ids))
         self.assertTrue({'addon:'+name for name in addons.ADDON_NAMES
-                         if not name.startswith('seedvr2') and name != 'image-splats'}.issubset(ids))
+                         if not name.startswith('seedvr2') and name not in {'image-splats','svg','hivg','omnisvg','qwen-layered'}}.issubset(ids))
         self.assertTrue({'splat:triposplat', 'splat:idol'}.issubset(ids))
-        self.assertEqual([v for _,v in model_catalog.choices('Layers & SVG','Layered')],['addon:qwen-layered'])
+        self.assertNotIn('Layers & SVG', model_catalog.CATEGORIES)
+        self.assertEqual([p.id for p in packages if p.id == 'addon:sam2'], ['addon:sam2'])
 
     def test_tool_install_routes_through_existing_script_and_generation_gpu(self):
         with patch.object(model_catalog.JOB,'run') as run,patch.object(model_catalog,'ready',return_value=True), \

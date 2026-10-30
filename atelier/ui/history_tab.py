@@ -7,7 +7,7 @@ from .. import history
 from . import widgets
 
 
-def build_history_tab(tabs, generation_tabs, prompt_boxes, pending_toolkit):
+def build_history_tab(tabs, generation_tabs, prompt_boxes):
     with gr.Tab("Gallery", id="history") as tab:
         gr.Markdown("### Your creations\nImages stay in **outputs/**. Browse, download the original, or reuse a prompt.")
         with gr.Row():
@@ -35,7 +35,6 @@ def build_history_tab(tabs, generation_tabs, prompt_boxes, pending_toolkit):
                 model = gr.Dropdown(choices=list(prompt_boxes), value=next(iter(prompt_boxes)),
                                     label="Reuse prompt with")
                 reuse = gr.Button("Use prompt in Images", variant="primary")
-                upscale = gr.Button("Send original to upscale")
                 with gr.Accordion("Saved generation details", open=False):
                     metadata = gr.Textbox(label="Parameters", lines=8, interactive=False,
                                           buttons=widgets.TEXT_COPY)
@@ -87,13 +86,3 @@ def build_history_tab(tabs, generation_tabs, prompt_boxes, pending_toolkit):
 
         reuse.click(send_prompt, inputs=[prompt, model],
                     outputs=[tabs, generation_tabs, *prompt_boxes.values()], queue=False)
-
-        def send_upscale(name):
-            try:
-                path = history.resolve(name)
-            except ValueError as exc:
-                raise gr.Error(str(exc)) from exc
-            return (str(path), "creative"), gr.Tabs(selected="tools")
-
-        pending_toolkit.send(upscale.click, send_upscale,
-                             inputs=[selected], outputs=[tabs])

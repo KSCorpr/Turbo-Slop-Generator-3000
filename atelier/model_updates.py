@@ -59,17 +59,9 @@ def _roots():
                 entries.append((path, owner + "/" + name, "main"))
     for name, repo in (("depth", "depth-anything/Depth-Anything-V2-Small-hf"),
         ("bg", "briaai/RMBG-1.4"), ("sam", "facebook/sam-vit-base"),
-        ("clip", "openai/clip-vit-base-patch32"), ("enhance", "Qwen/Qwen2.5-3B-Instruct"),
         ("describe", "Qwen/Qwen2.5-VL-3B-Instruct")):
         entries.append((base / name / "model", repo, "main"))
-    entries += [(base / "sam2/model", addons.SAM2_REPO, addons.SAM2_REVISION),
-        (base / "qwen-layered/model", addons.QWEN_LAYERED_REPO, addons.QWEN_LAYERED_REVISION),
-        (base / "qwen-layered/quantized", addons.QWEN_LAYERED_GGUF_REPO, addons.QWEN_LAYERED_GGUF_REVISION),
-        (base / "omnisvg/model", "OmniSVG/OmniSVG1.1_4B", addons.OMNISVG_REVISION),
-        (base / "omnisvg/processor", "Qwen/Qwen2.5-VL-3B-Instruct", addons.OMNISVG_PROCESSOR_REVISION),
-        (base / "hivg/model", "xingxm/HiVG-3B-Base", addons.HIVG_REVISION),
-        (base / "upscale/vae", "madebyollin/sdxl-vae-fp16-fix", "main"),
-        (base / "upscale/controlnet", "xinsir/controlnet-tile-sdxl-1.0", "main")]
+    entries += [(base / "sam2/model", addons.SAM2_REPO, addons.SAM2_REVISION)]
     from . import moss_dmd, taesd, image_splats
     return entries + [(moss_dmd.path().parent, moss_dmd.REPO, moss_dmd.REVISION)] + [
         (spec.path().parent, spec.repo, spec.revision) for spec in taesd.SPECS.values()] + list({
@@ -136,8 +128,6 @@ def discover():
     for spec in addons.SEED_CONVROT_MODELS.values():
         add(addons.root("seedvr2") / "models" / spec, "ussoewwin/SeedVR2-ConvRot-INT8-and-w4a8", spec)
     add(addons.root("seedvr2") / "models/ema_vae_fp16.safetensors", "numz/SeedVR2_comfyUI", "ema_vae_fp16.safetensors")
-    add(settings.ROOT / "tools_repo/upscale/sd_xl_base_1.0.safetensors",
-        "stabilityai/stable-diffusion-xl-base-1.0", "sd_xl_base_1.0.safetensors")
     trellis_root = settings.MODELS_DIR / "trellis"
     for path in _files(trellis_root):
         if path.name.startswith("pixal3d_"):

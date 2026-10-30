@@ -43,7 +43,7 @@ split Q/K/V tensor support. Build 973 introduced the architecture, but is not
 sufficient for all currently published weights. Known older official builds
 are rejected before resolving/loading the model. A manually installed engine
 must expose `--tokenizer`; the external tokenizer is passed in both ordinary
-generation and ADetailer.
+generation.
 
 The official preset is **Euler, 50 steps, CFG 3, Auto scheduler, flow shift 0
 (automatic)**. sd.cpp supplies the native time shift of 5 and skips DiT layer
@@ -124,7 +124,7 @@ raster images; the JSON describes composition rather than editable layers.
 
 CPU tests cover catalog selection, exact dependency paths, shared VAE reuse,
 required tokenizer, engine-version/capability guards, text/image-to-image CLI
-arguments, ADetailer, 3060 placement planning with sparse weight files, sampling
+arguments, 3060 placement planning with sparse weight files, sampling
 defaults, and unchanged/invalid JSON through the actual UI callback. They do
 not load pretrained weights or verify image quality on a GPU. DMD tests use
 the real pinned checkpoint header with sparse dummy payloads, test both

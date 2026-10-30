@@ -9,20 +9,9 @@ SEED_COMMIT = "4490bd1f482e026674543386bb2a4d176da245b9"
 SEED_CONVROT_COMMIT = "68191c40d03566608b65d24e97d11dc4389f3a62"
 COMFY_CONVROT_COMMIT = "7f7fd918ed0815c5d5ef2ccfe44bfc8e72cfd217"
 BRUSH_VERSION = "v0.3.0"
-ADDON_NAMES = ("seedvr2", "seedvr2-convrot", "vosr", "splat", "svg", "hivg", "omnisvg", "sam2", "qwen-layered", "image-splats")
+ADDON_NAMES = ("seedvr2", "seedvr2-convrot", "vosr", "splat", "sam2", "image-splats")
 SAM2_REPO = "facebook/sam2.1-hiera-small"
 SAM2_REVISION = "ee5bba1d82bb8749febdf90f45e84b687142ba03"
-QWEN_LAYERED_REPO = "Qwen/Qwen-Image-Layered"
-QWEN_LAYERED_REVISION = "8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
-QWEN_LAYERED_GGUF_REPO = "unsloth/Qwen-Image-Layered-GGUF"
-QWEN_LAYERED_GGUF_REVISION = "c83e10072f369c67db4a88c71ee63871b6b4ad90"
-QWEN_LAYERED_GGUF = "qwen-image-layered-Q4_K_M.gguf"
-OMNISVG_COMMIT = "308b49b3e3df29c8b5424bbaa7f1f7c6ff218e8d"
-OMNISVG_REVISION = "117d4c4541839e02943554fe71c0a0d54fcef819"
-OMNISVG_PROCESSOR_REVISION = "66285546d2b821cf421d4f5eb2576359d3770cd3"
-HIVG_COMMIT = "2ada95d057cb5d04fdbad4686258e174c8280c5f"
-HIVG_REVISION = "259cba9684201bbde830a59ca7543345bb333519"
-LAYERTRACER_COMMIT = "8e089f92795b4f32dcae8f7dbbd5ced20395dad7"
 SEED_MODELS = {
     "3b": "seedvr2_ema_3b-Q8_0.gguf",
     "7b": "seedvr2_ema_7b-Q4_K_M.gguf",
