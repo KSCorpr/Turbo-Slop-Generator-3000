@@ -14,7 +14,7 @@ import threading
 
 import gradio as gr
 
-from .. import benchmark, diagnostics, hardware, registry, settings, system_profile, taesd
+from .. import benchmark, diagnostics, hardware, registry, settings, system_profile, taesd, sage_attention
 from ..i18n import t
 from .theme import THEME_JS
 from . import widgets
@@ -198,7 +198,7 @@ def _bias_note(bias: str, prefs: dict | None = None) -> str:
 
 
 def build_settings_tab():
-    with gr.Tab("⚙️ Settings"):
+    with gr.Tab("⚙️ Settings") as settings_tab:
         prefs = settings.load_prefs()
         gpus = hardware.detect_gpus()
         multi_gpu = len(gpus) > 1
@@ -214,6 +214,33 @@ def build_settings_tab():
                  "expert settings.")
         model_plans = gr.Markdown(_system_table(prefs))
         refresh_plans = gr.Button("Refresh model system choices", size="sm")
+
+        def refresh_sage_support():
+            current = settings.load_prefs()
+            available, note = sage_attention.availability(
+                settings.find_sd_cli(), settings.generation_gpu_index(current))
+            return gr.update(value=bool(current.get("sage_attention")) and available,
+                             interactive=available, info=note)
+
+        with gr.Accordion("SageAttention (CUDA) — optional", open=False):
+            sage_update = refresh_sage_support()
+            sage = gr.Checkbox(label="Enable SageAttention", elem_id="sage-attention",
+                               value=sage_update["value"], interactive=sage_update["interactive"],
+                               info=sage_update["info"])
+            sage_refresh = gr.Button("Refresh acceleration support", size="sm")
+            sage_status = gr.Markdown("", elem_id="sage-attention-status")
+
+        def apply_sage_attention(value):
+            available, reason = sage_attention.availability(
+                settings.find_sd_cli(), settings.generation_gpu_index(settings.load_prefs()))
+            if value and not available:
+                raise gr.Error(reason)
+            _save(sage_attention=bool(value))
+            return "SageAttention enabled for supported sd.cpp requests." if value else "SageAttention disabled."
+
+        sage.input(apply_sage_attention, sage, sage_status, queue=False)
+        sage_refresh.click(refresh_sage_support, outputs=sage, queue=False)
+        settings_tab.select(refresh_sage_support, outputs=sage, queue=False)
 
         # ------------------------------------------------------------------ #
         #  LE réglage : marge mémoire ou détail
@@ -453,7 +480,7 @@ def build_settings_tab():
 
         mode.change(_apply_mode, inputs=[mode],
                     outputs=[headline, model_plans, manual_controls, status,
-                             bias, bias_note, gpu])
+                             bias, bias_note, gpu]).then(refresh_sage_support, outputs=sage, queue=False)
         refresh_plans.click(lambda: _system_table(), outputs=[model_plans])
 
         def _apply_bias(choice):
@@ -479,7 +506,7 @@ def build_settings_tab():
                     _system_table(p))
 
         gpu.input(_apply_gpu, inputs=[gpu, strategy, mode],
-                  outputs=[headline, status, model_plans])
+                  outputs=[headline, status, model_plans]).then(refresh_sage_support, outputs=sage, queue=False)
 
         if multi_gpu:
             def _apply_strategy(choice, idx):
@@ -668,4 +695,4 @@ def build_settings_tab():
             _btn.click(_apply_machine_preset(_preset.key, _preset.label,
                                              _preset.summary),
                        outputs=[headline, gpu, strategy, preset_status, mode,
-                                model_plans])
+                                model_plans]).then(refresh_sage_support, outputs=sage, queue=False)

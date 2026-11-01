@@ -119,6 +119,7 @@ class GenRequest:
     preview_path: Path | None = None   # aperçu temps réel (--preview-path)
     preview_method: str = "proj"       # projection légère pour l'aperçu par pas
     preview_interval: int = 1          # une image par pas
+    sage_attn: bool = False  # native CUDA attention, independently of memory profiles
     flags: dict[str, bool] = field(default_factory=dict)
     gpu_index: int | None = None
     # EXPÉRIMENTAL : place l'encodeur de texte sur un autre GPU (ex. 1080 Ti)
@@ -254,6 +255,10 @@ def memory_args(sd_cli: Path | None, req: "GenRequest") -> list[str]:
     # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
     if req.stream_layers and stream_layers_possible(sd_cli, flags, params):
         args.append("--stream-layers")
+    if req.sage_attn:
+        from .. import sage_attention
+        if sage_attention.availability(sd_cli, req.gpu_index)[0]:
+            args.append("--sage-attn")
     args += _flag_args(flags, sd_cli)
     args += auto_fit_args(sd_cli, req.auto_fit)
 

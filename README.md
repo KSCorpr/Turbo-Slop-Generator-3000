@@ -1,5 +1,10 @@
 # Turbo Slop Generator 3000 · Studio
 
+**SageAttention:** optional native CUDA acceleration for sd.cpp images and LTX.
+Enable **System → Settings → SageAttention (CUDA)** after updating the engine.
+RTX 30-series or newer required; incompatible cards keep standard attention.
+[Compatibility, mixed-GPU behavior and validation limits](docs/sage-attention.md).
+
 **Removed modules:** Z-Image Turbo, Flux.3 Klein, SDXL creative upscale,
 ADetailer, Prompt improver, 10 views / 360°, SVG & layers, Layers and Faces.
 They no longer appear in the UI or download catalog. Existing dedicated files

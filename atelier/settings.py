@@ -84,6 +84,8 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Mode de découpe entre GPU : "layer" (blocs entiers, défaut) ou "row"
     # (lignes de matmul réparties, CUDA seulement).
     "split_mode": "layer",
+    # Explicit opt-in survives automatic memory profiles and machine presets.
+    "sage_attention": False,
     "auto_optimize": True,      # déduire les flags du matériel
     "quant": None,              # None = recommandé selon VRAM
     "enc_quant": None,          # None = recommandé selon RAM

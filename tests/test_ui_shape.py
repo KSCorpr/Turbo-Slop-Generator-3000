@@ -277,7 +277,9 @@ class SettingsTabTests(unittest.TestCase):
     def test_only_optional_things_are_folded(self):
         """Ce qui est replié doit être facultatif, et le dire dans son titre."""
         labels = [b.label or "" for b in self._inside(gr.Accordion)]
-        self.assertLessEqual(len(labels), 3, labels)
+        # SageAttention is an independent opt-in; the fourth optional section
+        # keeps it separate from memory controls that switch to Manual mode.
+        self.assertLessEqual(len(labels), 4, labels)
         for lbl in labels:
             self.assertTrue(
                 any(w in lbl for w in ("facultatif", "optional", "Détail",

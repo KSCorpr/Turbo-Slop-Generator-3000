@@ -5,7 +5,7 @@ import json
 import secrets
 from pathlib import Path
 
-from .. import settings
+from .. import hardware, sage_attention, settings
 from . import sdcpp, video
 from .local_jobs import LocalJob
 
@@ -36,7 +36,7 @@ def ready(quant="Q3_K_M"):
 
 
 def build_command(cli, paths, prompt, output, *, size=(512, 288), frames=33,
-                  seed=-1, first=None, last=None):
+                  seed=-1, first=None, last=None, gpu_index=None, prefs=None, log=None):
     if not prompt.strip():
         raise ValueError("Describe the scene and its movement first.")
     if tuple(size) not in SIZES or frames not in FRAMES:
@@ -51,7 +51,13 @@ def build_command(cli, paths, prompt, output, *, size=(512, 288), frames=33,
     needed = {"--video-frames", "--auto-fit", "--max-vram", "--llm"}
     if not needed <= known or (last and "--end-img" not in known):
         raise RuntimeError("Update sd.cpp from System before using LTX 2.5.")
-    req = sdcpp.GenRequest(auto_fit=True, max_vram=sdcpp.max_vram_arg("auto"),
+    prefs = settings.load_prefs() if prefs is None else prefs
+    index = gpu_index if gpu_index is not None else settings.generation_gpu_index(prefs)
+    gpu = hardware.auto_profile(index).gpu
+    index = gpu.index if gpu else None
+    req = sdcpp.GenRequest(gpu_index=index,
+                          sage_attn=sage_attention.requested(cli, index, prefs, log),
+                          auto_fit=True, max_vram=sdcpp.max_vram_arg("auto"),
                           flags={"diffusion_fa": "--diffusion-fa" in known,
                                  "vae_tiling": "--vae-tiling" in known})
     command = [str(cli), "-M", "vid_gen", "--diffusion-model", str(diffusion),
@@ -73,10 +79,13 @@ def generate(prompt, quant="Q3_K_M", size="512x288", frames=33, seed=-1,
         raise RuntimeError("Install or update sd.cpp from System first.")
     seed = secrets.randbelow(2**31) if int(seed) < 0 else int(seed)
     output = sdcpp.unique_output("ltx-2.5", "avi")
+    prefs = settings.load_prefs()
+    gpu = hardware.auto_profile(settings.generation_gpu_index(prefs)).gpu
+    index = gpu.index if gpu else None
     command = build_command(cli, weights(quant), prompt, output,
                             size=tuple(map(int, size.split("x"))), frames=int(frames),
-                            seed=int(seed), first=first, last=last)
-    env = settings.child_env(settings.generation_gpu_index(settings.load_prefs()))
+                            seed=int(seed), first=first, last=last, gpu_index=index, prefs=prefs, log=log)
+    env = settings.child_env(index)
     with JOB.session():
         JOB.run(command, log, env=env)
         if not output.is_file() or not output.stat().st_size:

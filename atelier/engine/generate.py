@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from .. import hardware, registry, settings, system_profile, taesd, moss_dmd as moss_adapter
+from .. import hardware, registry, settings, system_profile, taesd, sage_attention, moss_dmd as moss_adapter
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -221,6 +221,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
         if is_moss_dmd:
             lines.append(f"MOSS DMD: 8 steps, LoRA strength {moss_adapter.STRENGTH}, at_runtime")
+        if req.sage_attn:
+            lines.append("SageAttention: enabled")
         if req.taesd:
             lines.append(f"TAE: {req.taesd.name}, " + ("preview only" if req.taesd_preview_only else "full encoding/decoding"))
         if req.init_image:
@@ -236,6 +238,7 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
                 "width": req.width, "height": req.height,
                 "sampler": req.sampler, "schedule": req.schedule or "auto",
                 "flow_shift": req.flow_shift, "date": date,
+                "sage_attention": req.sage_attn,
                 **({"taesd": req.taesd.name, "taesd_mode": "preview" if req.taesd_preview_only else "full"}
                    if req.taesd else {}),
                 **({"moss_dmd": True, "dmd_lora_strength": moss_adapter.STRENGTH} if is_moss_dmd else {}),
@@ -429,6 +432,11 @@ def generate(
         has_reference=bool(ref_image or init_image)) if automatic else None)
     flags, gpu_index = ((plan.flags, plan.gpu_index) if plan else
                         _resolved_flags(prefs))
+    # Manual "Automatic (best card)" may leave the saved index empty. Pin
+    # the detected card so SageAttention never lands on CUDA device 0 by chance.
+    if prefs.get("sage_attention") and gpu_index is None:
+        selected = hardware.auto_profile().gpu
+        gpu_index = selected.index if selected else None
     if plan and log:
         log(f"System auto ({model.name}): {plan.placement}; "
             f"{plan.image_gib:.1f} GiB image weights, "
@@ -524,6 +532,7 @@ def generate(
         # Qwen 2.1. La projection légère autorise l'aperçu à CHAQUE pas.
         preview_method="tae" if tiny_path else "proj",
         preview_interval=1,
+        sage_attn=sage_attention.requested(sd_cli, gpu_index, prefs, log, all_gpus=auto_fit),
         flags=flags, gpu_index=gpu_index,
         encoder_gpu_index=enc_gpu if split_gpu else None,
         params_backend=params_backend,
