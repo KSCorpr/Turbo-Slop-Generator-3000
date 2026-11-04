@@ -6,11 +6,13 @@ import json
 
 from . import addons, hardware, model_store, settings, transfers
 
-BACKENDS = {"triposplat": "TripoSplat", "idol": "Idol"}
+BACKENDS = {"triposplat": "TripoSplat", "idol": "Idol", "idol-turbo": "Idol Turbo"}
 SOURCES = {
     "triposplat": ("VAST-AI-Research/TripoSplat", "d8db9e018b413dd9c4a9fe22463781bf98e8e68d"),
     "idol": ("speridlabs/idol-sdk", "4702a7f00850e34b6e83a2170cc123c3e9570744"),
 }
+SOURCES["idol-turbo"] = SOURCES["idol"]
+TURBO_REV = "45cdd41f1f4d6d70496daa7d619f57ad79307a37"
 TRIPO_REV = "56a96e603204ec410c4da60c13ea4fa09a2169a9"
 IDOL_REV = "2731c2291fc65a797c5cb627a5e5526fc1490902"
 DINO_REPO = "facebook/dinov3-vith16plus-pretrain-lvd1689m"
@@ -54,10 +56,20 @@ IDOL = (
 )
 
 
+TURBO = (
+    Artifact("turbo_lora", "akhaliq/idol-turbo", TURBO_REV, "idol_turbo_lora.safetensors",
+             117484528, "2e4b089211c5d79354f8b67d512f9b436248ac072cea171f56d393a248f7bf66"),
+)
+
+
+def is_idol(backend):
+    return backend in {"idol", "idol-turbo"}
+
+
 def artifacts(backend):
     if backend not in BACKENDS:
-        raise ValueError("Choose TripoSplat or Idol.")
-    return TRIPO if backend == "triposplat" else IDOL
+        raise ValueError("Choose TripoSplat, Idol or Idol Turbo.")
+    return TRIPO if backend == "triposplat" else IDOL + TURBO if backend == "idol-turbo" else IDOL
 
 
 def root():
@@ -75,7 +87,7 @@ def selected_gpu_index():
 
 def source(backend):
     artifacts(backend)
-    return root() / "sources" / backend
+    return root() / "sources" / ("idol" if backend == "idol-turbo" else backend)
 
 
 def marker(backend):
@@ -120,11 +132,24 @@ def validate(backend, check=lambda: None):
     return paths
 
 
+def local_artifact_valid(spec):
+    """Trust a saved hash only while the complete file fingerprint matches."""
+    if not file_ready(spec):
+        return False
+    if spec.sha256 and not model_store.known(spec.path(), spec.sha256):
+        if model_store.digest(spec.path()) != spec.sha256:
+            return False
+        model_store.remember(spec.path(), spec.sha256)
+    return True
+
+
 def check_encoder_access():
     """Check the actual pinned gated files before any multi-GB Idol download."""
     from huggingface_hub import get_hf_file_metadata, hf_hub_url
     from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
     for spec in (s for s in IDOL if s.key in {"dino", "flux"}):
+        if local_artifact_valid(spec):
+            continue
         try:
             get_hf_file_metadata(hf_hub_url(spec.repo, spec.filename, revision=spec.revision))
         except (GatedRepoError, RepositoryNotFoundError) as exc:
@@ -135,9 +160,12 @@ def check_encoder_access():
 
 
 def download_models(backend, log=print):
-    if backend == "idol":
+    if is_idol(backend):
         check_encoder_access()
     for spec in artifacts(backend):
+        if local_artifact_valid(spec):
+            log(f"Reusing verified {spec.filename}.")
+            continue
         log(f"{BACKENDS[backend]}: {spec.filename} ({spec.size / 1e9:.2f} GB)")
         transfers.hf_hub_download(repo_id=spec.repo, filename=spec.filename, revision=spec.revision,
                                   local_dir=str(settings.model_repo_dir(spec.repo)))

@@ -22,9 +22,11 @@ def validate_controls(backend, count, steps, cfg, shift, mode, seed):
     maximum = 262144 if backend == "triposplat" else 1048576
     if count not in COUNTS or count > maximum:
         raise ValueError(f"Choose a Gaussian count up to {maximum:,} for {models.BACKENDS[backend]}.")
+    if backend == "idol-turbo" and (not 4 <= steps <= 8 or cfg != 0 or shift != 3):
+        raise ValueError("Idol Turbo uses 4–8 steps, guidance 0 (distilled), and time shift 3.")
     if int(steps) != steps or not 1 <= steps <= 100:
         raise ValueError("Use 1–100 sampling steps.")
-    if not all(math.isfinite(float(n)) for n in (cfg, shift)) or not 1 <= cfg <= 10 or not 0.1 <= shift <= 10:
+    if not all(math.isfinite(float(n)) for n in (cfg, shift)) or not (0 if backend == "idol-turbo" else 1) <= cfg <= 10 or not 0.1 <= shift <= 10:
         raise ValueError("Use CFG 1–10 and time shift 0.1–10.")
     if mode not in {"real", "synthetic"}:
         raise ValueError("Choose photograph or rendered / generated input.")

@@ -139,12 +139,17 @@ def items(prefs: dict | None = None) -> list[Item]:
                     [addons.root("vosr") / "models"],
                     note="DiT, DINOv2 and dedicated Qwen 2D VAE; one shared bundle for all VOSR controls."))
     from . import image_splats
-    out.append(Item("engine_image_splats", "TripoSplat / Idol shared runtime", "Engines",
+    out.append(Item("engine_image_splats", "TripoSplat / Idol / Idol Turbo shared runtime", "Engines",
                     [image_splats.root()], note="Shared isolated runtime and source; weights are listed separately."))
-    for backend in image_splats.BACKENDS:
+    for backend in ("triposplat", "idol"):
         out.append(Item("image_splats_" + backend, image_splats.BACKENDS[backend] + " weights and encoders", "Models",
                         sorted({s.path().parent for s in image_splats.artifacts(backend)}),
-                        note="Reinstall from Models. Identical weight files may share disk storage."))
+                        note=("Shared by Idol and Idol Turbo; removing these weights requires repair of both. "
+                              if backend == "idol" else "") +
+                             "Reinstall from Models. Identical weight files may share disk storage."))
+    out.append(Item("image_splats_idol-turbo", "Idol Turbo adapter (117.5 MB)", "Models",
+                    [spec.path().parent for spec in image_splats.TURBO],
+                    note="Turbo adapter only. Base weights and encoders are listed under Idol; deleting this keeps standard Idol usable."))
     folder = addons.root("sam2")
     out.append(Item("engine_sam2", "SAM 2.1 runtime", "Engines",
                     [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],

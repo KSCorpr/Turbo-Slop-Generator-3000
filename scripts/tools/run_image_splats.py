@@ -119,6 +119,101 @@ def idol_encoder_class(request, torch, dtype):
     return LocalImageEncoder
 
 
+def apply_idol_turbo(pipeline, filename):
+    """Phase-LoRA adapter for akhaliq/idol-turbo, pinned v5 checkpoint.
+
+    Adapted from turbo.py at HF revision 45cdd41f1f4d6d70496daa7d619f57ad79307a37
+    (Apache-2.0). Local-only loading, strict adapter shapes, resident experts,
+    and exception-safe restoration of the SDK's attention settings are ours.
+    """
+    import numpy as np
+    import torch
+    from torch import nn
+    from safetensors.torch import load_file
+    from tensordict import TensorDict
+    import idol.pipeline as api
+    import idol.models.layers as layers
+
+    class PhaseLinear(nn.Module):
+        def __init__(self, base, tensors):
+            super().__init__()
+            self.base = base
+            self.active = "slow"
+            for key, tensor in tensors.items():
+                self.register_buffer(key, tensor.to(base.weight.device))
+
+        def forward(self, x):
+            out = self.base(x)
+            a = getattr(self, self.active + "_A")
+            b = getattr(self, self.active + "_B")
+            return out + (x.to(a.dtype) @ a.t() @ b.t()).to(out.dtype) * 4.0  # alpha 128 / rank 32
+
+    targets = []
+    for group in ("noise_refiner", "context_refiner", "blocks"):
+        for index, block in enumerate(getattr(pipeline.denoiser, group)):
+            for suffix, parent, key in (("attn.qkv", block.attn, "qkv"),
+                                         ("attn.out", block.attn, "out"),
+                                         ("mlp.mlp.0", block.mlp.mlp, "0"),
+                                         ("mlp.mlp.2", block.mlp.mlp, "2")):
+                base = getattr(parent, key)
+                if not isinstance(base, nn.Linear):
+                    raise ValueError("Idol Turbo requires the original, unpatched Idol denoiser.")
+                targets.append((f"{group}.{index}.{suffix}", parent, key, base))
+    state = load_file(str(filename), device="cpu")
+    expected = {}
+    for name, _, _, base in targets:
+        for phase in ("slow", "fast"):
+            expected[name + "." + phase + "_A"] = (32, base.in_features)
+            expected[name + "." + phase + "_B"] = (base.out_features, 32)
+    if set(state) != set(expected):
+        raise ValueError("Idol Turbo adapter tensor names do not match the installed denoiser.")
+    for key, shape in expected.items():
+        value = state[key]
+        if tuple(value.shape) != shape or value.dtype != torch.float32 or not torch.isfinite(value).all():
+            raise ValueError(f"Invalid Idol Turbo adapter tensor: {key}.")
+    experts = []
+    for name, parent, key, base in targets:
+        tensors = {suffix: state[name + "." + suffix] for suffix in ("slow_A", "slow_B", "fast_A", "fast_B")}
+        expert = PhaseLinear(base, tensors)
+        setattr(parent, key, expert)
+        experts.append(expert)
+    original_sampler = api.sample_flow
+
+    @torch.no_grad()
+    def turbo_sample_flow(model, noise, cond, neg_cond, steps=5, rescale_t=3.0,
+                          cfg_strength=0.0, verbose=True, batch_cfg=False):
+        if model is not pipeline.denoiser:
+            return original_sampler(model, noise, cond=cond, neg_cond=neg_cond, steps=steps,
+                                    rescale_t=rescale_t, cfg_strength=cfg_strength,
+                                    verbose=verbose, batch_cfg=batch_cfg)
+        if steps not in range(4, 9) or cfg_strength != 0 or rescale_t != 3:
+            raise ValueError("Idol Turbo uses 4–8 steps, guidance 0 and time shift 3.")
+        from tqdm import tqdm
+        previous_backend = layers.ATTN_BACKEND
+        previous_tf32 = torch.backends.cuda.matmul.allow_tf32
+        try:
+            layers.ATTN_BACKEND = "sdpa"
+            torch.backends.cuda.matmul.allow_tf32 = True
+            sequence = np.linspace(1, 0, steps + 1)
+            sequence = rescale_t * sequence / (1 + (rescale_t - 1) * sequence)
+            sample = noise
+            for index in tqdm(range(steps), desc="Idol Turbo sampling", disable=not verbose):
+                t, previous_t = sequence[index], sequence[index + 1]
+                for expert in experts:
+                    expert.active = "slow" if t >= 0.5 else "fast"
+                timestep = torch.tensor([1000 * t] * sample.shape[0], device=sample.device, dtype=torch.float32)
+                velocity = model(sample, timestep, cond)
+                sample = TensorDict({key: sample[key] - velocity[key] * (t - previous_t)
+                                     for key in sample.keys()}, batch_size=sample.shape[0], device=sample.device)
+            return sample
+        finally:
+            layers.ATTN_BACKEND = previous_backend
+            torch.backends.cuda.matmul.allow_tf32 = previous_tf32
+
+    api.sample_flow = turbo_sample_flow
+    return pipeline
+
+
 def run_idol(request, torch, dtype):
     import idol.pipeline as api
     # The parent has verified/downloaded all files. Inference never contacts HF.
@@ -126,6 +221,9 @@ def run_idol(request, torch, dtype):
     print("Loading Idol and its local image encoders (compilation disabled)…", flush=True)
     pipeline = api.IdolPipeline(str(Path(request["paths"]["config"]).parent), device="cuda",
                                dinov3_dtype="bf16" if dtype == torch.bfloat16 else "fp32", optimize=False)
+    if request["backend"] == "idol-turbo":
+        apply_idol_turbo(pipeline, request["paths"]["turbo_lora"])
+        print("Idol Turbo: phase experts active; guidance-free, time shift 3.", flush=True)
     output = pipeline(request["source"], mode=request["mode"], seed=request["seed"], steps=request["steps"],
                       cfg_strength=request["cfg"], rescale_t=request["shift"],
                       num_gaussians=request["count"], verbose=True)
@@ -137,7 +235,7 @@ def run_idol(request, torch, dtype):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("triposplat", "idol"), required=True)
+    parser.add_argument("--backend", choices=("triposplat", "idol", "idol-turbo"), required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--request", type=Path)
     parser.add_argument("--probe", action="store_true")

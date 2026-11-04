@@ -122,6 +122,7 @@ def main():
         def generate_splats(source, backend, count, steps, cfg, shift, mode, seed, log):
             if not source:
                 raise ValueError("Import an image first.")
+            splat_engine.validate_controls(backend, count, steps, cfg, shift, mode, seed)
             splat_calls.append((backend, count, steps, mode))
             folder = settings.OUTPUT_DIR / ("splat-simulated-" + str(len(splat_calls)))
             folder.mkdir()
@@ -331,19 +332,31 @@ def main():
                 sample.save(splat_source)
                 page.locator("#image-splats-source input[type=file]").set_input_files(str(splat_source))
                 expect(page.locator("#image-splats-source img")).to_be_visible()
-                for model_name in ("TripoSplat", "Idol"):
+                for model_name in ("TripoSplat", "Idol Turbo", "Idol"):
                     page.locator("#image-splats-model input").click()
                     page.get_by_role("option", name=model_name, exact=True).click()
-                    if model_name == "Idol":
+                    if model_name.startswith("Idol"):
                         expect(page.locator("#image-splats-info")).to_contain_text("HF_TOKEN")
+                    guidance = page.locator('#image-splats-guidance input[type=number]')
+                    shift = page.locator('#image-splats-shift input[type=number]')
+                    step_input = page.locator('#image-splats-steps input[type=number]')
+                    if model_name == 'Idol Turbo':
+                        expect(step_input).to_have_value('5')
+                        expect(guidance).to_have_value('0')
+                        expect(guidance).to_be_disabled()
+                        expect(shift).to_be_disabled()
+                    else:
+                        expect(guidance).to_have_value('3')
+                        expect(guidance).to_be_enabled()
+                        expect(shift).to_be_enabled()
                     page.locator("#image-splats-count input").click()
                     page.get_by_role("option", name="32,768", exact=True).click()
                     page.get_by_role("button", name="Generate splats", exact=True).click()
                     expect(page.locator("#image-splats-status")).to_contain_text("Completed.")
                     expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"object\s*\.ply"))
                     expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"request\s*\.json"))
-                assert [call[0] for call in splat_calls] == ["triposplat", "idol"], splat_calls
-                assert [call[2] for call in splat_calls] == [20, 50], splat_calls
+                assert [call[0] for call in splat_calls] == ["triposplat", "idol-turbo", "idol"], splat_calls
+                assert [call[2] for call in splat_calls] == [20, 5, 50], splat_calls
                 page.screenshot(path=str(screenshots / "studio-image-splats.png"))
                 page.get_by_role("button", name="Unload 3D preview", exact=True).click()
                 expect(page.locator("#image-splats-status")).to_contain_text("preview unloaded")

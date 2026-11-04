@@ -59,6 +59,10 @@ def packages(prefs=None):
         Package("splat:idol", "Idol · image to splats", "Video & 3D",
                 "Single image to 32k–1M Gaussian splats, PLY + camera. Apache-2.0 core; gated DINOv3 / FLUX.2 terms required. "
                 "~6.78 GB including encoders. Shares the CUDA runtime with TripoSplat; identical VAE payloads can be reused."),
+        Package("splat:idol-turbo", "Idol Turbo · 5-step image to splats", "Video & 3D",
+                "Distilled Slow/Fast phase LoRA: 5 steps, no extra CFG pass. Adds 117.5 MB to Idol; "
+                "reuses its exact base weights, image encoders, decoders and runtime. Same gated encoder terms "
+                "on first download; PLY + predicted camera. Some outputs are softer than original Idol at 50 steps."),
     ]
 
 

@@ -23,7 +23,7 @@ def torch_packages():
 
 def install(backend):
     models.artifacts(backend)
-    if backend == "idol":
+    if models.is_idol(backend):
         models.check_encoder_access()
     selected = models.selected_gpu_index()
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -38,7 +38,7 @@ def install(backend):
     constraints.write_text(f"torch=={torch}\ntorchvision=={vision}\n", encoding="utf-8")
     pip(py, f"torch=={torch}", f"torchvision=={vision}", "--index-url", index)
     pip(py, "-c", constraints, "numpy>=1.26,<3", "Pillow>=10.2,<13", "safetensors==0.6.2", "tqdm>=4.66,<5")
-    if backend == "idol":
+    if models.is_idol(backend):
         pip(py, "-c", constraints, "transformers==4.57.6", "diffusers==0.36.0", "tensordict==0.10.0",
             "plyfile==1.1.3", "huggingface_hub==0.36.2")
     (target / "sources").mkdir(exist_ok=True)

@@ -9,6 +9,7 @@ from .media_tabs import stream_task
 
 def backend_controls(backend):
     models.artifacts(backend)
+    turbo = backend == "idol-turbo"
     counts = [n for n in engine.COUNTS if n <= (262144 if backend == "triposplat" else 1048576)]
     status = "Installed." if models.ready(backend) else "Install the selected model once, here or in Models."
     info = ("TripoSplat: MIT code and weights; PLY + SPLAT export. Source-image background removal is automatic."
@@ -16,9 +17,19 @@ def backend_controls(backend):
             "Idol: Apache-2.0 core. First accept [DINOv3](https://huggingface.co/facebook/dinov3-vith16plus-pretrain-lvd1689m) "
             "and [FLUX.2](https://huggingface.co/black-forest-labs/FLUX.2-dev) terms, then set HF_TOKEN or use hf auth login. "
             "Their own licenses apply. Exports PLY and the predicted camera; typical reported GPU memory is 7.2 GB, not a guarantee on every GPU.")
+    if turbo:
+        info = ("**Idol Turbo:** 5 steps recommended (4–8 supported). Distilled guidance: "
+                "no extra CFG pass; time shift fixed at 3. Slow/Fast experts switch at shifted t=0.5. "
+                "Only a 117.5 MB adapter is added when Idol is installed. "
+                "Some outputs are softer than original Idol at 50 steps. " + info)
     return (gr.update(choices=[(f"{n:,}", n) for n in counts], value=131072),
-            gr.update(value=20 if backend == "triposplat" else 50), gr.update(value="synthetic", visible=backend == "idol"),
-            status + " " + info)
+            gr.update(value=5 if turbo else 20 if backend == "triposplat" else 50,
+                      minimum=4 if turbo else 1, maximum=8 if turbo else 100),
+            gr.update(value="synthetic", visible=models.is_idol(backend)),
+            status + " " + info,
+            gr.update(value=0 if turbo else 3, minimum=0 if turbo else 1, interactive=not turbo),
+            gr.update(value=3, interactive=not turbo))
+
 
 
 def build_image_splats_tab():
@@ -33,17 +44,19 @@ def build_image_splats_tab():
                 backend = gr.Dropdown([(name, key) for key, name in models.BACKENDS.items()],
                                       value="triposplat", label="3D model", elem_id="image-splats-model")
                 install = gr.Button("Install / repair selected splat model", size="sm")
-                info = gr.Markdown(backend_controls("triposplat")[-1], elem_id="image-splats-info")
+                info = gr.Markdown(backend_controls("triposplat")[3], elem_id="image-splats-info")
                 mode = gr.Radio([("Render / generated image", "synthetic"), ("Photograph", "real")],
                                 value="synthetic", label="Idol crop mode", visible=False)
                 count = gr.Dropdown([(f"{n:,}", n) for n in engine.COUNTS[:4]], value=131072,
                                     label="Gaussians", elem_id="image-splats-count")
                 with gr.Row():
-                    steps = gr.Slider(1, 100, value=20, step=1, label="Sampling steps")
+                    steps = gr.Slider(1, 100, value=20, step=1, label="Sampling steps", elem_id="image-splats-steps")
                     seed = gr.Number(value=42, precision=0, label="Seed (-1 = random)")
                 with gr.Row():
-                    cfg = gr.Slider(1, 10, value=3, step=0.1, label="Image guidance")
-                    shift = gr.Slider(0.1, 10, value=3, step=0.1, label="Time shift")
+                    cfg = gr.Slider(1, 10, value=3, step=0.1, label="Image guidance",
+                                    info="Idol Turbo uses 0: guidance is already distilled into its adapter.",
+                                    elem_id="image-splats-guidance")
+                    shift = gr.Slider(0.1, 10, value=3, step=0.1, label="Time shift", elem_id="image-splats-shift")
                 with gr.Row():
                     start = gr.Button("Generate splats", variant="primary")
                     stop = gr.Button("Stop")
@@ -60,11 +73,11 @@ def build_image_splats_tab():
                                 elem_id="image-splats-files")
         status = gr.Markdown(elem_id="image-splats-status")
         log = gr.Textbox(label="Splat generation progress", lines=7, autoscroll=True)
-        backend.change(backend_controls, inputs=backend, outputs=[count, steps, mode, info], queue=False)
+        backend.change(backend_controls, inputs=backend, outputs=[count, steps, mode, info, cfg, shift], queue=False)
 
         def install_image_splats(selected):
             for state, _, text in stream_task(lambda report: engine.install(selected, report)):
-                yield state, text, backend_controls(selected)[-1]
+                yield state, text, backend_controls(selected)[3]
         install.click(install_image_splats, inputs=backend, outputs=[status, log, info], **widgets.GPU_QUEUE)
 
         def generate_image_splats(source, selected, count, steps, cfg, shift, mode, seed):

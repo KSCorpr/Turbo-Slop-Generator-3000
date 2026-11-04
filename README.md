@@ -748,12 +748,14 @@ picker and these strategies live in **Settings**.
 
 ### Single image to Gaussian splats
 
-**TripoSplat and Idol** are available in **Tools & 3D → Image → splats** and
+**TripoSplat, Idol and Idol Turbo** are available in **Tools & 3D → Image → splats** and
 in the Models catalog. Import one object image, install the selected model,
 then export a Gaussian PLY (plus SPLAT for TripoSplat or camera JSON for Idol).
 These are generated Gaussian objects, not polygon meshes. Idol requires prior
 Hugging Face access to its DINOv3 and FLUX.2 image encoders. Both use an isolated
-CUDA runtime; the main installation stays light.
+CUDA runtime; the main installation stays light. **Idol Turbo** adds a 117.5 MB
+adapter to the same Idol files, with a five-step preset and distilled guidance.
+The original 50-step Idol remains available for quality comparisons.
 See [installation, GPU precision, downloads and validation limits](docs/image-splats.md).
 
 ### Samplers & schedulers
