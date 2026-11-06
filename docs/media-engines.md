@@ -1,4 +1,4 @@
-# SeedVR2, VOSR 2.0, LTX 2.5 et capture Gaussian Splatting
+# SeedVR2, VOSR 2.0 et capture Gaussian Splatting
 
 Ces fonctions sont disponibles dans `main` et dans le téléchargement Studio.
 Le canal de mise à jour suit `main`.
@@ -175,28 +175,10 @@ autre erreur de traitement ne déclenche pas ce repli ; un échec SDPA reste vis
 Le message amont « optimizations check » indique des paquets optionnels absents,
 pas une erreur bloquante ; TurboSlop le remplace par le résultat de sa vérification.
 
-### LTX 2.5
+### Récupération des vidéos AVI
 
-Ouvrir **Video → LTX 2.5**, choisir la précision, puis **Download / prepare LTX 2.5**.
-Le programme télécharge le modèle dev GGUF, le VAE convolutionnel et l'encodeur
-Gemma 4 spécifique à LTX. L'encodeur BF16 est converti une fois en Q4_0 via sd.cpp.
-Il reste conservé, pour éviter de supprimer un fichier que l'utilisateur pourrait
-vouloir employer dans un autre outil. Prévoir au moins 60 Go libres pour commencer.
-Les téléchargements soumis à conditions utilisent l'authentification Hugging Face
-déjà configurée sur la machine ; les termes du modèle doivent avoir été acceptés.
-
-Commencer par 512×288, 33 images, sur les GPU de 11–12 Go. Le modèle dépasse la
-VRAM : auto-fit et la RAM système sont indispensables. Les autres choix sont
-768×448 / 960×544 et 65 / 97 / 121 images. Ce sont des profils à valider sur le GPU,
-pas une garantie de temps de calcul ou d'absence de manque de mémoire.
-
-Cette intégration utilise **dev, 20 étapes, Euler, CFG 3**, une première image
-facultative et une dernière image facultative si la première est fournie.
-Elle produit une vidéo MP4 sans audio et un fichier JSON de paramètres.
-Elle n'utilise pas le décodeur par diffusion, le modèle distilled, les passes DFR,
-les images clés intermédiaires ni les sorties HDR/EXR du pipeline Python LTX.
-Si l'encodage MP4 échoue, l'AVI reste disponible via la récupération de vidéos
-dans **Video → LTX 2.5 → Recover a saved AVI**.
+**System → Storage & help** affiche la conversion en MP4 si des AVI d'une
+ancienne génération LTX se trouvent dans `outputs/`.
 
 ### Capture 3D
 
@@ -247,8 +229,6 @@ outils. Vérifier le GPU annoncé dans le journal, en particulier avec un iGPU.
   réparation ciblée des installations ConvRot restées en CUDA 12.6.
 - COLMAP : wheel `pycolmap==3.12.0`, exécution CPU, environnement séparé.
 - Brush : binaire officiel `v0.3.0`, empreinte SHA-256 vérifiée avant extraction.
-- LTX : modèle `vantagewithai/LTX-2.5-GGUF`, composants `Lightricks/LTX-2.5`,
-  moteur sd.cpp déjà utilisé par l'application. Licence des poids : LTX Community.
 
 Les boutons d'installation et d'inférence partagent la file GPU du studio.
 Stop termine aussi les sous-processus (FFmpeg, installateur et moteurs) et empêche

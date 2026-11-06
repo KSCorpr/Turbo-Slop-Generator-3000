@@ -6,7 +6,7 @@ INT8 / BF16 / FP16 variant for that specific model before generating.
 **Encoder, VAE & local files** contains the corresponding component choices.
 Menus show precision, format, actual disk size and filenames without contacting
 Hugging Face. Install additional variants in Models, then click
-**Refresh installed variants** or return to the image model's tab.
+**Refresh variants** or return to the image model's tab.
 
 Selections are saved per model and shared with the Models catalog. Automatic
 uses the usual hardware target and compatible installed-weight fallback.
@@ -17,9 +17,9 @@ generation. Files placed in `models/custom` appear as **Local / custom** entries
 in the same menus; select the matching component and architecture. These local
 selections are saved separately from catalog download choices.
 
-Open **Models** to install image-generation weights and the models used by the
-Toolkit, video and 3D. Filter by usage or search, then choose
-a package. The page renders one image-weight form, not one copy per model.
+Open **Models** or click **Manage weights** in an Images workspace to go straight
+to its package. Use category and search to find packages for image generation,
+restoration, Toolkit and 3D. Built-in installations use public sources.
 Switching images restores that model's saved weight choices.
 
 - **Image generation:** select exact diffusion/encoder/VAE weights, or keep
@@ -28,7 +28,7 @@ Switching images restores that model's saved weight choices.
   other image models. Delete retains files required by another image model.
 - **Toolkit:** depth/normals, background removal, image descriptions, SAM click-to-cutout, ESRGAN and modern Spandrel upscalers.
 - **Segmentation:** SAM 2.1 and legacy SAM for click-to-cutout.
-- **Video & 3D:** ConvRot and classic SeedVR2, LTX 2.5, TRELLIS.2, Pixal3D and
+- **Video & 3D:** ConvRot and classic SeedVR2, TRELLIS.2, Pixal3D and
   Brush. Choose the requested variant before installing. SeedVR2's selected
   DiT and shared VAE can now be downloaded here before the first inference.
 
@@ -38,9 +38,10 @@ of each engine: the catalog does not make their checkpoint formats interchangeab
 Some large tools also install a separate Python/CUDA runtime. Those versions
 are retained independently to avoid dependency conflicts.
 
-**Download limit (MB/s; 0 = unlimited)** is the existing global transfer setting,
-also available under System. Installation, image download, deletion and
-consolidation use the shared job queue. **Stop download / installation** stops
+**Compatibility, download speed & storage** contains the component table,
+transfer limit and consolidation controls. The activity panel shows the current
+job and download log. Installation, image download, deletion and
+consolidation use the shared job queue. **Stop download** stops
 catalog subprocess trees, or aborts a managed HTTP transfer between chunks.
 Interrupted Hub weights retain their separate resumable partial files.
 Refresh status after an install; tool pages already opened may need a refresh

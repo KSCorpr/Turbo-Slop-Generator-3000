@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from PIL import Image
 from atelier import addons, settings
-from atelier.engine import ltx25, seedvr2, splat
+from atelier.engine import seedvr2, splat
 from atelier.engine.local_jobs import LocalJob
 
 
@@ -27,29 +27,6 @@ class CommandTests(unittest.TestCase):
             self.assertNotIn("--cuda_device", cmd)  # mapping comes from child env
         with self.assertRaises(ValueError):
             seedvr2.build_command(Path("in.png"), Path("out.png"), "../model", 1080, is_video=False)
-
-    def test_ltx_rejects_wrong_vae_and_unpaired_last_frame(self):
-        paths = [Path("model"), Path("encoder"), Path("ltx-2.5-video-vae-bf16.safetensors")]
-        with self.assertRaisesRegex(ValueError, "convolutional"):
-            ltx25.build_command(Path("sd"), paths, "a scene", Path("out"))
-        with self.assertRaisesRegex(ValueError, "first frame"):
-            ltx25.build_command(Path("sd"), paths, "a scene", Path("out"), last=Path("last.png"))
-
-    def test_ltx_paths_and_memory_controls_are_real_arguments(self):
-        with tempfile.TemporaryDirectory() as temp:
-            paths = [Path(temp) / n for n in ["model.gguf", "encoder.gguf",
-                     "ltx-2.5-video-vae-conv-bf16.safetensors"]]
-            for p in paths:
-                p.write_bytes(b"test")
-            opts = {"--video-frames", "--auto-fit", "--max-vram", "--llm",
-                    "--vae-tiling", "--diffusion-fa"}
-            with patch.object(ltx25.sdcpp, "supported_options", return_value=opts), \
-                 patch.object(ltx25.sdcpp, "max_vram_arg", return_value="10GiB"):
-                cmd = ltx25.build_command(Path("sd"), paths, "a scene", Path("out.avi"))
-            self.assertIn("--auto-fit", cmd)
-            self.assertIn("10GiB", cmd)
-            self.assertNotIn("--audio-vae", cmd)
-            self.assertEqual(cmd[cmd.index("--cfg-scale") + 1], "3.0")
 
     def test_brush_uses_release_cli_not_unreleased_renamed_flags(self):
         cmd = splat.brush_command(Path("brush"), Path("data"), Path("out"), "scene", "standard")

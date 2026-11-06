@@ -1,4 +1,4 @@
-"""Local restoration, LTX video and photo/video reconstruction workspaces."""
+"""Local restoration and photo/video reconstruction workspaces."""
 from __future__ import annotations
 
 import queue
@@ -11,7 +11,7 @@ import gradio as gr
 from PIL import Image, ImageOps
 
 from .. import addons, settings, seedvr2_acceleration as acceleration
-from ..engine import seedvr2, ltx25, splat, video
+from ..engine import seedvr2, splat
 from . import widgets
 
 
@@ -61,10 +61,8 @@ def stream_task(action):
         yield "Completed.", path, "\n".join(lines)
 
 
-def install_action(name, job, log, quant=None, *, optimizations=False, precision=None):
+def install_action(name, job, log, *, optimizations=False, precision=None):
     command = [sys.executable, "-u", str(settings.ROOT / "scripts" / "setup_media.py"), name]
-    if quant:
-        command += ["--quant", quant]
     if optimizations:
         command += ["--optimizations"]
     if precision:
@@ -231,77 +229,6 @@ def build_seedvr2_tab():
         start.click(run_seed, inputs=[source, model, resolution, seed, scale, detail, attention],
                     outputs=[status, image, clip, download, log], **widgets.GPU_QUEUE)
         widgets.stop_into_status(stop, seedvr2.JOB.cancel, status, [])
-
-
-def build_ltx25_tab():
-    with gr.Tab("LTX 2.5", id="ltx25"):
-        gr.Markdown("### LTX 2.5 · text or image to video\n"
-                    "Local sd.cpp generation, video only. Start with 512×288 / 33 frames "
-                    "on 11–12 GB GPUs. RAM offload is required; this is not a real-time mode.")
-        quant = gr.Dropdown([("Q3_K_M · ~12.9 GB diffusion", "Q3_K_M"),
-                             ("Q4_K_M · ~15.7 GB diffusion", "Q4_K_M")],
-                            value="Q3_K_M", label="Model precision")
-        with gr.Accordion("Install weights", open=not ltx25.ready()):
-            gr.Markdown("Downloads the selected model, convolutional VAE and LTX-specific "
-                        "Gemma encoder, then converts the encoder to Q4. Keep at least 60 GB "
-                        "free for downloads and conversion. The original encoder is kept. "
-                        "LTX weights use the LTX Community License; gated downloads may "
-                        "require accepting the model terms in your Hugging Face account.")
-            install = gr.Button("Download / prepare LTX 2.5", size="sm")
-        with gr.Row():
-            with gr.Column():
-                prompt = gr.Textbox(label="Scene and camera movement", lines=4)
-                with gr.Row():
-                    first = gr.Image(label="First frame (optional)", type="filepath",
-                                     buttons=widgets.IMAGE_VIEW_ONLY)
-                    last = gr.Image(label="Last frame (optional)", type="filepath",
-                                    buttons=widgets.IMAGE_VIEW_ONLY)
-                with gr.Row():
-                    size = gr.Dropdown([f"{w}x{h}" for w, h in ltx25.SIZES],
-                                       value="512x288", label="Resolution")
-                    frames = gr.Dropdown([(f"{n} frames · {n/24:.1f} s", n)
-                                          for n in ltx25.FRAMES], value=33, label="Duration")
-                seed = gr.Number(value=-1, precision=0, label="Seed (-1 = random)")
-                with gr.Row():
-                    start = gr.Button("Generate LTX video", variant="primary")
-                    stop = gr.Button("Stop")
-            with gr.Column():
-                result = gr.Video(label="LTX video", interactive=False)
-                download = gr.File(label="Download MP4", interactive=False)
-        status = gr.Markdown()
-        log = gr.Textbox(label="Progress", lines=8, autoscroll=True)
-        with gr.Accordion("Recover a saved AVI", open=False):
-            gr.Markdown("If MP4 conversion failed, recover the completed video without generating it again.")
-            saved_avi = gr.Dropdown(choices=[], label="Saved LTX AVI")
-            with gr.Row():
-                refresh_avi = gr.Button("Refresh AVI list", size="sm")
-                recover_avi = gr.Button("Convert AVI to MP4", size="sm")
-
-        def avi_choices():
-            choices = video.saved_avis()
-            return gr.update(choices=choices, value=choices[0] if choices else None)
-
-        def recover(name):
-            for state, path, text in stream_task(lambda report: video.convert_saved_avi(name, log=report)):
-                yield state, path, path, text
-
-        refresh_avi.click(avi_choices, outputs=saved_avi, queue=False)
-        recover_avi.click(recover, inputs=saved_avi, outputs=[status, result, download, log])
-
-        def install_ltx(quant):
-            for state, _, text in stream_task(lambda report: install_action("ltx25", ltx25.JOB, report, quant)):
-                yield state, text
-
-        install.click(install_ltx, inputs=[quant], outputs=[status, log], **widgets.GPU_QUEUE)
-
-        def run_ltx(prompt, quant, size, frames, seed, first, last):
-            for state, path, text in stream_task(lambda report: ltx25.generate(
-                    prompt, quant, size, frames, seed, first, last, report)):
-                yield state, path, path, text
-
-        start.click(run_ltx, inputs=[prompt, quant, size, frames, seed, first, last],
-                    outputs=[status, result, download, log], **widgets.GPU_QUEUE)
-        widgets.stop_into_status(stop, ltx25.JOB.cancel, status, [])
 
 
 def build_splat_tab():

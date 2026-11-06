@@ -139,17 +139,11 @@ def items(prefs: dict | None = None) -> list[Item]:
                     [addons.root("vosr") / "models"],
                     note="DiT, DINOv2 and dedicated Qwen 2D VAE; one shared bundle for all VOSR controls."))
     from . import image_splats
-    out.append(Item("engine_image_splats", "TripoSplat / Idol / Idol Turbo shared runtime", "Engines",
-                    [image_splats.root()], note="Shared isolated runtime and source; weights are listed separately."))
-    for backend in ("triposplat", "idol"):
-        out.append(Item("image_splats_" + backend, image_splats.BACKENDS[backend] + " weights and encoders", "Models",
-                        sorted({s.path().parent for s in image_splats.artifacts(backend)}),
-                        note=("Shared by Idol and Idol Turbo; removing these weights requires repair of both. "
-                              if backend == "idol" else "") +
-                             "Reinstall from Models. Identical weight files may share disk storage."))
-    out.append(Item("image_splats_idol-turbo", "Idol Turbo adapter (117.5 MB)", "Models",
-                    [spec.path().parent for spec in image_splats.TURBO],
-                    note="Turbo adapter only. Base weights and encoders are listed under Idol; deleting this keeps standard Idol usable."))
+    out.append(Item("engine_image_splats", "TripoSplat runtime", "Engines",
+                    [image_splats.root()], note="Isolated runtime. Weights are listed separately."))
+    out.append(Item("image_splats_triposplat", "TripoSplat weights and encoders", "Models",
+                    [settings.model_repo_dir("VAST-AI/TripoSplat")],
+                    note="Reinstall from Models or Tools & 3D."))
     folder = addons.root("sam2")
     out.append(Item("engine_sam2", "SAM 2.1 runtime", "Engines",
                     [folder / part for part in (".venv", "source", "installed.json", "constraints.txt")],
@@ -216,6 +210,12 @@ def items(prefs: dict | None = None) -> list[Item]:
     # Removed features stay manageable without deleting downloaded user data
     # during an app update. Shared active encoders and VAEs are excluded.
     retired = [
+        ("idol", "Idol weights", settings.model_repo_dir("speridlabs/idol")),
+        ("idol_turbo", "Idol Turbo adapter", settings.model_repo_dir("akhaliq/idol-turbo")),
+        ("idol_dino", "Idol DINOv3 weights", settings.model_repo_dir("facebook/dinov3-vith16plus-pretrain-lvd1689m")),
+        ("idol_vae", "Idol FLUX.2-dev VAE", settings.model_repo_dir("black-forest-labs/FLUX.2-dev") / "vae"),
+        ("ltx_gguf", "LTX 2.5 diffusion", settings.model_repo_dir("vantagewithai/LTX-2.5-GGUF")),
+        ("ltx_components", "LTX 2.5 encoder and VAE", settings.model_repo_dir("Lightricks/LTX-2.5")),
         ("flux3", "Flux.3 diffusion", settings.model_repo_dir("akhaliq/flux-3-image-klein-sd-gguf")),
         ("zimage", "Z-Image diffusion", settings.model_repo_dir("leejet/Z-Image-Turbo-GGUF")),
         ("zimage_native", "Z-Image native weights / VAE", settings.model_repo_dir("Comfy-Org/z_image_turbo")),
@@ -236,7 +236,7 @@ def items(prefs: dict | None = None) -> list[Item]:
     # --- Données utilisateur (prudence) -----------------------------------
     out += [
         Item("loras", "Installed LoRAs", "Your data", [settings.LORA_DIR],
-             note="⚠️ Your LoRA files (Civitai imports included).",
+             note="⚠️ Your local LoRA files.",
              protected=True),
         Item("custom", "Custom models (models/custom)", "Your data",
              [settings.CUSTOM_DIR],

@@ -40,62 +40,6 @@ def download_lora(repo: str, log: Callable[[str], None] | None = None) -> str:
     return dest.stem
 
 
-def download_lora_civitai(ref: str, token: str | None = None,
-                          log: Callable[[str], None] | None = None) -> str:
-    """Télécharge un LoRA depuis Civitai (URL ou ID de version) dans loras/.
-
-    `ref` peut être une URL (…?modelVersionId=123) ou directement l'ID de version.
-    Certains modèles exigent un token Civitai (Réglages). Renvoie le nom (sans
-    extension) à utiliser dans la liste LoRA."""
-    import re
-    import requests
-
-    settings.LORA_DIR.mkdir(parents=True, exist_ok=True)
-    s = str(ref or "").strip()
-    m = re.search(r"modelVersionId=(\d+)", s) or re.search(r"/(\d+)(?:[/?#]|$)", s)
-    vid = m.group(1) if m else (s if s.isdigit() else None)
-    if not vid:
-        raise RuntimeError("Civitai version ID not found. Paste the URL "
-                           "containing “modelVersionId=…”, or the numeric ID.")
-    token = token or settings.load_prefs().get("civitai_token") or ""
-    url = f"https://civitai.com/api/download/models/{vid}"
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    if log:
-        log(f"Civitai download (version {vid})…")
-    r = requests.get(url, headers=headers, stream=True, allow_redirects=True,
-                     timeout=120)
-    ctype = r.headers.get("content-type", "")
-    if r.status_code in (401, 403) or "text/html" in ctype:
-        raise RuntimeError(
-            "Civitai refused the download (this model needs a login or "
-            "token). Add a Civitai token in Settings, or download the file by "
-            "hand into the loras/ folder.")
-    r.raise_for_status()
-    cd = r.headers.get("content-disposition", "")
-    fn = re.search(r'filename="?([^";]+)"?', cd)
-    name = Path(fn.group(1).replace("\\", "/")).name if fn else f"civitai_{vid}.safetensors"
-    if not name.lower().endswith((".safetensors", ".gguf", ".ckpt", ".pt")):
-        name += ".safetensors"
-    dest = settings.LORA_DIR / name
-    from .transfers import CHUNK_SIZE, RateLimiter, transfer_lock
-    partial = dest.with_name(dest.name + ".download")
-    with r, transfer_lock():
-        with partial.open("wb") as fh:
-            limiter = RateLimiter()
-            chunks = r.iter_content(chunk_size=CHUNK_SIZE)
-            while True:
-                limiter.wait()
-                chunk = next(chunks, None)
-                if chunk is None:
-                    break
-                if chunk:
-                    fh.write(chunk)
-        partial.replace(dest)
-    if log:
-        log(f"  ✓ {name}")
-    return dest.stem
-
-
 def _fn(f: str, pattern: str) -> bool:
     return fnmatch.fnmatch(f, pattern) or fnmatch.fnmatch(Path(f).name, pattern)
 

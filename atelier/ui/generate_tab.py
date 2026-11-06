@@ -143,7 +143,8 @@ def build_generative_tab(model_id: str, title: str,
                          # ensuite de se mettre au premier plan.
                          pending_toolkit=None, tabs=None, toolkit_tab_id="tools",
                          pending_3d=None, threed_tab_id="tools",
-                         pending_outpaint=None, outpaint_tab_id="tools"):
+                         pending_outpaint=None, outpaint_tab_id="tools",
+                         model_links=None):
     d = _defaults(model_id)
 
     # `id` EXPLICITE : « 📝 Image → prompt » renvoie son texte vers un onglet
@@ -165,192 +166,103 @@ def build_generative_tab(model_id: str, title: str,
             ("full" if (m and m.family == "flux2") else "")
         is_edit = _edit_kind in (True, "full")
         edit_optional = _edit_kind == "optional"
-        status = (f"<span class='status-ok'>{t('● model ready')}</span>" if ready
-                  else "<span class='status-missing'>Download weights in Models to start</span>")
-        _mode = t("image editing") if is_edit else t("image-to-image")
-        _task = _mode if d.get("requires_reference") else f"text to image & {_mode}"
-        model_status = gr.Markdown(
-            f"**{title}** · {_task} · {status}",
-            elem_classes="model-summary")
-        if family.startswith("fibo2"):
-            gr.Markdown(
-                "**Fibo 2.0:** " + ("Edit Turbo needs at least one reference: **4 steps, CFG 1**. "
-                if d.get("requires_reference") else "Dev generates and edits images: **20 steps, CFG 5**. ") +
-                "Use Euler / Auto. Plain instructions and structured JSON captions are accepted; "
-                "JSON is sent unchanged, without style additions. For editing, refer to "
-                "`<image_1>`, `<image_2>`, etc. Keep automatic memory placement enabled on 12 GB cards. "
-                "Weights are **CC BY-NC 4.0**; commercial work requires Bria's license terms.")
-        if family == "krea2_realism":
-            gr.Markdown(
-                "**Realism preset:** Euler + Simple, 6 steps, CFG 1. "
-                "Around **2 MP** is recommended by the author. The checkpoint "
-                "alone is over **13 GB**; keep automatic system placement "
-                "enabled on 12 GB cards to use RAM as well as VRAM.")
-        if family == "moss_image":
-            gr.Markdown(
-                "**MOSS layout control:** paste a layout JSON directly into Prompt. "
-                "Text and object boxes use pixel coordinates relative to the canvas "
-                "center; set the matching output dimensions. Style additions are "
-                "skipped for JSON layouts. Start at 1024 px with automatic memory "
-                "placement. For **8 steps**, download **MOSS SFT · DMD 8-step "
-                "adapter** in Models, then select **DMD fast (8 steps)** below. "
-                "The adapter is applied automatically at strength 0.7, CFG 1.")
+        task = ("Image editing · reference required" if d.get("requires_reference")
+                else "Text to image & image editing" if is_edit else "Text to image & image-to-image")
+
+        def model_summary(available):
+            label = ("<span class='status-ok'>Weights ready</span>" if available
+                     else "<span class='status-missing'>Weights needed</span>")
+            return f"**{title}** · {task} · {label}"
+
+        with gr.Row(elem_classes="workspace-heading"):
+            model_status = gr.Markdown(model_summary(ready), elem_classes="model-summary", scale=5)
+            if model_links is not None:
+                model_links[model_id] = gr.Button("Manage weights", size="sm", scale=1,
+                                                  min_width=130, elem_classes="manage-weights")
 
         def refresh_model_status():
             current = registry.get_base_model(model_id, settings.load_prefs())
-            available = taesd.model_ready(current)
-            label = "Weights ready" if available else "Download weights in Models to start"
-            return f"**{title}** · {_task} · {label}"
+            return model_summary(taesd.model_ready(current))
 
         variant_model = gr.State(model_id)
 
         with gr.Row():
             # ----- Entrées -----
             with gr.Column(scale=3, min_width=340, elem_classes="studio-controls"):
-                # Le PROMPT d'abord : c'est le champ principal, il ne doit pas
-                # être enterré sous des accordéons. Tout le reste (styles,
-                # réglages de l'améliorateur) est replié en dessous, groupé par
-                # intention : « 🎨 Styles » d'un côté, « ✨ Améliorateur » de
-                # l'autre. Les explications longues vivent dans l'onglet
-                # « 🧹 Gestion & aide » ; ici on s'en tient à une ligne par bloc.
                 prompt = gr.Textbox(label="Prompt", lines=3,
-                                    placeholder="Describe your image, or the change to make…",
+                                    placeholder="Describe your image or the edit you want…",
                                     elem_classes="studio-prompt")
 
-                _acc_title = ("🖼️ Reference images (image editing)" if is_edit
-                              else "🖼️ Reference / starting image (image-to-image)")
-                # Keep the upload visible directly below the prompt for every model.
-                with gr.Accordion(_acc_title, open=True):
+                with gr.Group(elem_classes="primary-reference"):
                     init_image = gr.Image(
-                        label="Image to edit" if is_edit else "Starting image",
+                        label="Image to edit" if is_edit else "Starting image (optional)", height=156,
                         elem_id=(f"{model_id}-reference" if family.startswith("fibo2") else None),
                         type="pil", image_mode=("RGBA" if family == "qwen21"
                                                 else "RGB"),
                         buttons=widgets.IMAGE_VIEW_ONLY)
                     if is_edit:
-                        with gr.Row():
-                            ref_image2 = gr.Image(
-                                label="Reference 2 (optional)", type="pil",
-                                image_mode=("RGBA" if family == "qwen21"
-                                            else "RGB"),
-                                buttons=widgets.IMAGE_VIEW_ONLY)
-                            ref_image3 = gr.Image(
-                                label="Reference 3 (optional)", type="pil",
-                                image_mode=("RGBA" if family == "qwen21"
-                                            else "RGB"),
-                                buttons=widgets.IMAGE_VIEW_ONLY)
+                        with gr.Accordion("More reference images", open=False):
+                            with gr.Row():
+                                ref_image2 = gr.Image(
+                                    label="Reference 2 (optional)", type="pil", height=138,
+                                    image_mode="RGBA" if family == "qwen21" else "RGB",
+                                    buttons=widgets.IMAGE_VIEW_ONLY)
+                                ref_image3 = gr.Image(
+                                    label="Reference 3 (optional)", type="pil", height=138,
+                                    image_mode="RGBA" if family == "qwen21" else "RGB",
+                                    buttons=widgets.IMAGE_VIEW_ONLY)
+                            if int(d.get("max_references", 3)) > 3:
+                                extra_references = gr.File(
+                                    label=f"Additional references ({d['max_references']} images total)",
+                                    file_count="multiple", file_types=["image"],
+                                    type="filepath", allow_reordering=True)
+                            else:
+                                extra_references = gr.State(None)
                     else:
                         ref_image2 = gr.State(None)
                         ref_image3 = gr.State(None)
-                    if int(d.get("max_references", 3)) > 3:
-                        extra_references = gr.File(
-                            label=f"Additional references ({d['max_references']} images total)",
-                            file_count="multiple", file_types=["image"],
-                            type="filepath", allow_reordering=True)
-                    else:
                         extra_references = gr.State(None)
-                    strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
-                                         label="Transformation strength",
-                                         visible=not is_edit)
-                    if edit_optional:
-                        edit_mode = gr.Checkbox(
-                            value=False,
-                            label="✏️ Edit mode (editing LoRA required)")
-                        if d.get("edit_lora"):
-                            edit_lora_btn = gr.Button(
-                                "⬇️ Install the official editing LoRA (one click)",
-                                size="sm")
-                            edit_lora_msg = gr.Markdown("")
-                    else:
+                    if is_edit:
+                        strength = gr.State(0.6)
                         edit_mode = gr.State(False)
-                    if is_edit:
-                        outpaint = gr.Slider(
-                            1.0, 2.0, value=1.0, step=0.1,
-                            label="🧩 Centred outpaint — extend the canvas "
-                                  "(1.0 = off; ⚠️ experimental)",
-                            info="Enlarges the canvas symmetrically and lets "
-                                 "the model fill the borders. For a "
-                                 "directional outpaint "
-                                 "(left/right/top/bottom), with no prompt and "
-                                 "with any model, use the “🖼️ Outpaint” tab.")
+                        gr.Markdown("Describe the change in the prompt.", elem_classes="hint")
                     else:
-                        outpaint = gr.State(1.0)
-                    if is_edit:
-                        gr.Markdown(
-                            "**Edit an image**: load it and describe **the "
-                            "change** in the prompt (e.g. *“change the car "
-                            "color to red”*, *“add snow”*). Editing is "
-                            "prompt-driven (no strength slider). The output "
-                            "aspect follows your image. You can add **2 extra "
-                            "reference images** to combine elements (e.g. "
-                            "*“put the character from image 1 into the scene "
-                            "of image 2”*).")
-                        if family.startswith("fibo2"):
-                            gr.Markdown(
-                                "**Fibo:** up to **10 ordered references** in TurboSlop. "
-                                "The vision projector is required for editing and is shared with "
-                                "the catalog's Qwen3-VL 4B tools. A single reference is scaled "
-                                "and center-cropped to the output aspect; choose a matching "
-                                "aspect ratio to retain its edges. Native masked repair is unavailable.")
-                        if family == "qwen21":
-                            gr.Markdown(
-                                "**Qwen 2.1 Turbo:** editing requires the vision "
-                                "projector downloaded with the model; no "
-                                "editing LoRA is needed. For a transparent "
-                                "PNG, use: `This is an RGBA image with "
-                                "transparency. <your description>. The image "
-                                "has alpha channel and the background is "
-                                "transparent.` 2K formats need more VRAM.")
-                    else:
-                        gr.Markdown(
-                            "**Reference image** (image-to-image): load a "
-                            "photo, describe the desired result, and set the "
-                            "**transformation strength** — **low (0.2–0.4)** "
-                            "= keeps the reference's structure; **high "
-                            "(0.7–1.0)** = reinvented. The output aspect "
-                            "follows your image.")
-                        if edit_optional:
-                            gr.Markdown(
-                                "✏️ **Or: Edit mode (Ostris Edit)** — the "
-                                "image becomes a **context reference** "
-                                "(style, subject…) instead of a starting "
-                                "point. Requires a **Krea 2 editing LoRA** — "
-                                "one-click install button above — and an "
-                                "up-to-date sd.cpp engine "
-                                "(`update.bat`). 💡 Editing costs more "
-                                "VRAM (reference tokens): the reference is "
-                                "downscaled automatically, and the automatic "
-                                "quantization (Q4_K_M on 11–12 GB) leaves the "
-                                "headroom it needs.")
+                        with gr.Accordion("Starting image options", open=False):
+                            strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
+                                                 label="Transformation strength",
+                                                 info="Lower values preserve more of the source.")
+                            if edit_optional:
+                                edit_mode = gr.Checkbox(value=False, label="Edit mode (editing LoRA required)")
+                                if d.get("edit_lora"):
+                                    edit_lora_btn = gr.Button("Install editing LoRA", size="sm")
+                                    edit_lora_msg = gr.Markdown("")
+                            else:
+                                edit_mode = gr.State(False)
 
                 negative = gr.Textbox(label="Negative prompt", lines=1,
                                       visible=d.get("supports_negative", False))
 
                 weight_menus = generation_weights.menus(model_id)
-                diffusion_variant = gr.Dropdown(
-                    **weight_menus[0], label="Model variant (installed weights)",
-                    info="Choose GGUF / INT8 / BF16 / FP16 weights installed for this model. "
-                         "Download more in Models. Local / custom entries require the same architecture.",
-                    elem_id=f"{model_id}-weight-variant", allow_custom_value=False)
-                refresh_variants = gr.Button("Refresh installed variants", size="sm")
+                with gr.Row(elem_classes=["compact-fields", "variant-row"]):
+                    diffusion_variant = gr.Dropdown(
+                        **weight_menus[0], label="Model variant (installed weights)",
+                        elem_id=f"{model_id}-weight-variant", allow_custom_value=False,
+                        scale=4)
+                    refresh_variants = gr.Button("Refresh variants", size="sm", scale=1, min_width=112)
 
-                ratio = gr.Dropdown(
-                    [t(k) for k in ratios],
-                    value=t(_ratio_label(ratios, d.get("width", 1024),
-                                         d.get("height", 1024))),
-                    label="Aspect ratio")
                 preset_list = _presets(model_id)
-                preset = gr.Dropdown(
-                    [t(p["name"]) for p in preset_list],
-                    value=(t(preset_list[0]["name"]) if preset_list else None),
-                    label="Quality preset",
-                    elem_id=f"{model_id}-sampling-preset",
-                    info=sampling.preset_description(preset_list[0]) if preset_list else None,
-                    visible=bool(preset_list))
-                with gr.Row():
-                    seed = gr.Number(value=-1, label="Seed (-1 = random)",
-                                     precision=0)
-                    batch = gr.Slider(1, 8, value=1, step=1, label="Images")
+                with gr.Row(elem_classes="compact-fields"):
+                    ratio = gr.Dropdown(
+                        [t(k) for k in ratios],
+                        value=t(_ratio_label(ratios, d.get("width", 1024), d.get("height", 1024))),
+                        label="Aspect ratio", scale=2, min_width=222)
+                    preset = gr.Dropdown(
+                        [t(p["name"]) for p in preset_list],
+                        value=t(preset_list[0]["name"]) if preset_list else None,
+                        label="Quality preset", scale=3, min_width=220,
+                        elem_id=f"{model_id}-sampling-preset",
+                        info=sampling.preset_description(preset_list[0]) if preset_list else None,
+                        visible=bool(preset_list))
                 # Keep the main action above the optional styling and advanced settings.
                 with gr.Row(elem_classes="go-row"):
                     # Libellé court : le modèle est déjà écrit sur l'onglet.
@@ -473,14 +385,6 @@ def build_generative_tab(model_id: str, title: str,
                         clear_lora = gr.Button("✖ Clear LoRAs", size="sm")
                     gr.Markdown(t("Drop your LoRA files into `{dir}`")
                                 .format(dir=settings.LORA_DIR))
-                    with gr.Row():
-                        civitai_ref = gr.Textbox(
-                            label="Import a Civitai LoRA (URL or version ID)",
-                            scale=3, placeholder="https://civitai.com/…"
-                                                 "?modelVersionId=3067151")
-                        civitai_btn = gr.Button("⬇️ Import", scale=1)
-                    civitai_msg = gr.Markdown("")
-
                 with gr.Accordion("Encoder, VAE & local files", open=False):
                     encoder_variant = gr.Dropdown(
                         **weight_menus[1], label="Encoder variant (installed)",
@@ -502,6 +406,15 @@ def build_generative_tab(model_id: str, title: str,
                         .format(dir=settings.CUSTOM_DIR))
 
                 with gr.Accordion("Resolution & sampling · advanced", open=False):
+                    if is_edit:
+                        outpaint = gr.Slider(
+                            1.0, 2.0, value=1.0, step=0.1, label="Centred outpaint",
+                            info="1.0 keeps the canvas size. Higher values extend it on every side.")
+                    else:
+                        outpaint = gr.State(1.0)
+                    with gr.Row():
+                        seed = gr.Number(value=-1, label="Seed (-1 = random)", precision=0)
+                        batch = gr.Slider(1, 8, value=1, step=1, label="Images per run")
                     with gr.Row():
                         width = gr.Slider(256, size_max, value=d.get("width", 1024),
                                           step=size_step,
@@ -566,6 +479,24 @@ def build_generative_tab(model_id: str, title: str,
                         value=False,
                         label="Seamless pattern (circular)",
                         info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
+
+                    if family.startswith("fibo2") or family in {"krea2_realism", "moss_image", "qwen21"}:
+                        if family.startswith("fibo2"):
+                            gr.Markdown(
+                                "Fibo accepts plain instructions and layout JSON. Refer to inputs as "
+                                "`<image_1>`, `<image_2>`, etc. Weights are CC BY-NC 4.0. "
+                                "Commercial work requires Bria's license terms.")
+                        elif family == "krea2_realism":
+                            gr.Markdown("Euler / Simple, 6 steps, CFG 1. The author recommends around "
+                                        "2 MP. Keep automatic memory placement on 12 GB cards.")
+                        elif family == "qwen21":
+                            gr.Markdown("For transparency, ask for an RGBA image with an alpha channel. "
+                                        "Image editing uses the vision projector downloaded with the model.")
+                        else:
+                            gr.Markdown("MOSS accepts layout JSON in the prompt. Box coordinates are "
+                                        "relative to the canvas center. Match the output dimensions to the layout. "
+                                        "For eight steps, install the MOSS SFT DMD adapter from Models.")
+
 
                 # (« Générer » / « Annuler » sont en haut, sous le prompt.)
 
@@ -640,30 +571,15 @@ def build_generative_tab(model_id: str, title: str,
 
         def refresh_loras():
             choices = gen_engine.list_loras()
-            return (gr.update(choices=choices), gr.update(choices=choices), "")
+            return gr.update(choices=choices), gr.update(choices=choices)
 
-        refresh_lora.click(refresh_loras, outputs=[lora1, lora2, civitai_msg])
+        refresh_lora.click(refresh_loras, outputs=[lora1, lora2])
 
         def clear_loras():
             return (gr.update(value=None), gr.update(value=0.8),
                     gr.update(value=None), gr.update(value=0.8))
 
         clear_lora.click(clear_loras, outputs=[lora1, lora1_w, lora2, lora2_w])
-
-        def _civitai_import(ref):
-            if not (ref or "").strip():
-                raise gr.Error(t("Paste a Civitai URL or version ID."))
-            try:
-                name = downloader.download_lora_civitai(ref)
-            except Exception as exc:  # noqa: BLE001
-                raise gr.Error(str(exc))
-            choices = gen_engine.list_loras()
-            return (gr.update(choices=choices), gr.update(choices=choices),
-                    t("✓ LoRA imported: **{name}** — select it above."
-                      ).format(name=name))
-
-        civitai_btn.click(_civitai_import, inputs=[civitai_ref],
-                          outputs=[lora1, lora2, civitai_msg])
 
         # LoRA d'édition officiel (Mode édition) : téléchargé depuis le dépôt HF
         # déclaré par le catalogue (defaults.edit_lora), sélectionné en LoRA 1

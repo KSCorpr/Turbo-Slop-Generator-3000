@@ -122,6 +122,20 @@ class ModelUpdateTests(unittest.TestCase):
             self.assertEqual(download.call_args.kwargs["revision"], "b" * 40)
             self.assertEqual(download.call_args.kwargs["_tracking_revision"], revision)
 
+    def test_retired_weights_are_kept_and_excluded_from_hub_checks(self):
+        repo = "Lightricks/LTX-2.5"
+        path = settings.model_repo_dir(repo) / "encoder.safetensors"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"old installation")
+        updates.record(path, repo=repo, filename=path.name, revision="main",
+                       commit="old", etag=hashlib.sha256(path.read_bytes()).hexdigest())
+        active = self.file()
+        report, calls = self.run_check([self.remote(active)])
+        self.assertEqual([call.args[0] for call in calls], ["test/model"])
+        self.assertEqual(report["counts"]["up_to_date"], 1)
+        self.assertEqual(report["counts"]["unmapped"], 0)
+        self.assertEqual(path.read_bytes(), b"old installation")
+
     def test_default_and_standalone_models_flags_run_fresh_code_and_check_mode_does_not(self):
         for argv, flag in (([], "--check-models"), (["--models"], "check_model_updates.py")):
             with patch.object(update_app.sys, "argv", ["update_app.py", *argv]), \

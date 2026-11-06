@@ -467,7 +467,7 @@ def preset_description(preset: dict) -> str:
     if preset.get("krea_distill"):
         return ("Text-to-image. Install the 438 MB Krea 2 Turbo distillation LoRA in Models. "
                 "Applies it at strength 1 with four fixed Euler steps and CFG 1.")
-    return "Baseline preset. Alternatives below are experimental; steps are in brackets."
+    return "Baseline preset."
 
 
 def describe(kind: str, key: str, model_family: str) -> str:

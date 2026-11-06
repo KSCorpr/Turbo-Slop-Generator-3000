@@ -13,7 +13,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image
 
-from atelier import addons, hardware, image_splats as models, inventory, model_catalog, settings
+from atelier import addons, hardware, image_splats as models, model_catalog, settings
 from atelier.engine import image_splats as engine
 from atelier.engine.local_jobs import LocalJob
 from atelier.ui import image_splats_tab, widgets
@@ -37,24 +37,18 @@ def write_ply(path, count=32768, nonfinite=False):
 
 
 class ManifestTests(unittest.TestCase):
-    def test_only_required_files_are_pinned_and_common_vae_is_identical(self):
+    def test_only_required_files_are_pinned(self):
         self.assertEqual(len(models.TRIPO), 5)
-        self.assertEqual(len(models.IDOL), 9)
         self.assertFalse(any('vae_encoder' in s.filename for s in models.TRIPO))
-        self.assertEqual(len(models.TURBO), 1)
-        self.assertEqual(models.artifacts('idol-turbo'), models.IDOL + models.TURBO)
-        self.assertEqual(models.source('idol-turbo'), models.source('idol'))
-        for spec in models.TRIPO + models.IDOL + models.TURBO:
+        for spec in models.TRIPO:
             self.assertEqual(len(spec.revision), 40)
             if spec.filename.endswith('.safetensors'):
                 self.assertEqual(len(spec.sha256), 64)
-        self.assertEqual(next(s.sha256 for s in models.TRIPO if s.key == 'flux'),
-                         next(s.sha256 for s in models.IDOL if s.key == 'flux'))
         self.assertEqual(encoder_precision((6, 1)), 'fp32')
         self.assertEqual(encoder_precision((7, 5)), 'fp32')
         self.assertEqual(encoder_precision((8, 6)), 'bf16')
 
-    def test_both_catalog_entries_route_to_selected_model_and_generation_gpu(self):
+    def test_catalog_routes_to_selected_model_and_generation_gpu(self):
         for backend in models.BACKENDS:
             key = 'splat:' + backend
             self.assertIn(key, [v for _, v in model_catalog.choices('Video & 3D', models.BACKENDS[backend])])
@@ -64,14 +58,6 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0][-1], backend)
             self.assertTrue(str(run.call_args.args[0][-2]).endswith('setup_image_splats.py'))
             self.assertEqual(run.call_args.kwargs['env']['CUDA_VISIBLE_DEVICES'], '1')
-
-    def test_gated_access_denial_precedes_large_downloads(self):
-        from huggingface_hub.errors import GatedRepoError
-        with patch('huggingface_hub.get_hf_file_metadata', side_effect=GatedRepoError('denied')), \
-             patch.object(models.transfers, 'hf_hub_download') as download:
-            with self.assertRaisesRegex(RuntimeError, 'Accept the terms'):
-                models.download_models('idol', log=lambda _: None)
-            download.assert_not_called()
 
     def test_auto_gpu_and_cuda_wheels_follow_selected_hardware(self):
         cards = (hardware.Gpu(0,'GTX 1080 Ti',11,'pascal',False),
@@ -99,7 +85,7 @@ class IsolatedTests(unittest.TestCase):
         self.stack.enter_context(patch.object(engine, 'JOB', LocalJob()))
         self.stack.enter_context(patch.object(engine.trellis, 'resident_is_running', return_value=False))
         self.data = {}
-        for name in ('TRIPO', 'IDOL', 'TURBO'):
+        for name in ('TRIPO',):
             specs = []
             for spec in getattr(models, name):
                 payload = (spec.repo + '/' + spec.filename).encode()
@@ -109,7 +95,7 @@ class IsolatedTests(unittest.TestCase):
 
     def installed(self, backend):
         py = addons.python('image-splats'); py.parent.mkdir(parents=True, exist_ok=True); py.touch()
-        src = models.source(backend) / ('triposplat.py' if backend == 'triposplat' else 'idol/pipeline.py')
+        src = models.source(backend) / 'triposplat.py'
         src.parent.mkdir(parents=True, exist_ok=True); src.touch()
         for spec in models.artifacts(backend):
             spec.path().parent.mkdir(parents=True, exist_ok=True)
@@ -141,48 +127,6 @@ class IsolatedTests(unittest.TestCase):
             self.assertEqual(kwargs['revision'], models.TRIPO_REV)
             self.assertEqual(kwargs['local_dir'], str(settings.model_repo_dir('VAST-AI/TripoSplat')))
 
-    def test_turbo_reuses_verified_idol_weights_without_gated_network_requests(self):
-        self.installed('idol')
-        spec, = models.TURBO
-        def transfer(**kwargs):
-            self.assertEqual(kwargs['repo_id'], spec.repo)
-            self.assertEqual(kwargs['filename'], spec.filename)
-            self.assertEqual(kwargs['revision'], models.TURBO_REV)
-            spec.path().parent.mkdir(parents=True, exist_ok=True)
-            spec.path().write_bytes(self.data[(spec.repo, spec.filename)])
-        with patch('huggingface_hub.get_hf_file_metadata') as metadata, \
-             patch.object(models.transfers, 'hf_hub_download', side_effect=transfer) as download:
-            models.download_models('idol-turbo', log=lambda _: None)
-        metadata.assert_not_called()
-        download.assert_called_once()
-        self.assertTrue(models.ready('idol'))
-        self.assertFalse(models.ready('idol-turbo'))  # installer still has to write its own marker
-        self.assertIn('turbo_lora', models.validate('idol-turbo'))
-
-    def test_corrupt_cached_encoder_still_requires_access_and_stops_downloads(self):
-        from huggingface_hub.errors import GatedRepoError
-        self.installed('idol')
-        dino = next(s for s in models.IDOL if s.key == 'dino')
-        models.validate('idol')
-        dino.path().write_bytes(b'x' * dino.size)
-        with patch('huggingface_hub.get_hf_file_metadata', side_effect=GatedRepoError('denied')) as metadata, \
-             patch.object(models.transfers, 'hf_hub_download') as download:
-            with self.assertRaisesRegex(RuntimeError, 'Accept the terms'):
-                models.download_models('idol-turbo', log=lambda _: None)
-        metadata.assert_called_once()
-        download.assert_not_called()
-
-    def test_turbo_cleanup_does_not_delete_shared_idol_weights(self):
-        self.installed('idol-turbo')
-        item = next(i for i in inventory.items() if i.key == 'image_splats_idol-turbo')
-        shared = {s.path().parent for s in models.IDOL}
-        self.assertFalse(shared.intersection(item.paths))
-        # Exercise the same deletion implementation as the cleanup UI.
-        with patch.object(settings, 'ROOT', self.root):
-            inventory.delete([item.key])
-        self.assertFalse(models.TURBO[0].path().exists())
-        self.assertTrue(all(s.path().is_file() for s in models.IDOL))
-
     def test_native_requests_snapshot_rgba_unicode_input_and_select_offline_gpu_paths(self):
         source = self.root / 'objet_é_日本.png'
         Image.new('RGBA', (37, 53), (17,92,154,80)).save(source)
@@ -197,8 +141,7 @@ class IsolatedTests(unittest.TestCase):
                     image.save(Path(request['output']) / 'input.png')
                 write_ply(Path(request['output']) / 'object.ply')
             with patch.object(engine.JOB, 'run', side_effect=run):
-                result = engine.generate(source, backend, 32768, 5 if backend == 'idol-turbo' else 20,
-                                         0 if backend == 'idol-turbo' else 3, 3, 'real', -1, log=lambda _: None)
+                result = engine.generate(source, backend, 32768, 20, 3, 3, 'synthetic', -1, log=lambda _: None)
             request, env = captured[0]
             self.assertTrue(result.is_file())
             self.assertEqual(request['backend'], backend); self.assertEqual(request['count'], 32768)
@@ -209,10 +152,11 @@ class IsolatedTests(unittest.TestCase):
             self.assertEqual(request['code_commit'], models.SOURCES[backend][1])
 
     def test_invalid_controls_and_missing_input_stop_before_any_process(self):
-        for args in [('triposplat', 1048576,20,3,3,'real',42), ('idol',12345,20,3,3,'real',42),
-                     ('idol',32768,0,3,3,'real',42), ('idol',32768,20,float('nan'),3,'real',42),
-                     ('idol-turbo',32768,50,0,3,'real',42), ('idol-turbo',32768,5,3,3,'real',42),
-                     ('idol-turbo',32768,5,0,1,'real',42), ('idol-turbo',32768,5.5,0,3,'real',42)]:
+        for args in [('triposplat',1048576,20,3,3,'synthetic',42),
+                     ('triposplat',32768,0,3,3,'synthetic',42),
+                     ('triposplat',32768,20,float('nan'),3,'synthetic',42),
+                     ('idol',32768,50,3,3,'synthetic',42),
+                     ('idol-turbo',32768,5,0,3,'synthetic',42)]:
             with self.assertRaises(ValueError): engine.validate_controls(*args)
         with patch.object(engine.JOB, 'run') as run:
             with self.assertRaisesRegex(ValueError, 'Import an image'):
@@ -249,27 +193,20 @@ class IsolatedTests(unittest.TestCase):
                 setup_image_splats.install('triposplat')
             download.assert_not_called(); self.assertFalse(models.marker('triposplat').exists())
 
-    def test_ui_switch_limits_the_actual_model_controls_and_routes_preview_and_downloads(self):
+    def test_ui_routes_triposplat_preview_and_downloads(self):
         with gr.Blocks() as demo: image_splats_tab.build_image_splats_tab()
         fn = next(f for f in demo.fns.values() if getattr(f.fn, '__name__', '') == 'generate_image_splats')
         self.assertEqual(fn.concurrency_id, widgets.GPU_QUEUE['concurrency_id'])
-        for backend, maximum, steps in [('triposplat',262144,20), ('idol-turbo',1048576,5), ('idol',1048576,50)]:
-            controls = image_splats_tab.backend_controls(backend)
-            self.assertEqual(max(v for _,v in controls[0]['choices']), maximum)
-            self.assertEqual(controls[1]['value'], steps)
-            self.assertEqual(controls[4]['value'], 0 if backend == 'idol-turbo' else 3)
-            self.assertEqual(controls[4]['interactive'], backend != 'idol-turbo')
-            self.assertEqual(controls[5]['interactive'], backend != 'idol-turbo')
         output = self.root / 'result'; output.mkdir()
         write_ply(output / 'object.ply'); Image.new('RGB',(32,32)).save(output / 'input.png')
         (output / 'request.json').write_text('{}')
         with patch.object(engine, 'generate', return_value=output / 'object.ply') as run:
-            rows = list(fn.fn('source.png','idol',32768,50,3,3,'real',42))
-        self.assertEqual(run.call_args.args[1], 'idol')
+            rows = list(fn.fn('source.png',32768,20,3,3,42))
+        self.assertEqual(run.call_args.args[1], 'triposplat')
         self.assertEqual(rows[-1][0], 'Completed.')
         self.assertEqual(rows[-1][1], str(output / 'object.ply'))
         self.assertIn(str(output / 'request.json'), rows[-1][3])
-        self.assertFalse(any(p.endswith('.splat') for p in rows[-1][3]))
+        self.assertNotIn(str(output / "camera.json"), rows[-1][3])
 
 
 if __name__ == '__main__': unittest.main()

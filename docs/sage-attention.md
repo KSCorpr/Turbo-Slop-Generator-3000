@@ -13,8 +13,8 @@ A compatible CLI flag alone does not prove that a manually built binary contains
 the required CUDA kernels: upstream requires CUDA 12+ and its patched GGML.
 
 The switch applies to sd.cpp image generation (including reference editing,
-Xanax, outpaint and text-to-3D's initial image) and LTX 2.5. It does not affect
-SeedVR2, VOSR, TripoSplat, Idol or TRELLIS, which use separate engines.
+Xanax, outpaint and text-to-3D's initial image). SeedVR2, VOSR, TripoSplat
+and TRELLIS use separate engines.
 No Python SageAttention, Torch or Triton package is installed for this switch.
 
 The generation log reports whether a requested SageAttention run is active or

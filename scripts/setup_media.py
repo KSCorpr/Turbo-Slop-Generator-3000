@@ -307,40 +307,10 @@ def install_splat():
     print("COLMAP + Brush installed.", flush=True)
 
 
-def install_ltx(quant):
-    from atelier.engine import ltx25, sdcpp
-    from atelier import downloader
-    from atelier.registry import Component
-    cli = settings.find_sd_cli()
-    if cli is None:
-        raise RuntimeError("Install sd.cpp first from System.")
-    diffusion, encoder, vae = ltx25.weights(quant)
-    for role, repo, filename in [("diffusion", ltx25.REPO, ltx25.DIFFUSIONS[quant]),
-                                  ("vae", ltx25.OFFICIAL, ltx25.VAE)]:
-        downloader.download_component(Component(role, repo, filename, None), log=print)
-    if not encoder.is_file() or not encoder.stat().st_size:
-        original = downloader.download_component(
-            Component("text_encoder", ltx25.OFFICIAL, ltx25.ENCODER, None), log=print)
-        encoder.parent.mkdir(parents=True, exist_ok=True)
-        temporary = encoder.with_name(encoder.stem + ".partial.gguf")
-        try:
-            run(cli, "-M", "convert", "-m", original, "--type", "q4_0", "-o", temporary)
-            if not temporary.is_file() or temporary.stat().st_size < 1024:
-                raise RuntimeError("The text encoder conversion produced no valid file.")
-            with temporary.open("rb") as stream:
-                if stream.read(4) != b"GGUF":
-                    raise RuntimeError("The converted encoder is not GGUF.")
-            temporary.replace(encoder)
-        finally:
-            temporary.unlink(missing_ok=True)
-    print("LTX 2.5 weights ready. The original encoder is kept for other precisions.", flush=True)
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "splat", "ltx25"])
+    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "splat"])
     parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
-    parser.add_argument("--quant", choices=["Q3_K_M", "Q4_K_M"], default="Q3_K_M")
     parser.add_argument("--optimizations", action="store_true",
                         help="Install and test optional SeedVR2 Windows attention wheels.")
     args = parser.parse_args(argv)
@@ -348,8 +318,7 @@ def main(argv=None):
         parser.error("--optimizations is available for seedvr2 only")
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "vosr": install_vosr,
-     "seedvr2-convrot": lambda: install_seed_convrot(args.precision),
-     "ltx25": lambda: install_ltx(args.quant)}[args.tool]()
+     "seedvr2-convrot": lambda: install_seed_convrot(args.precision)}[args.tool]()
 
 
 if __name__ == "__main__":

@@ -110,7 +110,6 @@ DEFAULT_PREFS: dict[str, Any] = {
     "hf_endpoint": "https://huggingface.co",
     # Mo/s décimaux : 0 = sans plafond. Lu pendant le transfert.
     "download_limit_mbps": 5.0,
-    "civitai_token": "",        # jeton Civitai (optionnel, pour les LoRA protégés)
     # Accélération par cache (sd.cpp docs/caching.md). "" = désactivé.
     # Modes DiT (Flux/Krea) : easycache | dbcache | taylorseer | cache-dit | spectrum
     "cache_mode": "",
@@ -244,6 +243,7 @@ def configure_hf_env() -> None:
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
     os.environ["HF_HUB_DISABLE_XET"] = "1"
     os.environ["HF_XET_HIGH_PERFORMANCE"] = "0"
+    os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     # Gradio peut avoir importé le Hub avant cet appel : ses constantes sont
     # figées à l'import, modifier seulement os.environ ne suffit alors pas.
     import sys
@@ -251,6 +251,7 @@ def configure_hf_env() -> None:
     if constants is not None:
         constants.HF_HUB_DISABLE_XET = True
         constants.HF_HUB_ENABLE_HF_TRANSFER = False
+        constants.HF_HUB_DISABLE_IMPLICIT_TOKEN = True
     prefs = load_prefs()
     os.environ.setdefault("HF_ENDPOINT",
                           prefs.get("hf_endpoint", "https://huggingface.co"))

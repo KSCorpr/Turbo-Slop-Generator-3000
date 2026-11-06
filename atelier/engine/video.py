@@ -88,5 +88,5 @@ def convert_saved_avi(name: str,
     """Recover a completed video run without loading the model or using the GPU."""
     if (not name or "/" in name or "\\" in name or Path(name).name != name
             or not name.startswith(OUTPUT_PREFIXES) or not name.endswith(".avi")):
-        raise sdcpp.EngineError("Choose a saved AVI from the video tab.")
+        raise sdcpp.EngineError("Choose a saved AVI in System → Storage & help.")
     return encode_mp4(settings.OUTPUT_DIR / name, log=log)

@@ -140,6 +140,9 @@ REMOVED_FEATURES = [
     {"name": "MiniMax H3 generation",
      "files": ["atelier/video.py", "atelier/ui/video_tab.py", "tests/test_minimax_h3.py"],
      "dirs": []},
+    {"name": "Retired tools with account-gated weights",
+     "files": ["atelier/engine/ltx25.py", "tests/verify_idol_turbo_runtime.py"],
+     "dirs": []},
     {"name": "Ming Image",
      "files": ["tests/test_ming_image.py"], "dirs": []},
     {"name": "Sonde MiniMax-H3",
@@ -417,9 +420,8 @@ def clean_tmp() -> None:
 
 
 def _expected_model_dirs() -> set[str]:
-    """Noms de dossiers (owner__repo) attendus d'après le catalogue courant :
-    tous les composants des modèles + upscalers."""
-    from atelier import registry, settings
+    """Model directories used by the current generation and tool catalog."""
+    from atelier import image_splats, registry, settings, taesd
     prefs = settings.load_prefs()
     repos: set[str] = set()
     for m in registry.load_base_models(prefs):
@@ -427,6 +429,8 @@ def _expected_model_dirs() -> set[str]:
     up = registry.upscaler_config().get("repo")
     if up:
         repos.add(up)
+    repos.update(spec.repo for spec in image_splats.TRIPO)
+    repos.update(spec.repo for spec in taesd.SPECS.values())
     # Installés depuis l'onglet 3D, hors du catalogue des modèles d'image.
     return {settings.model_repo_dir(r).name for r in repos if r} | {"trellis"}
 

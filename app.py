@@ -219,7 +219,7 @@ from atelier.ui.theme import CSS, SHORTCUTS, theme
 from atelier.ui.history_tab import build_history_tab
 from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
-from atelier.ui.media_tabs import build_seedvr2_tab, build_ltx25_tab, build_splat_tab
+from atelier.ui.media_tabs import build_seedvr2_tab, build_splat_tab
 from atelier.ui.vosr_tab import build_vosr_tab
 from atelier.ui.image_splats_tab import build_image_splats_tab
 from atelier.ui.xanax_tab import build_xanax_tab
@@ -251,6 +251,7 @@ def presentation() -> dict:
 
 def build_app() -> gr.Blocks:
     settings.ensure_dirs()
+    settings.configure_hf_env()
     gpus = hardware.detect_gpus()
     sd_cli = settings.find_sd_cli()
     # Thème / CSS / <head> ne se posent plus ici : voir presentation(),
@@ -263,9 +264,11 @@ def build_app() -> gr.Blocks:
         # — pas enfouie dans Réglages.
         _subtitle = i18n.t("Local image generation")
         if gpus:
-            _best = max(gpus, key=lambda g: g.vram_gb)
-            _chip = (f"<span class='chip ok'>{html.escape(_best.name)} · "
-                     f"{_best.vram_gb:.0f} GB</span>")
+            gpu_index = settings.generation_gpu_index(settings.load_prefs())
+            selected_gpu = next((gpu for gpu in gpus if gpu.index == gpu_index), None)
+            gpu = selected_gpu or max(gpus, key=lambda card: card.vram_gb)
+            _chip = (f"<span class='chip ok'>{html.escape(gpu.name)} · "
+                     f"{gpu.vram_gb:.0f} GB</span>")
         else:
             _chip = (f"<span class='chip warn'>{i18n.t('mode CPU')}</span>")
         gr.HTML(
@@ -306,57 +309,30 @@ def build_app() -> gr.Blocks:
         # un State consommé au changement d'onglet — une sélection
         # programmatique ne déclenche pas `Tabs.select`.
         prompt_boxes: dict = {}
-        # Six onglets racine, pas onze. Au-delà, Gradio replie la barre dans un
-        # menu « … » : sur la version précédente, « Gestion » et « Réglages »
-        # étaient littéralement invisibles au premier coup d'œil. Le regroupement
-        # n'est donc pas cosmétique — il rend deux fonctions atteignables.
-        #
-        # Six espaces : création, vidéo, outils, historique, modèles, système.
+        model_links: dict = {}
         with gr.Tabs(elem_id="studio-nav") as tabs:
             with gr.Tab("Images", id="create"):
                 with gr.Tabs(elem_id="model-nav") as generation_tabs:
-                    prompt_boxes["flux2-klein-9b"] = build_generative_tab(
-                        "flux2-klein-9b", "Flux.2 Klein",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["qwen-image-2.1-turbo"] = build_generative_tab(
-                        "qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["moss-image-sft"] = build_generative_tab(
-                        "moss-image-sft", "MOSS-Image SFT",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    for model_id, label in (("fibo2-dev", "Fibo 2.0 Dev"),
-                                            ("fibo2-edit-turbo", "Fibo 2.0 Edit Turbo")):
+                    for model_id, label in (
+                        ("flux2-klein-9b", "Flux.2 Klein"),
+                        ("qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo"),
+                        ("moss-image-sft", "MOSS-Image SFT"),
+                        ("fibo2-dev", "Fibo 2.0 Dev"),
+                        ("fibo2-edit-turbo", "Fibo 2.0 Edit Turbo"),
+                        ("krea2-turbo", "Krea 2 Turbo"),
+                        ("krea2-realism", "Krea 2 Realism"),
+                    ):
                         prompt_boxes[model_id] = build_generative_tab(
                             model_id, label, pending_toolkit=pending_toolkit, tabs=tabs,
-                            pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["krea2-turbo"] = build_generative_tab(
-                        "krea2-turbo", "Krea 2 Turbo",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    prompt_boxes["krea2-realism"] = build_generative_tab(
-                        "krea2-realism", "Krea 2 Realism",
-                        pending_toolkit=pending_toolkit, tabs=tabs,
-                        pending_3d=pending_3d, pending_outpaint=pending_outpaint)
-                    # « Xanax » : style figé, aucun réglage de style exposé. Un seul
-                    # onglet pour les deux modèles — ils partagent tout sauf le moteur.
+                            pending_3d=pending_3d, pending_outpaint=pending_outpaint,
+                            model_links=model_links)
                     build_xanax_tab("Xanax")
-
-            with gr.Tab("Video", id="video"):
-                with gr.Tabs():
-                    build_ltx25_tab()
 
             # « Outils » : tout ce qui part d'une image existante. Les envois
             # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
             # se sélectionne ensuite via son propre gestionnaire (voir plus bas).
             with gr.Tab("Tools & 3D", id="tools"):
-                with gr.Tabs() as tool_tabs:
-                    build_seedvr2_tab()
-                    build_vosr_tab()
-                    build_splat_tab()
-                    build_image_splats_tab()
+                with gr.Tabs(elem_id="tool-nav") as tool_tabs:
                     build_toolkit_tab(pending_toolkit=pending_toolkit,
                                       tabs=tabs, parent_tabs=tool_tabs,
                                       prompt_boxes=prompt_boxes,
@@ -365,10 +341,14 @@ def build_app() -> gr.Blocks:
                                        tabs=tabs, parent_tabs=tool_tabs)
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,
                                      parent_tabs=tool_tabs)
+                    build_image_splats_tab()
+                    build_splat_tab()
+                    build_vosr_tab()
+                    build_seedvr2_tab()
 
             build_history_tab(tabs=tabs, generation_tabs=generation_tabs,
                               prompt_boxes=prompt_boxes)
-            build_library_tab()
+            build_library_tab(tabs, model_links)
 
             with gr.Tab("System", id="system"):
                 with gr.Tabs():

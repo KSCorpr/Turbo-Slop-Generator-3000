@@ -447,20 +447,16 @@ def build_settings_tab():
                        "connection; interrupted Hub downloads can resume."))
             download_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
-        with gr.Accordion(t("🌍 Theme and accounts"), open=False):
+        with gr.Accordion(t("Theme & download source"), open=False):
             with gr.Row():
                 theme_dd = gr.Dropdown(
                     [(t("Light"), "light"), (t("Dark"), "dark")],
                     value=prefs.get("theme", "light"),
-                    label="🎨 Theme (restart required)")
+                    label="Theme")
             hf_ep = gr.Textbox(
                 value=prefs.get("hf_endpoint", "https://huggingface.co"),
                 label="Hugging Face endpoint (optional mirror)")
-            civitai_tok = gr.Textbox(
-                value=prefs.get("civitai_token", ""),
-                label="Civitai token (optional — gated LoRAs)",
-                type="password")
-            account_status = gr.Markdown("", elem_classes="feedback", visible=False)
+            appearance_status = gr.Markdown("", elem_classes="feedback", visible=False)
 
         # ================================================================== #
         #  Câblage — tout s'applique à la volée
@@ -576,16 +572,9 @@ def build_settings_tab():
             _save(hf_endpoint=v or "https://huggingface.co")
             return _said(_OK + t("Endpoint saved."))
 
-        def _apply_token(v):
-            _save(civitai_token=(v or "").strip())
-            return _said(_OK + t("Civitai token saved."))
-
-        theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[account_status],
+        theme_dd.change(_apply_theme, inputs=[theme_dd], outputs=[appearance_status],
                         js=THEME_JS, queue=False)
-        hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[account_status])
-        civitai_tok.change(_apply_token, inputs=[civitai_tok],
-                           outputs=[account_status])
-
+        hf_ep.change(_apply_endpoint, inputs=[hf_ep], outputs=[appearance_status])
         # ---- Mesure -------------------------------------------------------- #
         _bench_stop = threading.Event()
 

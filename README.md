@@ -40,7 +40,7 @@ Run `update.bat`, download the chosen variant in **Models**, then use its
 **Images** tab. Requires sd.cpp build 985+. Weights are CC BY-NC 4.0;
 commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
 
-**Local media engines:** SeedVR2, VOSR 2.0, LTX 2.5 and COLMAP + Brush are available on
+**Local media engines:** SeedVR2, VOSR 2.0 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See
 [the setup guide and GPU validation limits](docs/media-engines.md).
 
@@ -50,7 +50,7 @@ CUDA 12.6 environment and one 6.97 GB weight bundle. See [VOSR controls and
 validation limits](docs/vosr.md).
 
 **Studio — available on `main`.** A calmer, responsive
-workspace with six navigation tabs, a local image gallery, lighter previews,
+workspace with five navigation tabs, a local image gallery, lighter previews,
 and one shared GPU queue. [Release notes and verification](docs/STUDIO_RELEASE.md).
 
 [Download Studio](https://github.com/KSCorpr/Turbo-Slop-Generator-3000/archive/refs/heads/main.zip)
@@ -113,18 +113,15 @@ is excluded from the file menu. Actual GPU output and speed remain unverified.
 > it accordingly: it’s a hobby tool, not battle-tested production software. Read
 > the code, test before relying on it, and report anything that breaks.
 
-**Six main tabs** keep the core workflow visible. Choose a model inside
-**Images**, write a prompt, then press **Generate** or **Ctrl/Cmd+Enter**. Size,
-quality, seed and batch stay close to the prompt; detailed sampling, styles and
-LoRA settings expand when needed.
+**Five main tabs** keep the core workflow visible. Choose a model inside
+**Images**, write a prompt, then press **Generate** or **Ctrl/Cmd+Enter**. The main reference, model variant, aspect ratio and quality stay close to the prompt. Advanced sampling contains seed and batch. **Manage weights** opens the matching catalog entry.
 
 | Tab | What it does |
 |---|---|
 | **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, [MOSS-Image SFT](docs/moss-image.md), Fibo 2, Krea 2 and Xanax; sampling controls follow each model's requirements. |
-| **Video** | LTX 2.5 text/image-to-video generation and AVI recovery. |
 | **Tools & 3D** | Image-to-prompt, depth, cutouts, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
-| **Models** | Searchable catalog for image models, Toolkit, video and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |
+| **Models** | Searchable catalog for image models, restoration, Toolkit and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |
 | **System** | Settings, disk management, help and GGUF conversion. |
 
 ---
@@ -521,9 +518,7 @@ The accordion adapts to the model family:
 ### LoRA
 Drop `.safetensors` / `.gguf` files into **`loras/`**, then pick up to **2** with
 their weights. The `<lora:name:weight>` syntax is forwarded to the engine. Use
-**↻ Refresh** after adding files, **✖ Clear** to reset. You can also **import a
-LoRA from Civitai** in one click — paste the model URL (or version ID) into the
-LoRA accordion; gated models need a Civitai token (Settings).
+**↻ Refresh** after adding files, **✖ Clear** to reset. The studio uses local LoRA files.
 
 ### Local / custom files
 To use a model downloaded elsewhere, drop the file(s) into **`models/custom/`**
@@ -748,14 +743,11 @@ picker and these strategies live in **Settings**.
 
 ### Single image to Gaussian splats
 
-**TripoSplat, Idol and Idol Turbo** are available in **Tools & 3D → Image → splats** and
-in the Models catalog. Import one object image, install the selected model,
-then export a Gaussian PLY (plus SPLAT for TripoSplat or camera JSON for Idol).
-These are generated Gaussian objects, not polygon meshes. Idol requires prior
-Hugging Face access to its DINOv3 and FLUX.2 image encoders. Both use an isolated
-CUDA runtime; the main installation stays light. **Idol Turbo** adds a 117.5 MB
-adapter to the same Idol files, with a five-step preset and distilled guidance.
-The original 50-step Idol remains available for quality comparisons.
+**TripoSplat** is available in **Tools & 3D → Image → splats** and in **Models**.
+Import an object image and generate a Gaussian PLY and SPLAT using public weights.
+The isolated CUDA runtime keeps the main installation light. Idol, Idol Turbo
+and LTX 2.5 have been retired because installation required account access.
+Previously downloaded files can be managed under **System → Storage & help**.
 See [installation, GPU precision, downloads and validation limits](docs/image-splats.md).
 
 ### Samplers & schedulers
@@ -1513,7 +1505,7 @@ atelier/
   hardware.py                # GPU/RAM detection + optimization profiles
   quant.py                   # the quantization ladder
   registry.py                # catalog, file resolution, status, recommendations
-  downloader.py              # on-demand Hugging Face / Civitai downloads
+  downloader.py              # on-demand Hugging Face downloads
   styles.py                  # system-prompt / style presets
   sampling.py                # samplers & schedulers: verdicts and their reasoning
   benchmark.py               # "measure this machine": placements, medians, spread
@@ -1846,7 +1838,7 @@ authors. Please read and respect each model's own license on its page.
 This is an independent, non-commercial hobby project, **not affiliated with or
 endorsed by** any of the above. If you are an author and want a credit corrected
 or removed, please open an issue.
-# New media tools: SeedVR2, LTX 2.5 and Gaussian Splatting
+# Local restoration and Gaussian Splatting
 
 **Tools & 3D → SeedVR2 upscale** restores images and videos locally.
 Choose **3B ConvRot W4A8** (default, ~2 GB diffusion weights) on an RTX GPU,
@@ -1864,7 +1856,7 @@ Choose **×2 / ×4** to calculate the size from the source, or **Custom** to set
 the short edge manually. **Added detail strength** mixes the resized original
 with the AI result: 0% is a simple upscale without loading SeedVR2, 100% keeps
 the full restoration, and intermediate values reduce the restoration changes.
-**Video → LTX 2.5** generates video from text or first/last frames.
+**System → Storage & help** offers AVI recovery when saved videos are present.
 **Tools & 3D → Capture → splats** reconstructs static objects and scenes from
 overlapping photographs or video, with a PLY download and interactive preview.
 Each workspace has its own installation button. SeedVR2 and COLMAP use isolated

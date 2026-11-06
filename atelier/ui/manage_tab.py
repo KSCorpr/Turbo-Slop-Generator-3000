@@ -9,8 +9,10 @@ from pathlib import Path
 import gradio as gr
 
 from .. import inventory, settings, storage
+from ..engine import video
 from ..i18n import t
 from . import widgets
+from .media_tabs import stream_task
 
 CATEGORIES = ["Engines", "Models", "Toolkit add-ons", "Removed features", "Your data"]
 
@@ -64,7 +66,7 @@ def _move_choices() -> list[tuple[str, str]]:
 
 
 def build_manage_tab():
-    with gr.Tab("🧹 Manage & help") as manage_tab:
+    with gr.Tab("Storage & help") as manage_tab:
         # ------------------------------------------------------------------ #
         #  Inventaire & suppression
         # ------------------------------------------------------------------ #
@@ -118,6 +120,31 @@ def build_manage_tab():
             f"`{settings.BIN_DIR.name}/`, add-ons `tools_repo/`, LoRAs "
             f"`{settings.LORA_DIR.name}/`, outputs "
             f"`{settings.OUTPUT_DIR.name}/`.*")
+
+        with gr.Group(visible=False) as video_recovery:
+            gr.Markdown("### Recover a saved AVI\nConvert a completed video in the output folder to MP4.")
+            saved = gr.Dropdown([], label="Saved AVI")
+            with gr.Row():
+                refresh_video = gr.Button("Refresh AVI list", size="sm")
+                recover = gr.Button("Convert AVI to MP4", size="sm")
+            recovered = gr.File(label="Recovered MP4", interactive=False)
+            recovery_status = gr.Markdown()
+
+            def refresh_avis():
+                choices = video.saved_avis()
+                return gr.update(choices=choices, value=choices[0] if choices else None)
+
+            def recover_avi(name):
+                for status, path, log in stream_task(lambda report: video.convert_saved_avi(name, log=report)):
+                    yield path, status + ("\n\n" + log if log else "")
+
+            def show_recovery():
+                selection = refresh_avis()
+                return gr.update(visible=bool(selection["choices"])), selection
+
+            manage_tab.select(show_recovery, outputs=[video_recovery, saved], queue=False)
+            refresh_video.click(refresh_avis, outputs=saved, queue=False)
+            recover.click(recover_avi, inputs=saved, outputs=[recovered, recovery_status])
 
         # ------------------------------------------------------------------ #
         #  Emplacement des modèles (dossier externe)
@@ -592,8 +619,7 @@ def build_manage_tab():
         with gr.Accordion("🌐 Updating & maintenance", open=False):
             gr.Markdown(
                 "**Hugging Face endpoint** — an alternative mirror when HF is "
-                "blocked or slow on\nyour network.\n**Civitai token** — "
-                "needed to import some gated LoRAs.\n**`update.bat`** — "
+                "blocked or slow on your network.\n**`update.bat`** — "
                 "the only update button. Code, then cleanup, then the "
                 "sd.cpp\nengine, then the 3D engine if it is installed. The "
                 "~16 GB of 3D weights are\nnever re-downloaded. It replaces "

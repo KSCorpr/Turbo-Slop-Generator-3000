@@ -6,19 +6,11 @@ import json
 
 from . import addons, hardware, model_store, settings, transfers
 
-BACKENDS = {"triposplat": "TripoSplat", "idol": "Idol", "idol-turbo": "Idol Turbo"}
+BACKENDS = {"triposplat": "TripoSplat"}
 SOURCES = {
     "triposplat": ("VAST-AI-Research/TripoSplat", "d8db9e018b413dd9c4a9fe22463781bf98e8e68d"),
-    "idol": ("speridlabs/idol-sdk", "4702a7f00850e34b6e83a2170cc123c3e9570744"),
 }
-SOURCES["idol-turbo"] = SOURCES["idol"]
-TURBO_REV = "45cdd41f1f4d6d70496daa7d619f57ad79307a37"
 TRIPO_REV = "56a96e603204ec410c4da60c13ea4fa09a2169a9"
-IDOL_REV = "2731c2291fc65a797c5cb627a5e5526fc1490902"
-DINO_REPO = "facebook/dinov3-vith16plus-pretrain-lvd1689m"
-DINO_REV = "c807c9eeea853df70aec4069e6f56b28ddc82acc"
-FLUX_REPO = "black-forest-labs/FLUX.2-dev"
-FLUX_REV = "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c"
 FLUX_SHA = "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"
 ADAPTER_VERSION = 1
 
@@ -43,33 +35,10 @@ TRIPO = (
     Artifact("flux", "VAST-AI/TripoSplat", TRIPO_REV, "vae/flux2-vae.safetensors", 336213556, FLUX_SHA),
     Artifact("bg", "VAST-AI/TripoSplat", TRIPO_REV, "background_removal/birefnet.safetensors", 444473596, "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154"),
 )
-IDOL = (
-    Artifact("config", "speridlabs/idol", IDOL_REV, "config.json", 1335),
-    Artifact("denoiser", "speridlabs/idol", IDOL_REV, "denoiser.safetensors", 1482258308, "ded2cacf671bf3978ebc62729087abdbd318ef4752e6805b4c9fc8ffa51fe716"),
-    Artifact("decoder", "speridlabs/idol", IDOL_REV, "decoder.safetensors", 203171696, "9da4d7676bfcadb1c3fdfbff796e6257dadf82d26ec05be7717c79b2b13a1c4e"),
-    Artifact("decoder_gs", "speridlabs/idol", IDOL_REV, "decoder_gs.safetensors", 949083036, "3087eb8ee5763206a53e4078acf2a1bf382dab5147d407ec13a2cf39c04cc544"),
-    Artifact("bg", "speridlabs/idol", IDOL_REV, "birefnet.safetensors", 444466856, "44bbc97b041f879975d0d6d538b8e66a25eb04d1f49aab40697544cdd97eaa8e"),
-    Artifact("dino_config", DINO_REPO, DINO_REV, "config.json", 744),
-    Artifact("dino", DINO_REPO, DINO_REV, "model.safetensors", 3362432800, "3e1d4d18b9bfa9f28fad8e9de6a783f1313532d3460efa4cd0b12521d81d1a4d"),
-    Artifact("flux_config", FLUX_REPO, FLUX_REV, "vae/config.json", 770),
-    Artifact("flux", FLUX_REPO, FLUX_REV, "vae/diffusion_pytorch_model.safetensors", 336213556, FLUX_SHA),
-)
-
-
-TURBO = (
-    Artifact("turbo_lora", "akhaliq/idol-turbo", TURBO_REV, "idol_turbo_lora.safetensors",
-             117484528, "2e4b089211c5d79354f8b67d512f9b436248ac072cea171f56d393a248f7bf66"),
-)
-
-
-def is_idol(backend):
-    return backend in {"idol", "idol-turbo"}
-
-
 def artifacts(backend):
     if backend not in BACKENDS:
-        raise ValueError("Choose TripoSplat, Idol or Idol Turbo.")
-    return TRIPO if backend == "triposplat" else IDOL + TURBO if backend == "idol-turbo" else IDOL
+        raise ValueError("TripoSplat is the available image-to-splats model.")
+    return TRIPO
 
 
 def root():
@@ -87,7 +56,7 @@ def selected_gpu_index():
 
 def source(backend):
     artifacts(backend)
-    return root() / "sources" / ("idol" if backend == "idol-turbo" else backend)
+    return root() / "sources" / backend
 
 
 def marker(backend):
@@ -112,7 +81,7 @@ def ready(backend):
     try:
         info = json.loads(marker(backend).read_text(encoding="utf-8"))
         return (info == identity(backend) and addons.python("image-splats").is_file()
-                and (source(backend) / ("triposplat.py" if backend == "triposplat" else "idol/pipeline.py")).is_file()
+                and (source(backend) / "triposplat.py").is_file()
                 and all(file_ready(s) for s in artifacts(backend)))
     except (OSError, ValueError):
         return False
@@ -143,25 +112,7 @@ def local_artifact_valid(spec):
     return True
 
 
-def check_encoder_access():
-    """Check the actual pinned gated files before any multi-GB Idol download."""
-    from huggingface_hub import get_hf_file_metadata, hf_hub_url
-    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-    for spec in (s for s in IDOL if s.key in {"dino", "flux"}):
-        if local_artifact_valid(spec):
-            continue
-        try:
-            get_hf_file_metadata(hf_hub_url(spec.repo, spec.filename, revision=spec.revision))
-        except (GatedRepoError, RepositoryNotFoundError) as exc:
-            raise RuntimeError("Idol needs Hugging Face access. Accept the terms at "
-                               f"https://huggingface.co/{DINO_REPO} and https://huggingface.co/{FLUX_REPO}, "
-                               "then set HF_TOKEN or log in with hf auth login and retry. "
-                               "No large Idol weights were downloaded.") from exc
-
-
 def download_models(backend, log=print):
-    if is_idol(backend):
-        check_encoder_access()
     for spec in artifacts(backend):
         if local_artifact_valid(spec):
             log(f"Reusing verified {spec.filename}.")

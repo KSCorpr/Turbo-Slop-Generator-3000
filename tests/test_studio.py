@@ -216,10 +216,10 @@ class StudioWiringTests(unittest.TestCase):
              patch("atelier.history.scan", side_effect=AssertionError("startup history scan")):
             cls.demo = app.build_app()
 
-    def test_root_navigation_is_six_visible_workspaces(self):
+    def test_root_navigation_is_five_visible_workspaces(self):
         nav = next(b for b in self.demo.blocks.values() if b.elem_id == "studio-nav")
         self.assertEqual([b.id for b in nav.children],
-                         ["create", "video", "tools", "history", "models", "system"])
+                         ["create", "tools", "history", "models", "system"])
 
     def test_retired_models_and_toolkit_enlargement_tabs_are_absent(self):
         tabs = [b for b in self.demo.blocks.values() if isinstance(b, gr.Tab)]
@@ -236,24 +236,26 @@ class StudioWiringTests(unittest.TestCase):
         from atelier import model_catalog
         tabs = {b.id for b in self.demo.blocks.values() if isinstance(b, gr.Tab)}
         self.assertTrue({"flux3-klein", "z-image-turbo", "multiview", "svg", "layers", "face",
-                         "adetailer", "creative"}.isdisjoint(tabs))
+                         "adetailer", "creative", "ltx25"}.isdisjoint(tabs))
         self.assertEqual({m.id for m in registry.load_base_models({})},
                          {"flux2-klein-9b", "qwen-image-2.1-turbo", "moss-image-sft", "fibo2-dev",
                           "fibo2-edit-turbo", "krea2-turbo", "krea2-realism"})
         for package in ("image:flux3-klein", "image:z-image-turbo", "tool:enhance", "tool:face",
                         "tool:upscale", "tool:adetailer", "tool:clip", "addon:qwen-layered",
-                        "addon:svg", "addon:hivg", "addon:omnisvg", "taesd:taef1"):
+                        "addon:svg", "addon:hivg", "addon:omnisvg", "taesd:taef1",
+                        "splat:idol", "splat:idol-turbo", "video:ltx"):
             self.assertIsNone(model_catalog.get(package), package)
             self.assertFalse(model_catalog.ready(package), package)
             with self.assertRaises(ValueError):
                 model_catalog.install(package)
         names = {getattr(f.fn, "__name__", "") for f in self.demo.fns.values()}
         self.assertTrue({"_enhance", "do_face", "do_adetailer", "do_creative", "do_layers",
-                         "run_views", "run_svg", "recover_svg"}.isdisjoint(names))
+                         "run_views", "run_svg", "recover_svg", "run_ltx", "_civitai_import"}.isdisjoint(names))
         for block in self.demo.blocks.values():
             label = getattr(block, "label", "") or ""
             self.assertNotIn("Prompt improver", label)
             self.assertNotIn("Enhance prompt", label)
+            self.assertNotIn("Civitai", label)
             self.assertNotEqual(getattr(block, "value", None), "Send original to upscale")
             if isinstance(block, gr.Dropdown) and label == "📤 Send the selection to the Toolkit":
                 self.assertEqual({v for _, v in block.choices}, {"depth", "bg", "sam"})
@@ -285,8 +287,8 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
         names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_generate3d", "do_depth", "do_bg",
-                 "do_describe", "_do_bench", "_on_click", "run_seed", "run_ltx", "run_splat",
-                 "install_seed", "install_ltx", "install_splat", "generate_image_splats", "install_image_splats",
+                 "do_describe", "_do_bench", "_on_click", "run_seed", "run_splat",
+                 "install_seed", "install_splat", "generate_image_splats", "install_image_splats",
                  "install_sam2", "handler", "deleter", "install_catalog_package", "consolidate_catalog_weights"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
         self.assertGreaterEqual(len(found), 24)
@@ -342,7 +344,7 @@ class StudioWiringTests(unittest.TestCase):
             response = client.get("/config")
         self.assertEqual(response.status_code, 200)
         # Seven image workspaces include Fibo Dev and Edit Turbo.
-        # One additional shared TripoSplat / Idol workspace: allow 100 KB for
+        # One additional TripoSplat workspace: allow 100 KB for
         # its upload, Gaussian viewer, controls and callback schemas.
         self.assertLess(len(response.content), 2_000_000)
 

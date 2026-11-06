@@ -70,6 +70,8 @@ def main():
             path.with_suffix(".txt").write_text(
                 "A studio browser test\nModel: Flux (flux2-klein-9b)\nSteps: 4, Seed: 42", encoding="utf-8")
 
+        (settings.OUTPUT_DIR / "ltx-2.5-smoke.avi").write_bytes(b"saved video fixture")
+
         def generate(**kwargs):
             nonlocal active, peak
             cancelled.clear()
@@ -243,12 +245,29 @@ def main():
                 page.get_by_role("button", name="Refresh saved captures", exact=True).click()
                 page.screenshot(path=str(screenshots / "studio-capture.png"))
 
-                page.get_by_role("tab", name="Video", exact=True).click()
-                page.get_by_role("tab", name="LTX 2.5", exact=True).click()
-                expect(page.get_by_role("button", name="Generate LTX video", exact=True)).to_be_visible()
-                expect(page.get_by_role("button", name="Download / prepare LTX 2.5", exact=True)).to_be_visible()
-                page.screenshot(path=str(screenshots / "studio-ltx25.png"))
+                assert page.get_by_role("tab", name="Video", exact=True).count() == 0
+                page.get_by_role("tab", name="System", exact=True).click()
+                page.get_by_role("tab", name="Storage & help", exact=True).click()
+                expect(page.get_by_role("button", name="Convert AVI to MP4", exact=True)).to_be_visible()
                 page.get_by_role("tab", name="Images", exact=True).click()
+                page.get_by_role("tab", name="Krea 2 Turbo", exact=True).click()
+                page.get_by_role("button", name="Manage weights", exact=True).click()
+                expect(page.get_by_role("tab", name="Models", exact=True)).to_have_attribute("aria-selected", "true")
+                expect(page.locator("#catalog-image-card")).to_contain_text("Krea 2 Turbo")
+                expect(page.get_by_role("button", name="Download selected image weights", exact=True)).to_be_visible()
+                page.get_by_role("textbox", name="Search packages").press_sequentially("no-such-package", delay=35)
+                expect(page.get_by_text("No packages match your search.", exact=True)).to_be_visible()
+                search = page.get_by_role("textbox", name="Search packages")
+                search.press("Control+A")
+                search.press_sequentially("TripoSplat", delay=35)
+                expect(page.locator("#catalog-tool-card")).to_contain_text("TripoSplat")
+                page.screenshot(path=str(screenshots / "studio-models.png"))
+                page.get_by_role("tab", name="Images", exact=True).click()
+                page.get_by_role("tab", name="Flux.2 Klein", exact=True).click()
+                reference = page.locator(".primary-reference:visible")
+                expect(reference.get_by_text("More reference images", exact=True)).to_be_visible()
+                expect(reference.get_by_text("Image to edit", exact=True)).to_be_visible()
+                expect(reference.get_by_text("Reference 2 (optional)", exact=True)).not_to_be_visible()
 
                 # Keyboard generation must produce exactly one request.
                 prompt.fill("Shortcut request")
@@ -307,7 +326,7 @@ def main():
                 for removed in ("10 views / 360°", "SVG & layers", "🧩 Layers", "🙂 Faces", "🖐️ Details", "✨ SDXL upscale"):
                     assert page.get_by_role("tab", name=removed, exact=True).count() == 0, removed
 
-                for title in ("Video", "Tools & 3D", "Models", "System", "Images"):
+                for title in ("Tools & 3D", "Models", "System", "Images"):
                     page.get_by_role("tab", name=title, exact=True).click()
                     expect(page.get_by_role("tab", name=title, exact=True)).to_have_attribute("aria-selected", "true")
 
@@ -332,31 +351,13 @@ def main():
                 sample.save(splat_source)
                 page.locator("#image-splats-source input[type=file]").set_input_files(str(splat_source))
                 expect(page.locator("#image-splats-source img")).to_be_visible()
-                for model_name in ("TripoSplat", "Idol Turbo", "Idol"):
-                    page.locator("#image-splats-model input").click()
-                    page.get_by_role("option", name=model_name, exact=True).click()
-                    if model_name.startswith("Idol"):
-                        expect(page.locator("#image-splats-info")).to_contain_text("HF_TOKEN")
-                    guidance = page.locator('#image-splats-guidance input[type=number]')
-                    shift = page.locator('#image-splats-shift input[type=number]')
-                    step_input = page.locator('#image-splats-steps input[type=number]')
-                    if model_name == 'Idol Turbo':
-                        expect(step_input).to_have_value('5')
-                        expect(guidance).to_have_value('0')
-                        expect(guidance).to_be_disabled()
-                        expect(shift).to_be_disabled()
-                    else:
-                        expect(guidance).to_have_value('3')
-                        expect(guidance).to_be_enabled()
-                        expect(shift).to_be_enabled()
-                    page.locator("#image-splats-count input").click()
-                    page.get_by_role("option", name="32,768", exact=True).click()
-                    page.get_by_role("button", name="Generate splats", exact=True).click()
-                    expect(page.locator("#image-splats-status")).to_contain_text("Completed.")
-                    expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"object\s*\.ply"))
-                    expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"request\s*\.json"))
-                assert [call[0] for call in splat_calls] == ["triposplat", "idol-turbo", "idol"], splat_calls
-                assert [call[2] for call in splat_calls] == [20, 5, 50], splat_calls
+                page.locator("#image-splats-count input").click()
+                page.get_by_role("option", name="32,768", exact=True).click()
+                page.get_by_role("button", name="Generate splats", exact=True).click()
+                expect(page.locator("#image-splats-status")).to_contain_text("Completed.")
+                expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"object\s*\.ply"))
+                expect(page.locator("#image-splats-files")).to_contain_text(re.compile(r"request\s*\.json"))
+                assert splat_calls == [("triposplat", 32768, 20, "synthetic")], splat_calls
                 page.screenshot(path=str(screenshots / "studio-image-splats.png"))
                 page.get_by_role("button", name="Unload 3D preview", exact=True).click()
                 expect(page.locator("#image-splats-status")).to_contain_text("preview unloaded")

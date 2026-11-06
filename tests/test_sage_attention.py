@@ -11,7 +11,7 @@ import gradio as gr
 from PIL import Image
 
 from atelier import hardware, registry, sage_attention as sage, settings
-from atelier.engine import generate, ltx25, sdcpp
+from atelier.engine import generate, sdcpp
 from atelier.ui import settings_tab
 
 RTX = hardware.Gpu(2, 'RTX 3060', 12, 'ampere', True, '8.6')
@@ -104,18 +104,6 @@ class SageAttentionTests(unittest.TestCase):
                     self.assertEqual(run.call_args.kwargs['gpu_index'], RTX.index)
                     self.assertTrue(json.loads(output.with_suffix('.json').read_text())['sage_attention'])
                     self.assertIn('SageAttention: enabled', output.with_suffix('.txt').read_text())
-
-    def test_ltx_uses_same_selected_gpu_and_preserves_other_native_arguments(self):
-        paths = [self.root / n for n in ('model.gguf', 'encoder.gguf', 'ltx-2.5-video-vae-conv-bf16.safetensors')]
-        for path in paths:
-            path.touch()
-        command = ltx25.build_command(self.cli, paths, 'A moving scene', self.root / 'out.avi')
-        self.assertIn('--sage-attn', command)
-        self.assertIn('--diffusion-fa', command)
-        self.assertIn('--auto-fit', command)
-        self.assertEqual(command[command.index('--cfg-scale') + 1], '3.0')
-        self.assertNotIn('--sage-attn', ltx25.build_command(
-            self.cli, paths, 'A scene', self.root / 'out.avi', gpu_index=TURING.index))
 
     def test_ui_toggle_preserves_auto_mode_and_refreshes_without_overwriting_saved_opt_in(self):
         with gr.Blocks() as demo:

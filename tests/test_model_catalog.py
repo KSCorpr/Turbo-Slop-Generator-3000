@@ -87,10 +87,11 @@ class CatalogTests(unittest.TestCase):
         packages=model_catalog.packages();ids=[p.id for p in packages]
         self.assertEqual(len(ids),len(set(ids)))
         self.assertTrue({'tool:depth','tool:bg','tool:sam','tool:describe','tool:upscalers','tool:modern','seed:classic','seed:convrot',
-                         'video:ltx','3d:trellis','3d:pixal'}.issubset(ids))
+                         '3d:trellis','3d:pixal'}.issubset(ids))
         self.assertTrue({'addon:'+name for name in addons.ADDON_NAMES
                          if not name.startswith('seedvr2') and name not in {'image-splats','svg','hivg','omnisvg','qwen-layered'}}.issubset(ids))
-        self.assertTrue({'splat:triposplat', 'splat:idol'}.issubset(ids))
+        self.assertIn('splat:triposplat', ids)
+        self.assertTrue({'video:ltx', 'splat:idol', 'splat:idol-turbo'}.isdisjoint(ids))
         self.assertNotIn('Layers & SVG', model_catalog.CATEGORIES)
         self.assertEqual([p.id for p in packages if p.id == 'addon:sam2'], ['addon:sam2'])
 

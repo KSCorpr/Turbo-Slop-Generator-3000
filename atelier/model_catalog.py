@@ -52,21 +52,12 @@ def packages(prefs=None):
         Package("seed:convrot","SeedVR2 · ConvRot","Video & 3D","Installs the native ConvRot runtime and only the selected model. All SeedVR2 variants reuse one VAE.",
                 tuple((key,key) for key in addons.SEED_CONVROT_MODELS)),
         Package("seed:classic","SeedVR2 · classic GGUF","Video & 3D","Legacy GGUF runtime, selected model and the same shared SeedVR2 VAE.",tuple((key,key) for key in addons.SEED_MODELS)),
-        Package("video:ltx","LTX 2.5 dev","Video & 3D","Selected diffusion + convolutional VAE + Gemma encoder converted to Q4. Needs sd.cpp and substantial free disk space.",
-                (("Q3_K_M (smaller)","Q3_K_M"),("Q4_K_M","Q4_K_M"))),
         Package("3d:trellis","TRELLIS.2","Video & 3D","3D engine and selected weight set; decoders/DINO are reused by Pixal3D.",(("Q4","q4"),("Q8","q8"),("F16","f16"))),
         Package("3d:pixal","Pixal3D","Video & 3D","3D engine, selected Pixal3D flows and required TRELLIS shared components.",
                 tuple((f"{v.upper()} · {r}",f"{v}:{r}") for v in ("q4","q8","f16") for r in (512,1024))),
         Package("addon:splat","Gaussian splats · Brush","Video & 3D","Brush runtime only; no pretrained model weights."),
         Package("splat:triposplat", "TripoSplat · image to splats", "Video & 3D",
                 "Single image to 32k–262k Gaussian splats, PLY + SPLAT. MIT. ~3.78 GB of selected weights; no unused 3D encoder download."),
-        Package("splat:idol", "Idol · image to splats", "Video & 3D",
-                "Single image to 32k–1M Gaussian splats, PLY + camera. Apache-2.0 core; gated DINOv3 / FLUX.2 terms required. "
-                "~6.78 GB including encoders. Shares the CUDA runtime with TripoSplat; identical VAE payloads can be reused."),
-        Package("splat:idol-turbo", "Idol Turbo · 5-step image to splats", "Video & 3D",
-                "Distilled Slow/Fast phase LoRA: 5 steps, no extra CFG pass. Adds 117.5 MB to Idol; "
-                "reuses its exact base weights, image encoders, decoders and runtime. Same gated encoder terms "
-                "on first download; PLY + predicted camera. Some outputs are softer than original Idol at 50 steps."),
     ]
 
 
@@ -122,9 +113,6 @@ def ready(key, variant=None):
         filename = (addons.SEED_CONVROT_MODELS if key.endswith("convrot") else addons.SEED_MODELS).get(variant)
         folder=addons.root("seedvr2") / "models"
         return addons.ready(addon) and bool(filename) and all((folder / f).is_file() for f in (filename,"ema_vae_fp16.safetensors"))
-    if key == "video:ltx":
-        from .engine import ltx25
-        return ltx25.ready(variant)
     from .engine import trellis
     if key == "3d:trellis":
         return trellis.is_ready() and trellis.models_ready(variant)
@@ -187,8 +175,6 @@ def install(key, variant=None, log=print):
             command=["setup_media.py",addon]
             if key.endswith("convrot"):
                 command += ["--precision", "int8" if variant.endswith("int8") else "w4a8"]
-        elif key == "video:ltx":
-            command=["setup_media.py","ltx25","--quant",variant]
         elif key.startswith("3d:"):
             from .engine import trellis
             if trellis.resident_is_running():

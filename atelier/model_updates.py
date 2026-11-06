@@ -13,6 +13,10 @@ from .fileio import atomic_write_text
 
 SKIP = model_store.SKIP | {".huggingface"}
 EXTENSIONS = model_store.WEIGHTS | {".json", ".txt", ".py", ".model", ".jinja"}
+RETIRED_REPOS = {
+    "speridlabs/idol", "akhaliq/idol-turbo", "facebook/dinov3-vith16plus-pretrain-lvd1689m",
+    "black-forest-labs/FLUX.2-dev", "vantagewithai/LTX-2.5-GGUF", "Lightricks/LTX-2.5",
+}
 
 
 def _allowed(path):
@@ -56,7 +60,9 @@ def _roots():
         for path in settings.MODELS_DIR.iterdir():
             if path.is_dir() and "__" in path.name:
                 owner, name = path.name.split("__", 1)
-                entries.append((path, owner + "/" + name, "main"))
+                repo = owner + "/" + name
+                if repo not in RETIRED_REPOS:
+                    entries.append((path, repo, "main"))
     for name, repo in (("depth", "depth-anything/Depth-Anything-V2-Small-hf"),
         ("bg", "briaai/RMBG-1.4"), ("sam", "facebook/sam-vit-base"),
         ("describe", "Qwen/Qwen2.5-VL-3B-Instruct")):
@@ -140,6 +146,8 @@ def discover():
         if not isinstance(entry, dict) or not all(isinstance(entry.get(k), str) and entry[k]
                                                 for k in ("repo", "filename", "revision")):
             continue
+        if entry["repo"] in RETIRED_REPOS:
+            continue
         path = Path(name)
         if not path.is_file() or not _allowed(path):
             continue
@@ -149,7 +157,10 @@ def discover():
         else:
             add(path, entry["repo"], entry["filename"], entry["revision"], local_modified=True)
             entries[str(path.resolve())].pop("etag", None)
+    retired_roots = [settings.model_repo_dir(repo) for repo in RETIRED_REPOS]
     for path in [*model_store.weight_files(), *(_files(settings.LORA_DIR) or [])]:
+        if any(path.is_relative_to(root) for root in retired_roots):
+            continue
         if path.suffix.lower() in model_store.WEIGHTS and str(path.resolve()) not in entries:
             entries[str(path.resolve())] = dict(path=str(path.resolve()), repo=None, filename=path.name)
     return list(entries.values())

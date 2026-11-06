@@ -117,7 +117,8 @@ class RealProjectTests(unittest.TestCase):
         self.assertEqual(living, [], "REMOVED_FEATURES vise du code vivant")
 
     def test_live_media_runtimes_and_shared_seed_models_are_never_orphans(self):
-        self.assertTrue({"seedvr2", "seedvr2-convrot", "splat"}.issubset(M._known_addon_dirs()))
+        self.assertTrue({"seedvr2", "seedvr2-convrot", "splat", "image-splats"}.issubset(M._known_addon_dirs()))
+        self.assertIn("VAST-AI__TripoSplat", M._expected_model_dirs())
         retired_dirs = {rel for feature in M.REMOVED_FEATURES for rel in feature["dirs"]}
         self.assertNotIn("tools_repo/seedvr2", retired_dirs)
         self.assertNotIn("tools_repo/seedvr2-convrot", retired_dirs)
