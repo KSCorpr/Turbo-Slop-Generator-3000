@@ -464,6 +464,9 @@ def preset_description(preset: dict) -> str:
     if preset.get("moss_dmd"):
         return ("DMD fast: requires the MOSS SFT adapter, applied automatically "
                 "at strength 0.7. Euler / Auto, 8 steps, CFG 1.")
+    if preset.get("krea_distill"):
+        return ("Text-to-image. Install the 438 MB Krea 2 Turbo distillation LoRA in Models. "
+                "Applies it at strength 1 with four fixed Euler steps and CFG 1.")
     return "Baseline preset. Alternatives below are experimental; steps are in brackets."
 
 

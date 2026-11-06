@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings, system_profile, taesd, sage_attention, moss_dmd as moss_adapter
+from .. import krea_distill as krea_adapter
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -211,6 +212,9 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
         is_moss_dmd = model.id == "moss-image-sft" and moss_adapter.strip_tag(saved_prompt) != saved_prompt
         if is_moss_dmd:
             saved_prompt = moss_adapter.strip_tag(saved_prompt)
+        is_krea_distill = model.id == "krea2-turbo" and "--sigmas" in req.extra_flags
+        if is_krea_distill:
+            saved_prompt = krea_adapter.strip_tag(saved_prompt)
         lines = [saved_prompt]
         if req.negative:
             lines.append(f"Negative prompt: {req.negative}")
@@ -221,6 +225,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
         if is_moss_dmd:
             lines.append(f"MOSS DMD: 8 steps, LoRA strength {moss_adapter.STRENGTH}, at_runtime")
+        if is_krea_distill:
+            lines.append(f"Krea 2 Turbo distillation LoRA: checkpoint 133000, strength 1, sigmas {krea_adapter.SIGMAS}")
         if req.sage_attn:
             lines.append("SageAttention: enabled")
         if req.taesd:
@@ -242,6 +248,9 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
                 **({"taesd": req.taesd.name, "taesd_mode": "preview" if req.taesd_preview_only else "full"}
                    if req.taesd else {}),
                 **({"moss_dmd": True, "dmd_lora_strength": moss_adapter.STRENGTH} if is_moss_dmd else {}),
+                **({"krea_distill": True, "distill_lora_revision": krea_adapter.REVISION,
+                    "distill_lora_strength": 1.0, "sigmas": [float(s) for s in krea_adapter.SIGMAS.split(",")]}
+                   if is_krea_distill else {}),
             }, ensure_ascii=False, indent=2))
         except OSError:
             pass
@@ -353,6 +362,7 @@ def generate(
     prefs_override: dict | None = None,
     moss_dmd: bool = False,
     taesd_mode: str | None = None,
+    krea_distill: bool = False,
 ) -> list[Path]:
     # A benchmark supplies an in-memory placement deliberately. It must not
     # inherit the saved automatic mode, which would erase the tested flags.
@@ -389,6 +399,20 @@ def generate(
         except (OSError, ValueError) as exc:
             raise sdcpp.EngineError(str(exc)) from exc
     references = sdcpp._ref_list(ref_image)
+    if krea_distill:
+        if model.id != "krea2-turbo":
+            raise sdcpp.EngineError("The four-step distillation LoRA requires Krea 2 Turbo.")
+        if init_image is not None or mask_image is not None or references or hires:
+            raise sdcpp.EngineError("The four-step distillation preset is for text-to-image. Clear the input image or choose another preset.")
+        if (steps != 4 or cfg_scale != 1 or sampler not in (None, "", "euler")
+                or schedule not in (None, "", "auto") or flow_shift):
+            raise sdcpp.EngineError("Select the four-step distillation preset to restore its fixed sampling settings.")
+        if not {"--sigmas", "--lora-apply-mode"} <= sdcpp.supported_options(sd_cli):
+            raise sdcpp.EngineError("The four-step LoRA needs sd.cpp with --sigmas and --lora-apply-mode. Run update.bat.")
+        try:
+            krea_adapter.require()
+        except (OSError, ValueError) as exc:
+            raise sdcpp.EngineError(str(exc)) from exc
     reference_limit = model.defaults.get("max_references")
     if reference_limit and len(references) > reference_limit:
         raise sdcpp.EngineError(f"{model.name} supports at most {reference_limit} reference images.")
@@ -420,6 +444,8 @@ def generate(
                  if tiny_mode == "preview" else "fast encoding and final decoding; fine detail may change."))
     if moss_dmd:
         files["image_adapter"] = moss_adapter.path()
+    if krea_distill:
+        files["image_adapter"] = krea_adapter.path()
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
                                   files["vae"])
     enc, uncond = files["enc"], files["uncond"]
@@ -451,6 +477,13 @@ def generate(
         loras.append((moss_adapter.LORA_NAME, moss_adapter.STRENGTH))
         if log:
             log("MOSS DMD: 8 Euler steps, CFG 1, LoRA 0.7 applied at runtime (unmerged).")
+    if krea_distill:
+        prompt = krea_adapter.strip_tag(prompt)
+        loras = [(name, strength) for name, strength in loras
+                 if name not in (krea_adapter.LORA_NAME, krea_adapter.LORA_NAME + ".safetensors")]
+        loras.append((krea_adapter.LORA_NAME, 1.0))
+        if log:
+            log("Krea 2 Turbo distillation: 4 Euler steps, fixed sigmas, CFG 1, LoRA strength 1.")
 
     # Placement. auto-fit laisse sd.cpp planifier la résidence de chaque module
     # (prioritaire) ; sinon split d'encodeur sur un 2e GPU (ex. 1080 Ti). Les
@@ -518,7 +551,8 @@ def generate(
         text_encoder=enc, tokenizer=files["tokenizer"], llm_vision=llm_vision,
         t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
         extra_flags=list(model.defaults.get("extra_flags", [])) +
-                    (["--lora-apply-mode", "at_runtime"] if moss_dmd else []),
+                    (["--lora-apply-mode", "at_runtime"] if moss_dmd or krea_distill else []) +
+                    (["--sigmas", krea_adapter.SIGMAS] if krea_distill else []),
         prompt=final_prompt, negative=negative,
         steps=steps, cfg_scale=cfg_scale,
         sampler=sampler or model.defaults.get("sampler", "euler"),

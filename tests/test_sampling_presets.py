@@ -8,7 +8,7 @@ from unittest.mock import patch
 import gradio as gr
 from PIL import Image
 
-from atelier import registry, sampling, settings
+from atelier import krea_distill, registry, sampling, settings
 from atelier.engine import generate, sdcpp
 from atelier.ui import generate_tab
 
@@ -126,6 +126,50 @@ class SamplingPresetTests(unittest.TestCase):
                                             ("flow_shift", 0)):
                         self.assertEqual(request[field], expected)
                     self.assertFalse(request.get("moss_dmd"))
+
+    def test_krea_distill_ui_sends_the_exact_native_recipe_and_releases_it_on_switch(self):
+        model = next(m for m in self.models if m.id == "krea2-turbo")
+        for comp in model.components:
+            path = settings.model_repo_dir(comp.repo) / comp.requested().replace("*", "fixture")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture")
+        adapter = krea_distill.path()
+        adapter.parent.mkdir()
+        adapter.write_bytes(b"fixture")
+        with gr.Blocks() as demo:
+            generate_tab.build_generative_tab(model.id, model.name)
+        binding = next(f for f in demo.fns.values() if getattr(f.fn, "__name__", "") == "do_generate")
+        apply = next(f for f in demo.fns.values() if getattr(f.fn, "__name__", "") == "apply_preset")
+        presets = [next(p for p in model.presets if p.get("krea_distill")),
+                   next(p for p in model.presets if p["steps"] == 4 and not p.get("krea_distill"))]
+        for distilled, preset in zip((True, False), presets):
+            values = {component._id: component.value for component in binding.inputs}
+            values[binding.inputs[2]._id] = "A detailed poster"
+            values[apply.inputs[0]._id] = preset["name"]
+            for component, update in zip(apply.outputs[:-1], apply.fn(preset["name"])):
+                self.assertEqual(update["interactive"], not distilled)
+                values[component._id] = update["value"]
+            with (patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"),
+                  patch.object(generate, "_resolved_flags", return_value=({}, 0)),
+                  patch.object(krea_distill, "FILE_SIZE", adapter.stat().st_size),
+                  patch.object(sdcpp, "supported_options", return_value={"--sigmas", "--lora-apply-mode"}),
+                  patch.object(sdcpp, "run") as run,
+                  patch.object(sdcpp, "collect_outputs", return_value=[])):
+                list(binding.fn(*(values[component._id] for component in binding.inputs)))
+            run.assert_called_once()
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--steps") + 1], "4")
+            self.assertEqual(command[command.index("--sampling-method") + 1], "euler")
+            self.assertEqual(float(command[command.index("--cfg-scale") + 1]), 1.0)
+            if distilled:
+                self.assertEqual(command[command.index("--sigmas") + 1], "1.0,0.90453,0.75951,0.51284,0.0")
+                self.assertEqual(command[command.index("--lora-apply-mode") + 1], "at_runtime")
+                self.assertEqual(command[command.index("-p") + 1],
+                                 f"A detailed poster <lora:{krea_distill.LORA_NAME}:1>")
+            else:
+                self.assertNotIn("--sigmas", command)
+                self.assertNotIn("--lora-model-dir", command)
+                self.assertEqual(command[command.index("-p") + 1], "A detailed poster")
 
 
 if __name__ == "__main__":

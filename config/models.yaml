@@ -448,6 +448,7 @@ base_models:
       # La doc ne fixe pas de pas ; on garde le 8 pas « officiel » du Turbo distillé.
       - {name: "⚡ Officiel (8 pas)",   sampler: euler, scheduler: auto, steps: 8,  cfg_scale: 1.0}
       - {name: "Très rapide (4 pas)",  sampler: euler, scheduler: auto, steps: 4,  cfg_scale: 1.0}
+      - {name: "4 steps + distillation LoRA", sampler: euler, scheduler: auto, steps: 4, cfg_scale: 1.0, krea_distill: true}
       - {name: "Qualité (12 pas)",     sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
       - name: "Res Multistep / Discrete (12)"
         sampler: "res_multistep"

@@ -802,11 +802,13 @@ def build_generative_tab(model_id: str, title: str,
                 name = i18n.to_source(name)
                 for p in preset_list:
                     if p["name"] == name:
-                        values = (gr.update(value=p.get("sampler", "euler")),
-                                gr.update(value=p.get("scheduler", "auto")),
-                                gr.update(value=int(p.get("steps", 8))),
-                                gr.update(value=float(p.get("cfg_scale", 1.0))))
-                        return (*values, gr.update(value=float(p.get("flow_shift", 0))),
+                        controls = ({"interactive": not p.get("krea_distill")}
+                                    if model_id == "krea2-turbo" else {})
+                        values = (gr.update(value=p.get("sampler", "euler"), **controls),
+                                  gr.update(value=p.get("scheduler", "auto"), **controls),
+                                  gr.update(value=int(p.get("steps", 8)), **controls),
+                                  gr.update(value=float(p.get("cfg_scale", 1.0)), **controls))
+                        return (*values, gr.update(value=float(p.get("flow_shift", 0)), **controls),
                                 gr.update(info=sampling.preset_description(p)))
                 return tuple(gr.update() for _ in preset_outputs)
 
@@ -943,8 +945,8 @@ def build_generative_tab(model_id: str, title: str,
 
             loras = [(lora1, float(lora1_w)), (lora2, float(lora2_w))]
             loras = [(n, w) for n, w in loras if n]
-            use_moss_dmd = family == "moss_image" and any(
-                p.get("moss_dmd") and p["name"] == generation_preset for p in preset_list)
+            chosen_preset = next((p for p in preset_list
+                                  if p["name"] == i18n.to_source(generation_preset)), {})
 
             preview_path = settings.TMP_DIR / f"preview_{time.time_ns()}_%03d.png"
 
@@ -964,7 +966,7 @@ def build_generative_tab(model_id: str, title: str,
                         init_image=init_path, strength=float(strength),
                         ref_image=(ref_paths or None), circular=bool(circular),
                         loras=loras,
-                        **({"moss_dmd": True} if use_moss_dmd else {}),
+                        **{key: True for key in ("moss_dmd", "krea_distill") if chosen_preset.get(key)},
                         taesd_mode=tae_mode,
                         diffusion_override=variant_paths.get("diffusion"),
                         vae_override=variant_paths.get("vae"),
@@ -1096,7 +1098,7 @@ def build_generative_tab(model_id: str, title: str,
         )
         _gen_io.update(widgets.GPU_QUEUE, show_progress="minimal",
                        show_progress_on=[status_md], stream_every=0.15)
-        if family == "moss_image":
+        if family == "moss_image" or model_id == "krea2-turbo":
             _gen_io["inputs"].append(preset)
         gen_evt = run.click(**_gen_io)
         # QOL : Ctrl+Entrée (ou Cmd+Entrée) depuis le prompt lance la
