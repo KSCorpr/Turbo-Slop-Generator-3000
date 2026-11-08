@@ -495,7 +495,9 @@ def build_generative_tab(model_id: str, title: str,
                         else:
                             gr.Markdown("MOSS accepts layout JSON in the prompt. Box coordinates are "
                                         "relative to the canvas center. Match the output dimensions to the layout. "
-                                        "For eight steps, install the MOSS SFT DMD adapter from Models.")
+                                        "For eight steps, install the " +
+                                        ("Kromoss DMD2 adapter" if model_id == "moss-image-kromoss" else "MOSS SFT DMD adapter") +
+                                        " from Models.")
 
 
                 # (« Générer » / « Annuler » sont en haut, sous le prompt.)

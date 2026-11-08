@@ -40,6 +40,12 @@ Run `update.bat`, download the chosen variant in **Models**, then use its
 **Images** tab. Requires sd.cpp build 985+. Weights are CC BY-NC 4.0;
 commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
 
+**Kromoss:** the MOSS fine-tune is available in **Models** and **Images → Kromoss**.
+INT8 ConvRot is the default, with BF16 selectable. It shares MOSS's encoder
+and tokenizer and uses the author's small FLUX.2 VAE. An optional
+**DMD2 fast (8 steps)** preset loads its dedicated adapter at strength 1.
+[Kromoss setup](docs/moss-image.md#kromoss-variant).
+
 **Local media engines:** SeedVR2, VOSR 2.0 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See
 [the setup guide and GPU validation limits](docs/media-engines.md).
@@ -752,7 +758,7 @@ See [installation, GPU precision, downloads and validation limits](docs/image-sp
 
 ### Samplers & schedulers
 The **Quality preset** menu keeps the existing baseline settings first and adds
-**28 experimental sampler / scheduler combinations across all nine image
+**26 experimental sampler / scheduler combinations across all eight image
 models**. Each alternative names its sampler, scheduler and step count, with
 a short explanation displayed with the menu. Selecting a preset applies its
 sampler, scheduler, steps and CFG together and restores the native automatic

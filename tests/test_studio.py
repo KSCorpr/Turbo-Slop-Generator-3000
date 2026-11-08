@@ -238,7 +238,7 @@ class StudioWiringTests(unittest.TestCase):
         self.assertTrue({"flux3-klein", "z-image-turbo", "multiview", "svg", "layers", "face",
                          "adetailer", "creative", "ltx25"}.isdisjoint(tabs))
         self.assertEqual({m.id for m in registry.load_base_models({})},
-                         {"flux2-klein-9b", "qwen-image-2.1-turbo", "moss-image-sft", "fibo2-dev",
+                         {"flux2-klein-9b", "qwen-image-2.1-turbo", "moss-image-sft", "moss-image-kromoss", "fibo2-dev",
                           "fibo2-edit-turbo", "krea2-turbo", "krea2-realism"})
         for package in ("image:flux3-klein", "image:z-image-turbo", "tool:enhance", "tool:face",
                         "tool:upscale", "tool:adetailer", "tool:clip", "addon:qwen-layered",

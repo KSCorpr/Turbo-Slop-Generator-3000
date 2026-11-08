@@ -422,7 +422,7 @@ def rationale(model_family: str) -> str:
                 "editing also requires its vision projector. Other samplers are experimental "
                 "here: no measured quality advantage is claimed. Requires sd.cpp build **985+**.")
     if fam == "moss_image":
-        return ("**MOSS-Image SFT** uses **Euler, 50 steps and CFG 3**. "
+        return ("**MOSS SFT / Kromoss** use **Euler, 50 steps and CFG 3**. "
                 "Keep the scheduler on **Auto** and flow shift at **0 (auto)**: "
                 "sd.cpp applies the native shift of **5** and skips layer "
                 "**22** in the negative CFG branch. This preset is not "
@@ -430,7 +430,8 @@ def rationale(model_family: str) -> str:
                 "negative prompts can affect the result. Its Qwen3.5-9B "
                 "encoder requires the external tokenizer. **DMD fast (8 steps)** "
                 "instead uses **CFG 1**, Euler/Auto and the separately downloaded "
-                "lodestones adapter at **0.7**, applied at runtime without merging. "
+                "variant's adapter, applied at runtime without merging: "
+                "**SFT DMD at 0.7** or **Kromoss DMD2 at 1**. "
                 "Choose that preset to activate it; lowering Steps alone does "
                 "not load the adapter. Negative prompts have no effect at CFG 1.")
     if fam == "krea2_realism":
@@ -462,6 +463,9 @@ def preset_description(preset: dict) -> str:
                 " Compare with the baseline at the same seed and resolution; "
                 "no measured quality gain is claimed.")
     if preset.get("moss_dmd"):
+        if preset.get("kromoss_dmd2"):
+            return ("DMD2 fast: install the Kromoss adapter in Models. Applied automatically "
+                    "at strength 1. Euler / Auto, 8 steps, CFG 1.")
         return ("DMD fast: requires the MOSS SFT adapter, applied automatically "
                 "at strength 0.7. Euler / Auto, 8 steps, CFG 1.")
     if preset.get("krea_distill"):

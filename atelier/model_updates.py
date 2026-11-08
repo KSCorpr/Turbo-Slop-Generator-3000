@@ -68,8 +68,9 @@ def _roots():
         ("describe", "Qwen/Qwen2.5-VL-3B-Instruct")):
         entries.append((base / name / "model", repo, "main"))
     entries += [(base / "sam2/model", addons.SAM2_REPO, addons.SAM2_REVISION)]
-    from . import moss_dmd, taesd, image_splats
-    return entries + [(moss_dmd.path().parent, moss_dmd.REPO, moss_dmd.REVISION)] + [
+    from . import kromoss, moss_dmd, taesd, image_splats
+    return entries + [(adapter.path().parent, adapter.REPO, adapter.REVISION)
+                      for adapter in (moss_dmd, kromoss)] + [
         (spec.path().parent, spec.repo, spec.revision) for spec in taesd.SPECS.values()] + list({
         (settings.model_repo_dir(s.repo), s.repo, s.revision)
         for backend in image_splats.BACKENDS for s in image_splats.artifacts(backend)})

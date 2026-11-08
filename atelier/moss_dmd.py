@@ -17,8 +17,8 @@ LORA_NAME = "moss-image-sft-dmd/lora_latest"
 STRENGTH = 0.7
 
 
-def strip_tag(prompt):
-    return re.sub(r"\s*<lora:" + re.escape(LORA_NAME) + r"(?:\.safetensors)?:[^>]+>", "", prompt)
+def strip_tag(prompt, name=LORA_NAME):
+    return re.sub(r"\s*<lora:" + re.escape(name) + r"(?:\.safetensors)?:[^>]+>", "", prompt)
 
 
 def path():
@@ -55,7 +55,7 @@ def validate(filename):
             shapes[prefix + ".lora_down.weight"] = [128, inputs]
             shapes[prefix + ".lora_up.weight"] = [outputs, 128]
     if header.keys() != shapes.keys():
-        raise ValueError("DMD adapter targets do not match MOSS-Image SFT (756 tensors required).")
+        raise ValueError("DMD adapter targets do not match MOSS-Image (756 tensors required).")
     ranges = []
     for name, shape in shapes.items():
         tensor = header[name]

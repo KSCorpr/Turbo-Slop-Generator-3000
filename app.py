@@ -317,6 +317,7 @@ def build_app() -> gr.Blocks:
                         ("flux2-klein-9b", "Flux.2 Klein"),
                         ("qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo"),
                         ("moss-image-sft", "MOSS-Image SFT"),
+                        ("moss-image-kromoss", "Kromoss"),
                         ("fibo2-dev", "Fibo 2.0 Dev"),
                         ("fibo2-edit-turbo", "Fibo 2.0 Edit Turbo"),
                         ("krea2-turbo", "Krea 2 Turbo"),

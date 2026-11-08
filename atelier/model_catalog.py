@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-from . import addons, downloader, krea_distill, model_store, registry, settings, transfers, moss_dmd, taesd
+from . import addons, downloader, krea_distill, kromoss, model_store, registry, settings, transfers, moss_dmd, taesd
 from .engine import tools
 from .engine.local_jobs import LocalJob
 
@@ -40,6 +40,9 @@ def packages(prefs=None):
     return images + tiny + [Package("moss:dmd", "MOSS SFT · DMD 8-step adapter", "Image generation",
                             "Optional 1.19 GB LoRA for MOSS-Image SFT. Select DMD fast (8 steps) in Images after downloading. "
                             "Reuses the installed image model, encoder and VAE; no second base checkpoint."),
+                           Package("kromoss:dmd2", "Kromoss · DMD2 8-step adapter", "Image generation",
+                                   "Optional 1.19 GB LoRA from lodestones/Kromoss. Select DMD2 fast (8 steps) "
+                                   "in Images → Kromoss. Strength 1, applied at runtime. Apache-2.0, public weights."),
                            Package("krea:distill", "Krea 2 Turbo · 4-step distillation LoRA", "Image generation",
                                    "Optional 438 MB adapter by lvladikov (checkpoint 133000). Reuses Krea 2 Turbo weights. "
                                    "After installation, select 4 steps + distillation LoRA in Images → Krea 2 Turbo. "
@@ -90,6 +93,8 @@ def ready(key, variant=None):
         return registry.model_is_ready(registry.get_base_model(key[6:],settings.load_prefs()))
     if key == "moss:dmd":
         return moss_dmd.ready()
+    if key == "kromoss:dmd2":
+        return kromoss.ready()
     if key == "krea:distill":
         return krea_distill.ready()
     if key.startswith("taesd:"):
@@ -151,6 +156,8 @@ def install(key, variant=None, log=print):
     with JOB.session(), transfers.cancel_scope(JOB.check):
         if key == "moss:dmd":
             moss_dmd.install(log)
+        elif key == "kromoss:dmd2":
+            kromoss.install(log)
         elif key == "krea:distill":
             krea_distill.install(log)
         elif key.startswith("taesd:"):

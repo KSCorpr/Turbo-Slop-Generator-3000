@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import hardware, registry, settings, system_profile, taesd, sage_attention, moss_dmd as moss_adapter
-from .. import krea_distill as krea_adapter
+from .. import kromoss, krea_distill as krea_adapter
 from . import sdcpp
 from .sdcpp import GenRequest
 
@@ -209,9 +209,10 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
         seed = base_seed + i if (base_seed is not None and base_seed >= 0) \
             else base_seed
         saved_prompt = req.prompt or ""
-        is_moss_dmd = model.id == "moss-image-sft" and moss_adapter.strip_tag(saved_prompt) != saved_prompt
+        dmd_adapter = kromoss if model.id == "moss-image-kromoss" else moss_adapter
+        is_moss_dmd = model.family == "moss_image" and dmd_adapter.strip_tag(saved_prompt) != saved_prompt
         if is_moss_dmd:
-            saved_prompt = moss_adapter.strip_tag(saved_prompt)
+            saved_prompt = dmd_adapter.strip_tag(saved_prompt)
         is_krea_distill = model.id == "krea2-turbo" and "--sigmas" in req.extra_flags
         if is_krea_distill:
             saved_prompt = krea_adapter.strip_tag(saved_prompt)
@@ -224,7 +225,7 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
             f"Scheduler: {req.schedule or 'auto'}, Size: {req.width}x{req.height}, "
             f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
         if is_moss_dmd:
-            lines.append(f"MOSS DMD: 8 steps, LoRA strength {moss_adapter.STRENGTH}, at_runtime")
+            lines.append(f"MOSS DMD: 8 steps, LoRA strength {dmd_adapter.STRENGTH}, at_runtime")
         if is_krea_distill:
             lines.append(f"Krea 2 Turbo distillation LoRA: checkpoint 133000, strength 1, sigmas {krea_adapter.SIGMAS}")
         if req.sage_attn:
@@ -247,7 +248,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
                 "sage_attention": req.sage_attn,
                 **({"taesd": req.taesd.name, "taesd_mode": "preview" if req.taesd_preview_only else "full"}
                    if req.taesd else {}),
-                **({"moss_dmd": True, "dmd_lora_strength": moss_adapter.STRENGTH} if is_moss_dmd else {}),
+                **({"moss_dmd": True, "dmd_lora_strength": dmd_adapter.STRENGTH,
+                    "dmd_lora_file": dmd_adapter.FILENAME, "dmd_lora_revision": dmd_adapter.REVISION} if is_moss_dmd else {}),
                 **({"krea_distill": True, "distill_lora_revision": krea_adapter.REVISION,
                     "distill_lora_strength": 1.0, "sigmas": [float(s) for s in krea_adapter.SIGMAS.split(",")]}
                    if is_krea_distill else {}),
@@ -386,16 +388,17 @@ def generate(
 
     _check_engine_build(model)
     _check_tokenizer_engine(model, sd_cli)
+    dmd_adapter = kromoss if model.id == "moss-image-kromoss" else moss_adapter
     if moss_dmd:
-        if model.id != "moss-image-sft":
-            raise sdcpp.EngineError("The MOSS DMD adapter is only for MOSS-Image SFT.")
+        if model.id not in {"moss-image-sft", "moss-image-kromoss"}:
+            raise sdcpp.EngineError("The DMD adapter is only for MOSS-Image SFT or Kromoss.")
         if (steps != 8 or cfg_scale != 1 or sampler not in (None, "", "euler")
                 or schedule not in (None, "", "auto", "discrete") or flow_shift not in (0, 5)):
             raise sdcpp.EngineError("Use DMD fast: 8 steps, CFG 1, Euler, Auto scheduler and flow shift 0 (auto) or 5.")
         if "--lora-apply-mode" not in sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError("MOSS DMD requires --lora-apply-mode at_runtime. Run update.bat.")
         try:
-            moss_adapter.require()
+            dmd_adapter.require()
         except (OSError, ValueError) as exc:
             raise sdcpp.EngineError(str(exc)) from exc
     references = sdcpp._ref_list(ref_image)
@@ -443,7 +446,7 @@ def generate(
                 ("previews only, original VAE retained for the final image."
                  if tiny_mode == "preview" else "fast encoding and final decoding; fine detail may change."))
     if moss_dmd:
-        files["image_adapter"] = moss_adapter.path()
+        files["image_adapter"] = dmd_adapter.path()
     if krea_distill:
         files["image_adapter"] = krea_adapter.path()
     model_path, diffusion, vae = (files["model_path"], files["diffusion"],
@@ -471,12 +474,12 @@ def generate(
             else f"System auto ({model.name}): {plan.placement}.")
     loras = list(loras or [])
     if moss_dmd:
-        prompt = moss_adapter.strip_tag(prompt)
+        prompt = dmd_adapter.strip_tag(prompt)
         loras = [(name, strength) for name, strength in loras
-                 if name not in (moss_adapter.LORA_NAME, moss_adapter.LORA_NAME + ".safetensors")]
-        loras.append((moss_adapter.LORA_NAME, moss_adapter.STRENGTH))
+                 if name not in (dmd_adapter.LORA_NAME, dmd_adapter.LORA_NAME + ".safetensors")]
+        loras.append((dmd_adapter.LORA_NAME, dmd_adapter.STRENGTH))
         if log:
-            log("MOSS DMD: 8 Euler steps, CFG 1, LoRA 0.7 applied at runtime (unmerged).")
+            log(f"{model.name}: 8 Euler steps, CFG 1, LoRA {dmd_adapter.STRENGTH:g} applied at runtime (unmerged).")
     if krea_distill:
         prompt = krea_adapter.strip_tag(prompt)
         loras = [(name, strength) for name, strength in loras

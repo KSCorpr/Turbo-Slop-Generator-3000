@@ -5,6 +5,35 @@ then open **Models**, search **MOSS**, and download the selected image weights.
 Generate under **Images → MOSS-Image SFT**. Missing required files keep the
 model marked as incomplete. No separate PyTorch environment is installed.
 
+## Kromoss variant
+
+Search **Kromoss** in **Models**, download its weights, then open
+**Images → Kromoss**. This lodestones fine-tune uses the MOSS architecture and
+shares SFT's Qwen3.5-9B GGUF encoder and external tokenizer. Its default
+diffusion is INT8 ConvRot (5.41 GB), with BF16 (10.16 GB) selectable.
+The default VAE is the author's FLUX.2 small decoder (249.5 MB). The existing
+full FLUX.2 VAE remains an explicit alternative. All sources are public.
+
+The baseline uses Euler / Auto, 50 steps, CFG 3 and the native shift of 5.
+The engine skips layer 22 in the negative branch. Four additional
+sampler/scheduler presets are available for comparison.
+
+For eight steps, install **Kromoss · DMD2 8-step adapter** from Models, then
+choose **DMD2 fast (8 steps)**. The 1.19 GB FP32 LoRA is applied at runtime at
+strength 1 with CFG 1. Its 756 tensors use the existing MOSS shape validator.
+The original SFT adapter remains specific to SFT. The memory planner includes
+the selected adapter, and output metadata records its filename and revision.
+
+The DMD2 adapter is pinned to `lodestones/Kromoss` revision
+`0c5417ec89301cb82da9ee164f8ed696523910a9`,
+`8-steps-dmd2-lora.safetensors`, SHA-256
+`7683fe1fb51f73f5d690f24dd6b7f46f31ab9a9873729a854ac5c9a420ffe6f2`.
+Kromoss is Apache-2.0. The integration tests cover downloads, component reuse,
+native commands, preset switching and metadata. Trained CUDA inference and
+timings on consumer GPUs require hardware validation.
+
+Source: [Kromoss model card](https://huggingface.co/lodestones/Kromoss).
+
 ## Weights and memory
 
 | Component | Default source/file | Download size |

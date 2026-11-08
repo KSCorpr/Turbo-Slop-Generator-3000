@@ -241,6 +241,86 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: moss-image-kromoss
+    name: "Kromoss"
+    family: moss_image
+    tags: [layout, text, int8, apache-2.0]
+    description: >
+      Lodestones' full fine-tune of MOSS-Image Base. INT8 ConvRot (5.41 GB)
+      by default; BF16 (10.16 GB) is selectable. Reuses MOSS SFT's Qwen3.5-9B
+      GGUF encoder and external tokenizer. Uses the author's FLUX.2 small
+      decoder VAE (249.5 MB). Euler, 50 steps, CFG 3 and automatic shift 5.
+      Keep automatic memory placement on 12 GB cards. Apache-2.0, public weights.
+      Optional DMD2 fast preset: 8 steps, CFG 1, adapter strength 1.
+      Install its 1.19 GB LoRA separately from Models.
+    sources:
+      diffusion:
+        repo: lodestones/Kromoss
+        match: "diffusion_models/kromoss_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/kromoss_int8_convrot.safetensors"
+          - "diffusion_models/kromoss_bf16.safetensors"
+      text_encoder:
+        repo: unsloth/Qwen3.5-9B-GGUF
+        match: "Qwen3.5-9B-{enc_quant}.gguf"
+        quantizable: true
+        auto_quant: Q4_K_M
+      tokenizer:
+        repo: OpenMOSS-Team/MOSS-Image-Base
+        match: "tokenizer/tokenizer.json"
+      vae:
+        repo: lodestones/Kromoss
+        match: "vae/flux2-vae_small.safetensors"
+        label: "FLUX.2 small decoder (recommended)"
+        alternatives:
+          - repo: Comfy-Org/flux2-klein-9B
+            match: "split_files/vae/flux2-vae.safetensors"
+            label: "Original FLUX.2 VAE (shared)"
+    defaults:
+      min_engine_build: 975
+      steps: 50
+      benchmark_steps: 50
+      cfg_scale: 3.0
+      sampler: euler
+      scheduler: auto
+      flow_shift: 0.0
+      width: 1024
+      height: 1024
+      supports_negative: true
+    presets:
+      - {name: "Recommended (50 steps)", sampler: euler, scheduler: auto, steps: 50, cfg_scale: 3.0}
+      - {name: "DMD2 fast (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0, moss_dmd: true, kromoss_dmd2: true}
+      - name: "Euler / Simple (50)"
+        sampler: "euler"
+        scheduler: "simple"
+        steps: 50
+        cfg_scale: 3.0
+        experimental: true
+        note: "Baseline Euler with Simple sigma spacing. Uses the standard Kromoss checkpoint, CFG 3 and no DMD2 adapter."
+      - name: "ER SDE / Bong Tangent (40)"
+        sampler: "er_sde"
+        scheduler: "bong_tangent"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Stochastic solver plus tangent sigma spacing for a different noise trajectory. Uses standard Kromoss, not the eight-step DMD2 adapter."
+      - name: "DPM++ 2M / Beta (40)"
+        sampler: "dpm++2m"
+        scheduler: "beta"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Deterministic multistep solver with Beta sigma spacing and a longer step budget; standard Kromoss, no DMD2 adapter."
+      - name: "Res Multistep / SGM Uniform (40)"
+        sampler: "res_multistep"
+        scheduler: "sgm_uniform"
+        steps: 40
+        cfg_scale: 3.0
+        experimental: true
+        note: "Deterministic multistep alternative with SGM Uniform spacing; standard Kromoss and CFG 3, no DMD2 adapter."
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
   - id: fibo2-dev
     name: "Fibo 2.0 Dev"
     family: fibo2
