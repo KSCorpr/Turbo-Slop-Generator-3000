@@ -94,6 +94,15 @@ def unpack(archive, destination):
             bundle.extractall(destination, filter="data")
 
 
+def _probe_environment(py):
+    # Use the same interpreter discovery as uv pip install, without downloads.
+    return subprocess.run(
+        [sys.executable, "-m", "uv", "--offline", "--no-config", "--no-cache",
+         "pip", "list", "--python", str(py)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
+    )
+
+
 def environment(name):
     # uv provisions its own Python: Windows embeddable Python has no venv module.
     try:
@@ -101,9 +110,17 @@ def environment(name):
     except ImportError:
         run(sys.executable, "-m", "pip", "install", "uv>=0.8,<1")
     py = addons.python(name)
-    if not py.is_file():
-        run(sys.executable, "-m", "uv", "venv", "--python", "3.12",
-            "--managed-python", py.parents[1])
+    venv = py.parents[1]
+    # A Windows launcher can still exist after its base Python has gone away.
+    if (venv / "pyvenv.cfg").is_file() and py.is_file() and _probe_environment(py).returncode == 0:
+        return py
+    if venv.exists():
+        print(f"Rebuilding unusable Python environment: {venv}", flush=True)
+        shutil.rmtree(venv)
+    run(sys.executable, "-m", "uv", "venv", "--python", "3.12", "--managed-python", venv)
+    probe = _probe_environment(py)
+    if probe.returncode != 0:
+        raise RuntimeError(f"Could not verify the new Python environment at {venv}.\n{probe.stderr.strip()}")
     return py
 
 
