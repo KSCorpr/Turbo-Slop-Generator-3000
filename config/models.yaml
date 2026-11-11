@@ -163,6 +163,80 @@ base_models:
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------
+  - id: minimax-h3-image
+    name: "MiniMax H3 Image"
+    family: minimax_h3_image
+    tags: [distilled, editing, int8]
+    description: >
+      Text-to-image and editing with up to 16 ordered reference images.
+      The default download is about 35.25 GB: INT8 ConvRot diffusion
+      (20.98 GB), Qwen3-VL-32B Q2_K_M (13.10 GB) and the dedicated image
+      VAE (1.17 GB). BF16 diffusion (40.23 GB) and a Q4_K_M encoder
+      (18.22 GB) are selectable. Both GGUFs include the vision tower.
+      On 12 GB GPUs, the model needs RAM offload. Start with automatic
+      placement, 1024 × 1024 and one reference at most. Requires sd.cpp
+      build 1088+. Public downloads. MiniMax H3 Image Community License.
+    sources:
+      diffusion:
+        repo: Comfy-Org/MiniMax-H3-Image
+        match: "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
+        selectable:
+          - "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
+          - "diffusion_models/minimax_h3_image_pruned_bf16.safetensors"
+      text_encoder:
+        repo: leejet/MiniMax-H3-GGUF
+        match: "qwen3vl_32b_minimax_h3-{enc_quant}.gguf"
+        quantizable: true
+        auto_quant: Q2_K_M
+        selectable:
+          - "qwen3vl_32b_minimax_h3-Q2_K_M.gguf"
+          - "qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
+      vae:
+        repo: Comfy-Org/MiniMax-H3-Image
+        match: "vae/minimax_h3_image_vae_fp16.safetensors"
+    defaults:
+      min_engine_build: 1088
+      steps: 6
+      benchmark_steps: 6
+      cfg_scale: 1.0
+      sampler: euler
+      scheduler: auto
+      fixed_sampling: true
+      flow_shift: 0.0
+      width: 1024
+      height: 1024
+      size_multiple: 32
+      supports_negative: false
+      supports_img2img: false
+      edit: full
+      max_references: 16
+      extra_flags: ["--sigmas", "minimax-h3-image", "--rng", "cpu"]
+    presets:
+      - {name: "Official PDD (6 steps)", sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - name: "Heun / PDD sigmas (6)"
+        sampler: heun
+        scheduler: auto
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Adds a second-order correction on the original PDD sigma sequence. It usually costs nearly twice as many model evaluations as Euler."
+      - name: "Res 2S / PDD sigmas (6)"
+        sampler: res_2s
+        scheduler: auto
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Tries a second-order exponential solver with an intermediate evaluation per step while keeping the original PDD sigma sequence."
+      - name: "DPM++ 2M / PDD sigmas (6)"
+        sampler: "dpm++2m"
+        scheduler: auto
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Reuses the previous model evaluation to test a multistep trajectory on the original PDD sigma sequence."
+    vram_min_gb: 24
+
+  # --------------------------------------------------------------------------
   - id: moss-image-sft
     name: "MOSS-Image SFT"
     family: moss_image

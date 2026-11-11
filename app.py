@@ -316,6 +316,7 @@ def build_app() -> gr.Blocks:
                     for model_id, label in (
                         ("flux2-klein-9b", "Flux.2 Klein"),
                         ("qwen-image-2.1-turbo", "Qwen Image 2.1 Turbo"),
+                        ("minimax-h3-image", "MiniMax H3 Image"),
                         ("moss-image-sft", "MOSS-Image SFT"),
                         ("moss-image-kromoss", "Kromoss"),
                         ("fibo2-dev", "Fibo 2.0 Dev"),

@@ -27,7 +27,7 @@ class SamplingPresetTests(unittest.TestCase):
         self.stack.enter_context(patch.object(settings, "PREFS_FILE", settings.USERDATA_DIR / "prefs.json"))
         self.stack.enter_context(patch.object(registry, "effective_quants", return_value=("Q5_K_M", "Q8_0")))
         settings.save_prefs({"system_mode": "manual", "auto_optimize": False})
-        (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-1017-be48649"}')
+        (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-1088-32d516c"}')
         self.models = registry.load_base_models({})
 
     def test_every_model_has_distinct_explained_native_alternatives_and_its_original_default(self):
@@ -70,6 +70,7 @@ class SamplingPresetTests(unittest.TestCase):
                      patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"), \
                      patch.object(generate, "_resolved_flags", return_value=({}, 0)), \
                      patch.object(sdcpp, "supported_options", return_value=options), \
+                     patch.object(sdcpp, "binary_help", return_value="--sigmas minimax-h3-image"), \
                      patch.object(sdcpp, "run") as run, \
                      patch.object(sdcpp, "collect_outputs", return_value=[]):
                     generate.generate(model.id, "A detailed poster", "", preset["steps"], preset["cfg_scale"],

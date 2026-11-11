@@ -426,6 +426,23 @@ def generate(
             raise sdcpp.EngineError("Fibo 2.0 dimensions must be positive multiples of 16.")
         if mask_image is not None:
             raise sdcpp.EngineError("Fibo 2.0 native mask preprocessing is not supported by sd.cpp. Use reference-image editing.")
+    if model.family == "minimax_h3_image":
+        if init_image is not None or mask_image is not None or hires:
+            raise sdcpp.EngineError("Use MiniMax H3 Image's reference-image editor for image inputs.")
+        if width <= 0 or height <= 0:
+            raise sdcpp.EngineError("MiniMax H3 Image dimensions must be positive.")
+        multiple = model.defaults["size_multiple"]
+        width, height = ((size + multiple - 1) // multiple * multiple for size in (width, height))
+        help_text = sdcpp.binary_help(sd_cli)
+        if "--sigmas" not in help_text or "minimax-h3-image" not in help_text:
+            raise sdcpp.EngineError(
+                f"{model.name} needs sd.cpp build {model.defaults['min_engine_build']} or newer. "
+                "Run update.bat (or ./update.sh on Linux/Mac).")
+        allowed_samplers = {p["sampler"] for p in model.presets}
+        if (steps != model.defaults["steps"] or cfg_scale != model.defaults["cfg_scale"]
+                or sampler not in {None, "", *allowed_samplers}
+                or schedule not in (None, "", "auto", "discrete") or flow_shift):
+            raise sdcpp.EngineError("Use a MiniMax H3 Image preset: 6 steps, CFG 1 and the official PDD sigmas.")
     _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":
         if "--sigmas" not in sdcpp.supported_options(sd_cli):
@@ -461,6 +478,8 @@ def generate(
         has_reference=bool(ref_image or init_image)) if automatic else None)
     flags, gpu_index = ((plan.flags, plan.gpu_index) if plan else
                         _resolved_flags(prefs))
+    if model.family == "minimax_h3_image":
+        flags = {**flags, "vae_tiling": True}
     # Manual "Automatic (best card)" may leave the saved index empty. Pin
     # the detected card so SageAttention never lands on CUDA device 0 by chance.
     if prefs.get("sage_attention") and gpu_index is None:

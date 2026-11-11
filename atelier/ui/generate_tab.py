@@ -83,6 +83,17 @@ _PROGRESS_BAR = re.compile(r"\|[#=>\-\s]*\|")
 def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     if family == "qwen21":
         return RATIOS_QWEN21
+    if family == "minimax_h3_image":
+        return {
+            "Square 1:1 — 1024×1024": (1024, 1024),
+            "Landscape 3:2 — 1248×832": (1248, 832),
+            "Portrait 2:3 — 832×1248": (832, 1248),
+            "Landscape 4:3 — 1152×864": (1152, 864),
+            "Portrait 3:4 — 864×1152": (864, 1152),
+            "Wide 16:9 — 1408×800": (1408, 800),
+            "Vertical 9:16 — 800×1408": (800, 1408),
+            _CUSTOM_LABEL: (0, 0),
+        }
     if family == "krea2_realism":
         return {"Portrait 9:14 — 1152×1792 (2 MP)": (1152, 1792),
                 "Landscape 14:9 — 1792×1152 (2 MP)": (1792, 1152),
@@ -155,7 +166,8 @@ def build_generative_tab(model_id: str, title: str,
         ready = taesd.model_ready(m)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
-        size_step = 32 if family == "qwen21" else 16
+        size_step = d.get("size_multiple", 32 if family == "qwen21" else 16)
+        fixed_sampling = family == "qwen21" or d.get("fixed_sampling", False)
         size_max = 2816 if family == "qwen21" else 2048
         # Capacité d'édition, déclarée par le catalogue (defaults.edit) :
         #   "full"     -> modèle d'édition natif (Flux.2) : UI images de référence ;
@@ -196,7 +208,7 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Group(elem_classes="primary-reference"):
                     init_image = gr.Image(
                         label="Image to edit" if is_edit else "Starting image (optional)", height=156,
-                        elem_id=(f"{model_id}-reference" if family.startswith("fibo2") else None),
+                        elem_id=(f"{model_id}-reference" if d.get("max_references") else None),
                         type="pil", image_mode=("RGBA" if family == "qwen21"
                                                 else "RGB"),
                         buttons=widgets.IMAGE_VIEW_ONLY)
@@ -215,7 +227,8 @@ def build_generative_tab(model_id: str, title: str,
                                 extra_references = gr.File(
                                     label=f"Additional references ({d['max_references']} images total)",
                                     file_count="multiple", file_types=["image"],
-                                    type="filepath", allow_reordering=True)
+                                    type="filepath", allow_reordering=True,
+                                    elem_id=f"{model_id}-extra-references")
                             else:
                                 extra_references = gr.State(None)
                     else:
@@ -225,7 +238,11 @@ def build_generative_tab(model_id: str, title: str,
                     if is_edit:
                         strength = gr.State(0.6)
                         edit_mode = gr.State(False)
-                        gr.Markdown("Describe the change in the prompt.", elem_classes="hint")
+                        gr.Markdown(
+                            "Refer to uploads in order as `<Picture 1>`, `<Picture 2>`, etc. "
+                            "Example: Edit `<Picture 1>`. Replace the background with a studio backdrop."
+                            if family == "minimax_h3_image" else "Describe the change in the prompt.",
+                            elem_classes="hint")
                     else:
                         with gr.Accordion("Starting image options", open=False):
                             strength = gr.Slider(0.1, 1.0, value=0.6, step=0.05,
@@ -406,7 +423,7 @@ def build_generative_tab(model_id: str, title: str,
                         .format(dir=settings.CUSTOM_DIR))
 
                 with gr.Accordion("Resolution & sampling · advanced", open=False):
-                    if is_edit:
+                    if is_edit and d.get("supports_img2img", True):
                         outpaint = gr.Slider(
                             1.0, 2.0, value=1.0, step=0.1, label="Centred outpaint",
                             info="1.0 keeps the canvas size. Higher values extend it on every side.")
@@ -424,11 +441,11 @@ def build_generative_tab(model_id: str, title: str,
                                            label="Height")
                     with gr.Row():
                         steps = gr.Slider(1, 60, value=d.get("steps", 8), step=1,
-                                          label="Steps", interactive=family != "qwen21")
+                                          label="Steps", interactive=not fixed_sampling)
                         cfg = gr.Slider(0.0, 12.0, value=d.get("cfg_scale", 1.0),
-                                        step=0.1, label="CFG", interactive=family != "qwen21",
-                                        info=("Qwen 2.1 Turbo: fixed CFG 1 and 8 steps."
-                                              if family == "qwen21" else
+                                        step=0.1, label="CFG", interactive=not fixed_sampling,
+                                        info=(f"Fixed CFG {d['cfg_scale']:g} and {d['steps']} steps."
+                                              if fixed_sampling else
                                               "On sd.cpp, CFG disabled = 1.0 "
                                               "(normal for distilled models). 0.0 "
                                               "= pure unconditional: may IGNORE "
@@ -442,17 +459,18 @@ def build_generative_tab(model_id: str, title: str,
                     with gr.Row():
                         sampler = gr.Dropdown(
                             [choice for choice in sampling.choices("sampler", family)
-                             if family != "qwen21" or choice[1] in
+                             if not fixed_sampling or choice[1] in
                              {p["sampler"] for p in preset_list}],
                             value=d.get("sampler", "euler"), label="Sampler", interactive=True,
                             info="⭐ recommended · △ poorly suited · ⚠️ "
                                  "discouraged for THIS model")
                         schedule = gr.Dropdown(
-                            sampling.choices("schedule", family),
+                            [choice for choice in sampling.choices("schedule", family)
+                             if not fixed_sampling or choice[1] == d.get("scheduler", "auto")],
                             value=d.get("scheduler", "auto"),
-                            label="Scheduler (sigmas)", interactive=family != "qwen21",
-                            info=("Fixed official Turbo sigmas for all Qwen presets; Auto does not replace them."
-                                  if family == "qwen21" else
+                            label="Scheduler (sigmas)", interactive=not fixed_sampling,
+                            info=("Fixed official sigmas for all presets."
+                                  if fixed_sampling else
                                   "How the denoising steps are spread out"))
                     with gr.Row():
                         sampler_doc = gr.Markdown(
@@ -470,7 +488,7 @@ def build_generative_tab(model_id: str, title: str,
                         inputs=[schedule], outputs=[schedule_doc])
                     flow_shift = gr.Slider(
                         0.0, 12.0, value=float(d.get("flow_shift", 0.0)), step=0.1,
-                        label="Flow shift", interactive=family != "qwen21",
+                        label="Flow shift", interactive=not fixed_sampling,
                         info="Leave at 0 (auto): the model picks the right value "
                              "for the resolution. Too low (1–2) leaves "
                              "GRAIN/noise at high resolution; ~3–4 reinforces "

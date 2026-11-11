@@ -223,7 +223,8 @@ class StudioWiringTests(unittest.TestCase):
 
     def test_retired_models_and_toolkit_enlargement_tabs_are_absent(self):
         tabs = [b for b in self.demo.blocks.values() if isinstance(b, gr.Tab)]
-        self.assertFalse(any("Ming" in tab.label or "H3" in tab.label for tab in tabs))
+        self.assertFalse(any("Ming" in tab.label or
+                             ("H3" in tab.label and tab.id != "minimax-h3-image") for tab in tabs))
         toolkit = next(tab for tab in tabs if tab.id == "toolkit")
         children = next(block for block in toolkit.children if isinstance(block, gr.Tabs))
         self.assertEqual([tab.id for tab in children.children],
@@ -239,7 +240,7 @@ class StudioWiringTests(unittest.TestCase):
                          "adetailer", "creative", "ltx25"}.isdisjoint(tabs))
         self.assertEqual({m.id for m in registry.load_base_models({})},
                          {"flux2-klein-9b", "qwen-image-2.1-turbo", "moss-image-sft", "moss-image-kromoss", "fibo2-dev",
-                          "fibo2-edit-turbo", "krea2-turbo", "krea2-realism"})
+                          "fibo2-edit-turbo", "krea2-turbo", "krea2-realism", "minimax-h3-image"})
         for package in ("image:flux3-klein", "image:z-image-turbo", "tool:enhance", "tool:face",
                         "tool:upscale", "tool:adetailer", "tool:clip", "addon:qwen-layered",
                         "addon:svg", "addon:hivg", "addon:omnisvg", "taesd:taef1",

@@ -43,6 +43,7 @@ def main():
     args = parser.parse_args()
     expect.set_options(timeout=15000)
     calls = []
+    h3_edits = []
     seed_calls = []
     seed_installs = []
     splat_calls = []
@@ -78,6 +79,12 @@ def main():
             active += 1
             peak = max(peak, active)
             calls.append(kwargs["prompt"])
+            if kwargs["model_id"] == "minimax-h3-image":
+                colors = []
+                for path in kwargs["ref_image"] or []:
+                    with Image.open(path) as image:
+                        colors.append(image.getpixel((0, 0)))
+                h3_edits.append((kwargs["prompt"], colors))
             engine_started.set()
             try:
                 if "Cancel request" in kwargs["prompt"] and kwargs.get("preview_path"):
@@ -170,7 +177,7 @@ def main():
                 model_tabs = {
                     "flux2-klein-9b": "Flux.2 Klein",
                     "qwen-image-2.1-turbo": "Qwen Image 2.1 Turbo", "moss-image-sft": "MOSS-Image SFT",
-                    "moss-image-kromoss": "Kromoss",
+                    "moss-image-kromoss": "Kromoss", "minimax-h3-image": "MiniMax H3 Image",
                     "fibo2-dev": "Fibo 2.0 Dev", "fibo2-edit-turbo": "Fibo 2.0 Edit Turbo",
                     "krea2-turbo": "Krea 2 Turbo", "krea2-realism": "Krea 2 Realism",
                 }
@@ -362,6 +369,29 @@ def main():
                 page.screenshot(path=str(screenshots / "studio-image-splats.png"))
                 page.get_by_role("button", name="Unload 3D preview", exact=True).click()
                 expect(page.locator("#image-splats-status")).to_contain_text("preview unloaded")
+
+                page.get_by_role("tab", name="Images", exact=True).click()
+                page.get_by_role("tab", name="MiniMax H3 Image", exact=True).click()
+                edit_zone = page.locator(".primary-reference:visible")
+                expect(edit_zone.get_by_text("<Picture 1>", exact=True).first).to_be_visible()
+                ref_files = []
+                colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+                for i, color in enumerate(colors, start=1):
+                    path = folder / f"reference-{i}.png"
+                    Image.new("RGB", (256, 256), color).save(path)
+                    ref_files.append(str(path))
+                page.locator("#minimax-h3-image-reference input[type=file]").set_input_files(ref_files[0])
+                expect(page.locator("#minimax-h3-image-reference img")).to_be_visible()
+                edit_zone.get_by_text("More reference images", exact=True).click()
+                expect(edit_zone.get_by_text("Additional references (16 images total)")).to_be_visible()
+                page.locator("#minimax-h3-image-extra-references input[type=file]").set_input_files(ref_files[1:])
+                expect(edit_zone.get_by_label("reference-3.png", exact=True)).to_be_visible()
+                instruction = "Edit <Picture 1> using <Picture 2> and <Picture 3>."
+                page.locator(".studio-prompt textarea:visible").fill(instruction)
+                page.get_by_role("button", name="Generate", exact=True).click()
+                expect(page.locator(".studio-status:visible").first).to_contain_text("Done")
+                assert h3_edits == [(instruction, colors)], h3_edits
+                page.screenshot(path=str(screenshots / "studio-minimax-h3-image.png"))
 
                 page.goto(f"http://127.0.0.1:{port}/?__theme=dark", wait_until="domcontentloaded", timeout=60000)
                 expect(page.get_by_role("tab", name="Images", exact=True)).to_be_visible()

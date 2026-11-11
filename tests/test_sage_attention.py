@@ -37,12 +37,12 @@ class SageAttentionTests(unittest.TestCase):
         self.stack.enter_context(patch.object(hardware, 'detect_ram_gb', return_value=64))
         self.stack.enter_context(patch.object(hardware, 'free_vram_gb', return_value=10.5))
         self.stack.enter_context(patch.object(sdcpp, 'supported_options', return_value=OPTIONS))
-        self.stack.enter_context(patch.object(sdcpp, 'binary_help', return_value='--auto-fit on|off'))
+        self.stack.enter_context(patch.object(sdcpp, 'binary_help', return_value='--auto-fit on|off --sigmas minimax-h3-image'))
         self.cli = settings.BIN_DIR / 'sd-cli'
         self.cli.touch()
         self.stack.enter_context(patch.object(settings, 'find_sd_cli', return_value=self.cli))
         self.manifest = settings.BIN_DIR / 'engine-manifest.json'
-        self.manifest.write_text('{"tag":"master-1031-test","archive":"sd-bin-linux-cuda12-x64.zip"}')
+        self.manifest.write_text('{"tag":"master-1088-32d516c","archive":"sd-bin-linux-cuda12-x64.zip"}')
         settings.save_prefs({'system_mode': 'auto', 'auto_gpu_index': RTX.index,
                              'gpu_index': RTX.index, 'sage_attention': True})
 

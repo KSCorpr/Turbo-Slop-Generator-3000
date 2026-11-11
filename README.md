@@ -40,6 +40,15 @@ Run `update.bat`, download the chosen variant in **Models**, then use its
 **Images** tab. Requires sd.cpp build 985+. Weights are CC BY-NC 4.0;
 commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
 
+**MiniMax H3 Image:** use `update.bat` for sd.cpp build 1088 or newer, then
+download the weights from **Models → MiniMax H3 Image**. The default INT8
+ConvRot and Q2_K_M encoder package takes about 35.25 GB. A previously
+installed MiniMax H3 video encoder can be reused. **Images → MiniMax H3 Image**
+generates with Euler, six PDD steps and CFG 1. For editing, add up to 16
+references and cite them in order as `<Picture 1>`, `<Picture 2>`, etc.
+On 12 GB cards, start at 1024 × 1024 with automatic memory placement.
+[Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/minimax_h3_image.md).
+
 **Kromoss:** the MOSS fine-tune is available in **Models** and **Images → Kromoss**.
 INT8 ConvRot is the default, with BF16 selectable. It shares MOSS's encoder
 and tokenizer and uses the author's small FLUX.2 VAE. An optional
@@ -84,7 +93,7 @@ cd turbo-slop-studio
 A **local**, modern, lightweight image-generation studio for artists, built on
 **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** (native
 CUDA, GGUF). Generate with **Flux.2 Klein 9B**, **Qwen Image 2.1 Turbo**,
-**MOSS SFT**, **Fibo 2 Dev / Edit Turbo** and **Krea 2 Turbo / Realism**, with an
+**MiniMax H3 Image**, **MOSS SFT**, **Fibo 2 Dev / Edit Turbo** and **Krea 2 Turbo / Realism**, with an
 on-demand model catalog, automatic optimization for your RTX card, LoRA, native
 resolution presets, saved styles, multi-reference image editing, SeedVR2 and
 VOSR restoration, and a utility toolkit.
@@ -124,7 +133,7 @@ is excluded from the file menu. Actual GPU output and speed remain unverified.
 
 | Tab | What it does |
 |---|---|
-| **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, [MOSS-Image SFT](docs/moss-image.md), Fibo 2, Krea 2 and Xanax; sampling controls follow each model's requirements. |
+| **Images** | Flux.2 Klein, Qwen Image 2.1 Turbo, MiniMax H3 Image, [MOSS-Image SFT](docs/moss-image.md), Fibo 2, Krea 2 and Xanax; sampling controls follow each model's requirements. |
 | **Tools & 3D** | Image-to-prompt, depth, cutouts, upscaling, restoration, Outpaint and textured 3D. |
 | **Gallery** | Browse local outputs, search filenames, download originals and reuse prompts; 24 thumbnails per page. |
 | **Models** | Searchable catalog for image models, restoration, Toolkit and 3D; shared weights and on-demand downloads. [Model storage guide](docs/model-catalog.md). |

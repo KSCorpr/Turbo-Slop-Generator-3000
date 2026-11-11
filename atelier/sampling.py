@@ -307,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "krea2_realism", "qwen21", "moss_image", "fibo2", "fibo2_turbo")
+FAMILIES = ("flux2", "krea2", "krea2_realism", "qwen21", "moss_image", "fibo2", "fibo2_turbo", "minimax_h3_image")
 
 
 def _family(model_family: str) -> str:
@@ -331,8 +331,8 @@ def level(kind: str, key: str, model_family: str) -> str:
         if key in ("lcm", "tcd"):
             return BAD
         return OK
-    if model_family == "qwen21":
-        # Turbo uses the publisher's fixed 8-step Euler schedule.
+    if model_family in {"qwen21", "minimax_h3_image"}:
+        # Both use a fixed sigma sequence with Euler as the baseline.
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
         if key in ("lcm", "tcd"):
@@ -442,6 +442,10 @@ def rationale(model_family: str) -> str:
                 "Qwen3-VL-4B encoder and Wan 2.1 VAE. INT8 ConvRot and FP8 "
                 "are available; the checkpoint's W4A8 format is not supported "
                 "by sd.cpp. On 12 GB cards these 13 GB weights need RAM offload.")
+    if fam == "minimax_h3_image":
+        return ("**MiniMax H3 Image** uses **Euler, 6 steps and CFG 1** on the official "
+                "PDD sigmas. The experimental solvers keep this sigma sequence. "
+                "Start at 1024 × 1024 with automatic memory placement.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "
@@ -480,6 +484,8 @@ def describe(kind: str, key: str, model_family: str) -> str:
     entry = table.get(key)
     if not entry:
         return ""
+    if model_family == "minimax_h3_image" and kind == "schedule" and key == "auto":
+        return "**Official PDD sigmas** — fixed six-step sequence for MiniMax H3 Image."
     if model_family == "qwen21" and kind == "schedule" and key == "auto":
         return ("**Official Turbo sigmas** — the eight-step sequence is passed explicitly "
                 "to sd.cpp. Auto does not generate a different schedule here; "
