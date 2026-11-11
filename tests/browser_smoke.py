@@ -393,7 +393,6 @@ def main():
                 assert h3_edits == [(instruction, colors)], h3_edits
                 page.screenshot(path=str(screenshots / "studio-minimax-h3-image.png"))
 
-                page.goto(f"http://127.0.0.1:{port}/?__theme=dark", wait_until="domcontentloaded", timeout=60000)
                 expect(page.get_by_role("tab", name="Images", exact=True)).to_be_visible()
                 assert not errors, errors
                 browser.close()
