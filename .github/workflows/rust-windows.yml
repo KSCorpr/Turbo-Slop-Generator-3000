@@ -1,0 +1,45 @@
+name: Rust Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/rust-windows']
+    paths: ['rust/**', 'config/models.yaml', '.github/workflows/rust-windows.yml']
+  pull_request:
+    paths: ['rust/**', 'config/models.yaml', '.github/workflows/rust-windows.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Rust stable
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable-x86_64-pc-windows-msvc
+      - name: Test native studio
+        run: cargo test --locked --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Build Windows executable
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --locked --release --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Smoke test and package
+        shell: pwsh
+        run: |
+          $package = New-Item -Type Directory -Path rust/dist -Force
+          Copy-Item rust/target/x86_64-pc-windows-msvc/release/turboslop.exe "$package/TurboSlop.exe"
+          Copy-Item rust/README.md "$package/Lisez-moi.md"
+          $report = Join-Path $env:RUNNER_TEMP "turboslop-self-check.json"
+          $process = Start-Process "$package/TurboSlop.exe" -ArgumentList "--self-check", "`"$report`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "TurboSlop returned $($process.ExitCode)" }
+          $check = Get-Content $report -Raw | ConvertFrom-Json
+          if ($check.platform -ne "windows" -or $check.arch -ne "x86_64" -or $check.models.Count -ne 9) { throw "Invalid self-check" }
+          Compress-Archive -Path "$package/*" -DestinationPath rust/TurboSlop-Rust-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TurboSlop-Rust-Windows-x64
+          path: rust/TurboSlop-Rust-Windows-x64.zip
+          if-no-files-found: error

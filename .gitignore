@@ -18,6 +18,7 @@ runtime/
 
 # Données utilisateur & sorties
 userdata/
+userdata-rust/
 outputs/
 tmp/
 hf_cache/
