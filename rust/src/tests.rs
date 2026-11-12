@@ -98,6 +98,28 @@ fn local_weights_reuse_python_layout_and_do_not_select_unapproved_paths() {
 }
 
 #[test]
+fn flux_variant_matching_accepts_the_default_diffusion_weight() {
+    let root = tempdir().unwrap();
+    let model = Catalog::load()
+        .unwrap()
+        .base_models
+        .into_iter()
+        .find(|m| m.id == "flux2-klein-9b")
+        .unwrap();
+    let weight = Weight {
+        repo: "unsloth/FLUX.2-klein-9B-GGUF".into(),
+        name: "flux-2-klein-9b-Q4_K_M.gguf".into(),
+    };
+    let path = weight.path(root.path());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, b"flux checkpoint").unwrap();
+    assert_eq!(
+        catalog::installed(&model, root.path())["diffusion"],
+        [weight]
+    );
+}
+
+#[test]
 fn interrupted_download_resumes_and_publishes_only_a_verified_file() {
     let directory = tempdir().unwrap();
     let bytes = b"TurboSlop";

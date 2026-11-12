@@ -279,6 +279,8 @@ impl Source {
                     matches(
                         &self
                             .pattern
+                            .replace("*{quant}", "*")
+                            .replace("*{enc_quant}", "*")
                             .replace("{quant}", "*")
                             .replace("{enc_quant}", "*"),
                         &weight.name,
