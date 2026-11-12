@@ -22,7 +22,10 @@ use combs_diffusion::{
     },
     vae::VAEDecoder,
 };
-use combs_formats::{ModelSource, SafetensorsSource, open_model_source};
+use combs_formats::{
+    ModelMetadata, ModelSource, QuantFormat, QuantTensor, SafetensorsSource, TensorDtype,
+    TensorReader, TokenizerSpec, open_model_source, quants::dequantize_q6_k,
+};
 use combs_models::{CacheConfig, GenerativeModel, LlamaModel};
 use cubecl::prelude::Runtime;
 use eframe::egui::ColorImage;
@@ -184,6 +187,115 @@ fn render_prompt(template: Option<&str>, prompt: &str) -> Result<String> {
     ))
 }
 
+// Klein only consumes three residual streams from the encoder. Use a prompt-sized
+// embedding table and stop the decoder stack as soon as the last tap is available.
+struct PromptEncoderSource<'a> {
+    source: &'a dyn ModelSource,
+    metadata: ModelMetadata,
+    embedding_name: &'static str,
+    embedding_bytes: Vec<u8>,
+}
+
+impl<'a> PromptEncoderSource<'a> {
+    fn new(source: &'a dyn ModelSource, ids: &mut [u32]) -> Result<Self> {
+        let mut metadata = source.metadata().clone();
+        ensure!(
+            metadata.architecture == "qwen3"
+                && metadata.num_hidden_layers >= TAPS[2]
+                && metadata.hidden_size * TAPS.len() == Flux2Config::klein_4b().joint_attention_dim,
+            "Cet encodeur ne correspond pas à FLUX.2 Klein 4B."
+        );
+        let embedding_name = if source
+            .tensor_names()
+            .iter()
+            .any(|name| name == "model.embed_tokens.weight")
+        {
+            "model.embed_tokens.weight"
+        } else {
+            "embed_tokens.weight"
+        };
+        let table = source
+            .open_tensor_quant(embedding_name)?
+            .context("Table de vocabulaire quantifiée absente")?;
+        ensure!(
+            table.format == QuantFormat::Q6K
+                && table.shape == [metadata.vocab_size, metadata.hidden_size]
+                && metadata.hidden_size.is_multiple_of(256),
+            "Table de vocabulaire Qwen3 inattendue."
+        );
+        let row_bytes = metadata.hidden_size / 256 * 210;
+        let mut rows = BTreeMap::new();
+        let mut selected = Vec::new();
+        for id in ids {
+            let next = rows.len() as u32;
+            let row = rows.entry(*id).or_insert_with(|| {
+                selected.push(*id as usize);
+                next
+            });
+            *id = *row;
+        }
+        let mut packed = Vec::with_capacity(selected.len() * row_bytes);
+        for index in selected {
+            let offset = index * row_bytes;
+            packed.extend_from_slice(
+                table
+                    .data
+                    .get(offset..offset + row_bytes)
+                    .context("Token Qwen3 hors vocabulaire")?,
+            );
+        }
+        let values = dequantize_q6_k(&packed, rows.len() * metadata.hidden_size)?;
+        let embedding_bytes = values.into_iter().flat_map(f32::to_le_bytes).collect();
+        metadata.vocab_size = rows.len();
+        metadata.num_hidden_layers = TAPS[2];
+        metadata.max_position_embeddings = PROMPT_TOKENS;
+        metadata.tie_word_embeddings = true;
+        Ok(Self {
+            source,
+            metadata,
+            embedding_name,
+            embedding_bytes,
+        })
+    }
+}
+
+impl ModelSource for PromptEncoderSource<'_> {
+    fn metadata(&self) -> &ModelMetadata {
+        &self.metadata
+    }
+
+    fn tensor_names(&self) -> Vec<String> {
+        self.source.tensor_names()
+    }
+
+    fn sampler_defaults(&self) -> Option<combs_formats::SamplerConfig> {
+        self.source.sampler_defaults()
+    }
+
+    fn tokenizer(&self) -> combs_formats::Result<TokenizerSpec> {
+        self.source.tokenizer()
+    }
+
+    fn open_tensor(&self, name: &str) -> combs_formats::Result<TensorReader<'_>> {
+        if name == self.embedding_name {
+            return Ok(TensorReader::new(
+                name.to_string(),
+                vec![self.metadata.vocab_size, self.metadata.hidden_size],
+                TensorDtype::F32,
+                &self.embedding_bytes,
+            ));
+        }
+        self.source.open_tensor(name)
+    }
+
+    fn open_tensor_quant(&self, name: &str) -> combs_formats::Result<Option<QuantTensor<'_>>> {
+        if name == self.embedding_name {
+            return Ok(None);
+        }
+        self.source.open_tensor_quant(name)
+    }
+}
+
 fn encode_prompt(path: &Path, prompt: &str, device: &WgpuDevice) -> Result<TensorData> {
     let source = open_model_source(path).context("Lecture de l’encodeur GGUF impossible")?;
     let spec = source.tokenizer()?;
@@ -193,7 +305,7 @@ fn encode_prompt(path: &Path, prompt: &str, device: &WgpuDevice) -> Result<Tenso
     let encoding = tokenizer
         .encode(formatted.as_str(), false)
         .map_err(|e| anyhow!("Encodage du prompt impossible : {e}"))?;
-    let mut ids: Vec<i32> = encoding.get_ids().iter().map(|&id| id as i32).collect();
+    let mut ids = encoding.get_ids().to_vec();
     ensure!(
         ids.len() <= PROMPT_TOKENS,
         "Le prompt formaté dépasse {PROMPT_TOKENS} tokens."
@@ -201,17 +313,19 @@ fn encode_prompt(path: &Path, prompt: &str, device: &WgpuDevice) -> Result<Tenso
     let pad = tokenizer
         .token_to_id("<|endoftext|>")
         .context("Jeton de remplissage Qwen3 absent")?;
-    ids.resize(PROMPT_TOKENS, pad as i32);
+    ids.resize(PROMPT_TOKENS, pad);
 
-    let mut model = LlamaModel::<Gpu>::load(source.as_ref(), device)
-        .context("Chargement de Qwen3 impossible")?;
-    ensure!(
-        model.metadata().hidden_size * TAPS.len() == Flux2Config::klein_4b().joint_attention_dim,
-        "Cet encodeur ne correspond pas à FLUX.2 Klein 4B."
-    );
+    let encoder = PromptEncoderSource::new(source.as_ref(), &mut ids)?;
+    let mut model =
+        LlamaModel::<Gpu>::load(&encoder, device).context("Chargement de Qwen3 impossible")?;
     let mut cache = model.create_kv_cache(&CacheConfig::contiguous(PROMPT_TOKENS));
-    let ids: Tensor<Gpu, 2, Int> =
-        Tensor::from_data(TensorData::new(ids, [1, PROMPT_TOKENS]), device);
+    let ids: Tensor<Gpu, 2, Int> = Tensor::from_data(
+        TensorData::new(
+            ids.into_iter().map(|id| id as i32).collect::<Vec<_>>(),
+            [1, PROMPT_TOKENS],
+        ),
+        device,
+    );
     let embeddings = model.embed(ids);
     let taps = model.prefill_taps(embeddings, cache.as_mut(), 0..PROMPT_TOKENS as u32, &TAPS)?;
     Ok(taps.into_data())
