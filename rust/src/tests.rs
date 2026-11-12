@@ -70,8 +70,8 @@ fn local_weights_reuse_python_layout_and_do_not_select_unapproved_paths() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, b"q4").unwrap();
     assert_eq!(
-        catalog::installed(&model, root.path())["text_encoder"],
-        [q4.clone()]
+        catalog::installed(&model, root.path())["text_encoder"].as_slice(),
+        std::slice::from_ref(&q4)
     );
     fs::write(q2.path(root.path()), b"q2").unwrap();
     assert_eq!(
