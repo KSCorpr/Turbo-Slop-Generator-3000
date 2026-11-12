@@ -1,5 +1,4 @@
 use std::{
-    collections::{BTreeMap, HashMap},
     fs::{self, File, OpenOptions},
     io::{BufReader, Read, Write},
     path::Path,
@@ -9,161 +8,50 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use url::Url;
 
-use crate::catalog::{self, Model, RemoteWeight, Selection, Weight};
+use crate::catalog;
 
 pub type Progress<'a> = &'a mut dyn FnMut(String, Option<f32>);
-
-#[derive(Deserialize)]
-struct Repo {
-    sha: String,
-    siblings: Vec<Sibling>,
-}
-
-#[derive(Deserialize)]
-struct Sibling {
-    rfilename: String,
-    size: Option<u64>,
-    lfs: Option<Lfs>,
-}
-
-#[derive(Deserialize)]
-struct Lfs {
-    sha256: String,
-}
-
-pub fn client() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .user_agent(concat!("TurboSlop-Rust/", env!("CARGO_PKG_VERSION")))
-        .timeout_connect(Duration::from_secs(15))
-        .timeout_read(Duration::from_secs(45))
-        .build()
-}
 
 pub fn check(cancel: &AtomicBool) -> Result<()> {
     ensure!(!cancel.load(Ordering::Relaxed), "Opération arrêtée.");
     Ok(())
 }
 
-pub fn catalog_weights(
-    model: &Model,
-    cancel: &AtomicBool,
-) -> Result<BTreeMap<String, Vec<RemoteWeight>>> {
-    let client = client();
-    let mut repos = HashMap::<String, Repo>::new();
-    let mut result = BTreeMap::new();
-    for (role, source) in &model.sources {
-        let mut entries = Vec::new();
-        for repo in source.repositories() {
-            check(cancel)?;
-            if !repos.contains_key(repo) {
-                let url = format!("https://huggingface.co/api/models/{repo}?blobs=true");
-                let data: Repo = client
-                    .get(&url)
-                    .call()
-                    .with_context(|| format!("Catalogue Hugging Face indisponible pour {repo}"))?
-                    .into_json()?;
-                ensure!(
-                    data.sha.len() == 40 && data.sha.bytes().all(|b| b.is_ascii_hexdigit()),
-                    "Révision Hugging Face invalide pour {repo}"
-                );
-                repos.insert(repo.to_owned(), data);
-            }
-            let info = &repos[repo];
-            entries.extend(info.siblings.iter().filter_map(|file| {
-                let weight = Weight {
-                    repo: repo.into(),
-                    name: file.rfilename.clone(),
-                };
-                let size = file.size.filter(|size| *size > 0)?;
-                source.accepts(&weight).then(|| RemoteWeight {
-                    weight,
-                    revision: info.sha.clone(),
-                    size,
-                    sha256: file.lfs.as_ref().map(|lfs| lfs.sha256.clone()),
-                })
-            }));
-        }
-        entries.sort_by_key(|entry| source.priority(&entry.weight));
-        entries.dedup_by(|a, b| a.weight == b.weight);
-        result.insert(role.clone(), entries);
-    }
-    Ok(result)
-}
-
-pub fn install_model(
-    model: &Model,
-    root: &Path,
-    remote: &BTreeMap<String, Vec<RemoteWeight>>,
-    selection: &Selection,
-    install_vision: bool,
-    cancel: &AtomicBool,
-    progress: Progress,
-) -> Result<()> {
-    let local = catalog::installed(model, root);
-    let client = client();
-    let mut downloads = Vec::new();
-    for (role, _) in catalog::ROLES {
-        if !model.needs(role, false, install_vision) {
-            continue;
-        }
-        if let Some(existing) = catalog::chosen(role, selection, &local)
-            && catalog::present(&existing.path(root))
-        {
-            continue;
-        }
-        let candidates = remote
-            .get(*role)
-            .with_context(|| format!("Choix de poids absent pour {role}"))?;
-        let chosen = match selection.get(*role) {
-            Some(selected) => candidates.iter().find(|file| &file.weight == selected),
-            None => candidates.first(),
-        }
-        .with_context(|| format!("Fichier indisponible pour {role}"))?;
-        downloads.push(chosen);
-    }
-    let total = downloads.len();
-    for (index, file) in downloads.into_iter().enumerate() {
+pub fn install(root: &Path, cancel: &AtomicBool, progress: Progress) -> Result<()> {
+    let client = ureq::AgentBuilder::new()
+        .user_agent(concat!("TurboSlop-Native/", env!("CARGO_PKG_VERSION")))
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(45))
+        .build();
+    let files: Vec<_> = catalog::WEIGHTS
+        .into_iter()
+        .filter(|file| !file.installed(root))
+        .collect();
+    let total: u64 = files.iter().map(|file| file.size).sum();
+    let mut completed = 0;
+    for file in files {
+        check(cancel)?;
         let mut report = |message, fraction: Option<f32>| {
             progress(
-                format!("{}/{} · {message}", index + 1, total),
-                fraction.map(|n| (index as f32 + n) / total as f32),
+                format!("{} · {message}", file.label),
+                fraction.map(|f| (completed as f32 + file.size as f32 * f) / total as f32),
             );
         };
-        install_weight(&client, file, &file.weight.path(root), cancel, &mut report)?;
+        download(
+            &client,
+            &file.url(),
+            &file.path(root),
+            file.size,
+            Some(file.sha256),
+            file.sha256,
+            cancel,
+            &mut report,
+        )?;
+        completed += file.size;
     }
     Ok(())
-}
-
-pub fn install_weight(
-    client: &ureq::Agent,
-    file: &RemoteWeight,
-    destination: &Path,
-    cancel: &AtomicBool,
-    progress: Progress,
-) -> Result<()> {
-    let mut url = Url::parse("https://huggingface.co")?;
-    url.path_segments_mut()
-        .map_err(|_| anyhow::anyhow!("URL Hugging Face invalide"))?
-        .pop_if_empty()
-        .extend(file.weight.repo.split('/'))
-        .push("resolve")
-        .push(&file.revision)
-        .extend(file.weight.name.split('/'));
-    let identity = file.sha256.as_deref().unwrap_or(&file.revision);
-    download(
-        client,
-        url.as_str(),
-        destination,
-        file.size,
-        file.sha256.as_deref(),
-        identity,
-        cancel,
-        progress,
-    )
 }
 
 #[allow(clippy::too_many_arguments)]

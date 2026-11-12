@@ -1,5 +1,4 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
     env, fs,
     path::{Path, PathBuf},
     sync::{
@@ -17,9 +16,8 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use crate::{
-    catalog::{self, Catalog, Model, Preset, RemoteWeight, Selection, Weight},
-    download,
-    engine::{self, Backend, Request, Update},
+    catalog, download,
+    engine::{self, Device, Request, Update},
 };
 
 const ACCENT: Color32 = Color32::from_rgb(250, 174, 116);
@@ -29,12 +27,7 @@ const MUTED: Color32 = Color32::from_rgb(166, 172, 184);
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
-    engine: Option<PathBuf>,
-    backend: Backend,
-    gpu: Option<u32>,
-    disable_auto_fit: bool,
-    disable_flash: bool,
-    choices: BTreeMap<String, Selection>,
+    device: Device,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,14 +38,10 @@ enum Page {
     Settings,
 }
 
-type Remote = BTreeMap<String, Vec<RemoteWeight>>;
-
 enum Outcome {
     Generated(Vec<PathBuf>),
-    Catalog(String, Remote),
-    Engine(PathBuf, Backend),
     Installed,
-    Gpus(Vec<String>),
+    Device(String),
 }
 
 enum Event {
@@ -65,81 +54,27 @@ struct Job {
     events: mpsc::Receiver<Event>,
 }
 
-struct Form {
+pub struct Studio {
+    root: PathBuf,
+    root_edit: String,
+    preferences: Preferences,
+    gpu: Option<String>,
+    page: Page,
     prompt: String,
-    negative: String,
-    references: Vec<PathBuf>,
-    #[cfg(not(windows))]
-    reference_text: String,
-    preset: usize,
-    sampling: Preset,
     width: u32,
     height: u32,
     seed: i64,
-    count: u32,
-    strength: f32,
-    lora: Option<String>,
-    lora_weight: f32,
-}
-
-impl Form {
-    fn new(model: &Model) -> Self {
-        let d = &model.defaults;
-        Self {
-            prompt: String::new(),
-            negative: String::new(),
-            references: Vec::new(),
-            #[cfg(not(windows))]
-            reference_text: String::new(),
-            preset: 0,
-            sampling: model.presets.first().cloned().unwrap_or_else(|| Preset {
-                name: "Par défaut".into(),
-                sampler: d.sampler.clone(),
-                scheduler: d.scheduler.clone(),
-                steps: d.steps,
-                cfg_scale: d.cfg_scale,
-                note: String::new(),
-                moss_dmd: false,
-                kromoss_dmd2: false,
-                krea_distill: false,
-            }),
-            width: d.width,
-            height: d.height,
-            seed: -1,
-            count: 1,
-            strength: 0.6,
-            lora: None,
-            lora_weight: 0.8,
-        }
-    }
-}
-
-pub struct Studio {
-    catalog: Catalog,
-    model: usize,
-    form: Form,
-    root: PathBuf,
-    preferences: Preferences,
-    root_edit: String,
-    engine_edit: String,
-    install_backend: Backend,
-    gpus: Vec<String>,
-    page: Page,
-    local: BTreeMap<String, Vec<Weight>>,
-    remote: Option<(String, Remote)>,
-    install_vision: bool,
-    loras: Vec<String>,
+    ready: bool,
     job: Option<Job>,
     closing: bool,
     status: String,
     fraction: Option<f32>,
     error: Option<String>,
-    log: VecDeque<String>,
     preview: Option<TextureHandle>,
-    gallery_preview: Option<TextureHandle>,
+    output: Option<PathBuf>,
     gallery: Vec<PathBuf>,
     gallery_selected: Option<PathBuf>,
-    outputs: Vec<PathBuf>,
+    gallery_preview: Option<TextureHandle>,
 }
 
 pub fn style(ctx: &egui::Context) {
@@ -159,57 +94,43 @@ pub fn style(ctx: &egui::Context) {
 
 impl Studio {
     pub fn load(root: Option<PathBuf>) -> Result<Self> {
-        let catalog = Catalog::load()?;
         let root = std::path::absolute(root.unwrap_or_else(default_root))?;
         fs::create_dir_all(&root).context("Dossier TurboSlop inaccessible")?;
-        let preferences = read_preferences(&root);
-        let form = Form::new(&catalog.base_models[0]);
-        let mut studio = Self {
-            catalog,
-            model: 0,
-            form,
+        let mut app = Self {
+            preferences: read_preferences(&root),
             root_edit: root.display().to_string(),
-            engine_edit: preferences
-                .engine
-                .as_ref()
-                .map_or_else(String::new, |p| p.display().to_string()),
-            install_backend: preferences.backend,
             root,
-            preferences,
-            gpus: Vec::new(),
+            gpu: None,
             page: Page::Images,
-            local: BTreeMap::new(),
-            remote: None,
-            install_vision: true,
-            loras: Vec::new(),
+            prompt: String::new(),
+            width: 512,
+            height: 512,
+            seed: -1,
+            ready: false,
             job: None,
             closing: false,
             status: String::new(),
             fraction: None,
             error: None,
-            log: VecDeque::new(),
             preview: None,
-            gallery_preview: None,
+            output: None,
             gallery: Vec::new(),
             gallery_selected: None,
-            outputs: Vec::new(),
+            gallery_preview: None,
         };
-        studio.refresh_local();
-        studio.refresh_gallery();
-        Ok(studio)
+        app.refresh_weights();
+        app.refresh_gallery();
+        Ok(app)
     }
 
-    fn active_model(&self) -> &Model {
-        &self.catalog.base_models[self.model]
-    }
-
-    fn refresh_local(&mut self) {
-        self.local = catalog::installed(self.active_model(), &self.root);
-        self.loras = local_loras(&self.root);
+    fn refresh_weights(&mut self) {
+        self.ready = catalog::WEIGHTS
+            .iter()
+            .all(|file| file.installed(&self.root));
     }
 
     fn refresh_gallery(&mut self) {
-        self.gallery = fs::read_dir(self.root.join("outputs"))
+        let mut paths: Vec<_> = fs::read_dir(self.root.join("outputs"))
             .into_iter()
             .flatten()
             .flatten()
@@ -219,59 +140,14 @@ impl Studio {
                 if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "webp") {
                     return None;
                 }
-                let modified = entry.metadata().ok()?.modified().ok()?;
-                Some((modified, path))
+                let metadata = entry.metadata().ok()?;
+                metadata
+                    .is_file()
+                    .then_some((metadata.modified().ok()?, path))
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .map(|(_, path)| path)
             .collect();
-        self.gallery.sort_by_cached_key(|path| {
-            std::cmp::Reverse(path.metadata().and_then(|m| m.modified()).ok())
-        });
-        self.gallery.truncate(250);
-    }
-
-    fn save(&mut self) {
-        if let Err(error) = save_json(&prefs_path(&self.root), &self.preferences) {
-            self.error = Some(format!("Préférences non enregistrées. {error:#}"));
-        }
-    }
-
-    fn select_model(&mut self, index: usize) {
-        if self.model == index {
-            return;
-        }
-        self.model = index;
-        let prompt = std::mem::take(&mut self.form.prompt);
-        self.form = Form::new(self.active_model());
-        self.form.prompt = prompt;
-        self.remote = None;
-        self.refresh_local();
-    }
-
-    fn selection(&self) -> Selection {
-        self.preferences
-            .choices
-            .get(&self.active_model().id)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn set_weight(&mut self, role: &str, weight: Option<Weight>) {
-        let id = self.active_model().id.clone();
-        let choice = self.preferences.choices.entry(id).or_default();
-        if let Some(weight) = weight {
-            choice.insert(role.into(), weight);
-        } else {
-            choice.remove(role);
-        }
-        self.save();
-    }
-
-    fn current_engine(&self) -> Option<PathBuf> {
-        engine::find(&self.root, self.preferences.engine.as_deref())
+        paths.sort_unstable_by(|a, b| b.cmp(a));
+        self.gallery = paths.into_iter().take(250).map(|(_, path)| path).collect();
     }
 
     fn start(
@@ -299,71 +175,44 @@ impl Studio {
         self.status = label.into();
         self.fraction = None;
         self.error = None;
-        self.log.clear();
         self.job = Some(Job { cancel, events: rx });
     }
 
     fn drain(&mut self, ctx: &egui::Context) {
-        let mut finished = None;
-        if let Some(job) = &self.job {
-            for _ in 0..256 {
-                match job.events.try_recv() {
-                    Ok(Event::Update(Update::Log(line))) => {
-                        if self.log.len() == 250 {
-                            self.log.pop_front();
-                        }
-                        self.log.push_back(line);
-                    }
-                    Ok(Event::Update(Update::Progress(message, fraction))) => {
-                        self.status = message;
-                        self.fraction = fraction;
-                    }
-                    Ok(Event::Update(Update::Preview(frame))) => {
-                        put_texture(ctx, &mut self.preview, "generation", frame);
-                    }
-                    Ok(Event::Done(result)) => {
-                        finished = Some(result);
-                        break;
-                    }
-                    Err(mpsc::TryRecvError::Empty) => break,
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        finished = Some(Err(anyhow::anyhow!("La tâche s’est interrompue.")));
-                        break;
-                    }
+        let Some(job) = &self.job else {
+            return;
+        };
+        let finished = loop {
+            match job.events.try_recv() {
+                Ok(Event::Update(Update::Progress(message, fraction))) => {
+                    self.status = message;
+                    self.fraction = fraction;
+                }
+                Ok(Event::Update(Update::Preview(frame))) => {
+                    put_texture(ctx, &mut self.preview, "generation", frame);
+                }
+                Ok(Event::Done(result)) => break result,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    break Err(anyhow::anyhow!("La tâche s’est interrompue."));
                 }
             }
-        }
-        let Some(result) = finished else {
-            return;
         };
         self.job = None;
         self.fraction = None;
-        match result {
+        match finished {
             Ok(Outcome::Generated(paths)) => {
-                self.status = format!("{} image(s) enregistrée(s)", paths.len());
-                self.outputs = paths;
+                self.output = paths.into_iter().next();
+                self.status = "Image enregistrée".into();
                 self.refresh_gallery();
             }
-            Ok(Outcome::Catalog(id, files)) => {
-                if self.active_model().id == id {
-                    self.remote = Some((id, files));
-                }
-                self.status = "Catalogue chargé".into();
-            }
-            Ok(Outcome::Engine(exe, backend)) => {
-                self.engine_edit = exe.display().to_string();
-                self.preferences.engine = Some(exe);
-                self.preferences.backend = backend;
-                self.save();
-                self.status = "Moteur installé".into();
-            }
             Ok(Outcome::Installed) => {
-                self.refresh_local();
-                self.status = "Poids prêts".into();
+                self.refresh_weights();
+                self.status = "Poids installés".into();
             }
-            Ok(Outcome::Gpus(gpus)) => {
-                self.status = format!("{} GPU NVIDIA détecté(s)", gpus.len());
-                self.gpus = gpus;
+            Ok(Outcome::Device(name)) => {
+                self.status = format!("Calcul Vulkan validé · {name}");
+                self.gpu = Some(name);
             }
             Err(error) => {
                 self.status.clear();
@@ -373,59 +222,34 @@ impl Studio {
     }
 
     fn generate(&mut self, ctx: &egui::Context) {
-        let Some(exe) = self.current_engine() else {
-            self.page = Page::Settings;
-            self.error = Some(
-                "Indique le chemin de sd-cli.exe ou installe le moteur depuis Réglages.".into(),
-            );
-            return;
-        };
-        let model = self.active_model().clone();
-        if self.form.prompt.trim().is_empty() {
-            self.error = Some("Saisis un prompt.".into());
+        if self.form_invalid() {
+            self.error = Some("Saisis un prompt et choisis des dimensions multiples de 16.".into());
             return;
         }
-        let align = |value: u32| {
-            let multiple = model.dimension_multiple();
-            value.clamp(256, 3072).div_ceil(multiple) * multiple
-        };
-        self.form.width = align(self.form.width);
-        self.form.height = align(self.form.height);
-        let seed = if self.form.seed < 0 {
+        self.refresh_weights();
+        if !self.ready {
+            self.page = Page::Models;
+            self.error = Some("Télécharge les poids du modèle dans Modèles.".into());
+            return;
+        }
+        let seed = if self.seed < 0 {
             (SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos()
-                % i32::MAX as u128) as i64
+                % i32::MAX as u128) as u64
         } else {
-            self.form.seed
+            self.seed as u64
         };
         let request = Request {
             root: self.root.clone(),
-            exe,
-            model,
-            selection: self.selection(),
-            preset: self.form.sampling.clone(),
-            prompt: self.form.prompt.trim().into(),
-            negative: self.form.negative.trim().into(),
-            references: self.form.references.clone(),
-            width: self.form.width,
-            height: self.form.height,
+            prompt: self.prompt.trim().into(),
+            width: self.width,
+            height: self.height,
             seed,
-            count: self.form.count,
-            strength: self.form.strength,
-            loras: self
-                .form
-                .lora
-                .iter()
-                .map(|name| (name.clone(), self.form.lora_weight))
-                .collect(),
-            backend: self.preferences.backend,
-            gpu: self.preferences.gpu,
-            auto_fit: !self.preferences.disable_auto_fit,
-            flash_attention: !self.preferences.disable_flash,
+            device: self.preferences.device,
         };
-        self.outputs.clear();
+        self.output = None;
         self.preview = None;
         self.start(
             ctx,
@@ -434,36 +258,10 @@ impl Studio {
         );
     }
 
-    fn add_refs(&mut self, files: impl IntoIterator<Item = PathBuf>) {
-        let max = self.active_model().max_references();
-        let mut overflow = false;
-        for file in files {
-            if !file.is_file()
-                || !file
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .is_some_and(|ext| {
-                        matches!(
-                            ext.to_ascii_lowercase().as_str(),
-                            "png" | "jpg" | "jpeg" | "webp"
-                        )
-                    })
-            {
-                self.error = Some(format!(
-                    "Image PNG, JPEG ou WebP introuvable : {}",
-                    file.display()
-                ));
-            } else if !self.form.references.contains(&file) {
-                if self.form.references.len() >= max {
-                    overflow = true;
-                } else {
-                    self.form.references.push(file);
-                }
-            }
-        }
-        if overflow {
-            self.error = Some(format!("Ce modèle accepte jusqu’à {max} référence(s)."));
-        }
+    fn form_invalid(&self) -> bool {
+        self.prompt.trim().is_empty()
+            || !engine::valid_edge(self.width)
+            || !engine::valid_edge(self.height)
     }
 
     fn header(&mut self, ctx: &egui::Context) {
@@ -488,11 +286,14 @@ impl Studio {
                             if page == Page::Gallery {
                                 self.refresh_gallery();
                             }
+                            if page == Page::Models {
+                                self.refresh_weights();
+                            }
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
-                            RichText::new(format!("Rust · {}", env!("CARGO_PKG_VERSION")))
+                            RichText::new(format!("Rust natif · {}", env!("CARGO_PKG_VERSION")))
                                 .small()
                                 .color(MUTED),
                         );
@@ -549,63 +350,7 @@ impl Studio {
             });
     }
 
-    fn model_picker(&mut self, ui: &mut egui::Ui) {
-        let mut index = self.model;
-        egui::ComboBox::from_id_salt("model")
-            .width(264.0)
-            .selected_text(&self.active_model().name)
-            .show_ui(ui, |ui| {
-                for (i, model) in self.catalog.base_models.iter().enumerate() {
-                    ui.selectable_value(&mut index, i, &model.name);
-                }
-            });
-        self.select_model(index);
-    }
-
-    fn weight_picker(
-        &mut self,
-        ui: &mut egui::Ui,
-        role: &str,
-        label: &str,
-        choices: Vec<(Weight, String)>,
-    ) {
-        let mut selected = self.selection().remove(role);
-        let before = selected.clone();
-        let selected_text = selected
-            .as_ref()
-            .map(|file| file.name.as_str())
-            .unwrap_or("Automatique");
-        egui::ComboBox::from_id_salt(("weight", role))
-            .width(300.0)
-            .selected_text(selected_text)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut selected,
-                    None,
-                    "Automatique · priorité aux poids installés",
-                );
-                for (file, text) in choices {
-                    ui.selectable_value(&mut selected, Some(file), text);
-                }
-            });
-        ui.label(RichText::new(label).small().color(MUTED));
-        if before != selected {
-            self.set_weight(role, selected);
-        }
-    }
-
     fn images(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        let dropped = ctx.input(|input| {
-            input
-                .raw
-                .dropped_files
-                .iter()
-                .filter_map(|file| file.path.clone())
-                .collect::<Vec<_>>()
-        });
-        if self.job.is_none() {
-            self.add_refs(dropped);
-        }
         let left = (ui.available_width() * 0.42).clamp(350.0, 560.0);
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
@@ -617,7 +362,82 @@ impl Studio {
                         .id_salt("controls")
                         .show(ui, |ui| {
                             ui.add_enabled_ui(self.job.is_none(), |ui| {
-                                self.image_controls(ctx, ui)
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.heading(catalog::MODEL_NAME);
+                                    if ui.button("Poids").clicked() {
+                                        self.page = Page::Models;
+                                    }
+                                });
+                                ui.label(RichText::new("Prompt").strong());
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.prompt)
+                                        .desired_rows(5)
+                                        .desired_width(f32::INFINITY)
+                                        .hint_text("Décris l’image à générer…"),
+                                );
+                                ui.label(
+                                    RichText::new("Flow Match Euler · 4 étapes")
+                                        .small()
+                                        .color(MUTED),
+                                );
+                                ui.horizontal_wrapped(|ui| {
+                                    for (label, w, h) in [
+                                        ("256", 256, 256),
+                                        ("384", 384, 384),
+                                        ("512", 512, 512),
+                                        ("Paysage", 640, 384),
+                                        ("Portrait", 384, 640),
+                                    ] {
+                                        if ui
+                                            .selectable_label(
+                                                (self.width, self.height) == (w, h),
+                                                label,
+                                            )
+                                            .clicked()
+                                        {
+                                            (self.width, self.height) = (w, h);
+                                        }
+                                    }
+                                });
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.width)
+                                            .speed(16)
+                                            .range(engine::MIN_EDGE..=engine::MAX_EDGE)
+                                            .prefix("L "),
+                                    );
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.height)
+                                            .speed(16)
+                                            .range(engine::MIN_EDGE..=engine::MAX_EDGE)
+                                            .prefix("H "),
+                                    );
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.seed)
+                                            .range(-1..=i64::MAX)
+                                            .prefix("Seed "),
+                                    );
+                                    ui.label("-1 = aléatoire");
+                                });
+                                if !self.ready {
+                                    ui.label(
+                                        RichText::new("Poids à télécharger dans Modèles.")
+                                            .color(ACCENT),
+                                    );
+                                }
+                                let run = egui::Button::new(
+                                    RichText::new("Générer")
+                                        .strong()
+                                        .color(Color32::from_rgb(31, 22, 18)),
+                                )
+                                .fill(ACCENT)
+                                .min_size(Vec2::new(180.0, 38.0));
+                                let shortcut = ctx.input(|input| {
+                                    input.modifiers.ctrl && input.key_pressed(egui::Key::Enter)
+                                });
+                                if ui.add(run).clicked() || shortcut {
+                                    self.generate(ctx);
+                                }
                             });
                         });
                 },
@@ -627,508 +447,148 @@ impl Studio {
                 ui.heading("Aperçu");
                 let area = Vec2::new(
                     ui.available_width(),
-                    (ui.available_height() - 180.0).max(230.0),
+                    (ui.available_height() - 106.0).max(230.0),
                 );
                 if let Some(texture) = &self.preview {
                     show_texture(ui, texture, area);
                 } else {
-                    placeholder(ui, area, "L’aperçu apparaît pendant la génération");
+                    placeholder(ui, area, "L’image apparaît après le décodage");
                 }
-                if !self.outputs.is_empty() {
-                    ui.horizontal_wrapped(|ui| {
-                        for (index, path) in self.outputs.iter().enumerate() {
-                            if ui.button(format!("Image {}", index + 1)).clicked()
-                                && let Ok(frame) = engine::preview_image(path)
-                            {
-                                put_texture(ctx, &mut self.preview, "generation", frame);
-                            }
-                        }
-                    });
-                }
-                if ui.button("Ouvrir le dossier des images").clicked() {
-                    reveal(self.root.join("outputs"), &mut self.error);
-                }
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Ouvrir le dossier des images").clicked() {
+                        reveal(self.root.join("outputs"), &mut self.error);
+                    }
+                    if let Some(path) = &self.output
+                        && ui.button("Ouvrir l’image").clicked()
+                        && let Err(error) = open::that(path)
+                    {
+                        self.error = Some(error.to_string());
+                    }
+                });
                 if let Some(error) = &self.error {
                     ui.label(RichText::new(error).color(Color32::LIGHT_RED));
                 }
-                ui.collapsing("Journal du moteur", |ui| {
-                    egui::ScrollArea::vertical()
-                        .max_height(150.0)
-                        .stick_to_bottom(true)
-                        .id_salt("log")
-                        .show(ui, |ui| {
-                            for line in &self.log {
-                                ui.monospace(line);
-                            }
-                        });
-                });
             });
-        });
-    }
-
-    fn image_controls(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            self.model_picker(ui);
-            if ui.button("Poids").clicked() {
-                self.page = Page::Models;
-            }
-        });
-        ui.label(RichText::new("Prompt").strong());
-        ui.add(
-            egui::TextEdit::multiline(&mut self.form.prompt)
-                .desired_rows(4)
-                .desired_width(f32::INFINITY)
-                .hint_text("Décris l’image ou la retouche…"),
-        );
-        let model = self.active_model().clone();
-        frame(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Images de référence").strong());
-                ui.label(
-                    RichText::new(format!(
-                        "{}/{}",
-                        self.form.references.len(),
-                        model.max_references()
-                    ))
-                    .small()
-                    .color(MUTED),
-                );
-                if ui.button("Ajouter").clicked() {
-                    self.add_refs(pick_images());
-                }
-            });
-            ui.label(RichText::new(model.reference_hint()).small().color(MUTED));
-            if self.form.references.is_empty() {
-                ui.label(
-                    RichText::new("Glisse tes fichiers ici")
-                        .small()
-                        .color(MUTED),
-                );
-            }
-            let mut remove = None;
-            let mut swap = None;
-            for (index, path) in self.form.references.iter().enumerate() {
-                ui.push_id(index, |ui| {
-                    ui.horizontal(|ui| {
-                        let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                        ui.label(format!("{}. {filename}", index + 1))
-                            .on_hover_text(path.display().to_string());
-                        if ui
-                            .add_enabled(index > 0, egui::Button::new("↑").small())
-                            .clicked()
-                        {
-                            swap = Some((index, index - 1));
-                        }
-                        if ui.button("Retirer").clicked() {
-                            remove = Some(index);
-                        }
-                    });
-                });
-            }
-            if let Some((a, b)) = swap {
-                self.form.references.swap(a, b);
-            }
-            if let Some(index) = remove {
-                self.form.references.remove(index);
-            }
-            #[cfg(not(windows))]
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.form.reference_text);
-                if ui.button("Ajouter ce chemin").clicked() {
-                    let path = PathBuf::from(std::mem::take(&mut self.form.reference_text));
-                    self.add_refs([path]);
-                }
-            });
-        });
-        if model.defaults.supports_negative {
-            ui.label("Prompt négatif");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.form.negative).desired_width(f32::INFINITY),
-            );
-        }
-        ui.horizontal(|ui| {
-            let before = self.form.preset;
-            egui::ComboBox::from_id_salt("preset")
-                .width(246.0)
-                .selected_text(&self.form.sampling.name)
-                .show_ui(ui, |ui| {
-                    for (index, preset) in model.presets.iter().enumerate() {
-                        ui.selectable_value(&mut self.form.preset, index, &preset.name);
-                    }
-                });
-            if before != self.form.preset {
-                self.form.sampling = model.presets[self.form.preset].clone();
-            }
-            ui.label("Preset");
-        });
-        if !self.form.sampling.note.is_empty() {
-            ui.label(RichText::new(&self.form.sampling.note).small().color(MUTED));
-        }
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Carré").clicked() {
-                (self.form.width, self.form.height) = (1024, 1024);
-            }
-            if ui.button("Paysage").clicked() {
-                (self.form.width, self.form.height) = (1280, 768);
-            }
-            if ui.button("Portrait").clicked() {
-                (self.form.width, self.form.height) = (768, 1280);
-            }
-            ui.label(format!("{} × {}", self.form.width, self.form.height));
-        });
-        let ready = catalog::ROLES.iter().all(|(role, _)| {
-            !model.needs(role, !self.form.references.is_empty(), false)
-                || catalog::chosen(role, &self.selection(), &self.local)
-                    .is_some_and(|file| catalog::present(&file.path(&self.root)))
-        });
-        if !ready {
-            ui.label(
-                RichText::new("Poids manquants. Ouvre Modèles pour les télécharger.").color(ACCENT),
-            );
-        }
-        let choices = self
-            .local
-            .get("diffusion")
-            .into_iter()
-            .flatten()
-            .map(|file| (file.clone(), file.name.clone()))
-            .collect();
-        ui.horizontal_wrapped(|ui| self.weight_picker(ui, "diffusion", "Diffusion", choices));
-        let run = egui::Button::new(
-            RichText::new("Générer")
-                .strong()
-                .color(Color32::from_rgb(31, 22, 18)),
-        )
-        .fill(ACCENT)
-        .min_size(Vec2::new(180.0, 38.0));
-        let shortcut =
-            ctx.input(|input| input.modifiers.ctrl && input.key_pressed(egui::Key::Enter));
-        if ui.add(run).clicked() || shortcut {
-            self.generate(ctx);
-        }
-        ui.collapsing("Variantes installées", |ui| {
-            for (role, label) in catalog::ROLES.iter().skip(1).take(2) {
-                let choices = self
-                    .local
-                    .get(*role)
-                    .into_iter()
-                    .flatten()
-                    .map(|file| (file.clone(), file.name.clone()))
-                    .collect();
-                self.weight_picker(ui, role, label, choices);
-            }
-        });
-        ui.collapsing("Résolution et échantillonnage", |ui| {
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::DragValue::new(&mut self.form.width)
-                        .range(256..=3072)
-                        .prefix("L "),
-                );
-                ui.add(
-                    egui::DragValue::new(&mut self.form.height)
-                        .range(256..=3072)
-                        .prefix("H "),
-                );
-            });
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::DragValue::new(&mut self.form.seed)
-                        .range(-1..=i64::MAX)
-                        .prefix("Seed "),
-                );
-                ui.label("-1 = aléatoire");
-                ui.add(
-                    egui::DragValue::new(&mut self.form.count)
-                        .range(1..=4)
-                        .prefix("Images "),
-                );
-            });
-            let fixed = model.fixed_sampling() || self.form.sampling.adapter().is_some();
-            ui.add_enabled_ui(!fixed, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::DragValue::new(&mut self.form.sampling.steps)
-                            .range(1..=100)
-                            .suffix(" étapes"),
-                    );
-                    ui.add(
-                        egui::DragValue::new(&mut self.form.sampling.cfg_scale)
-                            .range(0.0..=20.0)
-                            .speed(0.1)
-                            .prefix("CFG "),
-                    );
-                });
-            });
-            ui.label(format!(
-                "{} / {}",
-                self.form.sampling.sampler, self.form.sampling.scheduler
-            ));
-            if !model.native_references() && !self.form.references.is_empty() {
-                ui.add(
-                    egui::Slider::new(&mut self.form.strength, 0.05..=1.0).text("Force img2img"),
-                );
-            }
-        });
-        ui.collapsing("LoRA local", |ui| {
-            egui::ComboBox::from_id_salt("lora")
-                .width(246.0)
-                .selected_text(self.form.lora.as_deref().unwrap_or("Aucun"))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.form.lora, None, "Aucun");
-                    for name in &self.loras {
-                        ui.selectable_value(&mut self.form.lora, Some(name.clone()), name);
-                    }
-                });
-            if self.form.lora.is_some() {
-                ui.add(egui::Slider::new(&mut self.form.lora_weight, -2.0..=2.0).text("Intensité"));
-            }
-            if ui.button("Rafraîchir").clicked() {
-                self.refresh_local();
-            }
         });
     }
 
     fn models(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         ui.heading("Modèles");
-        ui.label(RichText::new("Télécharge les variantes du catalogue ou réutilise les poids du dossier TurboSlop.").color(MUTED));
-        ui.add_enabled_ui(self.job.is_none(), |ui| {
-            self.model_picker(ui);
-            let model = self.active_model().clone();
-            ui.label(&model.description);
+        ui.label(RichText::new(catalog::MODEL_NAME).strong());
+        ui.label("Génération à partir d’un prompt. Le transformeur est quantifié en mémoire pendant le chargement.");
+        for file in catalog::WEIGHTS {
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Voir les variantes disponibles").clicked() {
-                    let model = model.clone();
-                    self.start(ctx, "Lecture du catalogue", move |cancel, _| {
-                        download::catalog_weights(&model, cancel)
-                            .map(|files| Outcome::Catalog(model.id, files))
-                    });
-                }
-                if ui.button("Détecter les poids locaux").clicked() {
-                    self.refresh_local();
-                }
-                if ui.button("Ouvrir le dossier des modèles").clicked() {
-                    reveal(self.root.join("models"), &mut self.error);
+                ui.label(file.label);
+                ui.label(format!("{:.2} Go", download::gb(file.size)));
+                if file.installed(&self.root) {
+                    ui.label(RichText::new("Installé").color(ACCENT));
+                } else {
+                    ui.label(RichText::new("À télécharger").color(MUTED));
                 }
             });
-            ui.add_space(8.0);
-            for (role, label) in catalog::ROLES {
-                if !model.sources.contains_key(*role) {
-                    continue;
-                }
-                let mut choices: Vec<(Weight, String)> = self
-                    .local
-                    .get(*role)
-                    .into_iter()
-                    .flatten()
-                    .map(|file| (file.clone(), format!("{} · installé", file.name)))
-                    .collect();
-                if let Some((_, remote)) = &self.remote
-                    && let Some(files) = remote.get(*role)
-                {
-                    for file in files {
-                        if !choices.iter().any(|(weight, _)| weight == &file.weight) {
-                            choices.push((
-                                file.weight.clone(),
-                                format!("{} · {:.2} Go", file.weight.name, download::gb(file.size)),
-                            ));
-                        }
-                    }
-                }
-                ui.horizontal_wrapped(|ui| self.weight_picker(ui, role, label, choices));
-            }
-            if model
-                .sources
-                .get("text_encoder_vision")
-                .is_some_and(|s| s.optional)
+        }
+        ui.horizontal_wrapped(|ui| {
+            let total: u64 = catalog::WEIGHTS.iter().map(|file| file.size).sum();
+            if ui
+                .add_enabled(
+                    self.job.is_none() && !self.ready,
+                    egui::Button::new(format!(
+                        "Télécharger les poids · {:.2} Go au total",
+                        download::gb(total)
+                    )),
+                )
+                .clicked()
             {
-                ui.checkbox(
-                    &mut self.install_vision,
-                    "Inclure le projecteur vision pour l’édition",
-                );
-            }
-            if ui.button("Télécharger les poids sélectionnés").clicked() {
                 let root = self.root.clone();
-                let selection = self.selection();
-                let install_vision = self.install_vision;
-                let remote = self.remote.as_ref().map(|(_, files)| files.clone());
-                let model = model.clone();
                 self.start(
                     ctx,
                     "Préparation du téléchargement",
                     move |cancel, event| {
-                        let local = catalog::installed(&model, &root);
-                        let missing = catalog::ROLES.iter().any(|(role, _)| {
-                            model.needs(role, false, install_vision)
-                                && catalog::chosen(role, &selection, &local)
-                                    .is_none_or(|file| !catalog::present(&file.path(&root)))
-                        });
-                        if missing {
-                            let remote = match remote {
-                                Some(files) => files,
-                                None => download::catalog_weights(&model, cancel)?,
-                            };
-                            download::install_model(
-                                &model,
-                                &root,
-                                &remote,
-                                &selection,
-                                install_vision,
-                                cancel,
-                                &mut |label, fraction| event(Update::Progress(label, fraction)),
-                            )?;
-                        }
+                        download::install(&root, cancel, &mut |msg, p| {
+                            event(Update::Progress(msg, p))
+                        })?;
                         Ok(Outcome::Installed)
                     },
                 );
             }
-            for preset in &model.presets {
-                let Some(adapter) = preset.adapter() else {
-                    continue;
-                };
-                let installed = adapter
-                    .path(&self.root)
-                    .metadata()
-                    .is_ok_and(|m| m.len() == adapter.size);
-                let label = if installed {
-                    format!("{} · LoRA installé", preset.name)
-                } else {
-                    format!(
-                        "Installer le LoRA · {} · {:.2} Go",
-                        preset.name,
-                        download::gb(adapter.size)
-                    )
-                };
-                if ui
-                    .add_enabled(!installed, egui::Button::new(label))
-                    .clicked()
-                {
-                    let destination = adapter.path(&self.root);
-                    self.start(
-                        ctx,
-                        "Installation de l’adaptateur",
-                        move |cancel, event| {
-                            download::install_weight(
-                                &download::client(),
-                                &adapter.remote(),
-                                &destination,
-                                cancel,
-                                &mut |label, fraction| event(Update::Progress(label, fraction)),
-                            )?;
-                            Ok(Outcome::Installed)
-                        },
-                    );
-                }
+            if ui.button("Actualiser").clicked() {
+                self.refresh_weights();
+            }
+            if ui.button("Ouvrir le dossier").clicked() {
+                reveal(self.root.join("models"), &mut self.error);
             }
         });
+        ui.label(
+            RichText::new("Poids publics avec reprise des transferts et vérification SHA-256.")
+                .color(MUTED),
+        );
     }
 
     fn settings(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         ui.heading("Réglages");
         ui.add_enabled_ui(self.job.is_none(), |ui| {
             ui.label(RichText::new("Dossier TurboSlop").strong());
-            ui.label("Choisis le dossier principal d’une installation existante pour retrouver tes modèles, LoRA et images.");
+            ui.label("Tu peux choisir un dossier existant pour partager la galerie et les fichiers de modèles compatibles.");
             ui.horizontal_wrapped(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.root_edit).desired_width(480.0));
                 if ui.button("Parcourir").clicked() && let Some(path) = pick_folder() {
                     self.root_edit = path.display().to_string();
                 }
-                if ui.button("Utiliser ce dossier").clicked() {
-                    let path = PathBuf::from(self.root_edit.trim());
-                    match (!path.as_os_str().is_empty()).then(|| std::path::absolute(path)).transpose() {
-                        Ok(Some(path)) if path.is_dir() => {
-                            self.root = path;
-                            self.preferences = read_preferences(&self.root);
-                            self.root_edit = self.root.display().to_string();
-                            self.engine_edit = self.preferences.engine.as_ref().map_or_else(String::new, |p| p.display().to_string());
-                            self.install_backend = self.preferences.backend;
-                            self.remote = None;
-                            self.preview = None;
-                            self.outputs.clear();
-                            self.gallery_selected = None;
-                            self.gallery_preview = None;
-                            self.refresh_local();
-                            self.refresh_gallery();
-                            if let Some(session) = session_path() && let Err(error) = save_json(&session, &self.root) {
-                                self.error = Some(format!("Dossier non mémorisé. {error:#}"));
-                            }
-                        }
-                        _ => self.error = Some("Sélectionne un dossier existant.".into()),
-                    }
-                }
+                if ui.button("Utiliser ce dossier").clicked() { self.change_root(); }
             });
             ui.separator();
-            ui.label(RichText::new("Moteur sd.cpp").strong());
-            if let Some(exe) = self.current_engine() {
-                ui.label(format!("Actif · {}", exe.display()));
-            } else {
-                ui.label(RichText::new("Moteur à installer ou à sélectionner").color(ACCENT));
-            }
+            ui.label(RichText::new("Moteur Rust · Vulkan").strong());
+            let previous = self.preferences.device;
             ui.horizontal_wrapped(|ui| {
-                egui::ComboBox::from_id_salt("backend").selected_text(self.install_backend.label()).show_ui(ui, |ui| {
-                    for backend in Backend::ALL { ui.selectable_value(&mut self.install_backend, backend, backend.label()); }
-                });
-                if ui.button("Installer / mettre à jour").clicked() {
-                    let root = self.root.clone();
-                    let backend = self.install_backend;
-                    self.start(ctx, "Installation du moteur", move |cancel, event| {
-                        let path = engine::install(&root, backend, cancel,
-                            &mut |label, fraction| event(Update::Progress(label, fraction)))?;
-                        Ok(Outcome::Engine(path, backend))
+                egui::ComboBox::from_id_salt("gpu").selected_text(self.preferences.device.label())
+                    .show_ui(ui, |ui| {
+                        for device in Device::CHOICES {
+                            ui.selectable_value(&mut self.preferences.device, device, device.label());
+                        }
                     });
+                if ui.button("Tester le GPU").clicked() {
+                    let device = self.preferences.device;
+                    self.start(ctx, "Test de Vulkan", move |_, _| engine::probe(device).map(Outcome::Device));
                 }
+                if let Some(gpu) = &self.gpu { ui.label(gpu); }
             });
-            ui.horizontal_wrapped(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.engine_edit).desired_width(480.0).hint_text("Chemin vers sd-cli.exe"));
-                if ui.button("Parcourir").clicked() && let Some(path) = pick_engine() {
-                    self.engine_edit = path.display().to_string();
+            if previous != self.preferences.device {
+                self.gpu = None;
+                if let Err(error) = save_json(&prefs_path(&self.root), &self.preferences) {
+                    self.error = Some(format!("Préférences non enregistrées. {error:#}"));
                 }
-                if ui.button("Utiliser ce moteur").clicked() {
-                    let path = PathBuf::from(self.engine_edit.trim());
-                    if path.is_file() {
-                        match std::path::absolute(path) {
-                            Ok(path) => {
-                                self.preferences.engine = Some(path);
-                                self.preferences.backend = self.install_backend;
-                                self.save();
-                            }
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    } else if path.as_os_str().is_empty() {
-                        self.preferences.engine = None;
-                        self.preferences.backend = self.install_backend;
-                        self.save();
-                    } else {
-                        self.error = Some("Fichier moteur introuvable.".into());
-                    }
-                }
-            });
-            ui.separator();
-            ui.label(RichText::new("GPU et mémoire").strong());
-            let old_gpu = self.preferences.gpu;
-            ui.horizontal_wrapped(|ui| {
-                let selected = self.preferences.gpu.map(|n| format!("GPU {n}")).unwrap_or_else(|| "Automatique".into());
-                egui::ComboBox::from_id_salt("gpu").selected_text(selected).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.preferences.gpu, None, "Automatique");
-                    for line in &self.gpus {
-                        if let Some(index) = line.split(',').next().and_then(|s| s.trim().parse().ok()) {
-                            ui.selectable_value(&mut self.preferences.gpu, Some(index), line);
-                        }
-                    }
-                });
-                if ui.button("Détecter les GPU NVIDIA").clicked() {
-                    self.start(ctx, "Détection des GPU", |_, _| Ok(Outcome::Gpus(engine::gpu_list())));
-                }
-            });
-            let mut auto = !self.preferences.disable_auto_fit;
-            let mut flash = !self.preferences.disable_flash;
-            let changed = ui.checkbox(&mut auto, "Placement automatique RAM / VRAM").changed()
-                | ui.checkbox(&mut flash, "Flash Attention").changed();
-            self.preferences.disable_auto_fit = !auto;
-            self.preferences.disable_flash = !flash;
-            if old_gpu != self.preferences.gpu || changed { self.save(); }
-            ui.label(RichText::new("Le choix du GPU NVIDIA s’applique au moteur CUDA.").color(MUTED));
+            }
         });
+    }
+
+    fn change_root(&mut self) {
+        let path = PathBuf::from(self.root_edit.trim());
+        let next = (!path.as_os_str().is_empty())
+            .then(|| std::path::absolute(path))
+            .transpose();
+        let Ok(Some(path)) = next else {
+            self.error = Some("Sélectionne un dossier existant.".into());
+            return;
+        };
+        if !path.is_dir() {
+            self.error = Some("Sélectionne un dossier existant.".into());
+            return;
+        }
+        self.root = path;
+        self.preferences = read_preferences(&self.root);
+        self.root_edit = self.root.display().to_string();
+        self.gpu = None;
+        self.preview = None;
+        self.output = None;
+        self.gallery_selected = None;
+        self.gallery_preview = None;
+        self.refresh_weights();
+        self.refresh_gallery();
+        if let Some(session) = session_path()
+            && let Err(error) = save_json(&session, &self.root)
+        {
+            self.error = Some(format!("Dossier non mémorisé. {error:#}"));
+        }
     }
 
     fn gallery(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
@@ -1203,7 +663,7 @@ impl Studio {
                         {
                             match gallery_prompt(path) {
                                 Some(prompt) => {
-                                    self.form.prompt = prompt;
+                                    self.prompt = prompt;
                                     self.page = Page::Images;
                                 }
                                 None => {
@@ -1235,14 +695,12 @@ impl eframe::App for Studio {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        if self.job.is_some() {
+        if let Some(job) = &self.job {
             ctx.request_repaint_after(Duration::from_millis(100));
             if ctx.input(|i| i.viewport().close_requested()) {
                 self.closing = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                if let Some(job) = &self.job {
-                    job.cancel.store(true, Ordering::Relaxed);
-                }
+                job.cancel.store(true, Ordering::Relaxed);
             }
         }
         self.header(ctx);
@@ -1275,14 +733,6 @@ fn put_texture(
     }
 }
 
-fn frame(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    Frame::new()
-        .fill(PANEL)
-        .inner_margin(Margin::same(12))
-        .corner_radius(8)
-        .show(ui, add);
-}
-
 fn placeholder(ui: &mut egui::Ui, size: Vec2, label: &str) {
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     ui.painter().rect_filled(rect, 8, PANEL);
@@ -1311,7 +761,7 @@ fn session_path() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA")
         .or_else(|| env::var_os("XDG_STATE_HOME"))
         .map(PathBuf::from)
-        .map(|root| root.join("TurboSlop-Rust").join("workspace.json"))
+        .map(|root| root.join("TurboSlop-Rust-Native").join("workspace.json"))
 }
 
 fn default_root() -> PathBuf {
@@ -1334,7 +784,7 @@ fn default_root() -> PathBuf {
 }
 
 fn prefs_path(root: &Path) -> PathBuf {
-    root.join("userdata-rust").join("preferences.json")
+    root.join("userdata-rust-native").join("preferences.json")
 }
 
 fn read_preferences(root: &Path) -> Preferences {
@@ -1373,64 +823,11 @@ fn gallery_prompt(path: &Path) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-fn local_loras(root: &Path) -> Vec<String> {
-    fn collect(root: &Path, folder: &Path, depth: u8, names: &mut Vec<String>) {
-        for entry in fs::read_dir(folder).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if depth < 2 && entry.file_type().is_ok_and(|t| t.is_dir()) {
-                collect(root, &path, depth + 1, names);
-            } else if path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|e| matches!(e, "safetensors" | "gguf"))
-                && let Ok(relative) = path.strip_prefix(root)
-            {
-                let name = relative
-                    .with_extension("")
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                if catalog::safe_name(&name) {
-                    names.push(name);
-                }
-            }
-        }
-    }
-    let dir = root.join("loras");
-    let mut names = Vec::new();
-    collect(&dir, &dir, 0, &mut names);
-    names.sort();
-    names.dedup();
-    names
-}
-
-#[cfg(windows)]
-fn pick_images() -> Vec<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
-        .pick_files()
-        .unwrap_or_default()
-}
-#[cfg(not(windows))]
-fn pick_images() -> Vec<PathBuf> {
-    Vec::new()
-}
-
 #[cfg(windows)]
 fn pick_folder() -> Option<PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }
 #[cfg(not(windows))]
 fn pick_folder() -> Option<PathBuf> {
-    None
-}
-
-#[cfg(windows)]
-fn pick_engine() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("Exécutable Windows", &["exe"])
-        .pick_file()
-}
-#[cfg(not(windows))]
-fn pick_engine() -> Option<PathBuf> {
     None
 }

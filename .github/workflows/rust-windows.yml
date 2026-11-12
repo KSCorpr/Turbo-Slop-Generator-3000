@@ -1,9 +1,9 @@
-name: Rust Windows x64
+name: TurboSlop natif Windows x64
 
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/rust-windows']
+    branches: ['codex/rust-native']
     paths: ['rust/**', 'config/models.yaml', '.github/workflows/rust-windows.yml']
   pull_request:
     paths: ['rust/**', 'config/models.yaml', '.github/workflows/rust-windows.yml']
@@ -14,6 +14,9 @@ permissions:
 jobs:
   windows-x64:
     runs-on: windows-2022
+    env:
+      CARGO_BUILD_JOBS: 2
+      RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v4
       - name: Prepare Rust stable
@@ -21,10 +24,8 @@ jobs:
           rustup update stable --no-self-update
           rustup default stable-x86_64-pc-windows-msvc
       - name: Test native studio
-        run: cargo test --locked --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc
+        run: cargo test --release --locked --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc
       - name: Build Windows executable
-        env:
-          RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --locked --release --manifest-path rust/Cargo.toml --target x86_64-pc-windows-msvc
       - name: Smoke test and package
         shell: pwsh
@@ -36,7 +37,7 @@ jobs:
           $process = Start-Process "$package/TurboSlop.exe" -ArgumentList "--self-check", "`"$report`"" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "TurboSlop returned $($process.ExitCode)" }
           $check = Get-Content $report -Raw | ConvertFrom-Json
-          if ($check.platform -ne "windows" -or $check.arch -ne "x86_64" -or $check.models.Count -ne 9) { throw "Invalid self-check" }
+          if ($check.platform -ne "windows" -or $check.arch -ne "x86_64" -or $check.engine -ne "burn-vulkan" -or $check.models.Count -ne 1 -or $check.models[0] -ne "flux2-klein-4b") { throw "Invalid self-check" }
           Compress-Archive -Path "$package/*" -DestinationPath rust/TurboSlop-Rust-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
         with:

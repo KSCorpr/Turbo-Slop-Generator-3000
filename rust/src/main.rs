@@ -29,15 +29,35 @@ fn run() -> Result<()> {
     let first = args.next();
     if first.as_deref().is_some_and(|arg| arg == "--self-check") {
         let path = PathBuf::from(args.next().context("Indique le chemin du rapport")?);
-        let catalog = catalog::Catalog::load()?;
-        let models: Vec<_> = catalog.base_models.iter().map(|model| &model.id).collect();
         fs::write(
             path,
             serde_json::to_vec_pretty(&serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"), "arch": env::consts::ARCH,
-                "platform": env::consts::OS, "models": models,
+                "platform": env::consts::OS, "engine": "burn-vulkan", "models": [catalog::MODEL_ID],
             }))?,
         )?;
+        return Ok(());
+    }
+    if first.as_deref().is_some_and(|arg| arg == "--render-smoke") {
+        let root = std::path::absolute(PathBuf::from(
+            args.next().context("Indique le dossier des poids")?,
+        ))?;
+        let report = PathBuf::from(args.next().context("Indique le chemin du rapport")?);
+        let req = engine::Request {
+            root,
+            prompt: "A red fox sitting in a snowy forest, natural light, photograph".into(),
+            width: 256,
+            height: 256,
+            seed: 42,
+            device: engine::Device::Auto,
+        };
+        let outputs =
+            engine::generate(req, &std::sync::atomic::AtomicBool::new(false), |update| {
+                if let engine::Update::Progress(message, _) = update {
+                    eprintln!("{message}");
+                }
+            })?;
+        fs::write(report, serde_json::to_vec_pretty(&outputs)?)?;
         return Ok(());
     }
     let root = match first.as_deref() {
@@ -50,7 +70,7 @@ fn run() -> Result<()> {
     let app = studio::Studio::load(root)?;
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("TurboSlop · Rust")
+            .with_title("TurboSlop · Rust natif")
             .with_inner_size([1320.0, 880.0])
             .with_min_inner_size([880.0, 640.0]),
         vsync: true,

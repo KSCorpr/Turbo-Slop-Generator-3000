@@ -19,6 +19,7 @@ runtime/
 # Données utilisateur & sorties
 userdata/
 userdata-rust/
+userdata-rust-native/
 outputs/
 tmp/
 hf_cache/
