@@ -77,6 +77,12 @@ def _parse_catalog(path: Path, mtime_ns: int, size: int) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
+def _raw_catalog() -> dict[str, Any]:
+    path = settings.CONFIG_DIR / "models.yaml"
+    st = path.stat()
+    return _parse_catalog(path, st.st_mtime_ns, st.st_size)
+
+
 def _catalog() -> dict[str, Any]:
     """Le catalogue, sans le relire du disque à chaque appel.
 
@@ -88,9 +94,7 @@ def _catalog() -> dict[str, Any]:
     `defaults` et les `presets` qu'ils reçoivent, et sans elle ces écritures
     empoisonneraient l'entrée mise en cache pour tout le monde.
     """
-    path = settings.CONFIG_DIR / "models.yaml"
-    st = path.stat()
-    return deepcopy(_parse_catalog(path, st.st_mtime_ns, st.st_size))
+    return deepcopy(_raw_catalog())
 
 
 def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
@@ -105,6 +109,70 @@ def effective_quants(prefs: dict[str, Any]) -> tuple[str, str]:
     return q_diff, q_enc
 
 
+def _build_base_model(m: dict[str, Any], prefs: dict[str, Any],
+                      q_diff: str, q_enc: str) -> BaseModel:
+    comps: list[Component] = []
+    saved_files = prefs.get("model_files") or {}
+    overrides = (saved_files.get(m["id"], {})
+                 if isinstance(saved_files, dict) else {})
+    if not isinstance(overrides, dict):
+        overrides = {}
+    for role, spec in (m.get("sources") or {}).items():
+        template = source_template = spec["match"]
+        repo = spec["repo"]
+        alternatives = tuple(
+            ComponentVariant(s["repo"], s["match"], s.get("label", s["match"]))
+            for s in [spec, *spec["alternatives"]]
+        ) if spec.get("alternatives") else ()
+        if "{enc_quant}" in template:
+            q = q_enc
+            # Some large encoders have a model-specific default. Explicit
+            # manual/global or per-model weight choices still take priority.
+            if prefs.get("system_mode") == "auto" or not prefs.get("enc_quant"):
+                q = spec.get("auto_quant") or q
+        elif "{quant}" in template:
+            # `quant_bias` : ce modèle est-il plus petit (ou plus gros) que
+            # ce que l'échelle VRAM suppose ? Voir quant.shift().
+            q = quant.shift(q_diff, int(spec.get("quant_bias") or 0))
+        else:
+            q = None
+        if q is not None:
+            q = spec.get("quant_map", {}).get(q, q)
+        # Une sélection précise prime sur le profil matériel. On vérifie
+        # qu'elle reste dans le motif du composant ou une variante approuvée :
+        # le fichier peut aussi avoir disparu d'un catalogue distant.
+        selected = overrides.get(role)
+        selectable = tuple(spec.get("selectable") or ())
+        variant = next((v for v in alternatives if v.template == selected), None)
+        valid_gguf = (q is not None
+                      and isinstance(selected, str)
+                      and selected.lower().endswith(".gguf")
+                      and fnmatch.fnmatch(
+                          selected, template.replace("{quant}", "*")
+                                            .replace("{enc_quant}", "*")))
+        if (isinstance(selected, str)
+                and not selected.startswith("/") and "\\" not in selected
+                and ".." not in selected.split("/")
+                and (valid_gguf or selected in selectable or variant)):
+            template, q = selected, None
+            if variant:
+                repo, source_template = variant.repo, variant.template
+        comps.append(Component(role, repo, template, q,
+                               optional=bool(spec.get("optional")),
+                               source_template=source_template,
+                               selectable=selectable,
+                               alternatives=alternatives,
+                               catalog_repo=spec["repo"],
+                               catalog_template=spec["match"]))
+    return BaseModel(
+        id=m["id"], name=m["name"], family=m["family"],
+        tags=list(m.get("tags", [])), description=(m.get("description") or "").strip(),
+        components=comps, defaults=deepcopy(m.get("defaults", {})),
+        vram_min_gb=float(m.get("vram_min_gb", 0)),
+        presets=deepcopy(m.get("presets", [])),
+    )
+
+
 def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
     """Tous les modèles du catalogue.
 
@@ -116,73 +184,17 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
     relit et que le premier ajout contredira.
     """
     q_diff, q_enc = effective_quants(prefs)
-    out: list[BaseModel] = []
-    for m in _catalog().get("base_models", []):
-        comps: list[Component] = []
-        saved_files = prefs.get("model_files") or {}
-        overrides = (saved_files.get(m["id"], {})
-                     if isinstance(saved_files, dict) else {})
-        if not isinstance(overrides, dict):
-            overrides = {}
-        for role, spec in (m.get("sources") or {}).items():
-            template = source_template = spec["match"]
-            repo = spec["repo"]
-            alternatives = tuple(
-                ComponentVariant(s["repo"], s["match"], s.get("label", s["match"]))
-                for s in [spec, *spec["alternatives"]]
-            ) if spec.get("alternatives") else ()
-            if "{enc_quant}" in template:
-                q = q_enc
-                # Some large encoders have a model-specific default. Explicit
-                # manual/global or per-model weight choices still take priority.
-                if prefs.get("system_mode") == "auto" or not prefs.get("enc_quant"):
-                    q = spec.get("auto_quant") or q
-            elif "{quant}" in template:
-                # `quant_bias` : ce modèle est-il plus petit (ou plus gros) que
-                # ce que l'échelle VRAM suppose ? Voir quant.shift().
-                q = quant.shift(q_diff, int(spec.get("quant_bias") or 0))
-            else:
-                q = None
-            if q is not None:
-                q = spec.get("quant_map", {}).get(q, q)
-            # Une sélection précise prime sur le profil matériel. On vérifie
-            # qu'elle reste dans le motif du composant ou une variante approuvée :
-            # le fichier peut aussi avoir disparu d'un catalogue distant.
-            selected = overrides.get(role)
-            selectable = tuple(spec.get("selectable") or ())
-            variant = next((v for v in alternatives if v.template == selected), None)
-            valid_gguf = (q is not None
-                          and isinstance(selected, str)
-                          and selected.lower().endswith(".gguf")
-                          and fnmatch.fnmatch(
-                              selected, template.replace("{quant}", "*")
-                                                .replace("{enc_quant}", "*")))
-            if (isinstance(selected, str)
-                    and not selected.startswith("/") and "\\" not in selected
-                    and ".." not in selected.split("/")
-                    and (valid_gguf or selected in selectable or variant)):
-                template, q = selected, None
-                if variant:
-                    repo, source_template = variant.repo, variant.template
-            comps.append(Component(role, repo, template, q,
-                                   optional=bool(spec.get("optional")),
-                                   source_template=source_template,
-                                   selectable=selectable,
-                                   alternatives=alternatives,
-                                   catalog_repo=spec["repo"],
-                                   catalog_template=spec["match"]))
-        out.append(BaseModel(
-            id=m["id"], name=m["name"], family=m["family"],
-            tags=m.get("tags", []), description=(m.get("description") or "").strip(),
-            components=comps, defaults=m.get("defaults", {}),
-            vram_min_gb=float(m.get("vram_min_gb", 0)),
-            presets=m.get("presets", []),
-        ))
-    return out
+    return [_build_base_model(m, prefs, q_diff, q_enc)
+            for m in _raw_catalog().get("base_models", [])]
 
 
 def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
-    return next((m for m in load_base_models(prefs) if m.id == model_id), None)
+    raw = next((m for m in _raw_catalog().get("base_models", [])
+                if m.get("id") == model_id), None)
+    if raw is None:
+        return None
+    q_diff, q_enc = effective_quants(prefs)
+    return _build_base_model(raw, prefs, q_diff, q_enc)
 
 
 def model_repos(model: BaseModel) -> set[str]:
@@ -192,7 +204,7 @@ def model_repos(model: BaseModel) -> set[str]:
 
 
 def upscaler_config() -> dict[str, Any]:
-    return _catalog().get("upscalers", {}) or {}
+    return deepcopy(_raw_catalog().get("upscalers", {}) or {})
 
 
 def upscalers_dir() -> Path:
@@ -314,8 +326,8 @@ def upscaler_path(name: str) -> Path | None:
 
 def modern_upscaler_files() -> list[dict]:
     """Entrées du catalogue « modern_upscalers » (repo, file, arch, note)."""
-    cfg = _catalog().get("modern_upscalers") or {}
-    return list(cfg.get("files") or [])
+    cfg = _raw_catalog().get("modern_upscalers") or {}
+    return deepcopy(list(cfg.get("files") or []))
 
 
 def modern_upscalers_ready() -> bool:
@@ -340,6 +352,21 @@ def _match(files: list[Path], repo_dir: Path, pattern: str) -> list[Path]:
     return out
 
 
+def _visible_files(repo_dir: Path) -> list[Path]:
+    import os
+    out: list[Path] = []
+    for folder, dirs, files in os.walk(repo_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        folder_path = Path(folder)
+        for name in files:
+            if name.startswith("."):
+                continue
+            p = folder_path / name
+            if p.is_file():
+                out.append(p)
+    return out
+
+
 def resolve_component_path(comp: Component) -> Path | None:
     """Cherche sur le disque le fichier correspondant au composant. None si absent."""
     repo_dir = settings.model_repo_dir(comp.repo)
@@ -351,7 +378,7 @@ def resolve_component_path(comp: Component) -> Path | None:
     if "*" not in requested and exact.is_file():
         return exact
 
-    files = [p for p in repo_dir.rglob("*") if p.is_file()]
+    files = _visible_files(repo_dir)
 
     # 1) correspondance directe sur le motif demandé
     direct = _match(files, repo_dir, requested)

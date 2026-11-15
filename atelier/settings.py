@@ -156,25 +156,25 @@ def ensure_dirs() -> None:
 
 
 @lru_cache(maxsize=4)
-def _read_preferences(path: Path, mtime_ns: int, size: int) -> dict:
+def _read_preferences(path: Path, mtime_ns: int, size: int) -> dict[str, Any]:
+    merged = deepcopy(DEFAULT_PREFS)
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
-        return saved if isinstance(saved, dict) else {}
+        if isinstance(saved, dict):
+            merged.update({k: v for k, v in saved.items() if k != "flags"})
+            if isinstance(saved.get("flags"), dict):
+                merged["flags"].update(saved["flags"])
     except (ValueError, OSError, UnicodeError):
-        return {}
+        pass
+    return merged
 
 
 def load_prefs() -> dict[str, Any]:
-    prefs = deepcopy(DEFAULT_PREFS)
     try:
         st = PREFS_FILE.stat()
-        saved = deepcopy(_read_preferences(PREFS_FILE, st.st_mtime_ns, st.st_size))
-        prefs.update({k: v for k, v in saved.items() if k != "flags"})
-        if isinstance(saved.get("flags"), dict):
-            prefs["flags"].update(saved["flags"])
+        return deepcopy(_read_preferences(PREFS_FILE, st.st_mtime_ns, st.st_size))
     except OSError:
-        pass
-    return prefs
+        return deepcopy(DEFAULT_PREFS)
 
 
 def save_prefs(prefs: dict[str, Any]) -> None:

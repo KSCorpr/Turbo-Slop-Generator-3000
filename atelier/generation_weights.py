@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 from copy import deepcopy
 from pathlib import Path
 
@@ -26,6 +27,8 @@ def _sources(comp):
     pattern = comp.catalog_template or comp.base_glob()
     pattern = pattern.replace("{quant}", "*").replace("{enc_quant}", "*")
     sources = [(repo, name, "") for name in comp.selectable] if comp.selectable else [(repo, pattern, "")]
+    if comp.selectable and "*" in pattern:
+        sources.append((repo, pattern, ""))
     sources.extend((v.repo, v.template, v.label) for v in comp.alternatives)
     return sources
 
@@ -45,6 +48,22 @@ def _local_files():
                   and p.suffix.lower() in {".gguf", ".safetensors", ".sft", ".pth", ".ckpt"})
 
 
+def _repo_files(root: Path) -> list[tuple[str, Path]]:
+    if not root.is_dir():
+        return []
+    out: list[tuple[str, Path]] = []
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        folder_path = Path(folder)
+        for name in files:
+            if name.startswith("."):
+                continue
+            p = folder_path / name
+            if p.is_file():
+                out.append((p.relative_to(root).as_posix(), p))
+    return out
+
+
 def installed(model):
     """Approved (filename, path, label) choices, scanning each local repo once."""
     repos, result = {}, {}
@@ -55,9 +74,7 @@ def installed(model):
         choices = {}
         for repo, pattern, label in _sources(comp):
             if repo not in repos:
-                root = settings.model_repo_dir(repo)
-                repos[repo] = [(p.relative_to(root).as_posix(), p)
-                               for p in root.rglob("*") if p.is_file()]
+                repos[repo] = _repo_files(settings.model_repo_dir(repo))
             for filename, path in repos[repo]:
                 if _approved(filename, pattern, role):
                     choices.setdefault(filename, (filename, path, label))

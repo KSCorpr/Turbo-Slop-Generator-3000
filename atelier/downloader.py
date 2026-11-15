@@ -105,7 +105,8 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
                     repo_id=repo, files_metadata=True).siblings or []
             for sibling in repos[repo]:
                 name = sibling.rfilename
-                if (name not in comp.selectable if selectable else not _fn(name, pattern)):
+                if (name not in comp.selectable and not ("*" in pattern and _fn(name, pattern))
+                        if selectable else not _fn(name, pattern)):
                     continue
                 if comp.role == "text_encoder" and "mmproj" in name.lower():
                     continue
@@ -128,7 +129,7 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
             options = [(label + " · suggested for GPU memory" if name == suggested else label, name)
                        for label, name in options]
         options.sort(key=lambda row: (
-            quant._idx(quant.find_quant(row[1])) or -1, row[1]))
+            _i if (_i := quant._idx(quant.find_quant(row[1]))) is not None else -1, row[1]))
         result[comp.role] = options
     return result
 

@@ -27,7 +27,8 @@ class Item:
 
     @property
     def size(self) -> int:
-        return sum(path_size(p) for p in self.paths)
+        seen: set = set()
+        return sum(path_size(p, seen=seen) for p in self.paths)
 
     @property
     def installed(self) -> bool:
@@ -294,8 +295,9 @@ def delete(keys: list[str], prefs: dict | None = None) -> tuple[list[str], int]:
     msgs: list[str] = []
     freed = 0
     root = settings.ROOT.resolve()
+    table = {i.key: i for i in items(prefs)} if keys else {}
     for key in keys or []:
-        item = by_key(key, prefs)
+        item = table.get(key)
         if item is None:
             msgs.append(f"• {key}: unknown, ignored.")
             continue

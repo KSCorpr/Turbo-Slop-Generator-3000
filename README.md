@@ -41,13 +41,17 @@ Run `update.bat`, download the chosen variant in **Models**, then use its
 commercial use requires a BRIA agreement. [Setup and limits](docs/fibo2.md).
 
 **MiniMax H3 Image:** use `update.bat` for sd.cpp build 1088 or newer, then
-download the weights from **Models → MiniMax H3 Image**. The default INT8
-ConvRot and Q2_K_M encoder package takes about 35.25 GB. A previously
-installed MiniMax H3 video encoder can be reused. **Images → MiniMax H3 Image**
-generates with Euler, six PDD steps and CFG 1. For editing, add up to 16
-references and cite them in order as `<Picture 1>`, `<Picture 2>`, etc.
-On 12 GB cards, start at 1024 × 1024 with automatic memory placement.
-[Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/minimax_h3_image.md).
+download the weights from **Models → MiniMax H3 Image**. By default, the hardware
+profile selects a GGUF diffusion quantization from [`Abiray/MiniMax-H3-Image-GGUF`](https://huggingface.co/Abiray/MiniMax-H3-Image-GGUF)
+(`Q2_K` 6.88 GB to `Q5_K_M` 14.10 GB, with sensitive patch/AdaLN/PDD output layers
+preserved in FP32) alongside the `Q2_K_M` Qwen3-VL-32B encoder (13.10 GB) and
+dedicated image VAE (1.17 GB); the `Comfy-Org/MiniMax-H3-Image` INT8 ConvRot
+(20.98 GB) and BF16 (40.23 GB) Safetensors checkpoints and `Q4_K_M` encoder
+remain selectable. A previously installed MiniMax H3 video encoder can be reused.
+**Images → MiniMax H3 Image** generates with Euler, six PDD steps and CFG 1. For
+editing, add up to 16 references and cite them in order as `<Picture 1>`,
+`<Picture 2>`, etc. On 12 GB cards, start at 1024 × 1024 with automatic memory
+placement. [Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/minimax_h3_image.md).
 
 **Kromoss:** the MOSS fine-tune is available in **Models** and **Images → Kromoss**.
 INT8 ConvRot is the default, with BF16 selectable. It shares MOSS's encoder

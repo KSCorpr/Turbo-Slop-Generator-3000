@@ -32,8 +32,17 @@ def _choices_and_summary():
         rows.append("| | Item | Size |")
         rows.append("|---|---|---|")
         for i in cat_items:
-            size = i.size
-            total += sum(inventory.path_size(p,seen=seen) for p in i.paths)
+            item_seen: set = set()
+            size = 0
+            for p in i.paths:
+                size += inventory.path_size(p, seen=item_seen)
+            new_inodes = item_seen - seen
+            if new_inodes:
+                if len(new_inodes) == len(item_seen):
+                    total += size
+                    seen.update(item_seen)
+                else:
+                    total += sum(inventory.path_size(p, seen=seen) for p in i.paths)
             mark = "✅" if i.installed else "—"
             warn = " ⚠️" if (i.protected and i.installed) else ""
             rows.append(f"| {mark} | {i.label}{warn} | "

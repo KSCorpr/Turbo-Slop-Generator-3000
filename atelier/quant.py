@@ -7,13 +7,14 @@ from __future__ import annotations
 
 # Échelle ordonnée approximative qualité/taille (du plus léger au plus lourd).
 ORDER = [
-    "Q2_K", "Q3_K_S", "Q3_K_M", "Q3_K", "Q3_K_L",
+    "Q2_K_S", "Q2_K_M", "Q2_K", "Q3_K_S", "Q3_K_M", "Q3_K", "Q3_K_L",
     "Q4_K_S", "Q4_0", "Q4_1", "Q4_K_M", "Q4_K",
     "Q5_K_S", "Q5_0", "Q5_1", "Q5_K_M", "Q5_K",
     "Q6_K", "Q8_0", "Q8_1", "F16", "BF16", "F32",
 ]
-# Recherche du plus long token d'abord (Q4_K_M avant Q4_K).
+# Recherche du plus long token d'abord (Q4_K_M avant Q4_K, Q2_K_M avant Q2_K).
 _BY_LEN = sorted(ORDER, key=len, reverse=True)
+_INDEX = {q: i for i, q in enumerate(ORDER)}
 
 
 def shift(q: str | None, rungs: int) -> str | None:
@@ -46,10 +47,7 @@ def find_quant(name: str) -> str | None:
 def _idx(q: str | None) -> int | None:
     if q is None:
         return None
-    try:
-        return ORDER.index(q)
-    except ValueError:
-        return None
+    return _INDEX.get(q)
 
 
 def best(names: list[str], requested: str) -> str | None:

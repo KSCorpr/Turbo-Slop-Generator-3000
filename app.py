@@ -45,6 +45,13 @@ sys.path.insert(0, _ROOT)
 # --------------------------------------------------------------------------- #
 os.environ["GRADIO_TEMP_DIR"] = os.path.join(_ROOT, "tmp", "gradio")
 os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
+for _proxy_key in ("NO_PROXY", "no_proxy"):
+    _proxy_val = os.environ.get(_proxy_key)
+    if _proxy_val and "[" in _proxy_val:
+        os.environ[_proxy_key] = ",".join(
+            _p.strip()[1:-1] if _p.strip().startswith("[") and _p.strip().endswith("]") and ":" in _p else _p.strip()
+            for _p in _proxy_val.split(",")
+        )
 
 # Avertissements de dépréciation de Gradio : masqués pour ne pas inquiéter au
 # démarrage. Ils annonçaient les retraits de la 6.0, désormais tous traités.

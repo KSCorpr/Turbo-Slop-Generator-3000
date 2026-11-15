@@ -37,10 +37,36 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.assertIsNotNone(model_catalog.get("image:" + MODEL))
         self.assertTrue(registry.model_is_ready(self.model))
         self.assertEqual(set(self.files), {"diffusion", "text_encoder", "vae"})
-        self.assertEqual(self.files["diffusion"].name, "minimax_h3_image_pruned_int8_convrot.safetensors")
+        self.assertEqual(self.files["diffusion"].parent.name, "Abiray__MiniMax-H3-Image-GGUF")
+        self.assertRegex(self.files["diffusion"].name, r"^MiniMax-H3-Image-Pruned-Q[2345]_K(?:_[SM])?\.gguf$")
         self.assertEqual(self.files["vae"].name, "minimax_h3_image_vae_fp16.safetensors")
         self.assertEqual(self.files["text_encoder"].relative_to(settings.MODELS_DIR).as_posix(),
                          "leejet__MiniMax-H3-GGUF/qwen3vl_32b_minimax_h3-Q2_K_M.gguf")
+
+        # Hardware profile quantizations map cleanly onto Abiray/MiniMax-H3-Image-GGUF files.
+        expected_map = {
+            "Q4_K_S": "MiniMax-H3-Image-Pruned-Q2_K.gguf",
+            "Q4_K_M": "MiniMax-H3-Image-Pruned-Q3_K_M.gguf",
+            "Q5_K_M": "MiniMax-H3-Image-Pruned-Q4_K_S.gguf",
+            "Q6_K": "MiniMax-H3-Image-Pruned-Q4_K_M.gguf",
+            "Q8_0": "MiniMax-H3-Image-Pruned-Q5_K_M.gguf",
+        }
+        for raw_quant, expected_file in expected_map.items():
+            with patch.object(registry, "effective_quants", return_value=(raw_quant, "Q8_0")):
+                comp = next(c for c in registry.get_base_model(MODEL, {}).components if c.role == "diffusion")
+            self.assertEqual(comp.repo, "Abiray/MiniMax-H3-Image-GGUF")
+            self.assertEqual(comp.requested(), expected_file)
+
+        # Explicit GGUF quantizations and Comfy-Org Safetensors alternatives resolve to their repositories.
+        for selected, expected_repo in (
+            ("MiniMax-H3-Image-Pruned-Q2_K.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
+            ("MiniMax-H3-Image-Pruned-Q5_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
+            ("diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors", "Comfy-Org/MiniMax-H3-Image"),
+            ("diffusion_models/minimax_h3_image_pruned_bf16.safetensors", "Comfy-Org/MiniMax-H3-Image"),
+        ):
+            prefs = {"model_files": {MODEL: {"diffusion": selected}}}
+            comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "diffusion")
+            self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
 
         # A retained Q4 video encoder is compatible with the automatic Q2 target.
         installed_encoder = self.files["text_encoder"]
