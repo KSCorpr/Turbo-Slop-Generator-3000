@@ -172,6 +172,9 @@ def download_component(comp: Component,
         # évite des copies de plusieurs Go quand le profil matériel change.
         # Un choix explicite dans le catalogue n'a plus de token et reste exact.
         if exact or (comp.role == "text_encoder" and comp.token):
+            if comp.role == "diffusion":
+                from .engine.sdcpp import ensure_gguf_orig_shapes
+                ensure_gguf_orig_shapes(installed)
             if log:
                 note = " · shared existing weight" if not exact else ""
                 log(f"  ✓ already there: {comp.role} ({installed.name}){note}")
@@ -209,14 +212,20 @@ def download_component(comp: Component,
 
     dest = local_dir / chosen
     if dest.is_file() and dest.stat().st_size > 0:
+        if comp.role == "diffusion":
+            from .engine.sdcpp import ensure_gguf_orig_shapes
+            ensure_gguf_orig_shapes(dest)
         if log:
             log(f"  ✓ already there: {comp.role} ({chosen})")
         return dest
     if log:
         log(f"  ↓ {comp.role} : {comp.repo}/{chosen}")
-    path = hf_hub_download(repo_id=comp.repo, filename=chosen,
-                           local_dir=str(local_dir))
-    return Path(path)
+    path = Path(hf_hub_download(repo_id=comp.repo, filename=chosen,
+                                local_dir=str(local_dir)))
+    if comp.role == "diffusion":
+        from .engine.sdcpp import ensure_gguf_orig_shapes
+        ensure_gguf_orig_shapes(path)
+    return path
 
 
 def download_model(model: BaseModel,

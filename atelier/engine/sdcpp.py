@@ -1,15 +1,17 @@
 """Exécuteur stable-diffusion.cpp : construction et lancement des commandes sd-cli."""
 from __future__ import annotations
 
+import math
 import os
 import re
+import struct
 import subprocess
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import BinaryIO, Callable, Mapping
 
 from .. import settings
 from ..processes import close_worker
@@ -443,6 +445,220 @@ def stream_layers_possible(sd_cli: "Path | None", flags: dict,
     return diffusion_on_cpu and "--stream-layers" in supported_options(sd_cli)
 
 
+_GGUF_SCALAR_SIZES = {
+    0: 1,   # UINT8
+    1: 1,   # INT8
+    2: 2,   # UINT16
+    3: 2,   # INT16
+    4: 4,   # UINT32
+    5: 4,   # INT32
+    6: 4,   # FLOAT32
+    7: 1,   # BOOL
+    10: 8,  # UINT64
+    11: 8,  # INT64
+    12: 8,  # FLOAT64
+}
+_GGUF_INT_FORMATS = {
+    2: "H",
+    3: "h",
+    4: "I",
+    5: "i",
+    10: "Q",
+    11: "q",
+}
+_GGML_UNQUANTIZED_TYPES = {0, 1, 30}  # F32, F16, BF16
+_ORIG_SHAPE_PREFIX = "comfy.gguf.orig_shape."
+_ORIG_SHAPE_PAD_KEY = b"sdcpp.pad"
+
+
+def _read_exact(stream: BinaryIO, n: int) -> bytes:
+    buf = stream.read(n)
+    if len(buf) != n:
+        raise struct.error("Unexpected EOF in GGUF header")
+    return buf
+
+
+def _skip_gguf_value(stream: BinaryIO, vtype: int) -> bool:
+    if vtype in _GGUF_SCALAR_SIZES:
+        stream.seek(_GGUF_SCALAR_SIZES[vtype], os.SEEK_CUR)
+        return True
+    if vtype == 8:  # STRING
+        slen, = struct.unpack("<Q", _read_exact(stream, 8))
+        stream.seek(slen, os.SEEK_CUR)
+        return True
+    if vtype == 9:  # ARRAY
+        elem_type, count = struct.unpack("<IQ", _read_exact(stream, 12))
+        if elem_type in _GGUF_SCALAR_SIZES:
+            stream.seek(count * _GGUF_SCALAR_SIZES[elem_type], os.SEEK_CUR)
+            return True
+        if elem_type == 8:
+            for _ in range(count):
+                slen, = struct.unpack("<Q", _read_exact(stream, 8))
+                stream.seek(slen, os.SEEK_CUR)
+            return True
+    return False
+
+
+def ensure_gguf_orig_shapes(path: Path | None) -> int:
+    """Restaure en place les dimensions 2D+ des tenseurs F32/F16/BF16 aplatis par ComfyUI-GGUF.
+
+    Certains dépôts GGUF (comme `Abiray/MiniMax-H3-Image-GGUF`) aplatissent les
+    couches conservées en F32 (`video_patch_proj.weight`, `final_layer.video_out.weight`,
+    `condition_proj.weight`, `adaln_t_table`, `blocks.*.adaln_proj.linear.weight`)
+    en 1D dans la table des tenseurs pour contourner `llama-quantize`, et rangent
+    la vraie forme PyTorch dans `comfy.gguf.orig_shape.<nom>`. `stable-diffusion.cpp`
+    lit uniquement la table des tenseurs GGUF et échoue alors sur
+    `invalid MiniMax-H3 output head shape`.
+
+    Comme les octets bruts d'un tenseur non quantifié F32/F16/BF16 sont identiques
+    en 1D `[N*M]` et en 2D GGML `ne = [M, N]`, on réécrit uniquement l'en-tête
+    GGUF (~28 Ko) en compensant la taille exacte des métadonnées retirées par une
+    clé de bourrage : `data_offset`, la taille du fichier et son `mtime` restent
+    strictement inchangés.
+    """
+    if not path:
+        return 0
+    p = Path(path)
+    if p.suffix.lower() != ".gguf" or not p.is_file():
+        return 0
+    try:
+        st = p.stat()
+        if st.st_size < 32:
+            return 0
+        with p.open("rb") as f:
+            magic, version, tensor_count, kv_count = struct.unpack(
+                "<4sIQQ", _read_exact(f, 24))
+            if (magic != b"GGUF" or version not in (2, 3)
+                    or tensor_count == 0 or kv_count == 0
+                    or tensor_count > 100_000 or kv_count > 100_000):
+                return 0
+
+            alignment = 32
+            kv_spans: list[tuple[str, int, int]] = []
+            orig_shapes: dict[str, tuple[int, ...]] = {}
+
+            for _ in range(kv_count):
+                kv_start = f.tell()
+                key_len, = struct.unpack("<Q", _read_exact(f, 8))
+                if key_len > 4096:
+                    return 0
+                key = _read_exact(f, key_len).decode("utf-8", errors="replace")
+                vtype, = struct.unpack("<I", _read_exact(f, 4))
+
+                if key == "general.alignment" and vtype == 4:
+                    align_val, = struct.unpack("<I", _read_exact(f, 4))
+                    if align_val > 0 and (align_val & (align_val - 1)) == 0:
+                        alignment = align_val
+                elif key.startswith(_ORIG_SHAPE_PREFIX) and vtype == 9:
+                    elem_type, elem_count = struct.unpack("<IQ", _read_exact(f, 12))
+                    if elem_type in _GGUF_INT_FORMATS and 2 <= elem_count <= 4:
+                        fmt = f"<{elem_count}{_GGUF_INT_FORMATS[elem_type]}"
+                        dims = struct.unpack(fmt, _read_exact(f, struct.calcsize(fmt)))
+                        if all(d > 0 for d in dims):
+                            orig_shapes[key[len(_ORIG_SHAPE_PREFIX):]] = dims
+                    elif elem_type in _GGUF_SCALAR_SIZES:
+                        f.seek(elem_count * _GGUF_SCALAR_SIZES[elem_type], os.SEEK_CUR)
+                    else:
+                        return 0
+                else:
+                    if not _skip_gguf_value(f, vtype):
+                        return 0
+                kv_spans.append((key, kv_start, f.tell()))
+
+            if not orig_shapes:
+                return 0
+
+            tensor_records: list[tuple[bytes, tuple[int, ...], int, int, int, int]] = []
+            for _ in range(tensor_count):
+                t_start = f.tell()
+                nlen, = struct.unpack("<Q", _read_exact(f, 8))
+                if nlen > 4096:
+                    return 0
+                name_bytes = _read_exact(f, nlen)
+                ndims, = struct.unpack("<I", _read_exact(f, 4))
+                if ndims < 1 or ndims > 8:
+                    return 0
+                ne = struct.unpack(f"<{ndims}Q", _read_exact(f, 8 * ndims))
+                ttype, offset = struct.unpack("<IQ", _read_exact(f, 12))
+                tensor_records.append((name_bytes, ne, ttype, offset, t_start, f.tell()))
+
+            old_header_end = f.tell()
+            old_data_offset = ((old_header_end + alignment - 1) // alignment) * alignment
+            if old_data_offset > st.st_size:
+                return 0
+            f.seek(0)
+            raw_header = _read_exact(f, old_data_offset)
+
+        consumed_keys: set[str] = set()
+        tensor_chunks: list[bytes] = []
+        patched = 0
+
+        for name_bytes, ne, ttype, offset, t_start, t_end in tensor_records:
+            name = name_bytes.decode("utf-8", errors="replace")
+            lookup = name if name in orig_shapes else name.removeprefix("model.diffusion_model.")
+            orig_shape = orig_shapes.get(lookup)
+            if orig_shape is not None:
+                target_ne = tuple(reversed(orig_shape))
+                if (ttype in _GGML_UNQUANTIZED_TYPES
+                        and math.prod(ne) == math.prod(target_ne)
+                        and ne != target_ne):
+                    tensor_chunks.append(
+                        struct.pack("<Q", len(name_bytes))
+                        + name_bytes
+                        + struct.pack(f"<I{len(target_ne)}QIQ",
+                                      len(target_ne), *target_ne, ttype, offset)
+                    )
+                    consumed_keys.add(f"{_ORIG_SHAPE_PREFIX}{lookup}")
+                    patched += 1
+                    continue
+            tensor_chunks.append(raw_header[t_start:t_end])
+
+        if not patched or not consumed_keys:
+            return 0
+
+        kept_kvs = [raw_header[s:e] for k, s, e in kv_spans if k not in consumed_keys]
+        kept_kv_bytes = b"".join(kept_kvs)
+        new_tensors_bytes = b"".join(tensor_chunks)
+        new_kv_count = len(kept_kvs)
+
+        slack = old_header_end - (24 + len(kept_kv_bytes) + len(new_tensors_bytes))
+        min_pad_kv = 20 + len(_ORIG_SHAPE_PAD_KEY)
+        if slack < 0 or (0 < slack < min_pad_kv):
+            return 0
+        if slack >= min_pad_kv:
+            pad_len = slack - min_pad_kv
+            kept_kv_bytes += (
+                struct.pack("<Q", len(_ORIG_SHAPE_PAD_KEY))
+                + _ORIG_SHAPE_PAD_KEY
+                + struct.pack("<IQ", 8, pad_len)
+                + (b" " * pad_len)
+            )
+            new_kv_count += 1
+
+        new_header = (
+            struct.pack("<4sIQQ", b"GGUF", version, tensor_count, new_kv_count)
+            + kept_kv_bytes
+            + new_tensors_bytes
+        )
+        if len(new_header) != old_header_end:
+            return 0
+        new_header_padded = new_header + b"\x00" * (old_data_offset - len(new_header))
+        if len(new_header_padded) != old_data_offset:
+            return 0
+
+        with p.open("r+b") as wf:
+            wf.seek(0)
+            wf.write(new_header_padded)
+            wf.flush()
+        try:
+            os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+        except OSError:
+            pass
+        return patched
+    except (OSError, struct.error, ValueError):
+        return 0
+
+
 def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     refs = _ref_list(req.ref_image)
     vae = req.vae if not (req.taesd and not req.taesd_preview_only) else None
@@ -450,6 +666,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
              req.tokenizer, req.llm_vision, req.t5xxl, req.clip_l,
              req.uncond_model,
              req.init_image, req.mask_image, *refs)
+    ensure_gguf_orig_shapes(req.model_path)
+    ensure_gguf_orig_shapes(req.diffusion_model)
+    ensure_gguf_orig_shapes(req.uncond_model)
 
     cmd: list[str] = [str(sd_cli), "--mode", "img_gen"]
     if req.model_path:
