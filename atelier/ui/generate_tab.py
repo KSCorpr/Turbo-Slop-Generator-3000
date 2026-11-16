@@ -85,15 +85,23 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
         return RATIOS_QWEN21
     if family == "minimax_h3_image":
         return {
-            "Square 1:1 — 1024×1024": (1024, 1024),
-            "Landscape 3:2 — 1248×832": (1248, 832),
-            "Portrait 2:3 — 832×1248": (832, 1248),
-            "Landscape 4:3 — 1152×864": (1152, 864),
-            "Portrait 3:4 — 864×1152": (864, 1152),
-            "Wide 16:9 — 1408×800": (1408, 800),
-            "Vertical 9:16 — 800×1408": (800, 1408),
-            "Square 1:1 — 2048×2048 (2K)": (2048, 2048),
-            "Square 1:1 — 4096×4096 (4K)": (4096, 4096),
+            "Square 1:1 — 2048×2048 (4 MP · default)": (2048, 2048),
+            "Landscape 4:3 — 2368×1760 (4 MP)": (2368, 1760),
+            "Portrait 3:4 — 1760×2368 (4 MP)": (1760, 2368),
+            "Landscape 3:2 — 2496×1664 (4 MP)": (2496, 1664),
+            "Portrait 2:3 — 1664×2496 (4 MP)": (1664, 2496),
+            "Wide 16:9 — 2720×1536 (4 MP)": (2720, 1536),
+            "Vertical 9:16 — 1536×2720 (4 MP)": (1536, 2720),
+            "Cinema 21:9 — 3136×1344 (4 MP)": (3136, 1344),
+            "Square 1:1 — 4096×4096 (16 MP · best)": (4096, 4096),
+            "Landscape 4:3 — 4736×3552 (16 MP)": (4736, 3552),
+            "Portrait 3:4 — 3552×4736 (16 MP)": (3552, 4736),
+            "Landscape 3:2 — 5024×3360 (16 MP)": (5024, 3360),
+            "Portrait 2:3 — 3360×5024 (16 MP)": (3360, 5024),
+            "Wide 16:9 — 5472×3072 (16 MP)": (5472, 3072),
+            "Vertical 9:16 — 3072×5472 (16 MP)": (3072, 5472),
+            "Cinema 21:9 — 6272×2688 (16 MP)": (6272, 2688),
+            "Square 1:1 — 1024×1024 (1 MP, auto 4 MP → Lanczos)": (1024, 1024),
             _CUSTOM_LABEL: (0, 0),
         }
     if family == "krea2_realism":
@@ -171,7 +179,7 @@ def build_generative_tab(model_id: str, title: str,
         ratios = _ratios_for(family)
         size_step = d.get("size_multiple", 32 if family == "qwen21" else 16)
         fixed_sampling = family == "qwen21" or d.get("fixed_sampling", False)
-        size_max = 4096
+        size_max = 6272 if family == "minimax_h3_image" else 4096
         # Capacité d'édition, déclarée par le catalogue (defaults.edit) :
         #   "full"     -> modèle d'édition natif (Flux.2) : UI images de référence ;
         #   "optional" -> édition possible AVEC un LoRA d'édition (Krea 2 Ostris
@@ -184,13 +192,28 @@ def build_generative_tab(model_id: str, title: str,
         task = ("Image editing · reference required" if d.get("requires_reference")
                 else "Text to image & image editing" if is_edit else "Text to image & image-to-image")
 
-        def model_summary(available):
+        def _active_q2_warning(current_model, cur_prefs):
+            if model_id != "minimax-h3-image" or current_model is None:
+                return ""
+            custom_enc = ((cur_prefs.get("generation_custom_files") or {}).get(model_id) or {}).get("text_encoder")
+            if isinstance(custom_enc, str) and custom_enc:
+                name = custom_enc.lower()
+            else:
+                comp = next((c for c in current_model.components if c.role == "text_encoder"), None)
+                resolved = registry.resolve_component_path(comp) if comp else None
+                name = resolved.name.lower() if resolved else ""
+            if "q2_k" in name:
+                return (" · <span class='status-missing'>Q2_K_M text encoder active — "
+                        "low precision can distort faces and proportions; install Q4_K_M or P-H3 in Models</span>")
+            return ""
+
+        def model_summary(available, current=m, cur_prefs=prefs):
             label = ("<span class='status-ok'>Weights ready</span>" if available
                      else "<span class='status-missing'>Weights needed</span>")
-            return f"**{title}** · {task} · {label}"
+            return f"**{title}** · {task} · {label}{_active_q2_warning(current, cur_prefs)}"
 
         with gr.Row(elem_classes="workspace-heading"):
-            model_status = gr.Markdown(model_summary(ready), elem_classes="model-summary", scale=5)
+            model_status = gr.Markdown(model_summary(ready, m, prefs), elem_classes="model-summary", scale=5)
             if model_links is not None:
                 model_links[model_id] = gr.Button("Manage weights", size="sm", scale=1,
                                                   min_width=130, elem_classes="manage-weights")
@@ -198,7 +221,7 @@ def build_generative_tab(model_id: str, title: str,
         def refresh_model_status():
             cur_prefs = settings.load_prefs()
             current = registry.get_base_model(model_id, cur_prefs)
-            return model_summary(taesd.model_ready(current, cur_prefs))
+            return model_summary(taesd.model_ready(current, cur_prefs), current, cur_prefs)
 
         variant_model = gr.State(model_id)
 
@@ -503,7 +526,16 @@ def build_generative_tab(model_id: str, title: str,
                         label="Seamless pattern (circular)",
                         info="Wraps the edges so the image repeats seamlessly as a tileable pattern or texture.")
 
-                    if family.startswith("fibo2") or family in {"krea2_realism", "moss_image", "qwen21"}:
+                    if family == "minimax_h3_image":
+                        min_4mp_canvas = gr.Checkbox(
+                            value=True,
+                            label="Enforce 4 MP minimum canvas (official Lanczos downscale)",
+                            info="When output is under 4 MP, generates at >= 4 MP on the native grid "
+                                 "to prevent face/anatomy distortion, then Lanczos-downscales.")
+                    else:
+                        min_4mp_canvas = None
+
+                    if family.startswith("fibo2") or family in {"krea2_realism", "moss_image", "qwen21", "minimax_h3_image"}:
                         if family.startswith("fibo2"):
                             gr.Markdown(
                                 "Fibo accepts plain instructions and layout JSON. Refer to inputs as "
@@ -515,6 +547,13 @@ def build_generative_tab(model_id: str, title: str,
                         elif family == "qwen21":
                             gr.Markdown("For transparency, ask for an RGBA image with an alpha channel. "
                                         "Image editing uses the vision projector downloaded with the model.")
+                        elif family == "minimax_h3_image":
+                            gr.Markdown(
+                                "MiniMax H3 Image works best between **4 MP and 20 MP** (**2048×2048** "
+                                "default; **~16 MP** optimal up to **6272×2688**). Targets under 4 MP "
+                                "generate on a 4 MP canvas and Lanczos-downscale unless disabled above. "
+                                "Use detailed English prompts and **Q4_K_M+** / **P-H3** / **INT8** "
+                                "text encoders (avoid `Q2_K_M`).")
                         else:
                             gr.Markdown("MOSS accepts layout JSON in the prompt. Box coordinates are "
                                         "relative to the canvas center. Match the output dimensions to the layout. "
@@ -577,7 +616,7 @@ def build_generative_tab(model_id: str, title: str,
             current = registry.get_base_model(model_id, cur_prefs)
             return (*[gr.update(**menu) for menu in generation_weights.menus(model_id, prefs=cur_prefs, model=current)],
                     gr.update(value=taesd.selected_mode(model_id, cur_prefs)),
-                    model_summary(taesd.model_ready(current, cur_prefs)))
+                    model_summary(taesd.model_ready(current, cur_prefs), current, cur_prefs))
 
         gr.on(triggers=[model_tab.select, refresh_variants.click],
               fn=refresh_generation_variants, outputs=[*variant_controls, tiny_mode, model_status],
@@ -724,12 +763,13 @@ def build_generative_tab(model_id: str, title: str,
 
         def _fit_to_ref(img):
             """img2img : cale la sortie sur le format de l'image de départ
-            (côté long plafonné à 1024 px, grille propre au modèle)."""
+            (côté long plafonné à 1024 px, ou 2048 px sur H3, grille propre au modèle)."""
             if img is None:
                 return gr.update(), gr.update(), gr.update()
             w0, h0 = img.size
+            cap = 2048 if family == "minimax_h3_image" else 1024
             longest = max(w0, h0) or 1
-            sc = 1024 / longest if longest > 1024 else 1.0
+            sc = cap / longest if longest > cap else 1.0
             w = max(256, min(size_max, int(round(w0 * sc / size_step)) * size_step))
             h = max(256, min(size_max, int(round(h0 * sc / size_step)) * size_step))
             return (gr.update(value=w), gr.update(value=h),
@@ -768,7 +808,7 @@ def build_generative_tab(model_id: str, title: str,
                         diffusion_variant=generation_weights.AUTO,
                         encoder_variant=generation_weights.AUTO,
                         vae_variant=generation_weights.AUTO, tae_mode="off", extra_references=None,
-                        generation_preset=None):
+                        generation_preset=None, min_4mp_canvas=True):
             # NB : PAS de gr.Progress() ici — son overlay se dessine PAR-DESSUS
             # les sorties (dont l'aperçu) à chaque mise à jour → c'était LA cause
             # du clignotement « on voit la barre 1/8 entre deux pas ». Toute la
@@ -910,6 +950,8 @@ def build_generative_tab(model_id: str, title: str,
                         ref_image=(ref_paths or None), circular=bool(circular),
                         loras=loras,
                         **{key: True for key in ("moss_dmd", "krea_distill") if chosen_preset.get(key)},
+                        **({"min_generation_area": 0}
+                           if family == "minimax_h3_image" and not min_4mp_canvas else {}),
                         taesd_mode=tae_mode,
                         diffusion_override=variant_paths.get("diffusion"),
                         vae_override=variant_paths.get("vae"),
@@ -1043,6 +1085,8 @@ def build_generative_tab(model_id: str, title: str,
                        show_progress_on=[status_md], stream_every=0.15)
         if family == "moss_image" or model_id == "krea2-turbo":
             _gen_io["inputs"].append(preset)
+        elif family == "minimax_h3_image":
+            _gen_io["inputs"].extend([preset, min_4mp_canvas])
         gen_evt = run.click(**_gen_io)
         # QOL : Ctrl+Entrée (ou Cmd+Entrée) depuis le prompt lance la
         # génération. Un champ multiligne n'a pas de « validation » naturelle,

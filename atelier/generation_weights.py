@@ -99,11 +99,17 @@ def menus(model_id, prefs=None, model=None):
                           if comp and c.role == comp.role), None) if automatic else None
         current = registry.resolve_component_path(auto_comp) if auto_comp else None
         default = f"Automatic — {current.name}" if current else "Automatic — download weights in Models"
+        if (model_id == "minimax-h3-image" and role == "text_encoder"
+                and current and "q2_k" in current.name.lower()):
+            default = f"{default} (low precision; Q4_K_M or P-H3 recommended)"
         menu = [(default, AUTO)]
         for filename, path, label in choices.get(role, []):
             size = path.stat().st_size
             detail = weight_precision.describe(filename, profile, label=label,
                                                size=size, role=role)
+            if (model_id == "minimax-h3-image" and role == "text_encoder"
+                    and "q2_k" in filename.lower()):
+                detail = f"{detail} · low precision (Q4_K_M or P-H3 recommended)"
             menu.append((f"{detail} · {size / 1e9:.2f} GB — {filename}", filename))
         if comp:
             menu.extend((f"Local / custom — {p.name}", LOCAL + p.name) for p in local_files)

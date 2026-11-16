@@ -452,7 +452,10 @@ def rationale(model_family: str) -> str:
                 "`--sigmas minimax-h3-image`, matching the official sd.cpp CLI guide. "
                 "When you change the step count, sd.cpp's native discrete PDD denoiser "
                 "interpolates the schedule across your chosen steps. "
-                "Start at 1024 × 1024 with automatic memory placement.")
+                "Native working range is **4 MP–20 MP** (default **2048 × 2048**, best quality "
+                "around **~16 MP** up to 6272 × 2688); targets below 4 MP generate on a 4 MP "
+                "canvas and Lanczos-downscale automatically. Use **Q4_K_M+**, **P-H3**, or "
+                "**INT8** text encoders (avoid Q2_K_M) and detailed English prompts.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "

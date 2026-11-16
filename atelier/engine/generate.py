@@ -4,6 +4,7 @@ préférences matérielles et les LoRA, puis lance stable-diffusion.cpp.
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Callable
@@ -198,13 +199,64 @@ def _lora_file(name: str) -> Path | None:
     return None
 
 
+def _minimax_h3_canvas(target_w: int, target_h: int,
+                       multiple: int, min_area: int) -> tuple[int, int]:
+    """Scale smaller MiniMax H3 requests onto a >= 4 MP native grid."""
+    if min_area <= 0 or target_w * target_h >= min_area:
+        return target_w, target_h
+    scale = math.sqrt(min_area / (target_w * target_h))
+    canvas_w = max(multiple, int(round(target_w * scale / multiple)) * multiple)
+    canvas_h = max(multiple, int(round(target_h * scale / multiple)) * multiple)
+    return canvas_w, canvas_h
+
+
+def _resize_minimax_outputs(paths: list[Path], width: int, height: int) -> None:
+    """Downscale 4 MP MiniMax H3 canvas renders with Lanczos, preserving metadata."""
+    import os
+    import tempfile
+    from PIL import Image, PngImagePlugin
+
+    for path in paths:
+        with Image.open(path) as img:
+            if img.size == (width, height):
+                continue
+            fmt = img.format or "PNG"
+            info = dict(img.info or {})
+            resized = img.resize((width, height), Image.Resampling.LANCZOS)
+        try:
+            save_kw: dict = {}
+            if fmt.upper() == "PNG":
+                pnginfo = PngImagePlugin.PngInfo()
+                has_text = False
+                for key, value in info.items():
+                    if isinstance(key, str) and isinstance(value, str):
+                        pnginfo.add_text(key, value)
+                        has_text = True
+                if has_text:
+                    save_kw["pnginfo"] = pnginfo
+            if isinstance(info.get("icc_profile"), bytes):
+                save_kw["icc_profile"] = info["icc_profile"]
+            fd, temp_name = tempfile.mkstemp(dir=path.parent, suffix=path.suffix or ".png")
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    resized.save(stream, format=fmt, **save_kw)
+                os.replace(temp_name, path)
+            finally:
+                Path(temp_name).unlink(missing_ok=True)
+        finally:
+            resized.close()
+
+
 def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
-                           model: "registry.BaseModel", base_seed: int) -> None:
+                           model: "registry.BaseModel", base_seed: int,
+                           output_size: tuple[int, int] | None = None) -> None:
     """Écrit un .txt (style A1111) à côté de chaque image, pour retrouver le
     prompt et les réglages directement dans le dossier outputs/."""
     import time
     from ..fileio import atomic_write_text
     date = time.strftime("%Y-%m-%d %H:%M:%S")
+    out_w, out_h = output_size if output_size is not None else (req.width, req.height)
+    downscaled = (out_w, out_h) != (req.width, req.height)
     for i, p in enumerate(paths):
         seed = base_seed + i if (base_seed is not None and base_seed >= 0) \
             else base_seed
@@ -222,8 +274,9 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
         lines.append(f"Model: {model.name} ({model.id})")
         lines.append(
             f"Steps: {req.steps}, CFG: {req.cfg_scale}, Sampler: {req.sampler}, "
-            f"Scheduler: {req.schedule or 'auto'}, Size: {req.width}x{req.height}, "
-            f"Seed: {seed}, Flow shift: {req.flow_shift:g}")
+            f"Scheduler: {req.schedule or 'auto'}, Size: {out_w}x{out_h}"
+            + (f" (canvas {req.width}x{req.height}, Lanczos downscale)" if downscaled else "")
+            + f", Seed: {seed}, Flow shift: {req.flow_shift:g}")
         if is_moss_dmd:
             lines.append(f"MOSS DMD: 8 steps, LoRA strength {dmd_adapter.STRENGTH}, at_runtime")
         if is_krea_distill:
@@ -242,7 +295,8 @@ def _write_prompt_sidecars(paths: list[Path], req: "GenRequest",
                 "model_name": model.name, "prompt": saved_prompt,
                 "negative": req.negative or "", "seed": seed,
                 "steps": req.steps, "cfg_scale": req.cfg_scale,
-                "width": req.width, "height": req.height,
+                "width": out_w, "height": out_h,
+                **({"canvas_width": req.width, "canvas_height": req.height} if downscaled else {}),
                 "sampler": req.sampler, "schedule": req.schedule or "auto",
                 "flow_shift": req.flow_shift, "date": date,
                 "sage_attention": req.sage_attn,
@@ -365,6 +419,7 @@ def generate(
     moss_dmd: bool = False,
     taesd_mode: str | None = None,
     krea_distill: bool = False,
+    min_generation_area: int | None = None,
 ) -> list[Path]:
     # A benchmark supplies an in-memory placement deliberately. It must not
     # inherit the saved automatic mode, which would erase the tested flags.
@@ -380,6 +435,7 @@ def generate(
     if model is None:
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
+    target_w, target_h = int(width), int(height)
     tiny_mode = taesd.selected_mode(model_id, prefs) if taesd_mode is None else taesd_mode
     # A preview-only choice does not load an extra network for jobs without previews.
     if tiny_mode == "preview" and preview_path is None:
@@ -431,8 +487,11 @@ def generate(
             raise sdcpp.EngineError("Use MiniMax H3 Image's reference-image editor for image inputs.")
         if width <= 0 or height <= 0:
             raise sdcpp.EngineError("MiniMax H3 Image dimensions must be positive.")
-        multiple = model.defaults["size_multiple"]
-        width, height = ((size + multiple - 1) // multiple * multiple for size in (width, height))
+        multiple = int(model.defaults["size_multiple"])
+        target_w, target_h = ((int(size) + multiple - 1) // multiple * multiple for size in (width, height))
+        min_area = (int(model.defaults.get("min_generation_area") or 0)
+                    if min_generation_area is None else int(min_generation_area or 0))
+        width, height = _minimax_h3_canvas(target_w, target_h, multiple, min_area)
         help_text = sdcpp.binary_help(sd_cli)
         if "--sigmas" not in help_text or "minimax-h3-image" not in help_text:
             raise sdcpp.EngineError(
@@ -468,6 +527,14 @@ def generate(
     enc, uncond = files["enc"], files["uncond"]
     t5xxl, clip_l, llm_vision = (files["t5xxl"], files["clip_l"],
                                  files["llm_vision"])
+    if model.family == "minimax_h3_image" and log:
+        if (width, height) != (target_w, target_h):
+            log(f"MiniMax H3 Image: generating at {width}x{height} "
+                f"(4 MP minimum canvas) before Lanczos resize to {target_w}x{target_h}.")
+        if enc and "q2_k" in enc.name.lower():
+            log("⚠️ Text encoder uses Q2_K_M quantization: below-Q4 precision can "
+                "distort MiniMax H3 faces and proportions. Upgrade to Q4_K_M, P-H3 4B, "
+                "or 32B INT8 in Models.")
 
     automatic = prefs_override is None and prefs.get("system_mode") == "auto"
     plan = (system_profile.plan_for_model(
@@ -675,8 +742,11 @@ def generate(
                     "fit, and with the text encoder in RAM.")
         paths = _attempt(True)
 
+    if paths and (target_w, target_h) != (width, height):
+        _resize_minimax_outputs(paths, target_w, target_h)
     if save_prompt and paths:
-        _write_prompt_sidecars(paths, req, model, int(seed))
+        _write_prompt_sidecars(paths, req, model, int(seed),
+                               output_size=(target_w, target_h))
     return paths
 
 
