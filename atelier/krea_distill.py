@@ -1,9 +1,7 @@
 """Pinned four-step Krea 2 Turbo adapter from lvladikov."""
 from __future__ import annotations
 
-import re
-
-from . import model_store, settings, transfers
+from . import model_store, moss_dmd, settings, transfers
 
 REPO = "lvladikov/Krea2-Turbo-Distill-4step-LoRA"
 REVISION = "d4d6c8e9edb60587f9f6531b89995e668d5982dc"
@@ -19,14 +17,11 @@ def path():
 
 
 def strip_tag(prompt):
-    return re.sub(r"\s*<lora:" + re.escape(LORA_NAME) + r"(?:\.safetensors)?:[^>]+>", "", prompt)
+    return moss_dmd.strip_tag(prompt, LORA_NAME)
 
 
 def ready():
-    try:
-        return path().is_file() and path().stat().st_size == FILE_SIZE
-    except OSError:
-        return False
+    return moss_dmd.ready(path(), FILE_SIZE)
 
 
 def install(log=print):

@@ -82,9 +82,9 @@ def installed(model):
     return result
 
 
-def menus(model_id):
-    prefs = settings.load_prefs()
-    model = registry.get_base_model(model_id, prefs)
+def menus(model_id, prefs=None, model=None):
+    prefs = settings.load_prefs() if prefs is None else prefs
+    model = registry.get_base_model(model_id, prefs) if model is None else model
     automatic = _automatic_model(model_id, prefs)
     choices = installed(model) if model else {}
     saved = (prefs.get("model_files") or {}).get(model_id) or {}
@@ -101,9 +101,10 @@ def menus(model_id):
         default = f"Automatic — {current.name}" if current else "Automatic — download weights in Models"
         menu = [(default, AUTO)]
         for filename, path, label in choices.get(role, []):
+            size = path.stat().st_size
             detail = weight_precision.describe(filename, profile, label=label,
-                                               size=path.stat().st_size, role=role)
-            menu.append((f"{detail} · {path.stat().st_size / 1e9:.2f} GB — {filename}", filename))
+                                               size=size, role=role)
+            menu.append((f"{detail} · {size / 1e9:.2f} GB — {filename}", filename))
         if comp:
             menu.extend((f"Local / custom — {p.name}", LOCAL + p.name) for p in local_files)
         value = custom.get(comp.role) or saved.get(comp.role, AUTO) if comp else AUTO

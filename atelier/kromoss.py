@@ -21,10 +21,7 @@ def strip_tag(prompt):
 
 
 def ready():
-    try:
-        return path().is_file() and path().stat().st_size == FILE_SIZE
-    except OSError:
-        return False
+    return moss_dmd.ready(path(), FILE_SIZE)
 
 
 def install(log=print):

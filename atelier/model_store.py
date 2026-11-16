@@ -23,12 +23,13 @@ def roots():
     return [settings.MODELS_DIR.resolve(), (settings.ROOT / "tools_repo").resolve()]
 
 
-def managed(path):
+def managed(path, _roots=None):
     path = Path(path)
+    if path.suffix.lower() not in WEIGHTS or path.is_symlink():
+        return False
     resolved = path.resolve()
-    return (path.suffix.lower() in WEIGHTS and not path.is_symlink() and
-            any(resolved.is_relative_to(root) and not any(part in SKIP for part in resolved.relative_to(root).parts)
-                for root in roots()))
+    return any(resolved.is_relative_to(root) and not any(part in SKIP for part in resolved.relative_to(root).parts)
+               for root in (_roots if _roots is not None else roots()))
 
 
 def fingerprint(path):
@@ -82,10 +83,11 @@ def _source(sha, size, index):
     entries = index.get(sha, {})
     if not isinstance(entries, dict):
         return None
+    managed_roots = roots()
     for name in list(entries):
         path = Path(name)
         try:
-            if managed(path) and known(path, sha, index) and (size is None or path.stat().st_size == size):
+            if managed(path, managed_roots) and known(path, sha, index) and (size is None or path.stat().st_size == size):
                 return path
         except OSError:
             continue
@@ -140,27 +142,34 @@ def remember(path, sha=None):
         return
     with _lock():
         index = _read()
+        resolved_str = str(path.resolve())
+        fp = fingerprint(path)
         if sha is None:
-            name = str(path.resolve())
-            sha = next((key for key,files in index.items() if files.get(name) == fingerprint(path)), None)
+            sha = next((key for key,files in index.items() if files.get(resolved_str) == fp), None)
         sha = sha or digest(path)
-        source = _source(sha, path.stat().st_size, index)
+        source = _source(sha, fp[0], index)
         if source is not None:
             _link(source, path)
-        index.setdefault(sha, {})[str(path.resolve())] = fingerprint(path)
+            fp = fingerprint(path)
+        index.setdefault(sha, {})[resolved_str] = fp
         _write(index)
 
 
 def weight_files():
     visited = set()
-    for root in roots():
+    managed_roots = roots()
+    isjunction = getattr(os.path, "isjunction", lambda _: False)
+    for root in managed_roots:
         for folder, dirs, files in os.walk(root, followlinks=False):
             dirs[:] = sorted(d for d in dirs if d not in SKIP and not Path(folder, d).is_symlink()
-                             and not getattr(os.path, "isjunction", lambda _: False)(Path(folder, d)))
+                             and not isjunction(Path(folder, d)))
             for name in sorted(files):
                 path = Path(folder, name)
-                if managed(path) and path.resolve() not in visited:
-                    visited.add(path.resolve())
+                if not managed(path, managed_roots):
+                    continue
+                resolved = path.resolve()
+                if resolved not in visited:
+                    visited.add(resolved)
                     yield path
 
 
@@ -172,34 +181,37 @@ def consolidate(log=print, check=lambda: None):
     with transfer_lock(), _lock():
         index = {}
         inode_hashes = {}
-        for number, path in enumerate(weight_files(), 1):
-            check()
-            before = fingerprint(path)
-            identity = tuple(before[2:])
-            sha = inode_hashes.get(identity)
-            if sha is None:
-                log(f"Checking {number}: {path.name} ({before[0]/1e9:.2f} GB)")
-                sha = digest(path, check)
-                if before != fingerprint(path):
-                    log(f"Skipped a file changed during checking: {path.name}")
-                    continue
-                inode_hashes[identity] = sha
-            source = _source(sha, before[0], index)
-            if source is not None and not os.path.samefile(source, path):
-                old_links = path.stat().st_nlink
-                try:
-                    mode = _link(source, path)
-                except OSError as exc:
-                    log(f"Kept separate: {path.name} ({exc})")
-                    mode = "separate"
-                if mode == "shared":
-                    if old_links == 1:
-                        saved += before[0]
-                    linked += 1
-                    log(f"Shared identical bytes: {path.name}")
-                else:
-                    separate += 1
-                    log(f"Kept separate (hard links unavailable or different volumes): {path.name}")
-            index.setdefault(sha, {})[str(path.resolve())] = fingerprint(path)
-            _write(index)
+        try:
+            for number, path in enumerate(weight_files(), 1):
+                check()
+                before = fingerprint(path)
+                identity = tuple(before[2:])
+                sha = inode_hashes.get(identity)
+                if sha is None:
+                    log(f"Checking {number}: {path.name} ({before[0]/1e9:.2f} GB)")
+                    sha = digest(path, check)
+                    if before != fingerprint(path):
+                        log(f"Skipped a file changed during checking: {path.name}")
+                        continue
+                    inode_hashes[identity] = sha
+                source = _source(sha, before[0], index)
+                if source is not None and not os.path.samefile(source, path):
+                    old_links = path.stat().st_nlink
+                    try:
+                        mode = _link(source, path)
+                    except OSError as exc:
+                        log(f"Kept separate: {path.name} ({exc})")
+                        mode = "separate"
+                    if mode == "shared":
+                        if old_links == 1:
+                            saved += before[0]
+                        linked += 1
+                        log(f"Shared identical bytes: {path.name}")
+                    else:
+                        separate += 1
+                        log(f"Kept separate (hard links unavailable or different volumes): {path.name}")
+                index.setdefault(sha, {})[str(path.resolve())] = fingerprint(path)
+        finally:
+            if index:
+                _write(index)
     return {"linked_files": linked, "saved_bytes": saved, "separate_files": separate}

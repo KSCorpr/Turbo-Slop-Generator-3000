@@ -19,19 +19,24 @@ QWEN21_MIN_BUILD = 896
 QWEN21_PREVIEW_BUILD = 901
 
 
-def _check_engine_build(model: registry.BaseModel) -> None:
-    minimum = int(model.defaults.get("min_engine_build") or 0)
-    if not minimum:
-        return
+def _engine_build_number() -> int | None:
     try:
         data = json.loads((settings.BIN_DIR / "engine-manifest.json").read_text(
             encoding="utf-8"))
         tag = data.get("tag") if isinstance(data, dict) else None
     except (OSError, ValueError, TypeError):
-        return  # Un binaire manuel sera validé par sd.cpp lui-même.
+        return None  # Un binaire manuel sera validé par sd.cpp lui-même.
     match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
         if isinstance(tag, str) else None
-    if match and int(match[1]) < minimum:
+    return int(match.group(1)) if match else None
+
+
+def _check_engine_build(model: registry.BaseModel) -> None:
+    minimum = int(model.defaults.get("min_engine_build") or 0)
+    if not minimum:
+        return
+    build = _engine_build_number()
+    if build is not None and build < minimum:
         raise sdcpp.EngineError(
             f"{model.name} needs sd.cpp build {minimum} or newer. "
             "Run update.bat (or ./update.sh on Linux/Mac), then restart the app.")
@@ -41,19 +46,14 @@ def _check_qwen_engine(model: registry.BaseModel,
                        preview_path: Path | None = None) -> None:
     if model.family != "qwen21":
         return
-    manifest = settings.BIN_DIR / "engine-manifest.json"
-    try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        tag = data.get("tag") if isinstance(data, dict) else None
-    except (OSError, ValueError, TypeError):
+    build = _engine_build_number()
+    if build is None:
         return  # Manually installed engine: sd.cpp will validate the model.
-    match = re.fullmatch(r"master[-_](\d+)(?:[-_].*)?", tag, re.I) \
-        if isinstance(tag, str) else None
-    if match and int(match.group(1)) < QWEN21_MIN_BUILD:
+    if build < QWEN21_MIN_BUILD:
         raise sdcpp.EngineError(
             f"Qwen Image 2.1 needs sd.cpp build {QWEN21_MIN_BUILD} or newer. "
             "Run update.bat (or ./update.sh on Linux/Mac).")
-    if preview_path is not None and match and int(match.group(1)) < QWEN21_PREVIEW_BUILD:
+    if preview_path is not None and build < QWEN21_PREVIEW_BUILD:
         raise sdcpp.EngineError(
             "Qwen Image 2.1 live preview at every step needs sd.cpp build "
             f"{QWEN21_PREVIEW_BUILD} or newer. Run update.bat (or ./update.sh "

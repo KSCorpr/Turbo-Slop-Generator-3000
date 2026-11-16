@@ -72,15 +72,23 @@ class BaseModel:
 
 
 @lru_cache(maxsize=4)
-def _parse_catalog(path: Path, mtime_ns: int, size: int) -> dict[str, Any]:
+def _parse_catalog(path: Path, mtime_ns: int, size: int) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     with open(path, encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+        raw = yaml.safe_load(fh) or {}
+    by_id = {m["id"]: m for m in raw.get("base_models", []) if isinstance(m, dict) and "id" in m}
+    return raw, by_id
 
 
 def _raw_catalog() -> dict[str, Any]:
     path = settings.CONFIG_DIR / "models.yaml"
     st = path.stat()
-    return _parse_catalog(path, st.st_mtime_ns, st.st_size)
+    return _parse_catalog(path, st.st_mtime_ns, st.st_size)[0]
+
+
+def _raw_models_by_id() -> dict[str, dict[str, Any]]:
+    path = settings.CONFIG_DIR / "models.yaml"
+    st = path.stat()
+    return _parse_catalog(path, st.st_mtime_ns, st.st_size)[1]
 
 
 def _catalog() -> dict[str, Any]:
@@ -189,8 +197,7 @@ def load_base_models(prefs: dict[str, Any]) -> list[BaseModel]:
 
 
 def get_base_model(model_id: str, prefs: dict[str, Any]) -> BaseModel | None:
-    raw = next((m for m in _raw_catalog().get("base_models", [])
-                if m.get("id") == model_id), None)
+    raw = _raw_models_by_id().get(model_id)
     if raw is None:
         return None
     q_diff, q_enc = effective_quants(prefs)
@@ -452,13 +459,13 @@ def delete_model(model: BaseModel, prefs: dict[str, Any]) -> list[str]:
 # --------------------------------------------------------------------------- #
 #  Recommandations selon le matériel
 # --------------------------------------------------------------------------- #
-def recommend(prefs: dict[str, Any]) -> dict[str, list[str]]:
+def recommend(prefs: dict[str, Any], models: list[BaseModel] | None = None) -> dict[str, list[str]]:
     """Retourne {model_id: [étiquettes de reco]} pour guider l'artiste."""
     prof = hardware.auto_profile(settings.generation_gpu_index(prefs))
     vram = prof.gpu.vram_gb if prof.gpu else 0.0
     out: dict[str, list[str]] = {}
     from .i18n import t
-    for m in load_base_models(prefs):
+    for m in (models if models is not None else load_base_models(prefs)):
         labels: list[str] = []
         if vram and vram >= m.vram_min_gb:
             labels.append(t("✅ suits your card"))

@@ -17,17 +17,20 @@ LORA_NAME = "moss-image-sft-dmd/lora_latest"
 STRENGTH = 0.7
 
 
-def strip_tag(prompt, name=LORA_NAME):
-    return re.sub(r"\s*<lora:" + re.escape(name) + r"(?:\.safetensors)?:[^>]+>", "", prompt)
+def strip_tag(prompt, name=None):
+    target_name = LORA_NAME if name is None else name
+    return re.sub(r"\s*<lora:" + re.escape(target_name) + r"(?:\.safetensors)?:[^>]+>", "", prompt)
 
 
 def path():
     return settings.LORA_DIR / "moss-image-sft-dmd" / FILENAME
 
 
-def ready():
+def ready(file_path=None, expected_size=None):
+    target = path() if file_path is None else file_path
+    size = FILE_SIZE if expected_size is None else expected_size
     try:
-        return path().is_file() and path().stat().st_size == FILE_SIZE
+        return target.is_file() and target.stat().st_size == size
     except OSError:
         return False
 

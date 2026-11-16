@@ -32,33 +32,44 @@ PHOTO_STYLES_FILE = settings.CONFIG_DIR / "krea2_styles.csv"
 ART_STYLES_FILE = settings.CONFIG_DIR / "krea2_art_styles.csv"
 
 
+_json_cache: Dict[Path, Tuple[Tuple[int, int] | None, Dict[str, str]]] = {}
+
+
+def _load_json_dict(path: Path) -> Dict[str, str]:
+    try:
+        st = path.stat()
+        sig: Tuple[int, int] | None = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _json_cache.pop(path, None)
+        return {}
+    cached = _json_cache.get(path)
+    if cached is not None and cached[0] == sig:
+        return dict(cached[1])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            parsed = {str(k): str(v) for k, v in data.items()}
+            _json_cache[path] = (sig, parsed)
+            return dict(parsed)
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
 def _load() -> Dict[str, str]:
     settings.ensure_dirs()
-    if STYLES_FILE.is_file():
-        try:
-            data = json.loads(STYLES_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
+    return _load_json_dict(STYLES_FILE)
 
 
 def _write(data: Dict[str, str]) -> None:
     settings.ensure_dirs()
     atomic_write_text(STYLES_FILE,
                       json.dumps(data, indent=2, ensure_ascii=False))
+    _json_cache.pop(STYLES_FILE, None)
 
 
 def _load_bundled() -> Dict[str, str]:
-    if BUNDLED_STYLES_FILE.is_file():
-        try:
-            data = json.loads(BUNDLED_STYLES_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
+    return _load_json_dict(BUNDLED_STYLES_FILE)
 
 
 def is_bundled(name: str | None) -> bool:
@@ -125,6 +136,8 @@ def delete_style(name: str | None) -> None:
 # --------------------------------------------------------------------------
 _SEP = " › "
 _bank_cache: Dict[Path, List[Dict[str, str]]] = {}
+_bank_labels_cache: Dict[Path, List[str]] = {}
+_bank_index_cache: Dict[Path, Dict[str, Dict[str, str]]] = {}
 
 
 def _load_bank(path: Path) -> List[Dict[str, str]]:
@@ -166,17 +179,27 @@ def _load_bank(path: Path) -> List[Dict[str, str]]:
     except OSError:
         pass
     _bank_cache[path] = entries
+    _bank_labels_cache.pop(path, None)
+    _bank_index_cache.pop(path, None)
     return entries
 
 
 def bank_labels(path: Path) -> List[str]:
     """Étiquettes « Catégorie › Nom » d'une banque, dans l'ordre du fichier
     (regroupées par catégorie) — choix d'un menu multi-sélection."""
-    return [e["label"] for e in _load_bank(path)]
+    labels = _bank_labels_cache.get(path)
+    if labels is None:
+        labels = [e["label"] for e in _load_bank(path)]
+        _bank_labels_cache[path] = labels
+    return list(labels)
 
 
 def _bank_index(path: Path) -> Dict[str, Dict[str, str]]:
-    return {e["label"]: e for e in _load_bank(path)}
+    idx = _bank_index_cache.get(path)
+    if idx is None:
+        idx = {e["label"]: e for e in _load_bank(path)}
+        _bank_index_cache[path] = idx
+    return idx
 
 
 def random_bank_label(path: Path, exclude: List[str] | None = None) -> str | None:

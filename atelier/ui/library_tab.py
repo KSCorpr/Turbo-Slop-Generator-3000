@@ -101,10 +101,10 @@ def build_library_tab(tabs=None, model_links=None):
             updates.append(gr.update(choices=choices,value=selected,visible=visible))
         return updates
 
-    def shared_panel(key, diff_choice=None, enc_choice=None, vae_choice=None):
+    def shared_panel(key, diff_choice=None, enc_choice=None, vae_choice=None, _model=None):
         text=("**Shared files:** identical downloaded weights are reused by checksum. "
               "Consolidate existing installations once below. Unique weights and runtime versions are retained.")
-        model=image_model(key)
+        model=_model if _model is not None else image_model(key)
         if model:
             if diff_choice is not None:
                 prefs = _selection_prefs(settings.load_prefs(), model, diff_choice, enc_choice, vae_choice)
@@ -124,11 +124,11 @@ def build_library_tab(tabs=None, model_links=None):
             search = gr.Textbox(label="Search packages", placeholder="Krea, SAM, upscale, splats…", scale=3)
         package = gr.Dropdown(model_catalog.choices(), value=initial, label="Package",
                               filterable=True, elem_id="catalog-package")
-        model = image_model(initial)
+        model = models[0] if models else None
         with gr.Row(elem_classes="catalog-layout"):
             with gr.Column(scale=5, min_width=290):
                 with gr.Group(visible=bool(model)) as image_group:
-                    card = gr.Markdown(_card_md(model, registry.recommend(prefs)) if model else "",
+                    card = gr.Markdown(_card_md(model, registry.recommend(prefs, models=models)) if model else "",
                                        elem_id="catalog-image-card")
                     d_choices, d_value = _weight_menu(model, "diffusion") if model else ([], None)
                     diffusion = gr.Dropdown(d_choices, value=d_value, label="Image model weights")
@@ -155,7 +155,7 @@ def build_library_tab(tabs=None, model_links=None):
                 log = gr.Textbox(label="Download log", lines=3, max_lines=8, autoscroll=True,
                                  interactive=False, elem_classes="log-box")
         with gr.Accordion("Compatibility, download speed & storage", open=False):
-            shared_note = gr.Markdown(shared_panel(initial))
+            shared_note = gr.Markdown(shared_panel(initial, _model=model))
             limit = gr.Number(value=prefs.get("download_limit_mbps", 5), minimum=0, maximum=10000,
                               label="Download limit (MB/s; 0 = unlimited)")
             consolidate = gr.Button("Consolidate existing identical weights", size="sm")

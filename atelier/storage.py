@@ -30,12 +30,8 @@ def configured() -> str:
 
 
 def dir_size(p: Path) -> int:
-    try:
-        if p.is_dir():
-            return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
-    except OSError:
-        pass
-    return 0
+    from . import inventory
+    return inventory.path_size(p) if p.is_dir() else 0
 
 
 def free_space(p: Path) -> int:
@@ -106,7 +102,9 @@ def move(dest: Path, log=None) -> Iterator[str]:
         yield _emit("No model to move (the source folder is empty).")
         return
 
-    total = dir_size(src)
+    entries = sorted(src.iterdir())
+    entry_sizes = {e: (dir_size(e) if e.is_dir() else e.stat().st_size) for e in entries}
+    total = sum(entry_sizes.values())
     dest.mkdir(parents=True, exist_ok=True)
     avail = free_space(dest)
     yield _emit(f"Source: {src}")
@@ -118,13 +116,12 @@ def move(dest: Path, log=None) -> Iterator[str]:
         yield _emit("❌ Not enough room at the destination — aborting.")
         return
 
-    entries = sorted(src.iterdir())
     done = 0
     errors = 0
     for i, entry in enumerate(entries, 1):
         target = dest / entry.name
         yield _emit(f"[{i}/{len(entries)}] {entry.name} "
-                    f"({_human(dir_size(entry) if entry.is_dir() else entry.stat().st_size)})…")
+                    f"({_human(entry_sizes[entry])})…")
         try:
             if target.exists():
                 yield _emit(f"    already present at the destination — skipped.")
@@ -206,7 +203,8 @@ def relocate(paths: list[Path], dest_root: Path, log=None) -> Iterator[str]:
         yield _emit("Nothing to move (missing, or already moved through a link).")
         return
 
-    total = sum(dir_size(p) for p in todo)
+    todo_sizes = {p: dir_size(p) for p in todo}
+    total = sum(todo_sizes.values())
     avail = free_space(dest_root)
     yield _emit(f"To move: {_human(total)} · free at the destination: "
                 f"{_human(avail)}")
@@ -216,7 +214,7 @@ def relocate(paths: list[Path], dest_root: Path, log=None) -> Iterator[str]:
 
     for i, src in enumerate(todo, 1):
         target = dest_root / src.name
-        yield _emit(f"[{i}/{len(todo)}] {src.name} ({_human(dir_size(src))})…")
+        yield _emit(f"[{i}/{len(todo)}] {src.name} ({_human(todo_sizes[src])})…")
         if target.exists():
             yield _emit("    ⚠️ already present at the destination — skipped.")
             continue

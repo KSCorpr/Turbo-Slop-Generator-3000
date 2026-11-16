@@ -158,14 +158,15 @@ def build_generative_tab(model_id: str, title: str,
                          pending_3d=None, threed_tab_id="tools",
                          pending_outpaint=None, outpaint_tab_id="tools",
                          model_links=None):
-    d = _defaults(model_id)
+    prefs = settings.load_prefs()
+    m = registry.get_base_model(model_id, prefs)
+    d = m.defaults if m else {}
 
     # `id` EXPLICITE : « 📝 Image → prompt » renvoie son texte vers un onglet
     # nommé. Sans identifiant stable, la cible serait le libellé affiché, qui
     # change avec la langue — le retour tomberait à côté en anglais.
     with gr.Tab(title, id=model_id, elem_classes="generation-workspace") as model_tab:
-        m = registry.get_base_model(model_id, settings.load_prefs())
-        ready = taesd.model_ready(m)
+        ready = taesd.model_ready(m, prefs)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
         size_step = d.get("size_multiple", 32 if family == "qwen21" else 16)
@@ -195,8 +196,9 @@ def build_generative_tab(model_id: str, title: str,
                                                   min_width=130, elem_classes="manage-weights")
 
         def refresh_model_status():
-            current = registry.get_base_model(model_id, settings.load_prefs())
-            return model_summary(taesd.model_ready(current))
+            cur_prefs = settings.load_prefs()
+            current = registry.get_base_model(model_id, cur_prefs)
+            return model_summary(taesd.model_ready(current, cur_prefs))
 
         variant_model = gr.State(model_id)
 
@@ -261,7 +263,7 @@ def build_generative_tab(model_id: str, title: str,
                 negative = gr.Textbox(label="Negative prompt", lines=1,
                                       visible=d.get("supports_negative", False))
 
-                weight_menus = generation_weights.menus(model_id)
+                weight_menus = generation_weights.menus(model_id, prefs=prefs, model=m)
                 with gr.Row(elem_classes=["compact-fields", "variant-row"]):
                     diffusion_variant = gr.Dropdown(
                         **weight_menus[0], label="Model variant (installed weights)",
@@ -269,7 +271,7 @@ def build_generative_tab(model_id: str, title: str,
                         scale=4)
                     refresh_variants = gr.Button("Refresh variants", size="sm", scale=1, min_width=112)
 
-                preset_list = _presets(model_id)
+                preset_list = list(m.presets) if (m and m.presets) else []
                 with gr.Row(elem_classes="compact-fields"):
                     ratio = gr.Dropdown(
                         [t(k) for k in ratios],
@@ -386,16 +388,17 @@ def build_generative_tab(model_id: str, title: str,
                                     outputs=[photo_pick, art_pick, styles_loaded],
                                     queue=False, show_progress="hidden")
 
+                lora_choices = gen_engine.list_loras()
                 with gr.Accordion("🧩 LoRA", open=False):
                     with gr.Row():
                         lora1 = gr.Dropdown(label="LoRA 1",
-                                            choices=gen_engine.list_loras(),
+                                            choices=lora_choices,
                                             value=None, allow_custom_value=False)
                         lora1_w = gr.Slider(0.0, 5000.0, value=0.8, step=0.05,
                                             label="Weight")
                     with gr.Row():
                         lora2 = gr.Dropdown(label="LoRA 2",
-                                            choices=gen_engine.list_loras(),
+                                            choices=lora_choices,
                                             value=None, allow_custom_value=False)
                         lora2_w = gr.Slider(0.0, 5000.0, value=0.8, step=0.05,
                                             label="Weight")
@@ -412,7 +415,7 @@ def build_generative_tab(model_id: str, title: str,
                         **weight_menus[2], label="VAE variant (installed)",
                         allow_custom_value=False)
                     tiny_mode = gr.Dropdown(
-                        list(taesd.MODES), value=taesd.selected_mode(model_id),
+                        list(taesd.MODES), value=taesd.selected_mode(model_id, prefs),
                         label="Tiny autoencoder (TAESD)", info=taesd.info(m),
                         interactive=taesd.for_model(m) is not None,
                         elem_id=f"{model_id}-taesd-mode")
@@ -570,9 +573,11 @@ def build_generative_tab(model_id: str, title: str,
         variant_controls = [diffusion_variant, encoder_variant, vae_variant]
 
         def refresh_generation_variants():
-            return (*[gr.update(**menu) for menu in generation_weights.menus(model_id)],
-                    gr.update(value=taesd.selected_mode(model_id)),
-                    refresh_model_status())
+            cur_prefs = settings.load_prefs()
+            current = registry.get_base_model(model_id, cur_prefs)
+            return (*[gr.update(**menu) for menu in generation_weights.menus(model_id, prefs=cur_prefs, model=current)],
+                    gr.update(value=taesd.selected_mode(model_id, cur_prefs)),
+                    model_summary(taesd.model_ready(current, cur_prefs)))
 
         gr.on(triggers=[model_tab.select, refresh_variants.click],
               fn=refresh_generation_variants, outputs=[*variant_controls, tiny_mode, model_status],
