@@ -218,7 +218,7 @@ class GenerationTabTests(unittest.TestCase):
         self.assertFalse(cfg.interactive)
         width = next(b for b in controls if isinstance(b, gr.Slider)
                      and b.label == "Width")
-        self.assertEqual((width.maximum, width.step), (2816, 32))
+        self.assertEqual((width.maximum, width.step), (4096, 32))
 
     def test_the_int8_variant_stays_hidden_until_it_is_installed(self):
         """Proposer un modèle non téléchargé, c'est un piège : on clique, la

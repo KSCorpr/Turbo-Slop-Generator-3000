@@ -85,7 +85,7 @@ def instruction(p: dict, user_prompt: str = "") -> str:
 
 
 def plan(size: tuple[int, int], directions: list[str], amount: float,
-         multiple: int = 16, max_side: int = 2048) -> dict:
+         multiple: int = 16, max_side: int = 4096) -> dict:
     """Calcule la nouvelle toile et la position de l'original.
 
     `amount` = proportion de la dimension d'origine ajoutée par côté (0.25 = +25 %).

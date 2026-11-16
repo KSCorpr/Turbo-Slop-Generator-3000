@@ -171,7 +171,12 @@ def download_component(comp: Component,
         # Encodeur automatique : réutiliser une quantification déjà présente
         # évite des copies de plusieurs Go quand le profil matériel change.
         # Un choix explicite dans le catalogue n'a plus de token et reste exact.
-        if exact or (comp.role == "text_encoder" and comp.token):
+        inst_q = quant._idx(quant.find_quant(installed.name))
+        req_q = quant._idx(comp.quant)
+        reuse_enc = (comp.role == "text_encoder" and comp.token
+                     and (inst_q is None or req_q is None
+                          or inst_q >= min(req_q, quant._idx("Q4_K_S"))))
+        if exact or reuse_enc:
             if comp.role == "diffusion":
                 from .engine.sdcpp import ensure_gguf_orig_shapes
                 ensure_gguf_orig_shapes(installed)

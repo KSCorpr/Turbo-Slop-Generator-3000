@@ -464,7 +464,7 @@ def build_manage_tab():
                 "local.\n\n**Direction** — one or more sides to "
                 "extend.\n**Extension per side** — the share added on each "
                 "chosen side (0.25 = +25%). The\nnew size is shown below; it "
-                "is aligned to 16 px and capped at **2048 px** per\nside "
+                "is aligned to 16 px and capped at **4096 px** per\nside "
                 "(beyond that the margins are reduced "
                 "automatically).\n**Model** — any installed model. The "
                 "**sampler, CFG and steps** come from its\nrecommended "

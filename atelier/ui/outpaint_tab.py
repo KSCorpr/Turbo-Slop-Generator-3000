@@ -209,7 +209,7 @@ def build_outpaint_tab(tab_id="outpaint", pending_outpaint=None, tabs=None,
                     label="Extension per side (as a fraction of the image)",
                     info="0.25 = +25% on each side you pick. The canvas is "
                          "aligned to 32 px for Qwen, 16 px otherwise, and "
-                         "capped at 2048 px.")
+                         "capped at 4096 px.")
                 plan_md = gr.Markdown("")
                 model = gr.Dropdown(_choices, value=_first,
                                     label="Model used")

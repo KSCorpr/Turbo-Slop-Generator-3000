@@ -92,6 +92,8 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
             "Portrait 3:4 — 864×1152": (864, 1152),
             "Wide 16:9 — 1408×800": (1408, 800),
             "Vertical 9:16 — 800×1408": (800, 1408),
+            "Square 1:1 — 2048×2048 (2K)": (2048, 2048),
+            "Square 1:1 — 4096×4096 (4K)": (4096, 4096),
             _CUSTOM_LABEL: (0, 0),
         }
     if family == "krea2_realism":
@@ -168,7 +170,7 @@ def build_generative_tab(model_id: str, title: str,
         ratios = _ratios_for(family)
         size_step = d.get("size_multiple", 32 if family == "qwen21" else 16)
         fixed_sampling = family == "qwen21" or d.get("fixed_sampling", False)
-        size_max = 2816 if family == "qwen21" else 2048
+        size_max = 4096
         # Capacité d'édition, déclarée par le catalogue (defaults.edit) :
         #   "full"     -> modèle d'édition natif (Flux.2) : UI images de référence ;
         #   "optional" -> édition possible AVEC un LoRA d'édition (Krea 2 Ostris

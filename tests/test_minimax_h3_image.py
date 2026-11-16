@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from atelier import model_catalog, model_store, registry, settings
+from atelier import downloader, model_catalog, model_store, registry, settings
 from atelier.engine import generate, sdcpp
 
 MODEL = "minimax-h3-image"
@@ -83,29 +83,18 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.assertIsNotNone(model_catalog.get("image:" + MODEL))
         self.assertTrue(registry.model_is_ready(self.model))
         self.assertEqual(set(self.files), {"diffusion", "text_encoder", "vae"})
-        self.assertEqual(self.files["diffusion"].parent.name, "Abiray__MiniMax-H3-Image-GGUF")
-        self.assertRegex(self.files["diffusion"].name, r"^MiniMax-H3-Image-Pruned-Q[2345]_K(?:_[SM])?\.gguf$")
+        self.assertEqual(self.files["diffusion"].relative_to(settings.MODELS_DIR).as_posix(),
+                         "Comfy-Org__MiniMax-H3-Image/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors")
         self.assertEqual(self.files["vae"].name, "minimax_h3_image_vae_fp16.safetensors")
         self.assertEqual(self.files["text_encoder"].relative_to(settings.MODELS_DIR).as_posix(),
-                         "leejet__MiniMax-H3-GGUF/qwen3vl_32b_minimax_h3-Q2_K_M.gguf")
-
-        # Hardware profile quantizations map cleanly onto Abiray/MiniMax-H3-Image-GGUF files.
-        expected_map = {
-            "Q4_K_S": "MiniMax-H3-Image-Pruned-Q2_K.gguf",
-            "Q4_K_M": "MiniMax-H3-Image-Pruned-Q3_K_M.gguf",
-            "Q5_K_M": "MiniMax-H3-Image-Pruned-Q4_K_S.gguf",
-            "Q6_K": "MiniMax-H3-Image-Pruned-Q4_K_M.gguf",
-            "Q8_0": "MiniMax-H3-Image-Pruned-Q5_K_M.gguf",
-        }
-        for raw_quant, expected_file in expected_map.items():
-            with patch.object(registry, "effective_quants", return_value=(raw_quant, "Q8_0")):
-                comp = next(c for c in registry.get_base_model(MODEL, {}).components if c.role == "diffusion")
-            self.assertEqual(comp.repo, "Abiray/MiniMax-H3-Image-GGUF")
-            self.assertEqual(comp.requested(), expected_file)
+                         "leejet__MiniMax-H3-GGUF/qwen3vl_32b_minimax_h3-Q4_K_M.gguf")
 
         # Explicit GGUF quantizations and Comfy-Org Safetensors alternatives resolve to their repositories.
         for selected, expected_repo in (
             ("MiniMax-H3-Image-Pruned-Q2_K.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
+            ("MiniMax-H3-Image-Pruned-Q3_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
+            ("MiniMax-H3-Image-Pruned-Q4_K_S.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
+            ("MiniMax-H3-Image-Pruned-Q4_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
             ("MiniMax-H3-Image-Pruned-Q5_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
             ("diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors", "Comfy-Org/MiniMax-H3-Image"),
             ("diffusion_models/minimax_h3_image_pruned_bf16.safetensors", "Comfy-Org/MiniMax-H3-Image"),
@@ -114,11 +103,32 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "diffusion")
             self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
 
-        # A retained Q4 video encoder is compatible with the automatic Q2 target.
+        # Official sd.cpp text encoder alternatives (PrunaAI P-H3 4B, Comfy-Org 32B INT8, leejet GGUF) resolve cleanly.
+        for selected, expected_repo in (
+            ("qwen3vl_32b_minimax_h3-Q4_K_M.gguf", "leejet/MiniMax-H3-GGUF"),
+            ("qwen3vl_32b_minimax_h3-Q2_K_M.gguf", "leejet/MiniMax-H3-GGUF"),
+            ("text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors", "PrunaAI/P-H3-Image-Comfy"),
+            ("text_encoders/p-h3-image_text_encoder_bf16.safetensors", "PrunaAI/P-H3-Image-Comfy"),
+            ("text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "Comfy-Org/MiniMax-H3-Image"),
+        ):
+            prefs = {"model_files": {MODEL: {"text_encoder": selected}}}
+            comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "text_encoder")
+            self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
+
+        # If only Q2_K_M is installed, downloader upgrades to Q4_K_M in automatic mode, while resolve_model_files can fall back if offline.
         installed_encoder = self.files["text_encoder"]
-        legacy_encoder = installed_encoder.with_name(installed_encoder.name.replace("Q2_K_M", "Q4_K_M"))
-        installed_encoder.rename(legacy_encoder)
-        self.assertEqual(generate.resolve_model_files(self.model, want_vision=True)["enc"], legacy_encoder)
+        q2_encoder = installed_encoder.with_name(installed_encoder.name.replace("Q4_K_M", "Q2_K_M"))
+        installed_encoder.rename(q2_encoder)
+        q2_encoder.write_bytes(b"q2")
+        self.assertEqual(generate.resolve_model_files(self.model, want_vision=True)["enc"], q2_encoder)
+        enc_comp = next(c for c in self.model.components if c.role == "text_encoder")
+        repo_files = {"leejet/MiniMax-H3-GGUF": [installed_encoder.name, q2_encoder.name]}
+        with patch("atelier.transfers.hf_hub_download", return_value=str(installed_encoder)) as fetch:
+            result = downloader.download_component(enc_comp, _repo_files=repo_files)
+        fetch.assert_called_once_with(repo_id="leejet/MiniMax-H3-GGUF",
+                                      filename="qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
+                                      local_dir=str(installed_encoder.parent))
+        self.assertEqual(result, installed_encoder)
 
     def test_native_generation_and_ordered_edit_use_the_fixed_pdd_recipe(self):
         refs = [self.root / f"reference-{i}.png" for i in range(16)]
@@ -141,13 +151,22 @@ class MiniMaxH3ImageTests(unittest.TestCase):
                              [str(path) for path in ordered])
 
     def test_restores_flattened_comfy_orig_shapes_in_place_before_running_sd_cli(self):
-        diffusion = self.files["diffusion"]
+        gguf_name = "MiniMax-H3-Image-Pruned-Q4_K_M.gguf"
+        diffusion = settings.model_repo_dir("Abiray/MiniMax-H3-Image-GGUF") / gguf_name
+        diffusion.parent.mkdir(parents=True, exist_ok=True)
         data_offset, payload = _build_abiray_like_gguf(diffusion)
         os.utime(diffusion, ns=(1_700_000_000_000_000_000, 1_700_000_000_123_456_789))
         fp_before = model_store.fingerprint(diffusion)
 
+        req = {
+            **self.request,
+            "prefs_override": {
+                "auto_optimize": False,
+                "model_files": {MODEL: {"diffusion": gguf_name}},
+            },
+        }
         with patch.object(sdcpp, "run"), patch.object(sdcpp, "collect_outputs", return_value=[]):
-            generate.generate(**self.request)
+            generate.generate(**req)
 
         # File size, mtime, inode, data_offset, and tensor data payload are preserved byte-for-byte.
         self.assertEqual(model_store.fingerprint(diffusion), fp_before)
