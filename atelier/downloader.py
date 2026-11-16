@@ -177,9 +177,6 @@ def download_component(comp: Component,
                      and (inst_q is None or req_q is None
                           or inst_q >= min(req_q, quant._idx("Q4_K_S"))))
         if exact or reuse_enc:
-            if comp.role == "diffusion":
-                from .engine.sdcpp import ensure_gguf_orig_shapes
-                ensure_gguf_orig_shapes(installed)
             if log:
                 note = " · shared existing weight" if not exact else ""
                 log(f"  ✓ already there: {comp.role} ({installed.name}){note}")
@@ -217,20 +214,13 @@ def download_component(comp: Component,
 
     dest = local_dir / chosen
     if dest.is_file() and dest.stat().st_size > 0:
-        if comp.role == "diffusion":
-            from .engine.sdcpp import ensure_gguf_orig_shapes
-            ensure_gguf_orig_shapes(dest)
         if log:
             log(f"  ✓ already there: {comp.role} ({chosen})")
         return dest
     if log:
         log(f"  ↓ {comp.role} : {comp.repo}/{chosen}")
-    path = Path(hf_hub_download(repo_id=comp.repo, filename=chosen,
+    return Path(hf_hub_download(repo_id=comp.repo, filename=chosen,
                                 local_dir=str(local_dir)))
-    if comp.role == "diffusion":
-        from .engine.sdcpp import ensure_gguf_orig_shapes
-        ensure_gguf_orig_shapes(path)
-    return path
 
 
 def download_model(model: BaseModel,

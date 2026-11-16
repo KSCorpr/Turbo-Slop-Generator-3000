@@ -331,8 +331,13 @@ def level(kind: str, key: str, model_family: str) -> str:
         if key in ("lcm", "tcd"):
             return BAD
         return OK
-    if model_family in {"qwen21", "minimax_h3_image"}:
-        # Both use a fixed sigma sequence with Euler as the baseline.
+    if model_family == "minimax_h3_image":
+        if (kind, key) in (("sampler", "euler"), ("schedule", "auto"), ("schedule", "discrete")):
+            return BEST
+        if key in ("lcm", "tcd"):
+            return BAD
+        return OK
+    if model_family == "qwen21":
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
         if key in ("lcm", "tcd"):
@@ -443,8 +448,10 @@ def rationale(model_family: str) -> str:
                 "are available; the checkpoint's W4A8 format is not supported "
                 "by sd.cpp. On 12 GB cards these 13 GB weights need RAM offload.")
     if fam == "minimax_h3_image":
-        return ("**MiniMax H3 Image** uses **Euler, 6 steps and CFG 1** on the official "
-                "PDD sigmas. The experimental solvers keep this sigma sequence. "
+        return ("**MiniMax H3 Image** defaults to **Euler, 6 steps and CFG 1** with "
+                "`--sigmas minimax-h3-image`, matching the official sd.cpp CLI guide. "
+                "When you change the step count, sd.cpp's native discrete PDD denoiser "
+                "interpolates the schedule across your chosen steps. "
                 "Start at 1024 × 1024 with automatic memory placement.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
@@ -485,7 +492,8 @@ def describe(kind: str, key: str, model_family: str) -> str:
     if not entry:
         return ""
     if model_family == "minimax_h3_image" and kind == "schedule" and key == "auto":
-        return "**Official PDD sigmas** — fixed six-step sequence for MiniMax H3 Image."
+        return ("**Official PDD schedule** — passes `--sigmas minimax-h3-image` at 6 steps, "
+                "and uses sd.cpp's native discrete PDD interpolation when Steps is changed.")
     if model_family == "qwen21" and kind == "schedule" and key == "auto":
         return ("**Official Turbo sigmas** — the eight-step sequence is passed explicitly "
                 "to sd.cpp. Auto does not generate a different schedule here; "

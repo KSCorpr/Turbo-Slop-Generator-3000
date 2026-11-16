@@ -73,10 +73,10 @@ benchmark; the generation placement planner remains responsible for offload.
 Weights alone approaching/exceeding GPU memory receive an explicit offload note.
 
 INT8/BF16 choices for MOSS, Qwen 2.1 Turbo, Fibo 2, Krea Realism and MiniMax H3
-Image are visible before any metadata query. Krea 2 Turbo and MiniMax H3 Image
-also bridge their Comfy-Org INT8 ConvRot/BF16 Safetensors and GGUF sources
-(`vantagewithai/Krea-2-Turbo-GGUF` and `Abiray/MiniMax-H3-Image-GGUF`), plus the
-`PrunaAI/P-H3-Image-Comfy` Qwen3-VL-4B text encoders on MiniMax H3 Image.
+Image are visible before any metadata query. Krea 2 Turbo also bridges its
+Comfy-Org INT8 ConvRot/BF16 Safetensors and GGUF source
+(`vantagewithai/Krea-2-Turbo-GGUF`), while MiniMax H3 Image offers the
+`PrunaAI/P-H3-Image-Comfy` Qwen3-VL-4B and `Comfy-Org/MiniMax-H3-Image` text encoders.
 Cross-repository choices persist across restarts, download and generation;
 loading sizes still shows the original GGUF variants after selecting Safetensors.
 FP16/FP32 files are offered only where published and matched by the approved

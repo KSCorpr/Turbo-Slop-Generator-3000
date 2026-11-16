@@ -1,59 +1,13 @@
 """Verify the MiniMax H3 Image package and its native sd-cli requests."""
-import os
 from pathlib import Path
-import struct
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from atelier import downloader, model_catalog, model_store, registry, settings
+from atelier import downloader, model_catalog, registry, settings
 from atelier.engine import generate, sdcpp
 
 MODEL = "minimax-h3-image"
-
-
-def _pack_gguf_str(value: str) -> bytes:
-    encoded = value.encode("utf-8")
-    return struct.pack("<Q", len(encoded)) + encoded
-
-
-def _build_abiray_like_gguf(path: Path) -> tuple[int, bytes]:
-    kvs = [
-        _pack_gguf_str("general.architecture") + struct.pack("<I", 8) + _pack_gguf_str("wan"),
-        _pack_gguf_str("general.quantization_version") + struct.pack("<II", 4, 2),
-        _pack_gguf_str("general.file_type") + struct.pack("<II", 4, 15),
-    ]
-    orig_shapes = {
-        "adaln_t_table": (1025, 8),
-        "condition_proj.weight": (5376, 5120),
-        "final_layer.adaln_proj.linear.weight": (10752, 8),
-        "final_layer.video_out.weight": (576, 5376),
-        "video_patch_proj.weight": (5376, 96),
-        "blocks.0.adaln_proj.linear.weight": (96768, 8),
-    }
-    for name, dims in orig_shapes.items():
-        kvs.append(
-            _pack_gguf_str(f"comfy.gguf.orig_shape.{name}")
-            + struct.pack("<IIQ", 9, 5, len(dims))
-            + struct.pack(f"<{len(dims)}i", *dims)
-        )
-    kvs.append(_pack_gguf_str("config") + struct.pack("<I", 8) + _pack_gguf_str('{"pdd_steps":6}'))
-
-    tensors = []
-    offset = 0
-    for name, dims in orig_shapes.items():
-        flattened = dims[0] * dims[1]
-        tensors.append(_pack_gguf_str(name) + struct.pack("<IQIQ", 1, flattened, 0, offset))
-        offset += 64
-    # A quantized 2D tensor must remain untouched.
-    tensors.append(_pack_gguf_str("blocks.0.attn.qkv_proj.weight")
-                   + struct.pack("<I2QIQ", 2, 5376, 21504, 12, offset))
-
-    header = struct.pack("<4sIQQ", b"GGUF", 3, len(tensors), len(kvs)) + b"".join(kvs) + b"".join(tensors)
-    data_offset = ((len(header) + 31) // 32) * 32
-    payload = bytes(range(256)) * 4
-    path.write_bytes(header + b"\x00" * (data_offset - len(header)) + payload)
-    return data_offset, payload
 
 
 class MiniMaxH3ImageTests(unittest.TestCase):
@@ -89,19 +43,14 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.assertEqual(self.files["text_encoder"].relative_to(settings.MODELS_DIR).as_posix(),
                          "leejet__MiniMax-H3-GGUF/qwen3vl_32b_minimax_h3-Q4_K_M.gguf")
 
-        # Explicit GGUF quantizations and Comfy-Org Safetensors alternatives resolve to their repositories.
-        for selected, expected_repo in (
-            ("MiniMax-H3-Image-Pruned-Q2_K.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
-            ("MiniMax-H3-Image-Pruned-Q3_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
-            ("MiniMax-H3-Image-Pruned-Q4_K_S.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
-            ("MiniMax-H3-Image-Pruned-Q4_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
-            ("MiniMax-H3-Image-Pruned-Q5_K_M.gguf", "Abiray/MiniMax-H3-Image-GGUF"),
-            ("diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors", "Comfy-Org/MiniMax-H3-Image"),
-            ("diffusion_models/minimax_h3_image_pruned_bf16.safetensors", "Comfy-Org/MiniMax-H3-Image"),
+        # Official Comfy-Org Safetensors diffusion checkpoints resolve cleanly.
+        for selected in (
+            "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+            "diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
         ):
             prefs = {"model_files": {MODEL: {"diffusion": selected}}}
             comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "diffusion")
-            self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
+            self.assertEqual((comp.repo, comp.requested()), ("Comfy-Org/MiniMax-H3-Image", selected))
 
         # Official sd.cpp text encoder alternatives (PrunaAI P-H3 4B, Comfy-Org 32B INT8, leejet GGUF) resolve cleanly.
         for selected, expected_repo in (
@@ -130,7 +79,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
                                       local_dir=str(installed_encoder.parent))
         self.assertEqual(result, installed_encoder)
 
-    def test_native_generation_and_ordered_edit_use_the_fixed_pdd_recipe(self):
+    def test_native_generation_and_ordered_edit_use_sd_cpp_recipe_and_unlocked_steps(self):
         refs = [self.root / f"reference-{i}.png" for i in range(16)]
         for ref in refs:
             ref.touch()
@@ -150,65 +99,18 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             self.assertEqual([command[i+1] for i, arg in enumerate(command) if arg == "-r"],
                              [str(path) for path in ordered])
 
-    def test_restores_flattened_comfy_orig_shapes_in_place_before_running_sd_cli(self):
-        gguf_name = "MiniMax-H3-Image-Pruned-Q4_K_M.gguf"
-        diffusion = settings.model_repo_dir("Abiray/MiniMax-H3-Image-GGUF") / gguf_name
-        diffusion.parent.mkdir(parents=True, exist_ok=True)
-        data_offset, payload = _build_abiray_like_gguf(diffusion)
-        os.utime(diffusion, ns=(1_700_000_000_000_000_000, 1_700_000_000_123_456_789))
-        fp_before = model_store.fingerprint(diffusion)
-
-        req = {
-            **self.request,
-            "prefs_override": {
-                "auto_optimize": False,
-                "model_files": {MODEL: {"diffusion": gguf_name}},
-            },
-        }
-        with patch.object(sdcpp, "run"), patch.object(sdcpp, "collect_outputs", return_value=[]):
-            generate.generate(**req)
-
-        # File size, mtime, inode, data_offset, and tensor data payload are preserved byte-for-byte.
-        self.assertEqual(model_store.fingerprint(diffusion), fp_before)
-        raw = diffusion.read_bytes()
-        self.assertEqual(raw[data_offset:], payload)
-        # Subsequent calls are a no-op.
-        self.assertEqual(sdcpp.ensure_gguf_orig_shapes(diffusion), 0)
-
-        # Parse the patched GGUF header and verify GGML 2D shapes match stable-diffusion.cpp expectations.
-        with diffusion.open("rb") as f:
-            magic, version, tensor_count, kv_count = struct.unpack("<4sIQQ", f.read(24))
-            self.assertEqual((magic, version, tensor_count), (b"GGUF", 3, 7))
-            for _ in range(kv_count):
-                klen, = struct.unpack("<Q", f.read(8))
-                key = f.read(klen).decode("utf-8")
-                self.assertFalse(key.startswith("comfy.gguf.orig_shape."))
-                vtype, = struct.unpack("<I", f.read(4))
-                self.assertTrue(sdcpp._skip_gguf_value(f, vtype))
-            parsed_shapes = {}
-            for _ in range(tensor_count):
-                nlen, = struct.unpack("<Q", f.read(8))
-                name = f.read(nlen).decode("utf-8")
-                ndims, = struct.unpack("<I", f.read(4))
-                ne = struct.unpack(f"<{ndims}Q", f.read(8 * ndims))
-                ttype, _offset = struct.unpack("<IQ", f.read(12))
-                parsed_shapes[name] = (ne, ttype)
-            aligned_end = ((f.tell() + 31) // 32) * 32
-            self.assertEqual(aligned_end, data_offset)
-
-        self.assertEqual(parsed_shapes["video_patch_proj.weight"], ((96, 5376), 0))
-        self.assertEqual(parsed_shapes["final_layer.video_out.weight"], ((5376, 576), 0))
-        self.assertEqual(parsed_shapes["condition_proj.weight"], ((5120, 5376), 0))
-        self.assertEqual(parsed_shapes["adaln_t_table"], ((8, 1025), 0))
-        self.assertEqual(parsed_shapes["final_layer.adaln_proj.linear.weight"], ((8, 10752), 0))
-        self.assertEqual(parsed_shapes["blocks.0.adaln_proj.linear.weight"], ((8, 96768), 0))
-        self.assertEqual(parsed_shapes["blocks.0.attn.qkv_proj.weight"], ((5376, 21504), 12))
+        # Custom step counts omit --sigmas minimax-h3-image so sd-cli interpolates the PDD schedule across N steps.
+        with patch.object(sdcpp, "run") as run, patch.object(sdcpp, "collect_outputs", return_value=[]):
+            generate.generate(**{**self.request, "steps": 12})
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--steps") + 1], "12")
+        self.assertNotIn("--sigmas", command)
 
     def test_rejects_an_old_engine_and_unsupported_requests_before_inference(self):
         with patch.object(sdcpp, "run") as run:
             for changes, message in (
                 ({"ref_image": [self.root / "ref.png"] * 17}, "at most 16"),
-                ({"steps": 8}, "official PDD sigmas"),
+                ({"steps": 0}, "must be positive"),
                 ({"init_image": self.root / "ref.png"}, "reference-image editor"),
             ):
                 with self.subTest(changes=changes), self.assertRaisesRegex(sdcpp.EngineError, message):

@@ -438,11 +438,8 @@ def generate(
             raise sdcpp.EngineError(
                 f"{model.name} needs sd.cpp build {model.defaults['min_engine_build']} or newer. "
                 "Run update.bat (or ./update.sh on Linux/Mac).")
-        allowed_samplers = {p["sampler"] for p in model.presets}
-        if (steps != model.defaults["steps"] or cfg_scale != model.defaults["cfg_scale"]
-                or sampler not in {None, "", *allowed_samplers}
-                or schedule not in (None, "", "auto", "discrete") or flow_shift):
-            raise sdcpp.EngineError("Use a MiniMax H3 Image preset: 6 steps, CFG 1 and the official PDD sigmas.")
+        if steps <= 0:
+            raise sdcpp.EngineError("MiniMax H3 Image steps must be positive.")
     _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":
         if "--sigmas" not in sdcpp.supported_options(sd_cli):
@@ -573,6 +570,9 @@ def generate(
         text_encoder=enc, tokenizer=files["tokenizer"], llm_vision=llm_vision,
         t5xxl=t5xxl, clip_l=clip_l, uncond_model=uncond,
         extra_flags=list(model.defaults.get("extra_flags", [])) +
+                    (["--sigmas", "minimax-h3-image"]
+                     if model.family == "minimax_h3_image" and steps == 6 and schedule in (None, "", "auto")
+                     else []) +
                     (["--lora-apply-mode", "at_runtime"] if moss_dmd or krea_distill else []) +
                     (["--sigmas", krea_adapter.SIGMAS] if krea_distill else []),
         prompt=final_prompt, negative=negative,

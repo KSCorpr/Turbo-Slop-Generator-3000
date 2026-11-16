@@ -45,15 +45,14 @@ download the weights from **Models → MiniMax H3 Image**. By default it uses th
 official `Comfy-Org/MiniMax-H3-Image` INT8 ConvRot diffusion checkpoint (20.98 GB,
 which keeps `token_refiner` in BF16 and applies Hadamard rotation to the 50 DiT
 blocks), the `leejet/MiniMax-H3-GGUF` `Q4_K_M` Qwen3-VL-32B encoder (18.22 GB) and
-the dedicated image VAE (1.17 GB). Full BF16 diffusion (40.23 GB),
-[`Abiray/MiniMax-H3-Image-GGUF`](https://huggingface.co/Abiray/MiniMax-H3-Image-GGUF)
-(`Q5_K_M` 14.10 GB down to `Q2_K` 6.88 GB), `Q2_K_M` / INT8 ConvRot 32B encoders,
-and lightweight [`PrunaAI/P-H3-Image-Comfy`](https://huggingface.co/PrunaAI/P-H3-Image-Comfy)
+the dedicated image VAE (1.17 GB). Full BF16 diffusion (40.23 GB), `Q2_K_M` / INT8
+ConvRot 32B encoders, and lightweight [`PrunaAI/P-H3-Image-Comfy`](https://huggingface.co/PrunaAI/P-H3-Image-Comfy)
 Qwen3-VL-4B encoders (`INT8 ConvRot` 5.12 GB or `BF16` 9.14 GB) remain selectable.
-**Images → MiniMax H3 Image** generates with Euler, six PDD steps and CFG 1. For
-editing, add up to 16 references and cite them in order as `<Picture 1>`,
-`<Picture 2>`, etc. On 12 GB cards, start at 1024 × 1024 with automatic memory
-placement. [Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/models/minimax_h3_image.md).
+**Images → MiniMax H3 Image** defaults to Euler, 6 steps and CFG 1 (`--sigmas minimax-h3-image`),
+with the Steps slider unlocked for longer interpolated schedules. For editing, add
+up to 16 references and cite them in order as `<Picture 1>`, `<Picture 2>`, etc.
+On 12 GB cards, start at 1024 × 1024 with automatic memory placement.
+[Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/models/minimax_h3_image.md).
 
 **Kromoss:** the MOSS fine-tune is available in **Models** and **Images → Kromoss**.
 INT8 ConvRot is the default, with BF16 selectable. It shares MOSS's encoder
