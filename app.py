@@ -220,6 +220,7 @@ from atelier.ui.generate_tab import build_generative_tab
 from atelier.ui.library_tab import build_library_tab
 from atelier.ui.manage_tab import build_manage_tab
 from atelier.ui.outpaint_tab import build_outpaint_tab
+from atelier.ui.png_style_tab import build_png_style_tab
 from atelier.ui.settings_tab import build_settings_tab
 from atelier.ui.threed_tab import build_threed_tab
 from atelier.ui.theme import CSS, SHORTCUTS, theme
@@ -348,6 +349,7 @@ def build_app() -> gr.Blocks:
                                       generation_tabs=generation_tabs)
                     build_outpaint_tab(pending_outpaint=pending_outpaint,
                                        tabs=tabs, parent_tabs=tool_tabs)
+                    build_png_style_tab()
                     build_threed_tab(pending_3d=pending_3d, tabs=tabs,
                                      parent_tabs=tool_tabs)
                     build_image_splats_tab()
