@@ -223,6 +223,13 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                         info="Unchecked: resizes output to exact source pixel dimensions (W × H). "
                         "Checked: keeps the AI model's native resolution adjusted to the exact source ratio.",
                     )
+                    mask_png = gr.Image(
+                        label="Optional external alpha mask PNG (to slice layers from a full render)",
+                        type="pil",
+                        image_mode="RGBA",
+                        buttons=widgets.IMAGE_VIEW_ONLY,
+                        elem_id="png-style-mask",
+                    )
 
                 with gr.Row():
                     backdrop = gr.Dropdown(
@@ -353,6 +360,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
 
         def re_apply_mask(
             img: Image.Image | None,
+            mask_override: Image.Image | None,
             raw_path: str | None,
             out_path_str: str | None,
             preserve_a: bool,
@@ -363,17 +371,18 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             desc = _describe_source(img, mid, preserve_prop)
             if img is None or not raw_path or not Path(raw_path).is_file():
                 return desc, gr.update(), gr.update(), gr.update(), gr.update()
+            alpha_src = mask_override if mask_override is not None else img
             with Image.open(raw_path) as raw_gen:
                 final_img = ps.composite_and_transfer_alpha(
                     raw_gen,
-                    img,
+                    alpha_src,
                     preserve_alpha=bool(preserve_a),
                     preserve_proportions=bool(preserve_prop),
                 )
             comp_before = ps.prepare_comparison_source(img, final_img.size)
             target_path = (
                 Path(out_path_str)
-                if out_path_str
+                if out_path_str and mask_override is None
                 else settings.OUTPUT_DIR / f"png-style-{time.time_ns()}.png"
             )
             final_img.save(target_path, format="PNG")
@@ -389,11 +398,12 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                 ),
             )
 
-        for toggle in (preserve_alpha, preserve_proportions):
+        for toggle in (preserve_alpha, preserve_proportions, mask_png):
             toggle.change(
                 re_apply_mask,
                 inputs=[
                     image,
+                    mask_png,
                     raw_gen_state,
                     last_out_state,
                     preserve_alpha,
@@ -406,6 +416,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
 
         def do_png_style(
             img: Image.Image | None,
+            mask_override: Image.Image | None,
             model_id: str | None,
             prompt_txt: str,
             lock_sil: bool,
@@ -545,11 +556,12 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             # Keep a copy of the raw generated image in TMP_DIR so toggling
             # preserve_alpha / preserve_proportions re-masks without re-generating.
             cached_raw = settings.TMP_DIR / f"png_style_{job_id}_raw.png"
+            alpha_src = mask_override if mask_override is not None else img
             with Image.open(raw_out_path) as raw_gen:
                 raw_gen.save(cached_raw, format="PNG")
                 final_img = ps.composite_and_transfer_alpha(
                     raw_gen,
-                    img,
+                    alpha_src,
                     preserve_alpha=bool(preserve_a),
                     preserve_proportions=bool(preserve_prop),
                 )
@@ -598,6 +610,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             do_png_style,
             inputs=[
                 image,
+                mask_png,
                 model,
                 prompt,
                 lock_silhouette,
