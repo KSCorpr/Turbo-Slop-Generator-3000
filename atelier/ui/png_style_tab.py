@@ -36,11 +36,13 @@ def _is_edit(m) -> bool:
 
 
 def _models() -> list:
-    return [
+    all_models = [
         m
         for m in registry.load_base_models(settings.load_prefs())
         if _is_edit(m) or m.defaults.get("supports_img2img", True)
     ]
+    # List native reference-editing models (Flux.2, Qwen 2.1, MiniMax H3, Fibo 2.0) first
+    return sorted(all_models, key=lambda m: 0 if _is_edit(m) else 1)
 
 
 def _model_choices() -> tuple[list[tuple[str, str]], str | None]:
@@ -172,6 +174,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
         preset_choices = [(p.label, p.id) for p in ps.STYLE_PRESETS]
         raw_gen_state = gr.State(None)
         last_out_state = gr.State(None)
+        last_seed_state = gr.State(None)
 
         with gr.Row():
             with gr.Column(scale=3):
@@ -184,12 +187,20 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                 )
                 info_md = gr.Markdown(_describe_source(None, _first, False))
 
-                model = gr.Dropdown(
-                    _choices,
-                    value=_first,
-                    label="Model used",
-                    elem_id="png-style-model",
-                )
+                with gr.Row():
+                    model = gr.Dropdown(
+                        _choices,
+                        value=_first,
+                        label="Model used",
+                        elem_id="png-style-model",
+                        scale=4,
+                    )
+                    refresh_models = gr.Button(
+                        "↻ Refresh",
+                        size="sm",
+                        scale=1,
+                        min_width=96,
+                    )
                 mode_md = gr.Markdown("")
 
                 preset = gr.Radio(
@@ -252,10 +263,22 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                         interactive=_first != "qwen-image-2.1-turbo",
                         scale=2,
                     )
+                with gr.Row():
                     seed = gr.Number(
                         value=-1,
                         precision=0,
                         label="Seed (-1 = random)",
+                        scale=2,
+                        elem_id="png-style-seed",
+                    )
+                    reuse_seed = gr.Button(
+                        "🔒 Reuse last seed",
+                        size="sm",
+                        scale=1,
+                    )
+                    random_seed = gr.Button(
+                        "🎲 Random (-1)",
+                        size="sm",
                         scale=1,
                     )
 
@@ -306,6 +329,36 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             return p.prompt if p else ""
 
         preset.change(_on_preset, inputs=[preset], outputs=[prompt], queue=False)
+
+        def _refresh_model_dropdown(current_id):
+            choices, first = _model_choices()
+            valid_ids = {mid for _, mid in choices}
+            chosen = current_id if current_id in valid_ids else first
+            return gr.update(choices=choices, value=chosen)
+
+        refresh_models.click(
+            _refresh_model_dropdown,
+            inputs=[model],
+            outputs=[model],
+            queue=False,
+        )
+
+        def _reuse_last_seed(last_s):
+            if last_s is None:
+                return gr.update(), t("No previous seed available yet.")
+            return gr.update(value=int(last_s)), t(f"🔒 Locked seed: `{int(last_s)}`")
+
+        reuse_seed.click(
+            _reuse_last_seed,
+            inputs=[last_seed_state],
+            outputs=[seed, status],
+            queue=False,
+        )
+        random_seed.click(
+            lambda: gr.update(value=-1),
+            outputs=[seed],
+            queue=False,
+        )
 
         def _on_source_or_plan(img, mid, preserve_prop):
             if img is None:
@@ -363,6 +416,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             mask_override: Image.Image | None,
             raw_path: str | None,
             out_path_str: str | None,
+            last_s: int | None,
             preserve_a: bool,
             preserve_prop: bool,
             mid: str | None,
@@ -386,6 +440,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                 else settings.OUTPUT_DIR / f"png-style-{time.time_ns()}.png"
             )
             final_img.save(target_path, format="PNG")
+            seed_suffix = f" · **Seed:** `{last_s}`" if last_s is not None else ""
             return (
                 desc,
                 gr.update(value=str(target_path)),
@@ -395,7 +450,8 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                     w=final_img.width,
                     h=final_img.height,
                     n=target_path.name,
-                ),
+                )
+                + seed_suffix,
             )
 
         for toggle in (preserve_alpha, preserve_proportions, mask_png):
@@ -406,6 +462,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                     mask_png,
                     raw_gen_state,
                     last_out_state,
+                    last_seed_state,
                     preserve_alpha,
                     preserve_proportions,
                     model,
@@ -526,13 +583,14 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                     q, preview_path, int(steps_v), logs
                 ):
                     yield (
-                        status_txt,
+                        f"{status_txt} · Seed: `{s}`",
                         frame_upd,
                         gr.update(),
                         gr.update(),
                         log_txt,
                         gr.update(),
                         gr.update(),
+                        s,
                     )
             finally:
                 consumer_closed.set()
@@ -549,6 +607,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                     "\n".join(logs),
                     gr.update(),
                     gr.update(),
+                    s,
                 )
                 return
 
@@ -590,13 +649,14 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
             )
             comp_before = ps.prepare_comparison_source(img, final_img.size)
             logs.append(
-                f"\n✅ Alpha & proportions applied ({final_img.width}×{final_img.height} px) → {out_path.name}"
+                f"\n✅ Alpha & proportions applied ({final_img.width}×{final_img.height} px) · Seed: {s} → {out_path.name}"
             )
             yield (
-                t("✅ Textured PNG ready: {n} ({w}×{h} px)").format(
+                t("✅ Textured PNG ready: {n} ({w}×{h} px) · **Seed:** `{s}`").format(
                     n=out_path.name,
                     w=final_img.width,
                     h=final_img.height,
+                    s=s,
                 ),
                 gr.update(value=str(out_path)),
                 (comp_before, final_img),
@@ -604,6 +664,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                 "\n".join(logs),
                 str(cached_raw),
                 str(out_path),
+                s,
             )
 
         evt = run.click(
@@ -628,6 +689,7 @@ def build_png_style_tab(tab_id: str = "png-style") -> None:
                 log,
                 raw_gen_state,
                 last_out_state,
+                last_seed_state,
             ],
             stream_every=0.15,
             **widgets.GPU_QUEUE,
