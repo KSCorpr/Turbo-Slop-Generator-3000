@@ -31,16 +31,16 @@ _BACKDROPS: dict[str, tuple[int, int, int]] = {
 }
 
 
+def _is_edit(m) -> bool:
+    return (m.defaults.get("edit") if m else None) in (True, "full")
+
+
 def _models() -> list:
     return [
         m
         for m in registry.load_base_models(settings.load_prefs())
-        if m.defaults.get("supports_img2img", True)
+        if _is_edit(m) or m.defaults.get("supports_img2img", True)
     ]
-
-
-def _is_edit(m) -> bool:
-    return (m.defaults.get("edit") if m else None) in (True, "full")
 
 
 def _model_choices() -> tuple[list[tuple[str, str]], str | None]:
@@ -73,7 +73,8 @@ def _defaults(model_id: str | None) -> dict:
     base_h = int(d.get("height", 1024) or 1024)
     base_size = max(base_w, base_h)
     multiple = int(d.get("size_multiple", 16) or 16)
-    max_side = int(d.get("size_max", 4096) or 4096)
+    default_max = 6272 if family == "minimax_h3_image" else 4096
+    max_side = int(d.get("size_max", default_max) or default_max)
     return {
         "steps": int(d.get("steps", 8) or 8),
         "cfg_scale": float(d.get("cfg_scale", 1.0) or 1.0),

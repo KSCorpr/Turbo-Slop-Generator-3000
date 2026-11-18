@@ -281,7 +281,7 @@ def build_texture_prompt(
 
     if model_family == "minimax_h3_image" and "<Picture" not in body:
         body = f"In <Picture 1>, {body}"
-    elif model_family == "fibo2" and "<image_" not in body:
+    elif model_family.startswith("fibo2") and "<image_" not in body:
         body = f"Using <image_1> as the exact 3D structure reference, {body}"
     return body
 

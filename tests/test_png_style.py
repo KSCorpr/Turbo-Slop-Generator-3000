@@ -117,6 +117,21 @@ class PngStyleEngineTests(unittest.TestCase):
         self.assertEqual(out.getpixel((0, 0)), (0, 0, 0, 0))
         self.assertEqual(out.getpixel((512, 256))[3], 255)
 
+    def test_model_choices_include_minimax_h3_image_and_editing_models(self):
+        from atelier.ui import png_style_tab
+
+        choices, _ = png_style_tab._model_choices()
+        ids = {mid for _, mid in choices}
+        self.assertTrue(
+            {
+                "minimax-h3-image",
+                "flux2-klein-9b",
+                "qwen-image-2.1-turbo",
+                "fibo2-dev",
+                "fibo2-edit-turbo",
+            }.issubset(ids)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
