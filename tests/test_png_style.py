@@ -61,8 +61,8 @@ class PngStyleEngineTests(unittest.TestCase):
     def test_build_texture_prompt_adds_silhouette_coverage_and_model_tokens(self):
         p_flux = ps.build_texture_prompt("weathered bronze", model_family="flux2", lock_silhouette=True)
         self.assertIn("weathered bronze", p_flux)
-        self.assertIn("complete full coverage artwork", p_flux)
-        self.assertIn("edge-to-edge dense composition", p_flux)
+        self.assertIn("uniform real-world material scale", p_flux)
+        self.assertIn("consistent texel density", p_flux)
 
         p_h3 = ps.build_texture_prompt("cyberpunk neon", model_family="minimax_h3_image", lock_silhouette=True)
         self.assertTrue(p_h3.startswith("In <Picture 1>, "))

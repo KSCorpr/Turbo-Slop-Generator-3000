@@ -265,16 +265,19 @@ def build_texture_prompt(
     if lock_silhouette:
         body = (
             "The reference image is an untextured 3D grey clay render with "
-            "ambient occlusion and lighting. Render and texture this 3D surface "
-            f"as: {clean}. Replace the neutral grey clay with rich, realistic "
-            "surface materials and colors while strictly preserving the exact "
-            "3D geometry, curves, layout, camera angle, ambient occlusion "
-            "shadows, lighting direction, proportions, and outer silhouette of "
-            "the reference object, complete full coverage artwork, edge-to-edge "
-            "dense composition filling the entire shape and boundary without "
-            "voids or empty spaces, transform the surface materials and visual "
-            "aesthetics completely inside the silhouette, vibrant detailed "
-            "texture, master quality, isolated background"
+            "ambient occlusion and directional lighting. Apply realistic "
+            f"surface textures to this 3D mesh as: {clean}. "
+            "Maintain a strictly uniform real-world material scale and "
+            "consistent texel density across the entire object from top to "
+            "bottom. Respect the 3D surface normals and relief: keep flat "
+            "carved surfaces smooth and unobstructed, and texture steep "
+            "embankments as continuous surfaces without adding out-of-scale "
+            "3D objects, miniature trees, giant macro debris, or extra "
+            "boulders. Strictly preserve the exact 3D geometry, curves, "
+            "camera angle, ambient occlusion shadows, lighting direction, "
+            "proportions, and outer silhouette of the reference object, "
+            "complete edge-to-edge surface coverage inside the silhouette, "
+            "isolated background"
         )
     else:
         body = clean
