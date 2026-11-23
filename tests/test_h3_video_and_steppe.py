@@ -28,31 +28,30 @@ class H3ImageNewWeightsTests(unittest.TestCase):
         self.enterContext(patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"))
         self.enterContext(patch.object(sdcpp, "binary_help", return_value="--sigmas minimax-h3-image --rng"))
 
-    def test_w4a8_and_unsloth_gguf_weights_resolve_and_guard_old_engine(self):
-        for selected, expected_repo in (
-            ("diffusion_models/minimax_h3_image_pruned_w4a8.safetensors", "Comfy-Org/MiniMax-H3-Image"),
-            ("minimax_h3_image_pruned-UD-Q4_K_XL.gguf", "unsloth/MiniMax-H3-Image-GGUF"),
-            ("minimax_h3_image_pruned-UD-Q3_K_XL.gguf", "unsloth/MiniMax-H3-Image-GGUF"),
+    def test_clean_two_tier_h3_image_weights_resolve_and_guard_old_engine(self):
+        model_default = registry.get_base_model("minimax-h3-image", {})
+        diff_comp = next(c for c in model_default.components if c.role == "diffusion")
+        enc_comp = next(c for c in model_default.components if c.role == "text_encoder")
+        vae_comp = next(c for c in model_default.components if c.role == "vae")
+        self.assertEqual(len(diff_comp.selectable), 2)
+        self.assertEqual(diff_comp.alternatives, ())
+        self.assertEqual(len(enc_comp.alternatives), 2)  # default + 1 alternative
+        self.assertEqual(vae_comp.alternatives, ())
+
+        for selected in (
+            "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors",
+            "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
         ):
             prefs = {"model_files": {"minimax-h3-image": {"diffusion": selected}}}
             comp = next(c for c in registry.get_base_model("minimax-h3-image", prefs).components if c.role == "diffusion")
-            self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
+            self.assertEqual((comp.repo, comp.requested()), ("Comfy-Org/MiniMax-H3-Image", selected))
 
-        prefs_w4a8_enc = {
-            "model_files": {
-                "minimax-h3-image": {
-                    "diffusion": "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors",
-                    "text_encoder": "text_encoders/p-h3-image_text_encoder_w4a8.safetensors",
-                }
-            }
-        }
-        model = registry.get_base_model("minimax-h3-image", prefs_w4a8_enc)
-        for comp in model.components:
+        for comp in model_default.components:
             p = settings.model_repo_dir(comp.repo) / comp.requested()
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"ok")
 
-        # Older engine (< 1110) must be rejected before launching sd-cli for W4A8
+        # Older engine (< 1110) must be rejected before launching sd-cli for default W4A8
         self.manifest.write_text('{"tag":"master-1098-b521db4"}', encoding="utf-8")
         with patch.object(sdcpp, "run") as run:
             with self.assertRaisesRegex(sdcpp.EngineError, "build 1110"):
@@ -66,7 +65,7 @@ class H3ImageNewWeightsTests(unittest.TestCase):
                     height=2048,
                     seed=42,
                     batch_count=1,
-                    prefs_override={**prefs_w4a8_enc, "auto_optimize": False},
+                    prefs_override={"auto_optimize": False},
                     save_prompt=False,
                 )
         run.assert_not_called()

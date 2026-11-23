@@ -26,7 +26,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.enterContext(patch.object(settings, "PREFS_FILE", settings.USERDATA_DIR / "prefs.json"))
         settings.save_prefs({"system_mode": "manual", "auto_optimize": False})
         self.manifest = settings.BIN_DIR / "engine-manifest.json"
-        self.manifest.write_text('{"tag":"master-1088-32d516c"}', encoding="utf-8")
+        self.manifest.write_text('{"tag":"master-1117-0d71f96"}', encoding="utf-8")
         self.enterContext(patch.object(settings, "find_sd_cli", return_value=self.root / "sd-cli"))
         self.enterContext(patch.object(sdcpp, "binary_help", return_value="--sigmas minimax-h3-image --rng"))
         self.model = registry.get_base_model(MODEL, {})
@@ -48,46 +48,28 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.assertEqual(self.model.defaults["min_generation_area"], 4194304)
         self.assertEqual(set(self.files), {"diffusion", "text_encoder", "vae"})
         self.assertEqual(self.files["diffusion"].relative_to(settings.MODELS_DIR).as_posix(),
-                         "Comfy-Org__MiniMax-H3-Image/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors")
+                         "Comfy-Org__MiniMax-H3-Image/diffusion_models/minimax_h3_image_pruned_w4a8.safetensors")
         self.assertEqual(self.files["vae"].name, "minimax_h3_image_vae_fp16.safetensors")
         self.assertEqual(self.files["text_encoder"].relative_to(settings.MODELS_DIR).as_posix(),
-                         "leejet__MiniMax-H3-GGUF/qwen3vl_32b_minimax_h3-Q4_K_M.gguf")
+                         "PrunaAI__P-H3-Image-Comfy/text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors")
 
-        # Official Comfy-Org Safetensors diffusion checkpoints resolve cleanly.
+        # Clean 2-tier Comfy-Org Safetensors diffusion choices (W4A8 fast default + INT8 ConvRot max quality).
         for selected in (
+            "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors",
             "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
-            "diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
         ):
             prefs = {"model_files": {MODEL: {"diffusion": selected}}}
             comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "diffusion")
             self.assertEqual((comp.repo, comp.requested()), ("Comfy-Org/MiniMax-H3-Image", selected))
 
-        # Official sd.cpp text encoder alternatives (PrunaAI P-H3 4B, Comfy-Org 32B INT8, leejet GGUF) resolve cleanly.
+        # Clean 2-tier text encoder choices (P-H3 4B INT8 fast default + Qwen3-VL-32B Q4_K_M max precision).
         for selected, expected_repo in (
-            ("qwen3vl_32b_minimax_h3-Q4_K_M.gguf", "leejet/MiniMax-H3-GGUF"),
-            ("qwen3vl_32b_minimax_h3-Q2_K_M.gguf", "leejet/MiniMax-H3-GGUF"),
             ("text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors", "PrunaAI/P-H3-Image-Comfy"),
-            ("text_encoders/p-h3-image_text_encoder_bf16.safetensors", "PrunaAI/P-H3-Image-Comfy"),
-            ("text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "Comfy-Org/MiniMax-H3-Image"),
+            ("qwen3vl_32b_minimax_h3-Q4_K_M.gguf", "leejet/MiniMax-H3-GGUF"),
         ):
             prefs = {"model_files": {MODEL: {"text_encoder": selected}}}
             comp = next(c for c in registry.get_base_model(MODEL, prefs).components if c.role == "text_encoder")
             self.assertEqual((comp.repo, comp.requested()), (expected_repo, selected))
-
-        # If only Q2_K_M is installed, downloader upgrades to Q4_K_M in automatic mode, while resolve_model_files can fall back if offline.
-        installed_encoder = self.files["text_encoder"]
-        q2_encoder = installed_encoder.with_name(installed_encoder.name.replace("Q4_K_M", "Q2_K_M"))
-        installed_encoder.rename(q2_encoder)
-        q2_encoder.write_bytes(b"q2")
-        self.assertEqual(generate.resolve_model_files(self.model, want_vision=True)["enc"], q2_encoder)
-        enc_comp = next(c for c in self.model.components if c.role == "text_encoder")
-        repo_files = {"leejet/MiniMax-H3-GGUF": [installed_encoder.name, q2_encoder.name]}
-        with patch("atelier.transfers.hf_hub_download", return_value=str(installed_encoder)) as fetch:
-            result = downloader.download_component(enc_comp, _repo_files=repo_files)
-        fetch.assert_called_once_with(repo_id="leejet/MiniMax-H3-GGUF",
-                                      filename="qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
-                                      local_dir=str(installed_encoder.parent))
-        self.assertEqual(result, installed_encoder)
 
     def test_native_generation_and_ordered_edit_use_sd_cpp_recipe_and_unlocked_steps(self):
         refs = [self.root / f"reference-{i}.png" for i in range(16)]
@@ -147,19 +129,15 @@ class MiniMaxH3ImageTests(unittest.TestCase):
                 self.assertEqual((meta["canvas_width"], meta["canvas_height"]), expected_canvas)
 
     def test_q2_text_encoder_warns_and_ui_exposes_4mp_16mp_and_bypass_toggle(self):
-        installed_encoder = self.files["text_encoder"]
-        q2_encoder = installed_encoder.with_name(installed_encoder.name.replace("Q4_K_M", "Q2_K_M"))
-        installed_encoder.rename(q2_encoder)
-        q2_encoder.write_bytes(b"q2")
-
-        enc_menu = generation_weights.menus(MODEL)[1]
-        self.assertIn("low precision; Q4_K_M or P-H3 recommended", enc_menu["choices"][0][0])
-        self.assertTrue(any(val == q2_encoder.name and "low precision" in lbl
-                            for lbl, val in enc_menu["choices"]))
+        # Custom Q2_K_M file still triggers the low-precision warning if manually loaded.
+        q2_custom = settings.CUSTOM_DIR / "qwen3vl_32b_minimax_h3-Q2_K_M.gguf"
+        q2_custom.write_bytes(b"q2")
+        settings.save_prefs({"system_mode": "manual", "auto_optimize": False,
+                             "generation_custom_files": {MODEL: {"text_encoder": "__local__:qwen3vl_32b_minimax_h3-Q2_K_M.gguf"}}})
 
         logs = []
         with patch.object(sdcpp, "run"), patch.object(sdcpp, "collect_outputs", return_value=[]):
-            generate.generate(**self.request, log=logs.append)
+            generate.generate(**self.request, encoder_override=q2_custom, log=logs.append)
         self.assertTrue(any("Q2_K_M quantization" in line and "Upgrade to Q4_K_M" in line for line in logs), logs)
 
         with gr.Blocks() as demo:
@@ -197,7 +175,10 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             ):
                 with self.subTest(changes=changes), self.assertRaisesRegex(sdcpp.EngineError, message):
                     generate.generate(**{**self.request, **changes})
-            self.manifest.write_text('{"tag":"master-1087-f8417d0"}', encoding="utf-8")
-            with self.assertRaisesRegex(sdcpp.EngineError, "build 1088"):
+            self.manifest.write_text('{"tag":"master-1089-f8417d0"}', encoding="utf-8")
+            with self.assertRaisesRegex(sdcpp.EngineError, "build 1090"):
+                generate.generate(**self.request)
+            self.manifest.write_text('{"tag":"master-1106-532d2c1"}', encoding="utf-8")
+            with self.assertRaisesRegex(sdcpp.EngineError, "build 1110"):
                 generate.generate(**self.request)
         run.assert_not_called()

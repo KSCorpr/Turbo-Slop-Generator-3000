@@ -169,75 +169,37 @@ base_models:
     tags: [distilled, editing, int8, safetensors]
     description: >
       Text-to-image and editing with up to 16 ordered reference images.
-      Follows the official sd.cpp model guide: INT8 ConvRot diffusion
-      (20.98 GB, keeping token_refiner in BF16) by default, with Comfy-Org
-      W4A8 INT8 (12.5 GB, requires sd.cpp build 1110+), BF16 (40.23 GB), and
-      Unsloth Dynamic GGUF quants (UD-Q3_K_XL 11.4 GB to Q8_0 22 GB)
-      selectable. Uses Qwen3-VL-32B Q4_K_M (18.22 GB) by default, with
-      Qwen3-VL-32B INT8 ConvRot (27.14 GB) and the lighter P-H3 Qwen3-VL-4B
-      encoder (W4A8 3.58 GB, INT8 ConvRot 5.12 GB, or BF16 9.14 GB, connector
-      included) selectable. Q2_K_M (13.10 GB) remains selectable as a fallback,
-      though below-Q4 encoders can distort faces and proportions. Uses the
-      dedicated image VAE (1.17 GB). Native working range is 4 MP–20 MP
-      (2048 × 2048 default; ~16 MP optimal up to 6272 × 2688); targets under
-      4 MP generate on a 4 MP canvas and Lanczos-downscale automatically.
-      Requires sd.cpp build 1088+ (1110+ for W4A8). Public downloads.
-      MiniMax H3 Image Community License.
+      Clean 2-tier setup for fast 4 MP (2048 × 2048) output on 11–12 GB GPUs:
+      defaults to Comfy-Org W4A8 INT8 diffusion (12.5 GB, native INT8 kernels,
+      requires sd.cpp build 1110+) + P-H3 Qwen3-VL-4B INT8 ConvRot encoder
+      (5.12 GB, fits in VRAM, ~2 s encoding, shared with H3 Video) + dedicated
+      image VAE (1.17 GB). Optional max-fidelity weights: INT8 ConvRot
+      diffusion (21.0 GB) and Qwen3-VL-32B Q4_K_M encoder (18.2 GB, shared
+      with H3 Video). Native working range is 4 MP–20 MP (2048 × 2048 default;
+      up to 6272 × 2688); targets under 4 MP generate on a 4 MP canvas and
+      Lanczos-downscale automatically. Public downloads. MiniMax H3 Image
+      Community License.
     sources:
       diffusion:
         repo: Comfy-Org/MiniMax-H3-Image
-        match: "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
-        label: "INT8 ConvRot (official default)"
+        match: "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors"
+        label: "W4A8 INT8 (12.5 GB · recommended fast 4 MP)"
         selectable:
-          - "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
           - "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors"
-          - "diffusion_models/minimax_h3_image_pruned_bf16.safetensors"
-        alternatives:
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-UD-Q4_K_XL.gguf"
-            label: "Unsloth Dynamic UD-Q4_K_XL (13.6 GB)"
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-Q4_K_M.gguf"
-            label: "Unsloth Q4_K_M (12.7 GB)"
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-UD-Q3_K_XL.gguf"
-            label: "Unsloth Dynamic UD-Q3_K_XL (11.4 GB · 12 GB cards)"
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-Q5_K_M.gguf"
-            label: "Unsloth Q5_K_M (14.6 GB)"
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-Q6_K.gguf"
-            label: "Unsloth Q6_K (16.6 GB)"
-          - repo: unsloth/MiniMax-H3-Image-GGUF
-            match: "minimax_h3_image_pruned-Q8_0.gguf"
-            label: "Unsloth Q8_0 (22.0 GB)"
+          - "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
       text_encoder:
-        repo: leejet/MiniMax-H3-GGUF
-        match: "qwen3vl_32b_minimax_h3-{enc_quant}.gguf"
-        label: "Qwen3-VL-32B GGUF (Q4_K_M)"
-        quantizable: true
-        auto_quant: Q4_K_M
-        selectable:
-          - "qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
-          - "qwen3vl_32b_minimax_h3-Q2_K_M.gguf"
+        repo: PrunaAI/P-H3-Image-Comfy
+        match: "text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors"
+        label: "P-H3 4B INT8 ConvRot (5.12 GB · recommended fast, fits in VRAM)"
         alternatives:
-          - repo: PrunaAI/P-H3-Image-Comfy
-            match: "text_encoders/p-h3-image_text_encoder_w4a8.safetensors"
-            label: "P-H3 Qwen3-VL-4B W4A8 (3.58 GB · build 1110+)"
-          - repo: PrunaAI/P-H3-Image-Comfy
-            match: "text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors"
-            label: "P-H3 Qwen3-VL-4B INT8 ConvRot"
-          - repo: PrunaAI/P-H3-Image-Comfy
-            match: "text_encoders/p-h3-image_text_encoder_bf16.safetensors"
-            label: "P-H3 Qwen3-VL-4B BF16"
-          - repo: Comfy-Org/MiniMax-H3-Image
-            match: "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
-            label: "Qwen3-VL-32B INT8 ConvRot"
+          - repo: leejet/MiniMax-H3-GGUF
+            match: "qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
+            label: "Qwen3-VL-32B Q4_K_M (18.2 GB · max prompt precision)"
       vae:
         repo: Comfy-Org/MiniMax-H3-Image
         match: "vae/minimax_h3_image_vae_fp16.safetensors"
     defaults:
-      min_engine_build: 1088
+      min_engine_build: 1090
       steps: 6
       benchmark_steps: 6
       cfg_scale: 1.0
