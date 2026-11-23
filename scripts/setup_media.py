@@ -324,10 +324,34 @@ def install_splat():
     print("COLMAP + Brush installed.", flush=True)
 
 
+def install_steppe(variant="200m-1step"):
+    from atelier import steppe
+    target = addons.root("steppe")
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / "installed.json"
+    marker.unlink(missing_ok=True)
+    py = environment("steppe")
+    # CUDA 12.6 keeps GTX 1080 (Pascal), RTX 2080 Ti (Turing) and RTX 3060 (Ampere) working.
+    constraints = target / "constraints.txt"
+    constraints.write_text("torch==2.7.1+cu126\n", encoding="utf-8")
+    pip(py, "torch==2.7.1+cu126", "--index-url", "https://download.pytorch.org/whl/cu126")
+    pip(py, "-c", constraints, "safetensors>=0.5,<0.8", "diffusers>=0.32,<1",
+        "accelerate>=1.0,<2", "numpy>=1.26,<3", "Pillow>=10.2,<13",
+        "huggingface_hub>=0.26,<1", "imageio>=2.34,<3", "imageio-ffmpeg>=0.5,<1")
+    _install_source(steppe.SOURCE_REPO, steppe.SOURCE_COMMIT, target / "source")
+    wrapper = ROOT / "scripts/tools/run_steppe.py"
+    run(py, wrapper, "--addon-root", target, "--probe")
+    steppe.download_models(variant=variant)
+    marker.write_text(json.dumps({"commit": steppe.SOURCE_COMMIT,
+                                  "variant": variant}), encoding="utf-8")
+    print("Steppe-Wan2.1 installed. Use Tools & 3D → Steppe-Wan2.1 upscale.", flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "splat"])
+    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "steppe", "splat"])
     parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
+    parser.add_argument("--variant", default="200m-1step")
     parser.add_argument("--optimizations", action="store_true",
                         help="Install and test optional SeedVR2 Windows attention wheels.")
     args = parser.parse_args(argv)
@@ -335,6 +359,7 @@ def main(argv=None):
         parser.error("--optimizations is available for seedvr2 only")
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "vosr": install_vosr,
+     "steppe": lambda: install_steppe(args.variant),
      "seedvr2-convrot": lambda: install_seed_convrot(args.precision)}[args.tool]()
 
 

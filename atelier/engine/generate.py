@@ -527,6 +527,13 @@ def generate(
     enc, uncond = files["enc"], files["uncond"]
     t5xxl, clip_l, llm_vision = (files["t5xxl"], files["clip_l"],
                                  files["llm_vision"])
+    if model.family == "minimax_h3_image":
+        if any(p and "w4a8" in p.name.lower() for p in (diffusion, enc)):
+            build = _engine_build_number()
+            if build is not None and build < 1110:
+                raise sdcpp.EngineError(
+                    "MiniMax H3 W4A8 weights need sd.cpp build 1110 or newer "
+                    "(asym_w4a8_int8 group_size fix). Run update.bat (or ./update.sh on Linux/Mac).")
     if model.family == "minimax_h3_image" and log:
         if (width, height) != (target_w, target_h):
             log(f"MiniMax H3 Image: generating at {width}x{height} "

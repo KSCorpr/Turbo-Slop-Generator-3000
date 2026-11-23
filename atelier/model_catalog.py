@@ -52,6 +52,16 @@ def packages(prefs=None):
                 "One-step ×1 / ×2 / ×4 restoration. Isolated CUDA 12.6 runtime; "
                 "6.97 GB of pinned DiT, DINOv2 and dedicated Qwen 2D VAE weights. "
                 "FP16, tiled inference and stage offload by default; no ComfyUI server."),
+        Package("addon:steppe", "Steppe-Wan2.1 · latent upscaler", "Toolkit",
+                "Generative latent upscaler by TensorForger (MIT) on Wan 2.1 VAE latents: "
+                "×2 / ×4 still images and 2× resolution + 2× FPS video interpolation in 1 step. "
+                "Isolated CUDA 12.6 runtime + 508 MB Wan 2.1 VAE + selected checkpoint.",
+                tuple((lbl, key) for key, (_, lbl) in _steppe_variants())),
+        Package("video:minimax-h3", "MiniMax H3 Video & HyperFlow Flash", "Video & 3D",
+                "Synchronized 24 fps video + stereo audio via native sd-cli (--mode vid_gen). "
+                "HyperFlow H3 Flash Q4_K_M (9.05 GB, 4-8 steps) + Sol-H3-VAE (1.99 GB) + shared H3 encoder "
+                "tuned for 11-12 GB GPUs (RTX 2080 Ti / RTX 3060) + 64 GB RAM.",
+                _h3_video_variants()),
         Package("seed:convrot","SeedVR2 · ConvRot","Video & 3D","Installs the native ConvRot runtime and only the selected model. All SeedVR2 variants reuse one VAE.",
                 tuple((key,key) for key in addons.SEED_CONVROT_MODELS)),
         Package("seed:classic","SeedVR2 · classic GGUF","Video & 3D","Legacy GGUF runtime, selected model and the same shared SeedVR2 VAE.",tuple((key,key) for key in addons.SEED_MODELS)),
@@ -62,6 +72,16 @@ def packages(prefs=None):
         Package("splat:triposplat", "TripoSplat · image to splats", "Video & 3D",
                 "Single image to 32k–262k Gaussian splats, PLY + SPLAT. MIT. ~3.78 GB of selected weights; no unused 3D encoder download."),
     ]
+
+
+def _steppe_variants():
+    from . import steppe
+    return steppe.MODELS.items()
+
+
+def _h3_video_variants():
+    from . import h3_video
+    return h3_video.catalog_variants()
 
 
 def get(key):
@@ -87,7 +107,7 @@ def ready(key, variant=None):
     if not p:
         return False
     variant = variant or (p.variants[0][1] if p.variants else None)
-    if p.variants and variant not in {v for _,v in p.variants}:
+    if p.variants and variant not in {v for _,v in package_variants(p)}:
         return False
     if key.startswith("image:"):
         return registry.model_is_ready(registry.get_base_model(key[6:],settings.load_prefs()))
@@ -111,6 +131,12 @@ def ready(key, variant=None):
     if key == "addon:vosr":
         from . import vosr
         return vosr.ready()
+    if key == "addon:steppe":
+        from . import steppe
+        return steppe.ready(variant)
+    if key == "video:minimax-h3":
+        from . import h3_video
+        return h3_video.ready(variant)
     if key.startswith("addon:"):
         return addons.ready(key[6:])
     if key.startswith("seed:"):
@@ -125,6 +151,10 @@ def ready(key, variant=None):
         v,res=variant.split(":")
         return trellis.is_ready() and trellis.pixal_ready(v,int(res))
     return False
+
+
+def package_variants(p):
+    return p.variants
 
 
 def details(key, variant=None):
@@ -162,6 +192,11 @@ def install(key, variant=None, log=print):
             krea_distill.install(log)
         elif key.startswith("taesd:"):
             taesd.install(key[6:], log)
+        elif key == "video:minimax-h3":
+            from . import h3_video
+            h3_video.download_pack(diffusion_key=variant, log=log)
+        elif key == "addon:steppe":
+            command=["setup_media.py", "steppe", "--variant", variant]
         elif key.startswith("tool:"):
             name=key[5:]
             if name in {"modern","upscalers"}:

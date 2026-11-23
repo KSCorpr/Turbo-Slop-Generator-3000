@@ -537,6 +537,131 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
     return cmd
 
 
+@dataclass
+class VideoRequest:
+    """Native sd.cpp video+audio generation request (`--mode vid_gen`)."""
+    diffusion_model: Path | None = None
+    vae: Path | None = None
+    audio_vae: Path | None = None
+    text_encoder: Path | None = None
+    llm_vision: Path | None = None
+    embeddings_connectors: Path | None = None
+    prompt: str = ""
+    negative: str = ""
+    steps: int = 6
+    cfg_scale: float = 1.0
+    sampler: str = "euler"
+    schedule: str = ""
+    sigmas: str = ""
+    flow_shift: float = 0.0
+    width: int = 864
+    height: int = 480
+    video_frames: int = 56
+    fps: int = 24
+    seed: int = -1
+    init_image: Path | None = None
+    end_image: Path | None = None
+    ref_image: "Path | list[Path] | None" = None
+    extra_flags: list[str] = field(default_factory=list)
+    model_args: list[str] = field(default_factory=list)
+    temporal_tiling: bool = True
+    hires: "HiresParams | None" = None
+    hires_sigmas: str = ""
+    sage_attn: bool = False
+    flags: dict[str, bool] = field(default_factory=dict)
+    gpu_index: int | None = None
+    encoder_gpu_index: int | None = None
+    params_backend: str = ""
+    auto_fit: bool = False
+    split_mode: str = ""
+    max_vram: str = ""
+    stream_layers: bool = False
+
+
+def build_vid_gen_cmd(sd_cli: Path, req: VideoRequest, output: Path) -> list[str]:
+    """Build an `sd-cli --mode vid_gen` command for video+audio models (MiniMax H3)."""
+    refs = _ref_list(req.ref_image)
+    _require(req.diffusion_model, req.vae, req.audio_vae, req.text_encoder,
+             req.llm_vision, req.embeddings_connectors,
+             req.init_image, req.end_image, *refs)
+    known = supported_options(sd_cli)
+    cmd: list[str] = [str(sd_cli), "--mode", "vid_gen",
+                      "--diffusion-model", str(req.diffusion_model)]
+    if req.vae:
+        cmd += ["--vae", str(req.vae)]
+    if req.audio_vae:
+        if "--audio-vae" not in known:
+            raise EngineError("MiniMax H3 Video needs a newer sd.cpp engine with --audio-vae. Run update.bat.")
+        cmd += ["--audio-vae", str(req.audio_vae)]
+    if req.text_encoder:
+        cmd += ["--llm", str(req.text_encoder)]
+    if req.llm_vision:
+        cmd += ["--llm_vision", str(req.llm_vision)]
+    if req.embeddings_connectors and "--embeddings-connectors" in known:
+        cmd += ["--embeddings-connectors", str(req.embeddings_connectors)]
+
+    cmd += list(req.extra_flags)
+    cmd += ["-p", req.prompt]
+    if req.negative and req.cfg_scale > 1.0:
+        cmd += ["-n", req.negative]
+
+    cmd += [
+        "--cfg-scale", f"{req.cfg_scale}",
+        "--sampling-method", req.sampler,
+        "-W", f"{int(req.width)}", "-H", f"{int(req.height)}",
+        "--video-frames", f"{int(req.video_frames)}",
+        "-s", f"{int(req.seed)}",
+    ]
+    if req.fps and "--fps" in known:
+        cmd += ["--fps", f"{int(req.fps)}"]
+    if req.sigmas:
+        if "--sigmas" not in known:
+            raise EngineError("This video preset needs a newer sd.cpp engine with --sigmas. Run update.bat.")
+        cmd += ["--sigmas", req.sigmas]
+    else:
+        cmd += ["--steps", f"{int(req.steps)}"]
+        if req.schedule:
+            cmd += ["--scheduler", req.schedule]
+    if req.flow_shift and req.flow_shift > 0:
+        cmd += ["--flow-shift", f"{req.flow_shift}"]
+
+    if req.init_image:
+        cmd += ["--init-img", str(req.init_image)]
+    if req.end_image:
+        if "--end-img" not in known:
+            raise EngineError("First/last-frame conditioning needs a newer sd.cpp engine with --end-img. Run update.bat.")
+        cmd += ["--end-img", str(req.end_image)]
+    for r in refs:
+        cmd += ["-r", str(r)]
+
+    if req.temporal_tiling and "--temporal-tiling" in known:
+        cmd.append("--temporal-tiling")
+    if req.model_args and "--model-args" in known:
+        for arg in req.model_args:
+            cmd += ["--model-args", arg]
+
+    if req.hires and hires_supported(sd_cli):
+        cmd += hires_args(req.hires)
+        if req.hires_sigmas and "--hires-sigmas" in known:
+            cmd += ["--hires-sigmas", req.hires_sigmas]
+
+    # Reuse the shared memory placement builder via a lightweight GenRequest view.
+    mem_req = GenRequest(
+        flags=dict(req.flags),
+        gpu_index=req.gpu_index,
+        encoder_gpu_index=req.encoder_gpu_index,
+        params_backend=req.params_backend,
+        auto_fit=req.auto_fit,
+        split_mode=req.split_mode,
+        max_vram=req.max_vram,
+        stream_layers=req.stream_layers,
+        sage_attn=req.sage_attn,
+    )
+    cmd += memory_args(sd_cli, mem_req)
+    cmd += ["-o", str(output), "-v"]
+    return cmd
+
+
 def build_convert_cmd(sd_cli: Path, input_model: Path, output_model: Path,
                       qtype: str) -> list[str]:
     """Conversion/quantification d'un modèle en GGUF (sd.cpp --mode convert).

@@ -224,7 +224,8 @@ class StudioWiringTests(unittest.TestCase):
     def test_retired_models_and_toolkit_enlargement_tabs_are_absent(self):
         tabs = [b for b in self.demo.blocks.values() if isinstance(b, gr.Tab)]
         self.assertFalse(any("Ming" in tab.label or
-                             ("H3" in tab.label and tab.id != "minimax-h3-image") for tab in tabs))
+                             ("H3" in tab.label and tab.id not in ("minimax-h3-image", "minimax-h3-video"))
+                             for tab in tabs))
         toolkit = next(tab for tab in tabs if tab.id == "toolkit")
         children = next(block for block in toolkit.children if isinstance(block, gr.Tabs))
         self.assertEqual([tab.id for tab in children.children],
@@ -287,12 +288,13 @@ class StudioWiringTests(unittest.TestCase):
         self.assertTrue(any(isinstance(block, gr.Checkbox) and "Edit mode" in block.label for block in krea_inputs))
 
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
-        names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_png_style", "do_generate3d", "do_depth", "do_bg",
+        names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_png_style", "do_h3_video",
+                 "install_h3_video", "run_steppe", "install_steppe", "do_generate3d", "do_depth", "do_bg",
                  "do_describe", "_do_bench", "_on_click", "run_seed", "run_splat",
                  "install_seed", "install_splat", "generate_image_splats", "install_image_splats",
                  "install_sam2", "handler", "deleter", "install_catalog_package", "consolidate_catalog_weights"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
-        self.assertGreaterEqual(len(found), 25)
+        self.assertGreaterEqual(len(found), 29)
         for fn in found:
             self.assertEqual(fn.concurrency_id, widgets.GPU_QUEUE["concurrency_id"], fn.name)
             self.assertEqual(fn.concurrency_limit, 1, fn.name)
