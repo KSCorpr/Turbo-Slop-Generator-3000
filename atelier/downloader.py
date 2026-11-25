@@ -66,6 +66,25 @@ def _pick_file(comp: Component, files: list[str]) -> str | None:
     return None
 
 
+# Curated GGUF quant tiers for text encoders. Unsloth repos publish 35+
+# variants (IQ1–IQ4, UD-*_XL, Q2/Q3, Q4_0/Q4_1/Q4_K_S, Q5_K_S, F32, shards)
+# that turn the "Text encoder weights" dropdown into a wall of noise. Keep
+# only the meaningful precision steps — while always preserving any file
+# already installed on disk or explicitly selected by preferences.
+_CLEAN_TEXT_ENCODER_QUANTS = frozenset({"Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0", "F16", "BF16"})
+
+
+def _enc_quant_token(comp: Component, filename: str) -> str | None:
+    template = comp.catalog_template or comp.template
+    if "{enc_quant}" not in template:
+        return None
+    prefix, suffix = template.split("{enc_quant}", 1)
+    if not (filename.startswith(prefix) and filename.endswith(suffix)):
+        return ""
+    end = len(filename) - len(suffix) if suffix else None
+    return filename[len(prefix):end].upper()
+
+
 def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
     """Poids GGUF ou variantes safetensors et tailles réelles depuis le Hub.
 
@@ -103,6 +122,9 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
             if repo not in repos:
                 repos[repo] = api.model_info(
                     repo_id=repo, files_metadata=True).siblings or []
+            has_f16 = (comp.role == "text_encoder"
+                       and any(_enc_quant_token(comp, s.rfilename) == "F16"
+                               for s in repos[repo]))
             for sibling in repos[repo]:
                 name = sibling.rfilename
                 if (name not in comp.selectable and not ("*" in pattern and _fn(name, pattern))
@@ -112,15 +134,25 @@ def weight_choices(model: BaseModel) -> dict[str, list[tuple[str, str]]]:
                     continue
                 if name in seen:
                     continue
+                here = settings.model_repo_dir(repo) / name
+                is_installed = here.is_file()
+                is_target = weight_precision.is_target(comp, name)
+                if comp.role == "text_encoder":
+                    token = _enc_quant_token(comp, name)
+                    if token is not None and not is_installed and not is_target:
+                        if token not in _CLEAN_TEXT_ENCODER_QUANTS:
+                            continue
+                        # Avoid duplicate 16-bit rows (F16 + BF16) on Unsloth repos.
+                        if token == "BF16" and has_f16:
+                            continue
                 seen.add(name)
                 size = getattr(sibling, "size", None)
                 if size is None and getattr(sibling, "lfs", None):
                     size = getattr(sibling.lfs, "size", None)
                 human = f"{size / 1e9:.2f} GB" if size is not None else "size unknown"
-                here = settings.model_repo_dir(repo) / name
-                installed = " · installed" if here.is_file() else ""
+                installed = " · installed" if is_installed else ""
                 precision = weight_precision.describe(name, prof, label=label, size=size,
-                    role=comp.role, recommended=repo == comp.repo and weight_precision.is_target(comp, name))
+                    role=comp.role, recommended=repo == comp.repo and is_target)
                 title = label or name
                 options.append((f"{title} — {precision} — {human}{installed}", name))
                 candidates.append((name, size, label))

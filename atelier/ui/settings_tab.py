@@ -21,6 +21,7 @@ from . import widgets
 
 QUANTS = ["Q3_K_S", "Q3_K_M", "Q4_K_S", "Q4_K_M", "Q5_K_S", "Q5_K_M",
           "Q6_K", "Q8_0"]
+ENC_QUANTS = ["Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
 
 # Préfixe des confirmations. Elles sont au passé et concrètes — « appliqué »,
 # pas « enregistré » : ce qu'on veut savoir, c'est que c'est FAIT.
@@ -353,9 +354,13 @@ def build_settings_tab():
                 quant = gr.Dropdown(label="Image model",
                                     choices=["auto"] + QUANTS,
                                     value=prefs.get("quant") or "auto")
+                saved_enc_q = prefs.get("enc_quant") or "auto"
+                enc_choices = ["auto"] + list(ENC_QUANTS)
+                if saved_enc_q != "auto" and saved_enc_q not in enc_choices:
+                    enc_choices.append(saved_enc_q)
                 enc_quant = gr.Dropdown(label="Text analysis",
-                                        choices=["auto"] + QUANTS,
-                                        value=prefs.get("enc_quant") or "auto")
+                                        choices=enc_choices,
+                                        value=saved_enc_q)
             f = prefs.get("flags", {})
             gr.Markdown(t("**Engine memory options.**"))
             with gr.Row():
