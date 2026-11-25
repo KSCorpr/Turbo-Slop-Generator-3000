@@ -174,6 +174,26 @@ class ModelWeightTests(unittest.TestCase):
             choices_bf16 = downloader.weight_choices(model)["text_encoder"]
             self.assertIn("Qwen3.5-9B-BF16.gguf", [v for _, v in choices_bf16])
 
+    def test_models_tab_exposes_curated_text_encoders_immediately_without_hub_scan(self):
+        import gradio as gr
+        from atelier.ui import library_tab
+
+        for model in registry.load_base_models({}):
+            with self.subTest(model=model.id):
+                menu, _ = library_tab._weight_menu(model, "text_encoder")
+                values = [v for _, v in menu]
+                self.assertGreaterEqual(len(values), 3, f"{model.id} should list curated encoder weights immediately")
+                self.assertEqual(values[0], library_tab._AUTO)
+
+        with gr.Blocks() as demo:
+            library_tab.build_library_tab()
+        self.addCleanup(demo.close)
+        enc_dd = next(b for b in demo.blocks.values()
+                      if isinstance(b, gr.Dropdown) and b.label == "Text encoder weights")
+        self.assertTrue(enc_dd.visible)
+        self.assertGreaterEqual(len(enc_dd.choices), 4)
+        self.assertNotIsInstance(enc_dd.parent, gr.Accordion)
+
 
 if __name__ == "__main__":
     unittest.main()

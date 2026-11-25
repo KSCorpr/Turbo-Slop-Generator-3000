@@ -33,6 +33,15 @@ def _selection_prefs(prefs, model, diff_choice, enc_choice, vae_choice=None):
     return prefs
 
 
+_CURATED_ENCODER_QUANTS_BY_REPO = {
+    "Qwen/Qwen3-VL-4B-Instruct-GGUF": ("Q4_K_M", "Q8_0", "F16"),
+    "Qwen/Qwen3-VL-8B-Instruct-GGUF": ("Q4_K_M", "Q8_0", "F16"),
+    "unsloth/Qwen3-8B-GGUF": ("Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0", "BF16"),
+    "unsloth/Qwen3.5-9B-GGUF": ("Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0", "BF16"),
+}
+_DEFAULT_ENCODER_QUANTS = ("Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0")
+
+
 def _weight_menu(model: registry.BaseModel, role: str,
                  variants: list[tuple[str, str]] | None = None):
     comp = next((c for c in model.components if c.role == role), None)
@@ -45,17 +54,27 @@ def _weight_menu(model: registry.BaseModel, role: str,
     menu = [(auto_label, _AUTO)]
     menu.extend(variants or [])
     if not variants:
-        known = [(v.template, v.label) for v in comp.alternatives
+        known = [(v.template, v.label, v.repo) for v in comp.alternatives
                  if not any(token in v.template for token in ("{quant}", "{enc_quant}"))]
-        known += [(name, "") for name in comp.selectable]
+        base_repo = comp.catalog_repo or comp.repo
+        known += [(name, "", base_repo) for name in comp.selectable]
+        base_template = comp.catalog_template or comp.template
+        if role == "text_encoder" and "{enc_quant}" in base_template:
+            quants = _CURATED_ENCODER_QUANTS_BY_REPO.get(base_repo, _DEFAULT_ENCODER_QUANTS)
+            known += [(base_template.replace("{enc_quant}", q), "", base_repo) for q in quants]
         seen = set()
-        for name, label in known:
+        for name, label, repo in known:
             if name in seen:
                 continue
             seen.add(name)
-            detail = weight_precision.describe(name, prof, label=label,
-                recommended=weight_precision.is_target(comp, name))
-            menu.append((f"{label or name} — {detail} (load sizes)", name))
+            here = settings.model_repo_dir(repo) / name
+            is_installed = here.is_file()
+            size = here.stat().st_size if is_installed else None
+            detail = weight_precision.describe(name, prof, label=label, size=size,
+                role=role, recommended=weight_precision.is_target(comp, name))
+            suffix = (f" — {size / 1e9:.2f} GB · installed" if size is not None
+                      else " (load sizes)")
+            menu.append((f"{label or name} — {detail}{suffix}", name))
     if comp.token is None and comp.requested() not in {v for _, v in menu}:
         # Un choix enregistré doit déjà figurer dans le menu avant même la
         # requête de métadonnées, sinon Gradio le réinitialise au lancement.
@@ -132,12 +151,12 @@ def build_library_tab(tabs=None, model_links=None):
                                        elem_id="catalog-image-card")
                     d_choices, d_value = _weight_menu(model, "diffusion") if model else ([], None)
                     diffusion = gr.Dropdown(d_choices, value=d_value, label="Image model weights")
+                    e_choices, e_value = _weight_menu(model, "text_encoder") if model else ([], None)
+                    encoder = gr.Dropdown(e_choices, value=e_value, label="Text encoder weights")
                     with gr.Row():
                         download = gr.Button("Download selected image weights", variant="primary", scale=3)
                         scan = gr.Button("Load weights and sizes", size="sm", scale=2)
-                    with gr.Accordion("Encoder, VAE & file options", open=False):
-                        e_choices, e_value = _weight_menu(model, "text_encoder") if model else ([], None)
-                        encoder = gr.Dropdown(e_choices, value=e_value, label="Text encoder weights")
+                    with gr.Accordion("VAE & file options", open=False):
                         v_visible = bool(model and any(c.role == "vae" and c.alternatives for c in model.components))
                         v_choices, v_value = _weight_menu(model, "vae") if v_visible else ([], None)
                         vae = gr.Dropdown(v_choices, value=v_value, label="VAE weights", visible=v_visible)
