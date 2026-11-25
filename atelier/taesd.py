@@ -30,7 +30,7 @@ SPECS = {
     "taef2": TinyAutoencoder("taef2", "TAEF2 · Flux.2 / MOSS / Fibo 2", "madebyollin/taef2",
         "taef2.safetensors", "bd244ebfe4398c84fbf312a2f1c868c676b500e3",
         10_723_524, "701d31c0ecbef3b609fe236e2e3a65ffb17f3a94237acdd771e8ea3194df557a",
-        ("flux2", "moss_image", "fibo2", "fibo2_turbo")),
+        ("flux2", "moss_image", "moss_image_turbo", "fibo2", "fibo2_turbo")),
     "taeqi2_1": TinyAutoencoder("taeqi2_1", "TAEQI2.1 · Qwen Image 2.1 RGBA", "madebyollin/taeqi2_1",
         "taeqi2_1.safetensors", "5d62f11fee0068b4df7bd699ddab685e32174010",
         30_591_264, "6578b31cc5e336233a2c842eba61b56425bbcac97c7088705f7c7db93291887e", ("qwen21",)),

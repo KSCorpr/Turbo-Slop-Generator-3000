@@ -175,7 +175,8 @@ base_models:
       (5.12 GB, fits in VRAM, ~2 s encoding, shared with H3 Video) + dedicated
       image VAE (1.17 GB). Optional max-fidelity weights: INT8 ConvRot
       diffusion (21.0 GB) and Qwen3-VL-32B Q4_K_M encoder (18.2 GB, shared
-      with H3 Video). Native working range is 4 MP–20 MP (2048 × 2048 default;
+      with H3 Video). Defaults to LCM, 6 steps, CFG 1 for cleaner skin and hair
+      textures. Native working range is 4 MP–20 MP (2048 × 2048 default;
       up to 6272 × 2688); targets under 4 MP generate on a 4 MP canvas and
       Lanczos-downscale automatically. Public downloads. MiniMax H3 Image
       Community License.
@@ -203,7 +204,7 @@ base_models:
       steps: 6
       benchmark_steps: 6
       cfg_scale: 1.0
-      sampler: euler
+      sampler: lcm
       scheduler: auto
       flow_shift: 0.0
       width: 2048
@@ -216,16 +217,18 @@ base_models:
       max_references: 16
       extra_flags: ["--rng", "cpu"]
     presets:
-      - {name: "Recommended (sd.cpp, 6 steps)", sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
-      - {name: "Balanced (8 steps)", sampler: euler, scheduler: auto, steps: 8, cfg_scale: 1.0}
-      - {name: "Detailed (12 steps)", sampler: euler, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - {name: "Recommended (LCM, 6 steps)", sampler: lcm, scheduler: auto, steps: 6, cfg_scale: 1.0}
+      - {name: "LCM / Simple (6 steps)", sampler: lcm, scheduler: simple, steps: 6, cfg_scale: 1.0}
+      - {name: "Balanced (LCM, 8 steps)", sampler: lcm, scheduler: auto, steps: 8, cfg_scale: 1.0}
+      - {name: "Detailed (LCM, 12 steps)", sampler: lcm, scheduler: auto, steps: 12, cfg_scale: 1.0}
+      - {name: "Euler (6 steps)", sampler: euler, scheduler: auto, steps: 6, cfg_scale: 1.0}
       - name: "Heun / Discrete (6)"
         sampler: heun
         scheduler: discrete
         steps: 6
         cfg_scale: 1.0
         experimental: true
-        note: "Adds a second-order correction on the native PDD discrete schedule. It usually costs nearly twice as many model evaluations as Euler."
+        note: "Adds a second-order correction on the native PDD discrete schedule. It usually costs nearly twice as many model evaluations as LCM or Euler."
       - name: "Res 2S / Discrete (8)"
         sampler: res_2s
         scheduler: discrete
@@ -398,6 +401,92 @@ base_models:
         cfg_scale: 3.0
         experimental: true
         note: "Deterministic multistep alternative with SGM Uniform spacing; standard Kromoss and CFG 3, no DMD2 adapter."
+    vram_min_gb: 10
+
+  # --------------------------------------------------------------------------
+  - id: moss-image-juggernaut-turbo
+    name: "Juggernaut Moss Turbo"
+    family: moss_image_turbo
+    tags: [fast, distilled, photography, cinematic, int8, apache-2.0]
+    description: >
+      Kandoo's Juggernaut Moss V1 with its DMD2 Turbo LoRA baked in (Beta).
+      Generates photographic and cinematic images in 6 steps (7 for complex
+      scenes), CFG 1.0, Euler Ancestral / Simple, around 1.5–2.4 MP
+      (1344 × 1792 default). INT8 ConvRot (5.41 GB, author-recommended for
+      Beta) by default; FP8 Scaled (5.41 GB) and BF16 (10.16 GB) are
+      selectable (W6A8, NVFP4 and community-node GGUFs are excluded). Reuses
+      MOSS's Qwen3.5-9B GGUF encoder, external tokenizer and FLUX.2 small
+      decoder VAE (249.5 MB; shared full FLUX.2 VAE selectable). Keep automatic
+      memory placement on 12 GB cards. Requires sd.cpp build 975 or newer.
+      Apache-2.0, public weights.
+    sources:
+      diffusion:
+        repo: Kandoo/Juggernaut-Moss-Turbo-Beta
+        match: "juggernaut_moss_turbo_v1_int8_convrot.safetensors"
+        selectable:
+          - "juggernaut_moss_turbo_v1_int8_convrot.safetensors"
+          - "juggernaut_moss_turbo_v1_fp8_scaled.safetensors"
+          - "juggernaut_moss_turbo_v1_bf16.safetensors"
+      text_encoder:
+        repo: unsloth/Qwen3.5-9B-GGUF
+        match: "Qwen3.5-9B-{enc_quant}.gguf"
+        quantizable: true
+        auto_quant: Q4_K_M
+      tokenizer:
+        repo: OpenMOSS-Team/MOSS-Image-Base
+        match: "tokenizer/tokenizer.json"
+      vae:
+        # Byte-identical to Comfy-Org/MOSS-Image/vae/flux2-vae_small.safetensors.
+        repo: lodestones/Kromoss
+        match: "vae/flux2-vae_small.safetensors"
+        label: "FLUX.2 small decoder (recommended)"
+        alternatives:
+          - repo: Comfy-Org/flux2-klein-9B
+            match: "split_files/vae/flux2-vae.safetensors"
+            label: "Original FLUX.2 VAE (shared)"
+    defaults:
+      min_engine_build: 975
+      steps: 6
+      benchmark_steps: 6
+      cfg_scale: 1.0
+      sampler: euler_a
+      scheduler: simple
+      flow_shift: 0.0
+      width: 1344
+      height: 1792
+      supports_negative: false
+    presets:
+      - {name: "Recommended (6 steps)", sampler: euler_a, scheduler: simple, steps: 6, cfg_scale: 1.0}
+      - {name: "Complex scenes (7 steps)", sampler: euler_a, scheduler: simple, steps: 7, cfg_scale: 1.0}
+      - {name: "Fast (4 steps)", sampler: euler_a, scheduler: simple, steps: 4, cfg_scale: 1.0}
+      - name: "DPM++ 2M SDE / Beta (6)"
+        sampler: "dpm++2m_sde"
+        scheduler: "beta"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Stochastic alternative on Beta sigmas tested by the author; comparable detail to Euler Ancestral at higher compute cost."
+      - name: "Euler / Simple (6)"
+        sampler: "euler"
+        scheduler: "simple"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Deterministic Euler on Simple sigmas with CFG 1.0; reproducible across runs for side-by-side comparison with Euler Ancestral."
+      - name: "Euler Ancestral / Auto (6)"
+        sampler: "euler_a"
+        scheduler: "auto"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Uses sd.cpp's automatic native MOSS schedule instead of Simple sigmas while keeping Euler Ancestral and CFG 1.0."
+      - name: "Res 2S / Simple (6)"
+        sampler: "res_2s"
+        scheduler: "simple"
+        steps: 6
+        cfg_scale: 1.0
+        experimental: true
+        note: "Second-order single-step exponential solver on Simple sigmas; more model evaluations per step than Euler Ancestral."
     vram_min_gb: 10
 
   # --------------------------------------------------------------------------

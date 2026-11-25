@@ -27,7 +27,7 @@ class SamplingPresetTests(unittest.TestCase):
         self.stack.enter_context(patch.object(settings, "PREFS_FILE", settings.USERDATA_DIR / "prefs.json"))
         self.stack.enter_context(patch.object(registry, "effective_quants", return_value=("Q5_K_M", "Q8_0")))
         settings.save_prefs({"system_mode": "manual", "auto_optimize": False})
-        (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-1088-32d516c"}')
+        (settings.BIN_DIR / "engine-manifest.json").write_text('{"tag":"master-1117-0d71f96"}')
         self.models = registry.load_base_models({})
 
     def test_every_model_has_distinct_explained_native_alternatives_and_its_original_default(self):

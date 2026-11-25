@@ -42,7 +42,7 @@ class SageAttentionTests(unittest.TestCase):
         self.cli.touch()
         self.stack.enter_context(patch.object(settings, 'find_sd_cli', return_value=self.cli))
         self.manifest = settings.BIN_DIR / 'engine-manifest.json'
-        self.manifest.write_text('{"tag":"master-1088-32d516c","archive":"sd-bin-linux-cuda12-x64.zip"}')
+        self.manifest.write_text('{"tag":"master-1117-0d71f96","archive":"sd-bin-linux-cuda12-x64.zip"}')
         settings.save_prefs({'system_mode': 'auto', 'auto_gpu_index': RTX.index,
                              'gpu_index': RTX.index, 'sage_attention': True})
 

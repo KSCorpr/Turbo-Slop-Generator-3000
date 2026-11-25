@@ -307,7 +307,7 @@ SCHEDULES: dict[str, tuple] = {
 # Familles documentées. Le repli sur « flux2 » vaut pour un modèle inconnu :
 # mieux vaut les verdicts d'un distillé à peu de pas — les plus restrictifs —
 # que pas de verdict du tout.
-FAMILIES = ("flux2", "krea2", "krea2_realism", "qwen21", "moss_image", "fibo2", "fibo2_turbo", "minimax_h3_image")
+FAMILIES = ("flux2", "krea2", "krea2_realism", "qwen21", "moss_image", "moss_image_turbo", "fibo2", "fibo2_turbo", "minimax_h3_image")
 
 
 def _family(model_family: str) -> str:
@@ -325,6 +325,16 @@ def level(kind: str, key: str, model_family: str) -> str:
         if (kind, key) == ("schedule", "auto"):
             return OK
         return entry[4].get("krea2", OK)
+    if model_family == "moss_image_turbo":
+        if (kind, key) in (("sampler", "euler_a"), ("schedule", "simple")):
+            return BEST
+        if (kind, key) == ("schedule", "karras"):
+            return BAD
+        if key in ("lcm", "tcd", "euler_cfg_pp", "euler_a_cfg_pp"):
+            return BAD
+        if (kind, key) == ("sampler", "dpm++2m"):
+            return MEH
+        return OK
     if model_family in {"moss_image", "fibo2", "fibo2_turbo"}:
         if (kind, key) in (("sampler", "euler"), ("schedule", "auto")):
             return BEST
@@ -332,9 +342,9 @@ def level(kind: str, key: str, model_family: str) -> str:
             return BAD
         return OK
     if model_family == "minimax_h3_image":
-        if (kind, key) in (("sampler", "euler"), ("schedule", "auto"), ("schedule", "discrete")):
+        if (kind, key) in (("sampler", "lcm"), ("schedule", "auto"), ("schedule", "simple"), ("schedule", "discrete")):
             return BEST
-        if key in ("lcm", "tcd"):
+        if key == "tcd" or (kind == "schedule" and key == "lcm"):
             return BAD
         return OK
     if model_family == "qwen21":
@@ -426,6 +436,14 @@ def rationale(model_family: str) -> str:
                 "Both use the shared **Flux.2 VAE and Qwen3-VL 4B encoder**; reference "
                 "editing also requires its vision projector. Other samplers are experimental "
                 "here: no measured quality advantage is claimed. Requires sd.cpp build **985+**.")
+    if fam == "moss_image_turbo":
+        return ("**Juggernaut Moss Turbo (Beta)** is Kandoo's Juggernaut Moss V1 with its "
+                "DMD2 Turbo LoRA already baked in. The author recommends **Euler Ancestral + "
+                "Simple, 6 steps (7 for complex scenes) and CFG 1.0**, around **1.5–2.4 MP** "
+                "(e.g. **1344 × 1792** or **1536 × 1536**). Leave flow shift at **0 (auto)** "
+                "so sd.cpp applies MOSS's native shift of **5**. Avoid **Karras** (blurry) and "
+                "**DPM++ 2M** with normal/beta (burnt). Negative prompts have no effect at CFG 1. "
+                "Shares MOSS's Qwen3.5-9B encoder, external tokenizer and FLUX.2 small decoder VAE.")
     if fam == "moss_image":
         return ("**MOSS SFT / Kromoss** use **Euler, 50 steps and CFG 3**. "
                 "Keep the scheduler on **Auto** and flow shift at **0 (auto)**: "
@@ -448,14 +466,16 @@ def rationale(model_family: str) -> str:
                 "are available; the checkpoint's W4A8 format is not supported "
                 "by sd.cpp. On 12 GB cards these 13 GB weights need RAM offload.")
     if fam == "minimax_h3_image":
-        return ("**MiniMax H3 Image** defaults to **Euler, 6 steps and CFG 1** with "
-                "`--sigmas minimax-h3-image`, matching the official sd.cpp CLI guide. "
-                "When you change the step count, sd.cpp's native discrete PDD denoiser "
-                "interpolates the schedule across your chosen steps. "
-                "Native working range is **4 MP–20 MP** (default **2048 × 2048**, best quality "
-                "around **~16 MP** up to 6272 × 2688); targets below 4 MP generate on a 4 MP "
-                "canvas and Lanczos-downscale automatically. Use **Q4_K_M+**, **P-H3**, or "
-                "**INT8** text encoders (avoid Q2_K_M) and detailed English prompts.")
+        return ("**MiniMax H3 Image** defaults to **LCM, 6 steps and CFG 1** with "
+                "`--sigmas minimax-h3-image` (reducing grainy skin and hair textures "
+                "compared to Euler). **LCM / Simple (6 steps)** and **Euler (6 steps)** "
+                "are also available as presets. When you change the step count on Auto, "
+                "sd.cpp's native discrete PDD denoiser interpolates the schedule across "
+                "your chosen steps. Native working range is **4 MP–20 MP** (default "
+                "**2048 × 2048**, best quality around **~16 MP** up to 6272 × 2688); "
+                "targets below 4 MP generate on a 4 MP canvas and Lanczos-downscale "
+                "automatically. Use **Q4_K_M+**, **P-H3**, or **INT8** text encoders "
+                "(avoid Q2_K_M) and detailed English prompts.")
     if fam == "qwen21":
         return ("**Qwen Image 2.1 Turbo** uses **Euler, CFG 1.0 and 8 steps**. "
                 "Its fixed sampling sigmas come from the official Turbo checkpoint "
@@ -494,6 +514,16 @@ def describe(kind: str, key: str, model_family: str) -> str:
     entry = table.get(key)
     if not entry:
         return ""
+    if model_family == "minimax_h3_image" and kind == "sampler" and key == "lcm":
+        return ("**LCM** — Re-noising consistency sampler; the default for MiniMax H3 Image.\n\n"
+                "✅ Cleans up grainy and crunchy skin, hair and fine textures at 6–12 steps.\n\n"
+                "❌ Stochastic re-noising can slightly soften micro-detail compared to Euler.\n\n"
+                "⭐ **Recommended** for this model.")
+    if model_family == "moss_image_turbo" and kind == "sampler" and key == "euler_a":
+        return ("**Euler Ancestral** — Author-recommended sampler for Juggernaut Moss Turbo.\n\n"
+                "✅ Best speed/quality balance at 6–7 steps with the Simple scheduler and CFG 1.0.\n\n"
+                "❌ Stochastic noise injection varies slightly across backends and settings.\n\n"
+                "⭐ **Recommended** for this model.")
     if model_family == "minimax_h3_image" and kind == "schedule" and key == "auto":
         return ("**Official PDD schedule** — passes `--sigmas minimax-h3-image` at 6 steps, "
                 "and uses sd.cpp's native discrete PDD interpolation when Steps is changed.")

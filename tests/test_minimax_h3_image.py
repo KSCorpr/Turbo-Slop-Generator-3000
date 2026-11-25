@@ -45,6 +45,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         self.assertTrue(registry.model_is_ready(self.model))
         self.assertEqual(self.model.defaults["width"], 2048)
         self.assertEqual(self.model.defaults["height"], 2048)
+        self.assertEqual(self.model.defaults["sampler"], "lcm")
         self.assertEqual(self.model.defaults["min_generation_area"], 4194304)
         self.assertEqual(set(self.files), {"diffusion", "text_encoder", "vae"})
         self.assertEqual(self.files["diffusion"].relative_to(settings.MODELS_DIR).as_posix(),
@@ -84,7 +85,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             for flag, value in (
                 ("--diffusion-model", self.files["diffusion"]), ("--vae", self.files["vae"]),
                 ("--llm", self.files["text_encoder"]), ("--sigmas", MODEL), ("--rng", "cpu"),
-                ("--steps", 6), ("--sampling-method", "euler"), ("-W", 1056), ("-p", prompt),
+                ("--steps", 6), ("--sampling-method", "lcm"), ("-W", 1056), ("-p", prompt),
             ):
                 self.assertEqual(command[command.index(flag) + 1], str(value))
             self.assertIn("--vae-tiling", command)
@@ -149,9 +150,26 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         width = next(b for b in demo.blocks.values() if isinstance(b, gr.Slider) and b.label == "Width")
         height = next(b for b in demo.blocks.values() if isinstance(b, gr.Slider) and b.label == "Height")
         ratio = next(b for b in demo.blocks.values() if isinstance(b, gr.Dropdown) and b.label == "Aspect ratio")
+        mp_preset = next(b for b in demo.blocks.values() if isinstance(b, gr.Dropdown) and b.label == "Image size (MP)")
+        sampler = next(b for b in demo.blocks.values() if isinstance(b, gr.Dropdown) and b.label == "Sampler")
+        self.assertEqual(sampler.value, "lcm")
         self.assertEqual((width.value, width.maximum, width.step), (2048, 6272, 32))
         self.assertEqual((height.value, height.maximum, height.step), (2048, 6272, 32))
         self.assertEqual(ratio.value, "Square 1:1 — 2048×2048 (4 MP · default)")
+        self.assertEqual(mp_preset.value, 4.0)
+        mp_values = [val for _, val in mp_preset.choices]
+        for expected_mp in (1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0, 20.0):
+            self.assertIn(expected_mp, mp_values)
+        on_mp = next(f for f in demo.fns.values() if getattr(f.fn, "__name__", "") == "on_mp_preset")
+        w_upd, h_upd, r_upd, mp_upd = on_mp.fn(16.0, 2720, 1536)
+        self.assertEqual((w_upd["value"], h_upd["value"]), (5472, 3072))
+        self.assertEqual(r_upd["value"], "Wide 16:9 — 5472×3072 (16 MP)")
+        self.assertIn("5472×3072", mp_upd["info"])
+        w8, h8, _, mp8 = on_mp.fn(8.0, 2048, 2048)
+        self.assertEqual((w8["value"], h8["value"]), (2912, 2912))
+        self.assertIn("2912×2912", mp8["info"])
+        w20, h20, _, _ = on_mp.fn(20.0, 2048, 2048)
+        self.assertEqual((w20["value"], h20["value"]), (4576, 4576))
         labels = [lbl for lbl, _ in ratio.choices]
         self.assertIn("Square 1:1 — 4096×4096 (16 MP · best)", labels)
         self.assertIn("Cinema 21:9 — 6272×2688 (16 MP)", labels)
@@ -165,6 +183,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         with patch.object(generate_tab.gen_engine, "generate", return_value=[]) as run:
             list(binding.fn(*inputs))
         self.assertEqual(run.call_args.kwargs.get("min_generation_area"), 0)
+        self.assertEqual(run.call_args.kwargs.get("sampler"), "lcm")
 
     def test_rejects_an_old_engine_and_unsupported_requests_before_inference(self):
         with patch.object(sdcpp, "run") as run:

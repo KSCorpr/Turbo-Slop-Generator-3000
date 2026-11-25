@@ -329,6 +329,7 @@ def build_app() -> gr.Blocks:
                         ("minimax-h3-image", "MiniMax H3 Image"),
                         ("moss-image-sft", "MOSS-Image SFT"),
                         ("moss-image-kromoss", "Kromoss"),
+                        ("moss-image-juggernaut-turbo", "Juggernaut Moss Turbo"),
                         ("fibo2-dev", "Fibo 2.0 Dev"),
                         ("fibo2-edit-turbo", "Fibo 2.0 Edit Turbo"),
                         ("krea2-turbo", "Krea 2 Turbo"),

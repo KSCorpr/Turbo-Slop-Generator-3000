@@ -3,9 +3,10 @@ presets sampler/scheduler, LoRA, fichiers locaux, envoi vers l'upscale.
 """
 from __future__ import annotations
 
+import json
+import math
 import random
 import re
-import json
 
 import gradio as gr
 
@@ -64,6 +65,7 @@ RATIOS_QWEN21: dict[str, tuple[int, int]] = {
     "Custom (sliders)": (0, 0),
 }
 _CUSTOM_LABEL = "Custom (sliders)"
+_MP_UNIT = 1024 * 1024
 
 # Entrée « neutre » en tête du menu des styles perso : la sélectionner RETIRE
 # le style appliqué (vide le champ système), sans rien supprimer d'enregistré.
@@ -104,6 +106,19 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
             "Square 1:1 — 1024×1024 (1 MP, auto 4 MP → Lanczos)": (1024, 1024),
             _CUSTOM_LABEL: (0, 0),
         }
+    if family == "moss_image_turbo":
+        return {
+            "Portrait 3:4 — 1344×1792 (2.4 MP · default)": (1344, 1792),
+            "Landscape 4:3 — 1792×1344 (2.4 MP)": (1792, 1344),
+            "Square 1:1 — 1536×1536 (2.4 MP)": (1536, 1536),
+            "Wide 16:9 — 1920×1088 (2.1 MP)": (1920, 1088),
+            "Vertical 9:16 — 1088×1920 (2.1 MP)": (1088, 1920),
+            "Landscape 3:2 — 1728×1152 (2.0 MP)": (1728, 1152),
+            "Portrait 2:3 — 1152×1728 (2.0 MP)": (1152, 1728),
+            "Square 1:1 — 1024×1024 (1 MP)": (1024, 1024),
+            "Square 1:1 — 2048×2048 (4 MP)": (2048, 2048),
+            _CUSTOM_LABEL: (0, 0),
+        }
     if family == "krea2_realism":
         return {"Portrait 9:14 — 1152×1792 (2 MP)": (1152, 1792),
                 "Landscape 14:9 — 1792×1152 (2 MP)": (1792, 1152),
@@ -113,6 +128,101 @@ def _ratios_for(family: str) -> dict[str, tuple[int, int]]:
     # l'architecture du Turbo, donc ses résolutions natives. Une égalité stricte lui donnerait la grille de Flux.2, hors de
     # sa grille d'entraînement — et ça ne se verrait qu'à l'image produite.
     return RATIOS_KREA2 if family.startswith("krea2") else RATIOS_FLUX2
+
+
+def _mp_presets_for(family: str) -> list[tuple[str, float]]:
+    """Megapixel target presets tailored to each model family."""
+    if family == "minimax_h3_image":
+        return [
+            ("1 MP (auto 4 MP → Lanczos)", 1.0),
+            ("2 MP (auto 4 MP → Lanczos)", 2.0),
+            ("4 MP · default", 4.0),
+            ("6 MP", 6.0),
+            ("8 MP", 8.0),
+            ("12 MP", 12.0),
+            ("16 MP · best", 16.0),
+            ("20 MP", 20.0),
+            ("Custom", 0.0),
+        ]
+    if family == "moss_image_turbo":
+        return [
+            ("1 MP", 1.0),
+            ("2 MP", 2.0),
+            ("2.4 MP · default", 2.3),
+            ("4 MP", 4.0),
+            ("8 MP", 8.0),
+            ("16 MP", 16.0),
+            ("Custom", 0.0),
+        ]
+    if family == "krea2_realism":
+        return [
+            ("1 MP", 1.0),
+            ("2 MP · default", 2.0),
+            ("4 MP", 4.0),
+            ("8 MP", 8.0),
+            ("16 MP", 16.0),
+            ("Custom", 0.0),
+        ]
+    return [
+        ("1 MP · default", 1.0),
+        ("2 MP", 2.0),
+        ("4 MP", 4.0),
+        ("8 MP", 8.0),
+        ("16 MP", 16.0),
+        ("Custom", 0.0),
+    ]
+
+
+def _dimensions_for_mp(cur_w: int, cur_h: int, target_mp: float,
+                       size_step: int, size_max: int,
+                       ratios: dict[str, tuple[int, int]] | None = None) -> tuple[int, int]:
+    """Scale the current aspect ratio to a target megapixel area on the model's grid."""
+    if not target_mp or target_mp <= 0:
+        return int(cur_w), int(cur_h)
+    area = float(target_mp) * _MP_UNIT
+    aspect = (float(cur_w) / float(cur_h)) if (cur_w and cur_h and cur_w > 0 and cur_h > 0) else 1.0
+    if ratios:
+        best_match, best_score = None, float("inf")
+        for rw, rh in ratios.values():
+            if rw <= 0 or rh <= 0:
+                continue
+            r_err = abs((rw / rh) - aspect) / aspect
+            a_err = abs((rw * rh) - area) / area
+            if r_err <= 0.015 and a_err <= 0.05:
+                score = r_err + a_err
+                if score < best_score:
+                    best_match, best_score = (rw, rh), score
+        if best_match is not None:
+            return best_match
+    w = math.sqrt(area * aspect)
+    h = math.sqrt(area / aspect)
+    if max(w, h) > size_max:
+        scale = size_max / max(w, h)
+        w *= scale
+        h *= scale
+    w_px = max(256, min(size_max, int(round(w / size_step)) * size_step))
+    h_px = max(256, min(size_max, int(round(h / size_step)) * size_step))
+    return w_px, h_px
+
+
+def _mp_value_for(w: int, h: int, mp_presets: list[tuple[str, float]]) -> float:
+    """Match pixel dimensions to the closest megapixel preset, or 0.0 (Custom)."""
+    if not w or not h or w <= 0 or h <= 0:
+        return 0.0
+    actual = (float(w) * float(h)) / _MP_UNIT
+    best_val, best_err = 0.0, 0.12
+    for _, value in mp_presets:
+        if value <= 0:
+            continue
+        err = abs(actual - value) / value
+        if err < best_err:
+            best_val, best_err = value, err
+    return best_val
+
+
+def _size_info(w: int, h: int) -> str:
+    w_i, h_i = int(w or 0), int(h or 0)
+    return f"{w_i}×{h_i} px ({w_i * h_i / 1e6:.1f} MP)"
 
 
 def _defaults(model_id: str) -> dict:
@@ -177,6 +287,9 @@ def build_generative_tab(model_id: str, title: str,
         ready = taesd.model_ready(m, prefs)
         family = m.family if m else "flux2"
         ratios = _ratios_for(family)
+        mp_presets = _mp_presets_for(family)
+        default_w = int(d.get("width", 1024))
+        default_h = int(d.get("height", 1024))
         size_step = d.get("size_multiple", 32 if family == "qwen21" else 16)
         fixed_sampling = family == "qwen21" or d.get("fixed_sampling", False)
         size_max = 6272 if family == "minimax_h3_image" else 4096
@@ -298,8 +411,16 @@ def build_generative_tab(model_id: str, title: str,
                 with gr.Row(elem_classes="compact-fields"):
                     ratio = gr.Dropdown(
                         [t(k) for k in ratios],
-                        value=t(_ratio_label(ratios, d.get("width", 1024), d.get("height", 1024))),
-                        label="Aspect ratio", scale=2, min_width=222)
+                        value=t(_ratio_label(ratios, default_w, default_h)),
+                        label="Aspect ratio", scale=3, min_width=210)
+                    mp_preset = gr.Dropdown(
+                        mp_presets,
+                        value=_mp_value_for(default_w, default_h, mp_presets),
+                        label="Image size (MP)", scale=2, min_width=165,
+                        elem_id=f"{model_id}-mp-preset",
+                        info=_size_info(default_w, default_h),
+                        allow_custom_value=False)
+                with gr.Row(elem_classes="compact-fields"):
                     preset = gr.Dropdown(
                         [t(p["name"]) for p in preset_list],
                         value=t(preset_list[0]["name"]) if preset_list else None,
@@ -535,7 +656,7 @@ def build_generative_tab(model_id: str, title: str,
                     else:
                         min_4mp_canvas = None
 
-                    if family.startswith("fibo2") or family in {"krea2_realism", "moss_image", "qwen21", "minimax_h3_image"}:
+                    if family.startswith("fibo2") or family in {"krea2_realism", "moss_image", "moss_image_turbo", "qwen21", "minimax_h3_image"}:
                         if family.startswith("fibo2"):
                             gr.Markdown(
                                 "Fibo accepts plain instructions and layout JSON. Refer to inputs as "
@@ -549,11 +670,17 @@ def build_generative_tab(model_id: str, title: str,
                                         "Image editing uses the vision projector downloaded with the model.")
                         elif family == "minimax_h3_image":
                             gr.Markdown(
-                                "MiniMax H3 Image works best between **4 MP and 20 MP** (**2048×2048** "
-                                "default; **~16 MP** optimal up to **6272×2688**). Targets under 4 MP "
-                                "generate on a 4 MP canvas and Lanczos-downscale unless disabled above. "
-                                "Use detailed English prompts and **Q4_K_M+** / **P-H3** / **INT8** "
-                                "text encoders (avoid `Q2_K_M`).")
+                                "MiniMax H3 Image defaults to **LCM, 6 steps, CFG 1** and works best "
+                                "between **4 MP and 20 MP** (**2048×2048** default; **~16 MP** optimal "
+                                "up to **6272×2688**). Targets under 4 MP generate on a 4 MP canvas "
+                                "and Lanczos-downscale unless disabled above. Use detailed English "
+                                "prompts and **Q4_K_M+** / **P-H3** / **INT8** text encoders (avoid `Q2_K_M`).")
+                        elif family == "moss_image_turbo":
+                            gr.Markdown(
+                                "Juggernaut Moss Turbo has its DMD2 Turbo LoRA baked in: **6 steps** "
+                                "(**7** for complex scenes), **CFG 1**, **Euler Ancestral / Simple**, "
+                                "around **1.5–2.4 MP** (**1344×1792** default). Also accepts MOSS layout "
+                                "JSON in the prompt.")
                         else:
                             gr.Markdown("MOSS accepts layout JSON in the prompt. Box coordinates are "
                                         "relative to the canvas center. Match the output dimensions to the layout. "
@@ -754,10 +881,33 @@ def build_generative_tab(model_id: str, title: str,
         def on_ratio(label):
             w, h = ratios.get(i18n.to_source(label), (0, 0))
             if not w:
-                return gr.update(), gr.update()
-            return gr.update(value=w), gr.update(value=h)
+                return gr.update(), gr.update(), gr.update()
+            return (gr.update(value=w), gr.update(value=h),
+                    gr.update(value=_mp_value_for(w, h, mp_presets), info=_size_info(w, h)))
 
-        ratio.change(on_ratio, inputs=[ratio], outputs=[width, height])
+        ratio.change(on_ratio, inputs=[ratio], outputs=[width, height, mp_preset])
+
+        def on_mp_preset(target_mp, cur_w, cur_h):
+            if not target_mp or float(target_mp) <= 0:
+                return gr.update(), gr.update(), gr.update(), gr.update()
+            nw, nh = _dimensions_for_mp(
+                int(cur_w or default_w), int(cur_h or default_h),
+                float(target_mp), size_step, size_max, ratios=ratios)
+            return (gr.update(value=nw), gr.update(value=nh),
+                    gr.update(value=t(_ratio_label(ratios, nw, nh))),
+                    gr.update(info=_size_info(nw, nh)))
+
+        mp_preset.input(on_mp_preset, inputs=[mp_preset, width, height],
+                        outputs=[width, height, ratio, mp_preset])
+
+        def on_dims_input(cur_w, cur_h):
+            w_i, h_i = int(cur_w or default_w), int(cur_h or default_h)
+            return (gr.update(value=t(_ratio_label(ratios, w_i, h_i))),
+                    gr.update(value=_mp_value_for(w_i, h_i, mp_presets), info=_size_info(w_i, h_i)))
+
+        gr.on(triggers=[width.input, height.input], fn=on_dims_input,
+              inputs=[width, height], outputs=[ratio, mp_preset],
+              queue=False, show_progress="hidden")
 
         clear_prompt.click(lambda: ("", ""), outputs=[prompt, negative], queue=False)
 
@@ -765,7 +915,7 @@ def build_generative_tab(model_id: str, title: str,
             """img2img : cale la sortie sur le format de l'image de départ
             (côté long plafonné à 1024 px, ou 2048 px sur H3, grille propre au modèle)."""
             if img is None:
-                return gr.update(), gr.update(), gr.update()
+                return gr.update(), gr.update(), gr.update(), gr.update()
             w0, h0 = img.size
             cap = 2048 if family == "minimax_h3_image" else 1024
             longest = max(w0, h0) or 1
@@ -773,10 +923,11 @@ def build_generative_tab(model_id: str, title: str,
             w = max(256, min(size_max, int(round(w0 * sc / size_step)) * size_step))
             h = max(256, min(size_max, int(round(h0 * sc / size_step)) * size_step))
             return (gr.update(value=w), gr.update(value=h),
-                    gr.update(value=t(_CUSTOM_LABEL)))
+                    gr.update(value=t(_ratio_label(ratios, w, h))),
+                    gr.update(value=_mp_value_for(w, h, mp_presets), info=_size_info(w, h)))
 
         init_image.upload(_fit_to_ref, inputs=[init_image],
-                          outputs=[width, height, ratio])
+                          outputs=[width, height, ratio, mp_preset])
 
         if preset_list:
             preset_outputs = [sampler, schedule, steps, cfg, flow_shift, preset]
@@ -833,13 +984,14 @@ def build_generative_tab(model_id: str, title: str,
                 raise gr.Error(str(exc)) from exc
 
             full_prompt = prompt or ""
-            layout_prompt = (family == "moss_image" or family.startswith("fibo2")) and full_prompt.lstrip().startswith("{")
+            is_moss = family.startswith("moss_image")
+            layout_prompt = (is_moss or family.startswith("fibo2")) and full_prompt.lstrip().startswith("{")
             if layout_prompt:
                 try:
                     layout = json.loads(full_prompt)
                 except ValueError as exc:
-                    raise gr.Error(f"Invalid {'MOSS layout' if family == 'moss_image' else 'Fibo caption'} JSON: {exc}") from exc
-                if family == "moss_image" and (not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict)):
+                    raise gr.Error(f"Invalid {'MOSS layout' if is_moss else 'Fibo caption'} JSON: {exc}") from exc
+                if is_moss and (not isinstance(layout.get("items"), list) or not isinstance(layout.get("summary"), dict)):
                     raise gr.Error("MOSS layout JSON needs a summary object and an items list.")
             if not layout_prompt and (system_prompt or "").strip():
                 full_prompt = f"{system_prompt.strip()}, {full_prompt}".strip(", ")

@@ -48,17 +48,16 @@ blocks), the `leejet/MiniMax-H3-GGUF` `Q4_K_M` Qwen3-VL-32B encoder (18.22 GB) a
 the dedicated image VAE (1.17 GB). Full BF16 diffusion (40.23 GB), `Q2_K_M` / INT8
 ConvRot 32B encoders, and lightweight [`PrunaAI/P-H3-Image-Comfy`](https://huggingface.co/PrunaAI/P-H3-Image-Comfy)
 Qwen3-VL-4B encoders (`INT8 ConvRot` 5.12 GB or `BF16` 9.14 GB) remain selectable.
-**Images → MiniMax H3 Image** defaults to Euler, 6 steps and CFG 1 (`--sigmas minimax-h3-image`),
-with the Steps slider unlocked for longer interpolated schedules. For editing, add
+**Images → MiniMax H3 Image** defaults to LCM, 6 steps and CFG 1 (`--sigmas minimax-h3-image`),
+with megapixel size presets (`4 MP`, `8 MP`, `12 MP`, `16 MP`, `20 MP`, etc.) and the Steps slider unlocked for longer interpolated schedules. For editing, add
 up to 16 references and cite them in order as `<Picture 1>`, `<Picture 2>`, etc.
-On 12 GB cards, start at 1024 × 1024 with automatic memory placement.
+On 12 GB cards, start at 2048 × 2048 (4 MP) with automatic memory placement.
 [Upstream setup and examples](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/models/minimax_h3_image.md).
 
-**Kromoss:** the MOSS fine-tune is available in **Models** and **Images → Kromoss**.
-INT8 ConvRot is the default, with BF16 selectable. It shares MOSS's encoder
-and tokenizer and uses the author's small FLUX.2 VAE. An optional
-**DMD2 fast (8 steps)** preset loads its dedicated adapter at strength 1.
-[Kromoss setup](docs/moss-image.md#kromoss-variant).
+**Kromoss & Juggernaut Moss Turbo:** the MOSS fine-tunes are available in **Models** and **Images → Kromoss / Juggernaut Moss Turbo**.
+INT8 ConvRot is the default, sharing MOSS's encoder, tokenizer and small FLUX.2 VAE.
+**Kromoss** offers an optional **DMD2 fast (8 steps)** LoRA preset; **Juggernaut Moss Turbo (Beta)** bakes Kandoo's DMD2 Turbo LoRA directly into the checkpoint (6 steps, CFG 1, Euler Ancestral / Simple, ~2.4 MP default).
+[MOSS setup](docs/moss-image.md#kromoss-variant).
 
 **Local media engines:** SeedVR2, VOSR 2.0 and COLMAP + Brush are available on
 `main` and included in the Studio download below. See

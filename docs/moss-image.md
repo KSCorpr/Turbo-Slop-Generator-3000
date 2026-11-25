@@ -34,6 +34,23 @@ timings on consumer GPUs require hardware validation.
 
 Source: [Kromoss model card](https://huggingface.co/lodestones/Kromoss).
 
+## Juggernaut Moss Turbo (Beta)
+
+Search **Juggernaut Moss Turbo** in **Models**, download its weights, then open
+**Images → Juggernaut Moss Turbo**. This Kandoo checkpoint bakes a custom DMD2
+Turbo LoRA directly into Juggernaut Moss V1 (no separate LoRA install needed).
+It shares MOSS's Qwen3.5-9B GGUF encoder, external tokenizer and FLUX.2 small
+decoder VAE (249.5 MB; the full FLUX.2 VAE remains selectable).
+
+Default diffusion is `juggernaut_moss_turbo_v1_int8_convrot.safetensors`
+(5.41 GB, author-recommended for this Beta), with FP8 Scaled (5.41 GB) and
+BF16 (10.16 GB) selectable from `Kandoo/Juggernaut-Moss-Turbo-Beta`. Recommended
+settings: **Euler Ancestral (`euler_a`) / Simple**, **6 steps** (**7** for
+complex scenes), **CFG 1.0**, automatic flow shift 5, around **1.5–2.4 MP**
+(**1344 × 1792** default). Apache-2.0, public weights.
+
+Source: [Juggernaut Moss Turbo model card](https://huggingface.co/Kandoo/Juggernaut-Moss-Turbo-Beta).
+
 ## Weights and memory
 
 | Component | Default source/file | Download size |
