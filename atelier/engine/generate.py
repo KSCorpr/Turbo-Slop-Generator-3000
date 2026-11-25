@@ -276,7 +276,11 @@ def _h3_image_memory_guard(
         auto_fit = False
         params_backend = ""
         flags["offload_to_cpu"] = True
-        disable_prefetch = True
+        # Keep async next-segment prefetch enabled at <= 4 MP so the 210 MB
+        # block transfers overlap GPU compute; only disable prefetch upfront
+        # above 4 MP on <= 12 GB cards where the compute workspace alone is
+        # ~7.8 GB and every ~200 MB of VRAM headroom matters.
+        disable_prefetch = bool(pixels > 4.0 and vram_gb <= 12.0)
         spare = 2.0 if (pixels > 4.0 or has_reference) else 1.5
         if not max_vram or max_vram.startswith("-"):
             cur_spare = 0.0
@@ -287,7 +291,9 @@ def _h3_image_memory_guard(
                     cur_spare = 0.0
             max_vram = sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO, spare_gib=max(spare, cur_spare))
 
-    if needs_offload and (vram_gb <= 12.0 or pixels > 4.0 or has_reference):
+    if needs_offload and pixels > 4.0 and vram_gb <= 12.0:
+        chunk_gib = 0.03125
+    elif needs_offload and (vram_gb <= 12.0 or pixels > 4.0 or has_reference):
         chunk_gib = 0.0625
     elif needs_offload:
         chunk_gib = 0.25
@@ -298,7 +304,7 @@ def _h3_image_memory_guard(
     if log and needs_offload:
         known = sdcpp.supported_options(sd_cli)
         fa_note = "--flash-attn on" if "--flash-attn" in known else "--diffusion-fa"
-        pf_note = ", --disable-prefetch" if "--disable-prefetch" in known else ""
+        pf_note = ", --disable-prefetch" if (disable_prefetch and "--disable-prefetch" in known) else ""
         mv_note = f", --max-vram {max_vram}" if (max_vram and "--max-vram" in known) else ""
         ma_note = f", attn_chunk_budget={chunk_gib:g} GiB" if "--model-args" in known else ""
         log(f"MiniMax H3 Image VRAM guard ({width}x{height}): --offload-to-cpu, "
@@ -797,12 +803,18 @@ def generate(
     def _attempt(relief: bool) -> list[Path]:
         nonlocal all_gpus
         if relief and model.family == "minimax_h3_image":
+            # Under --offload-to-cpu, sd.cpp already evicts text encoder and VAE
+            # from VRAM (0 MB resident) before diffusion starts. Do NOT force
+            # --clip-on-cpu / --vae-on-cpu here: running 225 VAE tiles or
+            # Qwen3-VL-32B on CPU is ~50x slower and frees 0 MB during DiT.
+            # Instead, disable async prefetch + SageAttention workspace copies
+            # and tighten --max-vram and the attention chunk budget.
             req.auto_fit = False
             req.params_backend = ""
             req.encoder_gpu_index = None
-            req.flags = {**flags, "offload_to_cpu": True, "vae_tiling": True,
-                         "clip_on_cpu": True, "vae_on_cpu": True}
+            req.flags = {**flags, "offload_to_cpu": True, "vae_tiling": True}
             req.disable_prefetch = True
+            req.sage_attn = False
             req.model_args = ["minimax_h3_attn_chunk_budget=0.03125"]
             req.max_vram = sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO,
                                               spare_gib=_OOM_RELIEF_SPARE_GIB)
@@ -868,8 +880,8 @@ def generate(
             raise
         if log:
             if model.family == "minimax_h3_image":
-                log("↻ Not enough GPU memory for MiniMax H3 Image — retrying with full RAM "
-                    "offload (--offload-to-cpu), no prefetch, text encoder + VAE on CPU, "
+                log("↻ Not enough GPU memory for MiniMax H3 Image — retrying with RAM "
+                    "offload (--offload-to-cpu), no prefetch, Flash Attention only, "
                     f"--max-vram -{_OOM_RELIEF_SPARE_GIB:g}, and smaller attention chunks.")
             elif auto_fit:
                 log("↻ Not enough GPU memory — retrying with a tighter budget "

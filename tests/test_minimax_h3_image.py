@@ -246,7 +246,8 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             cmd = run.call_args.args[0]
             self.assertIn("--offload-to-cpu", cmd)
             self.assertIn("--vae-tiling", cmd)
-            self.assertIn("--disable-prefetch", cmd)
+            # At 4 MP, keep async next-segment prefetch ON so 210 MB block transfers overlap GPU compute.
+            self.assertNotIn("--disable-prefetch", cmd)
             self.assertNotIn("--params-backend", cmd)
             self.assertNotIn("--diffusion-fa", cmd)
             self.assertEqual(cmd[cmd.index("--flash-attn") + 1], "on")
@@ -258,7 +259,8 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             self.assertTrue(any("MiniMax H3 Image VRAM guard (2048x2048)" in line for line in logs), logs)
 
             # 2) Home dual-GPU (RTX 3060 12 GB + GTX 1080 Ti 11 GB) in Auto mode at 16 MP:
-            #    must keep offload pinned to the 3060 (all_gpus=False), raise spare to -2 GiB.
+            #    must keep offload pinned to the 3060 (all_gpus=False), raise spare to -2 GiB,
+            #    disable prefetch and tighten attention chunk budget to 0.03125 GiB.
             settings.save_prefs({"system_mode": "auto", "gpu_index": 0})
             with patch.object(hardware, "detect_gpus", return_value=[rtx_3060, gtx_1080ti]), \
                  patch.object(hardware, "free_vram_gb", return_value=11.0), \
@@ -272,7 +274,7 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--max-vram") + 1], "-2")
             self.assertEqual(cmd[cmd.index("--flash-attn") + 1], "on")
             self.assertNotIn("--diffusion-fa", cmd)
-            self.assertEqual(cmd[cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.0625")
+            self.assertEqual(cmd[cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.03125")
             self.assertFalse(run.call_args.kwargs.get("all_gpus"))
             self.assertEqual(run.call_args.kwargs.get("gpu_index"), 0)
 
@@ -319,13 +321,16 @@ class MiniMaxH3ImageTests(unittest.TestCase):
         retry_cmd, retry_kw = calls[1]
         self.assertIn("--offload-to-cpu", retry_cmd)
         self.assertIn("--disable-prefetch", retry_cmd)
-        self.assertIn("--clip-on-cpu", retry_cmd)
-        self.assertIn("--vae-on-cpu", retry_cmd)
+        # Keep VAE and text encoder on GPU (sd.cpp already evicts them before DiT);
+        # avoid forcing 50x-slower CPU execution for 225 VAE tiles and Qwen3-VL-32B.
+        self.assertNotIn("--clip-on-cpu", retry_cmd)
+        self.assertNotIn("--vae-on-cpu", retry_cmd)
+        self.assertNotIn("--sage-attn", retry_cmd)
         self.assertIn("--vae-tiling", retry_cmd)
         self.assertEqual(retry_cmd[retry_cmd.index("--max-vram") + 1], "-3")
         self.assertEqual(retry_cmd[retry_cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.03125")
         self.assertEqual(retry_cmd[retry_cmd.index("--auto-fit") + 1], "off")
         self.assertNotIn("--backend", retry_cmd)
         self.assertFalse(retry_kw.get("all_gpus"))
-        self.assertTrue(any("full RAM offload" in line for line in logs), logs)
+        self.assertTrue(any("Flash Attention only" in line for line in logs), logs)
 
