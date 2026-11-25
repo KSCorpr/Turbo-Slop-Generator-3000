@@ -111,6 +111,20 @@ def plan_for_model(model: registry.BaseModel, files: dict, prefs: dict,
         return SystemPlan(gpu.index, flags, "", False, "", False,
                           placement, image_gib, encoder_gib, free)
 
+    if model.family == "minimax_h3_image":
+        # MiniMax-H3-Image is a 33B DiT + 36-layer ViT 2D VAE. Keeping weights
+        # unpinned in RAM (--offload-to-cpu) with segmented execution and a
+        # generous free-VRAM reserve avoids OOM at 4 MP–16 MP on 11–16 GB cards
+        # and keeps compute pinned to the single chosen RTX GPU.
+        spare = 2.0 if (pixels > 4.0 or has_reference) else 1.5
+        h3_budget = (sdcpp.max_vram_arg("auto", spare_gib=spare)
+                     if "--max-vram" in known else "")
+        flags["offload_to_cpu"] = True
+        flags["vae_tiling"] = True
+        return SystemPlan(gpu.index, flags, "", False, h3_budget, False,
+                          "RAM offload + segmented VRAM budget (MiniMax H3 Image)",
+                          image_gib, encoder_gib, free)
+
     budget = (sdcpp.max_vram_arg("auto")
               if "--max-vram" in known else "")
     if "--auto-fit" in known:

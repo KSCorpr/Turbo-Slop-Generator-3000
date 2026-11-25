@@ -8,7 +8,7 @@ from unittest.mock import patch
 import gradio as gr
 from PIL import Image, PngImagePlugin
 
-from atelier import downloader, generation_weights, model_catalog, registry, settings
+from atelier import downloader, generation_weights, hardware, model_catalog, registry, settings
 from atelier.engine import generate, sdcpp
 from atelier.ui import generate_tab
 
@@ -201,3 +201,131 @@ class MiniMaxH3ImageTests(unittest.TestCase):
             with self.assertRaisesRegex(sdcpp.EngineError, "build 1110"):
                 generate.generate(**self.request)
         run.assert_not_called()
+
+    def _modern_sd_help(self) -> str:
+        return (
+            "--sigmas minimax-h3-image --rng --flash-attn --diffusion-fa "
+            "--offload-to-cpu --max-vram --disable-prefetch --model-args "
+            "--auto-fit on|off --params-backend --backend --vae-tiling "
+            "--clip-on-cpu --vae-on-cpu"
+        )
+
+    def _make_realistic_h3_weights(self) -> None:
+        # Sparse files matching the real W4A8 diffusion (~12.5 GiB) + FP16 VAE (~1.17 GiB).
+        with open(self.files["diffusion"], "wb") as f:
+            f.truncate(int(12.5 * 1024 ** 3))
+        with open(self.files["vae"], "wb") as f:
+            f.truncate(int(1.17 * 1024 ** 3))
+
+    def test_4mp_and_16mp_vram_guard_on_11gb_and_12gb_gpus(self):
+        self._make_realistic_h3_weights()
+        rtx_2080ti = hardware.Gpu(index=0, name="NVIDIA GeForce RTX 2080 Ti", vram_gb=11.0,
+                                  arch="turing", tensor_cores=True)
+        rtx_3060 = hardware.Gpu(index=0, name="NVIDIA GeForce RTX 3060", vram_gb=12.0,
+                                arch="ampere", tensor_cores=True)
+        gtx_1080ti = hardware.Gpu(index=1, name="NVIDIA GeForce GTX 1080 Ti", vram_gb=11.0,
+                                  arch="pascal", tensor_cores=False)
+
+        with patch.object(sdcpp, "binary_help", return_value=self._modern_sd_help()):
+            # 1) Office 11 GB card with manual preset that hard-pins diffusion=cuda0:
+            #    must override diffusion=cuda0 -> --offload-to-cpu + --flash-attn on +
+            #    --disable-prefetch + --max-vram -1.5 + attn_chunk_budget=0.0625.
+            office_prefs = {
+                "system_mode": "manual",
+                "auto_optimize": False,
+                "gpu_index": 0,
+                "params_backend": "diffusion=cuda0,vae=cuda0,te=cpu",
+                "flags": {"diffusion_fa": True, "offload_to_cpu": False, "vae_tiling": True},
+            }
+            settings.save_prefs(office_prefs)
+            logs = []
+            with patch.object(hardware, "detect_gpus", return_value=[rtx_2080ti]), \
+                 patch.object(sdcpp, "run") as run, \
+                 patch.object(sdcpp, "collect_outputs", return_value=[]):
+                generate.generate(**{**self.request, "prefs_override": None}, log=logs.append)
+            cmd = run.call_args.args[0]
+            self.assertIn("--offload-to-cpu", cmd)
+            self.assertIn("--vae-tiling", cmd)
+            self.assertIn("--disable-prefetch", cmd)
+            self.assertNotIn("--params-backend", cmd)
+            self.assertNotIn("--diffusion-fa", cmd)
+            self.assertEqual(cmd[cmd.index("--flash-attn") + 1], "on")
+            self.assertEqual(cmd[cmd.index("--auto-fit") + 1], "off")
+            self.assertEqual(cmd[cmd.index("--max-vram") + 1], "-1.5")
+            self.assertEqual(cmd[cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.0625")
+            self.assertFalse(run.call_args.kwargs.get("all_gpus"))
+            self.assertEqual(run.call_args.kwargs.get("gpu_index"), 0)
+            self.assertTrue(any("MiniMax H3 Image VRAM guard (2048x2048)" in line for line in logs), logs)
+
+            # 2) Home dual-GPU (RTX 3060 12 GB + GTX 1080 Ti 11 GB) in Auto mode at 16 MP:
+            #    must keep offload pinned to the 3060 (all_gpus=False), raise spare to -2 GiB.
+            settings.save_prefs({"system_mode": "auto", "gpu_index": 0})
+            with patch.object(hardware, "detect_gpus", return_value=[rtx_3060, gtx_1080ti]), \
+                 patch.object(hardware, "free_vram_gb", return_value=11.0), \
+                 patch.object(sdcpp, "run") as run, \
+                 patch.object(sdcpp, "collect_outputs", return_value=[]):
+                generate.generate(**{**self.request, "prefs_override": None, "width": 4096, "height": 4096})
+            cmd = run.call_args.args[0]
+            self.assertIn("--offload-to-cpu", cmd)
+            self.assertIn("--disable-prefetch", cmd)
+            self.assertEqual(cmd[cmd.index("--auto-fit") + 1], "off")
+            self.assertEqual(cmd[cmd.index("--max-vram") + 1], "-2")
+            self.assertEqual(cmd[cmd.index("--flash-attn") + 1], "on")
+            self.assertNotIn("--diffusion-fa", cmd)
+            self.assertEqual(cmd[cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.0625")
+            self.assertFalse(run.call_args.kwargs.get("all_gpus"))
+            self.assertEqual(run.call_args.kwargs.get("gpu_index"), 0)
+
+            # 3) 24 GB GPU at 4 MP: fits in VRAM, does NOT force offload/disable-prefetch,
+            #    still enables --flash-attn on and 0.5 GiB attention chunk budget.
+            rtx_4090 = hardware.Gpu(index=0, name="NVIDIA GeForce RTX 4090", vram_gb=24.0,
+                                    arch="ada", tensor_cores=True)
+            settings.save_prefs({"system_mode": "manual", "auto_optimize": False, "gpu_index": 0,
+                                 "flags": {"diffusion_fa": True, "offload_to_cpu": False}})
+            with patch.object(hardware, "detect_gpus", return_value=[rtx_4090]), \
+                 patch.object(sdcpp, "run") as run, \
+                 patch.object(sdcpp, "collect_outputs", return_value=[]):
+                generate.generate(**{**self.request, "prefs_override": None})
+            cmd = run.call_args.args[0]
+            self.assertNotIn("--offload-to-cpu", cmd)
+            self.assertNotIn("--disable-prefetch", cmd)
+            self.assertEqual(cmd[cmd.index("--flash-attn") + 1], "on")
+            self.assertNotIn("--diffusion-fa", cmd)
+            self.assertEqual(cmd[cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.5")
+
+    def test_h3_image_oom_rescue_retries_with_full_ram_offload_and_tiny_chunk_budget(self):
+        self._make_realistic_h3_weights()
+        rtx_3060 = hardware.Gpu(index=0, name="NVIDIA GeForce RTX 3060", vram_gb=12.0,
+                                arch="ampere", tensor_cores=True)
+        out_file = settings.OUTPUT_DIR / "h3-rescued.png"
+        Image.new("RGB", (2048, 2048), (90, 100, 110)).save(out_file)
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((list(cmd), dict(kwargs)))
+            if len(calls) == 1:
+                raise sdcpp.VramError("CUDA error: out of memory")
+
+        logs = []
+        with patch.object(sdcpp, "binary_help", return_value=self._modern_sd_help()), \
+             patch.object(hardware, "detect_gpus", return_value=[rtx_3060]), \
+             patch.object(sdcpp, "run", side_effect=fake_run), \
+             patch.object(sdcpp, "collect_outputs", return_value=[out_file]):
+            paths = generate.generate(**{**self.request, "prefs_override": None}, log=logs.append)
+
+        self.assertEqual(paths, [out_file])
+        self.assertEqual(len(calls), 2)
+        retry_cmd, retry_kw = calls[1]
+        self.assertIn("--offload-to-cpu", retry_cmd)
+        self.assertIn("--disable-prefetch", retry_cmd)
+        self.assertIn("--clip-on-cpu", retry_cmd)
+        self.assertIn("--vae-on-cpu", retry_cmd)
+        self.assertIn("--vae-tiling", retry_cmd)
+        self.assertEqual(retry_cmd[retry_cmd.index("--max-vram") + 1], "-3")
+        self.assertEqual(retry_cmd[retry_cmd.index("--model-args") + 1], "minimax_h3_attn_chunk_budget=0.03125")
+        self.assertEqual(retry_cmd[retry_cmd.index("--auto-fit") + 1], "off")
+        self.assertNotIn("--backend", retry_cmd)
+        self.assertFalse(retry_kw.get("all_gpus"))
+        self.assertTrue(any("full RAM offload" in line for line in logs), logs)
+

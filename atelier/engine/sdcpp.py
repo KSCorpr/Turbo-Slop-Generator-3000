@@ -145,6 +145,9 @@ class GenRequest:
     max_vram: str = ""
     stream_layers: bool = False
     circular: bool = False             # --circular : texture sans couture (seamless pattern)
+    model_args: list[str] = field(default_factory=list)
+    disable_prefetch: bool = False
+    flash_attn_mode: str = ""          # "on" | "off" | "auto" (prefers --flash-attn over deprecated --diffusion-fa)
 
 
 # --------------------------------------------------------------------------- #
@@ -251,6 +254,8 @@ def memory_args(sd_cli: Path | None, req: "GenRequest") -> list[str]:
 
     if req.max_vram and "--max-vram" in known:
         args += ["--max-vram", req.max_vram]
+    if req.disable_prefetch and "--disable-prefetch" in known:
+        args.append("--disable-prefetch")
     # Le streaming ne dépend pas de --max-vram. Il dépend de poids de diffusion
     # résidant en RAM, d'où ils sont chargés couche par couche vers le GPU.
     if req.stream_layers and stream_layers_possible(sd_cli, flags, params):
@@ -259,7 +264,15 @@ def memory_args(sd_cli: Path | None, req: "GenRequest") -> list[str]:
         from .. import sage_attention
         if sage_attention.availability(sd_cli, req.gpu_index)[0]:
             args.append("--sage-attn")
+    use_modern_fa = bool(req.flash_attn_mode) and "--flash-attn" in known
+    if use_modern_fa:
+        # Avoid emitting deprecated --diffusion-fa alongside --flash-attn:
+        # in sd.cpp, --diffusion-fa maps to "--flash-attn off,diffusion=on"
+        # and the last occurrence wins, which would disable FA on VAE and TE.
+        flags["diffusion_fa"] = False
     args += _flag_args(flags, sd_cli)
+    if use_modern_fa:
+        args += ["--flash-attn", req.flash_attn_mode]
     args += auto_fit_args(sd_cli, req.auto_fit)
 
     if req.auto_fit:
@@ -532,6 +545,9 @@ def build_gen_cmd(sd_cli: Path, req: GenRequest, output: Path) -> list[str]:
             cmd += ["--cache-option", req.cache_option]
     if req.circular and "--circular" in known:
         cmd += ["--circular"]
+    if req.model_args and "--model-args" in known:
+        for arg in req.model_args:
+            cmd += ["--model-args", arg]
     cmd += memory_args(sd_cli, req)
     cmd += ["-o", str(output), "-v"]
     return cmd

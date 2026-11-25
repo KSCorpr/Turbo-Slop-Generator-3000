@@ -210,6 +210,102 @@ def _minimax_h3_canvas(target_w: int, target_h: int,
     return canvas_w, canvas_h
 
 
+def _file_size_gib(path: Path | None) -> float:
+    if path is None:
+        return 0.0
+    try:
+        return Path(path).stat().st_size / (1024 ** 3)
+    except OSError:
+        return 0.0
+
+
+def _h3_image_memory_guard(
+    *,
+    diffusion: Path | None,
+    vae: Path | None,
+    width: int,
+    height: int,
+    has_reference: bool,
+    gpu_index: int | None,
+    flags: dict[str, bool],
+    auto_fit: bool,
+    params_backend: str,
+    max_vram: str,
+    sd_cli: Path,
+    log: Callable[[str], None] | None = None,
+) -> tuple[dict[str, bool], bool, str, str, list[str], bool, str]:
+    """Tune sd.cpp memory flags for MiniMax H3 Image (4 MP–16 MP) to prevent VRAM OOM.
+
+    Aligns with upstream sd.cpp docs/models/minimax_h3_image.md & performance.md:
+    - Enables Flash Attention across all modules (`--flash-attn on`) instead of
+      deprecated `--diffusion-fa` (which disables FA on the 36-layer ViT 2D VAE
+      and Qwen3-VL text encoder).
+    - Always enables `--vae-tiling`.
+    - When diffusion + VAE weights plus high-MP compute exceed GPU VRAM (e.g.
+      12.5 GB W4A8 or 21 GB INT8 on 11–16 GB cards, even under manual/machine
+      presets that pin `diffusion=cuda0`), switches to `--offload-to-cpu` +
+      segmented `--max-vram` + `--disable-prefetch` on the chosen GPU.
+    - Passes `--model-args minimax_h3_attn_chunk_budget=<GiB>` to bound peak
+      attention working set on 4 MP+ canvases and multi-reference edits.
+    """
+    flags = {**flags, "vae_tiling": True}
+    gpus = hardware.detect_gpus()
+    gpu = (next((g for g in gpus if g.index == gpu_index), None)
+           if gpu_index is not None else None)
+    if gpu is None and gpus:
+        gpu = hardware.auto_profile().gpu
+
+    image_gib = _file_size_gib(diffusion) + _file_size_gib(vae)
+    pixels = max(1.0, (width * height) / (1024 ** 2))
+    vram_gb = gpu.vram_gb if gpu else 0.0
+    reserve = 1.5 + max(0.0, pixels - 1.0) * 0.8 + (1.0 if has_reference else 0.0)
+    needs_offload = bool(
+        gpu is not None and not gpu.is_apple and (
+            (image_gib > 0.0 and image_gib + reserve > max(0.0, vram_gb - 1.0))
+            or (image_gib == 0.0 and vram_gb <= 16.0)
+        )
+    )
+
+    flash_attn_mode = ""
+    if gpu is None or gpu.tensor_cores or flags.get("diffusion_fa"):
+        flags["diffusion_fa"] = True
+        flash_attn_mode = "on"
+
+    disable_prefetch = False
+    if needs_offload:
+        auto_fit = False
+        params_backend = ""
+        flags["offload_to_cpu"] = True
+        disable_prefetch = True
+        spare = 2.0 if (pixels > 4.0 or has_reference) else 1.5
+        if not max_vram or max_vram.startswith("-"):
+            cur_spare = 0.0
+            if max_vram.startswith("-"):
+                try:
+                    cur_spare = abs(float(max_vram))
+                except ValueError:
+                    cur_spare = 0.0
+            max_vram = sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO, spare_gib=max(spare, cur_spare))
+
+    if needs_offload and (vram_gb <= 12.0 or pixels > 4.0 or has_reference):
+        chunk_gib = 0.0625
+    elif needs_offload:
+        chunk_gib = 0.25
+    else:
+        chunk_gib = 0.5
+    model_args = [f"minimax_h3_attn_chunk_budget={chunk_gib:g}"]
+
+    if log and needs_offload:
+        known = sdcpp.supported_options(sd_cli)
+        fa_note = "--flash-attn on" if "--flash-attn" in known else "--diffusion-fa"
+        pf_note = ", --disable-prefetch" if "--disable-prefetch" in known else ""
+        mv_note = f", --max-vram {max_vram}" if (max_vram and "--max-vram" in known) else ""
+        ma_note = f", attn_chunk_budget={chunk_gib:g} GiB" if "--model-args" in known else ""
+        log(f"MiniMax H3 Image VRAM guard ({width}x{height}): --offload-to-cpu, "
+            f"--vae-tiling, {fa_note}{mv_note}{pf_note}{ma_note}.")
+    return flags, auto_fit, params_backend, max_vram, model_args, disable_prefetch, flash_attn_mode
+
+
 def _resize_minimax_outputs(paths: list[Path], width: int, height: int) -> None:
     """Downscale 4 MP MiniMax H3 canvas renders with Lanczos, preserving metadata."""
     import os
@@ -627,6 +723,25 @@ def generate(
         g = (gpu_index if gpu_index is not None else 0) if split_gpu else 0
         params_backend = f"diffusion=cuda{g},vae=cuda{g},te=cuda{enc_gpu}"
 
+    resolved_max_vram = (max_vram if max_vram is not None else
+                         (plan.max_vram if plan else sdcpp.max_vram_arg(
+                             prefs.get("max_vram") or "")))
+    model_args: list[str] = []
+    disable_prefetch = False
+    flash_attn_mode = ""
+    if model.family == "minimax_h3_image":
+        (flags, auto_fit, params_backend, resolved_max_vram,
+         model_args, disable_prefetch, flash_attn_mode) = _h3_image_memory_guard(
+            diffusion=diffusion, vae=vae, width=width, height=height,
+            has_reference=bool(ref_image), gpu_index=gpu_index,
+            flags=flags, auto_fit=auto_fit, params_backend=params_backend,
+            max_vram=resolved_max_vram, sd_cli=sd_cli, log=log,
+        )
+        if not auto_fit and not params_backend and flags.get("offload_to_cpu"):
+            split_gpu = False
+            all_gpus = False
+            enc_gpu = None
+
     stream_layers = ((plan.stream_layers if plan else
                       bool(prefs.get("stream_layers")))
                      if stream_layers is None else bool(stream_layers))
@@ -669,16 +784,30 @@ def generate(
         auto_fit=auto_fit, split_mode=prefs.get("split_mode") or "",
         cache_mode=cache_mode, cache_option=cache_option,
         hires=hires,
-        max_vram=(max_vram if max_vram is not None else
-                  (plan.max_vram if plan else sdcpp.max_vram_arg(
-                      prefs.get("max_vram") or ""))),
+        max_vram=resolved_max_vram,
         stream_layers=stream_layers,
         circular=circular,
+        model_args=model_args,
+        disable_prefetch=disable_prefetch,
+        flash_attn_mode=flash_attn_mode,
     )
     out = sdcpp.unique_output(model.family)
     base_max_vram = req.max_vram
 
     def _attempt(relief: bool) -> list[Path]:
+        nonlocal all_gpus
+        if relief and model.family == "minimax_h3_image":
+            req.auto_fit = False
+            req.params_backend = ""
+            req.encoder_gpu_index = None
+            req.flags = {**flags, "offload_to_cpu": True, "vae_tiling": True,
+                         "clip_on_cpu": True, "vae_on_cpu": True}
+            req.disable_prefetch = True
+            req.model_args = ["minimax_h3_attn_chunk_budget=0.03125"]
+            req.max_vram = sdcpp.max_vram_arg(sdcpp.MAX_VRAM_AUTO,
+                                              spare_gib=_OOM_RELIEF_SPARE_GIB)
+            all_gpus = False
+            return _run_attempt()
         if relief and auto_fit:
             # Sous auto-fit, `--clip-on-cpu` ne sert à RIEN : le raccourci
             # est effacé par `memory_args` (auto-fit décide seul du
@@ -726,17 +855,23 @@ def generate(
         # Sous auto-fit la reprise n'est PAS « l'encodeur en RAM » mais un
         # budget plus serré : partir directement en reprise dépenserait ce
         # levier avant même d'avoir essayé le placement demandé.
-        paths = _attempt(not auto_fit and bool(flags.get("clip_on_cpu")))
+        paths = _attempt(
+            model.family != "minimax_h3_image" and not auto_fit and bool(flags.get("clip_on_cpu"))
+        )
     except sdcpp.VramError:
         # L'encodeur revenu sur le GPU de génération peut faire déborder une
         # carte juste. Plutôt que de renvoyer l'utilisateur à ses réglages, on
         # reprend une fois avec l'encodeur en RAM : plus lent que le GPU, mais
         # toujours bien plus rapide qu'une Pascal, et ça ne coûte pas un octet
         # de VRAM.
-        if flags.get("clip_on_cpu") and not auto_fit:
+        if model.family != "minimax_h3_image" and flags.get("clip_on_cpu") and not auto_fit:
             raise
         if log:
-            if auto_fit:
+            if model.family == "minimax_h3_image":
+                log("↻ Not enough GPU memory for MiniMax H3 Image — retrying with full RAM "
+                    "offload (--offload-to-cpu), no prefetch, text encoder + VAE on CPU, "
+                    f"--max-vram -{_OOM_RELIEF_SPARE_GIB:g}, and smaller attention chunks.")
+            elif auto_fit:
                 log("↻ Not enough GPU memory — retrying with a tighter budget "
                     f"(--max-vram -{_OOM_RELIEF_SPARE_GIB:g}), so automatic "
                     "placement moves more weights out of the card.")
