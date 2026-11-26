@@ -379,6 +379,99 @@ class ComfyBackendTests(unittest.TestCase):
             self.assertIn("stopped", stop_msg)
             close_mock.assert_called_once()
 
+    def test_managed_memory_flags_for_windows_and_low_vram(self):
+        fake_gpu = SimpleNamespace(index=0, name="RTX 2080 Ti", vram_gb=11.0, is_apple=False)
+        fake_prof = SimpleNamespace(gpu=fake_gpu, ram_gb=32.0)
+        with patch.object(comfy_backend.hardware, "auto_profile", return_value=fake_prof):
+            flags = comfy_backend._managed_memory_flags(0)
+        self.assertIn("--disable-pinned-memory", flags)
+        self.assertIn("--reserve-vram", flags)
+        self.assertIn("1.0", flags)
+
+    def test_polling_retries_transient_connection_reset_and_reports_managed_crash_log(self):
+        import requests as req_lib
+
+        model, files = self._install_model("minimax-h3-image")
+        settings.save_prefs({"generation_backend": "comfyui", "comfyui_url": "http://127.0.0.1:8188"})
+
+        # 1) Transient WinError 10054 on /history polling retries and succeeds.
+        history_calls = {"n": 0}
+
+        def fake_get_retry(url, **kwargs):
+            if url.endswith("/system_stats"):
+                return _FakeResponse(json_data={"system": {"comfyui_version": "0.3.99"}, "devices": []})
+            if url.endswith("/object_info/UNETLoader"):
+                return _FakeResponse(json_data={"UNETLoader": {"input": {"required": {"unet_name": [[files["diffusion"].name]]}}}})
+            if url.endswith("/object_info/CLIPLoader"):
+                return _FakeResponse(json_data={"CLIPLoader": {"input": {"required": {"clip_name": [[files["text_encoder"].name]]}}}})
+            if url.endswith("/object_info/VAELoader"):
+                return _FakeResponse(json_data={"VAELoader": {"input": {"required": {"vae_name": [[files["vae"].name]]}}}})
+            if url.endswith("/object_info/MiniMaxH3ImageConditioning"):
+                return _FakeResponse(json_data={"MiniMaxH3ImageConditioning": {"input": {"required": {}}}})
+            if url.endswith("/history/prompt-retry"):
+                history_calls["n"] += 1
+                if history_calls["n"] <= 2:
+                    raise req_lib.ConnectionError("ConnectionResetError(10054)")
+                return _FakeResponse(json_data={
+                    "prompt-retry": {
+                        "status": {"status_str": "success"},
+                        "outputs": {"9": {"images": [{"filename": "ok.png", "subfolder": "", "type": "output"}]}},
+                    }
+                })
+            if url.endswith("/view"):
+                return _FakeResponse(content=_png_bytes(512, 512))
+            raise AssertionError(f"Unexpected GET {url}")
+
+        def fake_post(url, **kwargs):
+            if url.endswith("/prompt"):
+                return _FakeResponse(json_data={"prompt_id": "prompt-retry"})
+            raise AssertionError(f"Unexpected POST {url}")
+
+        logs = []
+        with patch.object(comfy_backend.requests, "get", side_effect=fake_get_retry), \
+             patch.object(comfy_backend.requests, "post", side_effect=fake_post), \
+             patch.object(comfy_backend.time, "sleep", return_value=None):
+            out = comfy_backend.generate(
+                model=model, diffusion=files["diffusion"], vae=files["vae"],
+                text_encoder=files["text_encoder"], loras=[], prompt="test", negative="",
+                width=2048, height=2048, steps=6, cfg_scale=1.0, sampler="lcm", schedule="simple",
+                seed=1, batch_count=1, ref_images=[], init_image=None, strength=0.6,
+                log=logs.append,
+            )
+        self.assertEqual(len(out), 1)
+        self.assertGreaterEqual(history_calls["n"], 3)
+        self.assertTrue(any("temporary connection hiccup" in line for line in logs), logs)
+
+        # 2) If managed server actually crashes, surface exit code + comfyui_server.log tail immediately.
+        class DeadProc:
+            returncode = -1073741819
+
+            def poll(self):
+                return self.returncode
+
+        comfy_backend._server_log_path().write_text(
+            "Fatal Python error: Segmentation fault\nCurrent thread: comfy_aimdo\n", encoding="utf-8"
+        )
+
+        def fake_get_crash(url, **kwargs):
+            if url.endswith("/history/prompt-retry"):
+                raise req_lib.ConnectionError("ConnectionResetError(10054)")
+            return fake_get_retry(url, **kwargs)
+
+        with patch.object(comfy_backend, "_MANAGED_PROC", DeadProc()), \
+             patch.object(comfy_backend.requests, "get", side_effect=fake_get_crash), \
+             patch.object(comfy_backend.requests, "post", side_effect=fake_post), \
+             patch.object(comfy_backend.time, "sleep", return_value=None):
+            with self.assertRaises(sdcpp.EngineError) as ctx:
+                comfy_backend.generate(
+                    model=model, diffusion=files["diffusion"], vae=files["vae"],
+                    text_encoder=files["text_encoder"], loras=[], prompt="test", negative="",
+                    width=2048, height=2048, steps=6, cfg_scale=1.0, sampler="lcm", schedule="simple",
+                    seed=1, batch_count=1, ref_images=[], init_image=None, strength=0.6,
+                )
+        self.assertIn("0xC0000005", str(ctx.exception))
+        self.assertIn("Segmentation fault", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

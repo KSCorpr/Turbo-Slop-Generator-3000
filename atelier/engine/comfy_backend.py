@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import os
 import random
 import subprocess
 import threading
@@ -21,7 +22,7 @@ from typing import Any, Callable
 import requests
 import yaml
 
-from .. import addons, registry, settings
+from .. import addons, hardware, registry, settings
 from ..processes import close_worker
 from . import sdcpp
 
@@ -240,6 +241,79 @@ def stop_managed() -> str:
 atexit.register(stop_managed)
 
 
+def _server_log_path() -> Path:
+    return settings.TMP_DIR / "comfyui_server.log"
+
+
+def _read_server_log_tail(max_chars: int = 1600) -> str:
+    try:
+        text = _server_log_path().read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+    return text[-max_chars:] if len(text) > max_chars else text
+
+
+def _drain_server_log(offset: int, log: Callable[[str], None] | None) -> tuple[int, bool]:
+    """Stream newly appended ComfyUI server log lines into ``log``."""
+    path = _server_log_path()
+    if not path.is_file():
+        return offset, False
+    try:
+        size = path.stat().st_size
+        if size <= offset:
+            return offset, False
+        with path.open("rb") as fh:
+            fh.seek(offset)
+            chunk = fh.read(size - offset)
+    except OSError:
+        return offset, False
+    emitted = False
+    if log and chunk:
+        text = chunk.decode("utf-8", errors="replace")
+        for raw_line in text.splitlines():
+            # Collapse tqdm carriage-return progress updates to the latest frame.
+            line = raw_line.rsplit("\r", 1)[-1].strip()
+            if line:
+                log(f"[ComfyUI] {line}")
+                emitted = True
+    return size, emitted
+
+
+def _managed_exit_code() -> int | None:
+    with _PROC_LOCK:
+        proc = _MANAGED_PROC
+    if proc is None:
+        return None
+    return proc.poll()
+
+
+def _format_exit_code(code: int) -> str:
+    if code < 0 or code >= 0x80000000:
+        return f"{code} (0x{code & 0xFFFFFFFF:08X})"
+    return str(code)
+
+
+def _managed_memory_flags(gpu_idx: int | None) -> list[str]:
+    """Select ComfyUI memory-safety flags to prevent pinned-RAM/VRAM crashes."""
+    flags: list[str] = []
+    try:
+        prof = hardware.auto_profile(gpu_idx)
+        gpu = prof.gpu
+        ram_gb = float(prof.ram_gb or 0)
+    except Exception:
+        gpu = None
+        ram_gb = 0.0
+    # On Windows (or <=16 GB VRAM hosts with <48 GB RAM), CUDA pinned host memory
+    # locks huge non-pageable RAM slabs for 20+ GB models (e.g. MiniMax H3 Image),
+    # triggering OS kills / HostBuffer crashes. Disabling pinned memory lets the
+    # OS page offloaded tensors cleanly while Dynamic VRAM stays active.
+    if os.name == "nt" or (gpu is not None and gpu.vram_gb <= 16.5 and ram_gb < 48.0):
+        flags.append("--disable-pinned-memory")
+    if gpu is not None and not gpu.is_apple and gpu.vram_gb <= 16.5:
+        flags += ["--reserve-vram", "1.0"]
+    return flags
+
+
 def start_managed(
     url: str | None = None,
     *,
@@ -267,21 +341,24 @@ def start_managed(
     py = addons.python("comfyui-backend")
     main_py = root / "source" / "main.py"
     prefs = settings.load_prefs()
-    env = settings.child_env(settings.generation_gpu_index(prefs))
+    gpu_idx = settings.generation_gpu_index(prefs)
+    env = settings.child_env(gpu_idx)
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONFAULTHANDLER"] = "1"
     cmd = [
         str(py), "-u", str(main_py),
         "--listen", host,
         "--port", str(port),
         "--extra-model-paths-config", str(cfg_path),
         "--disable-auto-launch",
+        *_managed_memory_flags(gpu_idx),
     ]
     if log:
         log(f"Starting managed ComfyUI backend on {base}…")
     with _PROC_LOCK:
         if _MANAGED_PROC is not None and _MANAGED_PROC.poll() is None:
             close_worker(_MANAGED_PROC)
-        log_path = settings.TMP_DIR / "comfyui_server.log"
+        log_path = _server_log_path()
         settings.TMP_DIR.mkdir(parents=True, exist_ok=True)
         log_file = open(log_path, "wb")
         proc = subprocess.Popen(
@@ -301,16 +378,11 @@ def start_managed(
             stop_managed()
             raise sdcpp.EngineError("ComfyUI startup cancelled.")
         if proc.poll() is not None:
-            tail = ""
-            try:
-                tail = (settings.TMP_DIR / "comfyui_server.log").read_text(
-                    encoding="utf-8", errors="replace"
-                )[-600:]
-            except OSError:
-                pass
+            tail = _read_server_log_tail(1200)
+            code_str = _format_exit_code(proc.returncode)
             stop_managed()
             raise sdcpp.EngineError(
-                f"Managed ComfyUI server exited during startup (code {proc.returncode}).\n{tail}"
+                f"Managed ComfyUI server exited during startup (code {code_str}).\n{tail}"
             )
         if is_running(base, timeout=1.5):
             if log:
@@ -321,7 +393,7 @@ def start_managed(
     stop_managed()
     raise sdcpp.EngineError(
         f"Managed ComfyUI server did not respond on {base} within {int(timeout)}s. "
-        f"Check {settings.TMP_DIR / 'comfyui_server.log'}."
+        f"Check {_server_log_path()}."
     )
 
 
@@ -775,6 +847,13 @@ def generate(
         log(f"ComfyUI ({base}): queuing {model.name} ({width}x{height}, {steps} steps, "
             f"{comfy_sampler_name(sampler)} / {comfy_scheduler_name(schedule, model.family)}, seed {eff_seed})…")
 
+    log_offset = 0
+    try:
+        if _server_log_path().is_file():
+            log_offset = _server_log_path().stat().st_size
+    except OSError:
+        log_offset = 0
+
     client_id = str(uuid.uuid4())
     try:
         resp = requests.post(
@@ -798,22 +877,74 @@ def generate(
         raise sdcpp.EngineError("ComfyUI did not return a prompt_id.")
 
     # Poll /history/{prompt_id} until completed or cancelled.
+    # Under heavy 20+ GB model loads on Windows, ComfyUI's aiohttp loop can
+    # momentarily reset polling sockets (WinError 10054) while still healthy;
+    # retry transient failures while the server is alive, and surface the real
+    # server log + exit code immediately if the managed server crashes.
     t0 = time.monotonic()
-    last_heartbeat = t0
+    last_activity = t0
+    error_since: float | None = None
     history_entry: dict[str, Any] | None = None
     while True:
         if sdcpp.was_cancelled():
             interrupt(base)
             raise sdcpp.EngineError("Generation cancelled.")
-        hist = _get_json(f"{base}/history/{prompt_id}", timeout=10.0)
+
+        log_offset, emitted = _drain_server_log(log_offset, log)
+        now = time.monotonic()
+        if emitted:
+            last_activity = now
+
+        try:
+            resp = requests.get(
+                f"{base}/history/{prompt_id}",
+                timeout=15.0,
+                headers={"Connection": "close"},
+            )
+            resp.raise_for_status()
+            hist = resp.json()
+            error_since = None
+        except requests.RequestException as exc:
+            exit_code = _managed_exit_code()
+            if exit_code is not None:
+                log_offset, _ = _drain_server_log(log_offset, log)
+                tail = _read_server_log_tail(1600)
+                code_str = _format_exit_code(exit_code)
+                stop_managed()
+                if "out of memory" in tail.lower():
+                    raise sdcpp.VramError(
+                        f"Managed ComfyUI server ran out of memory (exit code {code_str}).\n{tail}"
+                    ) from exc
+                raise sdcpp.EngineError(
+                    f"Managed ComfyUI server crashed during generation (exit code {code_str}).\n"
+                    f"Log tail ({_server_log_path()}):\n{tail}"
+                ) from exc
+
+            # Server is still running (or external): retry transient socket resets.
+            managed_alive = _MANAGED_PROC is not None
+            grace = 60.0 if managed_alive else 20.0
+            if error_since is None:
+                error_since = now
+                if log:
+                    log(f"ComfyUI: temporary connection hiccup ({type(exc).__name__}), retrying while server is busy…")
+            elif now - error_since >= grace:
+                tail = _read_server_log_tail(1200) if managed_alive else ""
+                suffix = f"\nServer log tail:\n{tail}" if tail else ""
+                raise sdcpp.EngineError(
+                    f"Lost connection to ComfyUI at {base}/history/{prompt_id} for {int(grace)}s: {exc}.{suffix}"
+                ) from exc
+            time.sleep(1.0)
+            continue
+
         if prompt_id in hist:
+            log_offset, _ = _drain_server_log(log_offset, log)
             history_entry = hist[prompt_id]
             break
-        now = time.monotonic()
-        if log and now - last_heartbeat >= 5.0:
+
+        if log and now - last_activity >= 5.0:
             log(f"ComfyUI: still running ({now - t0:.0f}s)…")
-            last_heartbeat = now
-        time.sleep(0.4)
+            last_activity = now
+        time.sleep(0.5)
 
     status_block = history_entry.get("status") or {}
     if status_block.get("status_str") == "error":
