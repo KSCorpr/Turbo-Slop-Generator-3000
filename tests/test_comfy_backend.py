@@ -13,7 +13,7 @@ import gradio as gr
 import yaml
 from PIL import Image
 
-from atelier import registry, settings
+from atelier import addons, inventory, model_catalog, registry, settings
 from atelier.engine import comfy_backend, generate, sdcpp
 from atelier.ui import settings_tab
 
@@ -48,8 +48,12 @@ class ComfyBackendTests(unittest.TestCase):
             path = self.root / name
             path.mkdir()
             self.enterContext(patch.object(settings, name, path))
+        self.tools_repo = self.root / "tools_repo"
+        self.tools_repo.mkdir()
+        self.enterContext(patch.object(addons, "root", side_effect=lambda n: self.tools_repo / n))
         self.enterContext(patch.object(settings, "PREFS_FILE", settings.USERDATA_DIR / "prefs.json"))
         settings.save_prefs({"generation_backend": "sdcpp", "comfyui_url": comfy_backend.DEFAULT_URL})
+        self.addCleanup(comfy_backend.stop_managed)
 
     def _install_model(self, model_id: str) -> tuple[registry.BaseModel, dict[str, Path]]:
         model = registry.get_base_model(model_id, {})
@@ -61,16 +65,27 @@ class ComfyBackendTests(unittest.TestCase):
             files[comp.role] = path
         return model, files
 
-    def test_settings_tab_exposes_backend_toggle_and_writes_extra_model_paths(self):
+    def _fake_managed_install(self) -> Path:
+        root = addons.root("comfyui-backend")
+        py = addons.python("comfyui-backend")
+        py.parent.mkdir(parents=True, exist_ok=True)
+        py.write_text("", encoding="utf-8")
+        (root / "source" / "custom_nodes" / "ComfyUI-GGUF").mkdir(parents=True, exist_ok=True)
+        (root / "source" / "main.py").write_text("# comfyui\n", encoding="utf-8")
+        (root / "installed.json").write_text(json.dumps({"commit": addons.COMFYUI_BACKEND_COMMIT}), encoding="utf-8")
+        return root
+
+    def test_settings_tab_exposes_backend_toggle_install_buttons_and_auto_stop(self):
         self._install_model("minimax-h3-image")
         with gr.Blocks() as demo:
             settings_tab.build_settings_tab()
         self.addCleanup(demo.close)
 
-        backend = next(b for b in demo.blocks.values() if getattr(b, "elem_id", None) == "generation-backend")
-        comfy_url = next(b for b in demo.blocks.values() if getattr(b, "elem_id", None) == "comfyui-url")
-        self.assertEqual(backend.value, "sdcpp")
-        self.assertEqual(comfy_url.value, "http://127.0.0.1:8188")
+        by_id = {getattr(b, "elem_id", None): b for b in demo.blocks.values()}
+        self.assertEqual(by_id["generation-backend"].value, "sdcpp")
+        self.assertEqual(by_id["comfyui-url"].value, "http://127.0.0.1:8188")
+        for eid in ("comfyui-install", "comfyui-start", "comfyui-stop", "comfyui-test", "comfyui-log"):
+            self.assertIn(eid, by_id)
 
         on_change = next(f.fn for f in demo.fns.values() if getattr(f.fn, "__name__", "") == "on_backend_change")
         grp_upd, note, status_upd = on_change("comfyui", "127.0.0.1:8188/")
@@ -88,6 +103,12 @@ class ComfyBackendTests(unittest.TestCase):
         section = parsed["turbo_slop_generator"]
         self.assertIn("Comfy-Org__MiniMax-H3-Image", section["diffusion_models"])
         self.assertIn(str(settings.LORA_DIR.resolve()), section["loras"])
+
+        with patch.object(comfy_backend, "stop_managed", return_value="stopped") as stop_mock:
+            grp_off, _, status_off = on_change("sdcpp", "http://127.0.0.1:8188")
+        self.assertFalse(grp_off["visible"])
+        self.assertIn("sd.cpp", status_off["value"])
+        stop_mock.assert_called_once()
 
     def test_resolve_comfy_weight_matches_suffix_windows_slashes_and_basename(self):
         extra = comfy_backend.extra_model_paths_file()
@@ -267,6 +288,96 @@ class ComfyBackendTests(unittest.TestCase):
         self.assertTrue(any("ComfyUI" in line for line in logs), logs)
         self.assertEqual(len(interrupted), 1)
         self.assertIn("ComfyUI", cancel_msg)
+
+    def test_install_comfyui_backend_creates_isolated_runtime_and_catalog_ready(self):
+        import scripts.setup_media as setup_media
+
+        self.assertFalse(comfy_backend.is_managed_installed())
+        self.assertFalse(model_catalog.ready("addon:comfyui-backend"))
+        self.assertIsNotNone(model_catalog.get("addon:comfyui-backend"))
+        self.assertIn("engine_comfyui_backend", {it.key for it in inventory.items()})
+
+        py_path = addons.python("comfyui-backend")
+        pip_calls = []
+        run_calls = []
+
+        def fake_env(name):
+            self.assertEqual(name, "comfyui-backend")
+            py_path.parent.mkdir(parents=True, exist_ok=True)
+            py_path.write_text("", encoding="utf-8")
+            return py_path
+
+        def fake_install_source(repo, commit, dest):
+            dest = Path(dest)
+            dest.mkdir(parents=True, exist_ok=True)
+            if repo == "Comfy-Org/ComfyUI":
+                (dest / "main.py").write_text("# main\n", encoding="utf-8")
+            (dest / "requirements.txt").write_text("gguf\n", encoding="utf-8")
+
+        with patch.object(setup_media, "environment", side_effect=fake_env), \
+             patch.object(setup_media, "_install_source", side_effect=fake_install_source), \
+             patch.object(setup_media, "pip", side_effect=lambda py, *a: pip_calls.append((py, a))), \
+             patch.object(setup_media, "run", side_effect=lambda *a: run_calls.append(a)), \
+             patch.object(setup_media.platform, "system", return_value="Windows"):
+            setup_media.main(["comfyui-backend"])
+
+        self.assertTrue(comfy_backend.is_managed_installed())
+        self.assertTrue(model_catalog.ready("addon:comfyui-backend"))
+        self.assertTrue(any("torch==2.7.1+cu128" in args for _, args in pip_calls), pip_calls)
+        self.assertTrue(any("torchaudio==2.7.1+cu128" in args for _, args in pip_calls), pip_calls)
+        self.assertTrue(any("-r" in args for _, args in pip_calls), pip_calls)
+        self.assertEqual(len(run_calls), 1)
+
+    def test_managed_server_start_autostart_and_stop(self):
+        import requests as req_lib
+
+        self._fake_managed_install()
+        self.assertTrue(comfy_backend.is_managed_installed())
+
+        # When installed and stopped, check_connection reports installed-but-stopped.
+        with patch.object(comfy_backend.requests, "get", side_effect=req_lib.ConnectionError("refused")):
+            ok, msg = comfy_backend.check_connection("http://127.0.0.1:8188")
+        self.assertFalse(ok)
+        self.assertIn("installed", msg)
+        self.assertIn("auto-starts", msg)
+
+        launched = []
+        running = {"up": False}
+
+        class FakeProc:
+            def __init__(self):
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+        def fake_popen(cmd, **kwargs):
+            launched.append((cmd, kwargs))
+            proc = FakeProc()
+            running["up"] = True
+            return proc
+
+        def fake_get(url, **kwargs):
+            if url.endswith("/system_stats") and running["up"]:
+                return _FakeResponse(json_data={"system": {"comfyui_version": "0.3.99"}, "devices": []})
+            raise req_lib.ConnectionError("not up yet")
+
+        logs = []
+        with patch.object(comfy_backend.subprocess, "Popen", side_effect=fake_popen), \
+             patch.object(comfy_backend.requests, "get", side_effect=fake_get), \
+             patch.object(comfy_backend, "close_worker") as close_mock:
+            base = comfy_backend.ensure_running("http://127.0.0.1:8188", log=logs.append)
+            self.assertEqual(base, "http://127.0.0.1:8188")
+            self.assertEqual(len(launched), 1)
+            cmd = launched[0][0]
+            self.assertIn("--extra-model-paths-config", cmd)
+            self.assertIn("--disable-auto-launch", cmd)
+            self.assertIn("8188", cmd)
+            self.assertTrue(any("Starting managed ComfyUI" in line for line in logs), logs)
+
+            stop_msg = comfy_backend.stop_managed()
+            self.assertIn("stopped", stop_msg)
+            close_mock.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -7,9 +7,13 @@ for every catalog model family, and saves rendered PNGs back into ``outputs/``.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import random
+import subprocess
+import threading
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -17,10 +21,14 @@ from typing import Any, Callable
 import requests
 import yaml
 
-from .. import registry, settings
+from .. import addons, registry, settings
+from ..processes import close_worker
 from . import sdcpp
 
 DEFAULT_URL = "http://127.0.0.1:8188"
+_PROC_LOCK = threading.Lock()
+_MANAGED_PROC: subprocess.Popen | None = None
+_MANAGED_URL: str | None = None
 
 # Exact ComfyUI CLIPLoader ``type`` per Turbo-Slop-Generator model family
 # (verified against Comfy-Org/ComfyUI nodes.py CLIPLoader.INPUT_TYPES).
@@ -190,18 +198,166 @@ def _input_choices(node_info: dict[str, Any] | None, field: str) -> list[str]:
     return []
 
 
+def is_managed_installed() -> bool:
+    """Return True when the isolated managed ComfyUI + ComfyUI-GGUF runtime is ready."""
+    root = addons.root("comfyui-backend")
+    return (
+        addons.ready("comfyui-backend")
+        and (root / "source" / "main.py").is_file()
+        and (root / "source" / "custom_nodes" / "ComfyUI-GGUF").is_dir()
+    )
+
+
+def is_running(url: str | None = None, timeout: float = 1.5) -> bool:
+    base = normalize_url(url)
+    try:
+        resp = requests.get(f"{base}/system_stats", timeout=timeout)
+        return resp.ok
+    except requests.RequestException:
+        return False
+
+
+def _host_port_from_url(url: str) -> tuple[str, int]:
+    parsed = urllib.parse.urlparse(normalize_url(url))
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 8188)
+    return host, int(port)
+
+
+def stop_managed() -> str:
+    """Stop the managed ComfyUI server subprocess if we started it."""
+    global _MANAGED_PROC, _MANAGED_URL
+    with _PROC_LOCK:
+        proc = _MANAGED_PROC
+        _MANAGED_PROC = None
+        _MANAGED_URL = None
+    if proc is None or proc.poll() is not None:
+        return "Managed ComfyUI server is not running."
+    close_worker(proc)
+    return "Managed ComfyUI server stopped (VRAM released)."
+
+
+atexit.register(stop_managed)
+
+
+def start_managed(
+    url: str | None = None,
+    *,
+    timeout: float = 120.0,
+    log: Callable[[str], None] | None = None,
+) -> str:
+    """Start the managed ComfyUI server in the background and wait until its API responds."""
+    global _MANAGED_PROC, _MANAGED_URL
+    base = normalize_url(url)
+    if is_running(base, timeout=1.5):
+        return f"ComfyUI is already running at {base}."
+    if not is_managed_installed():
+        raise sdcpp.EngineError(
+            "Managed ComfyUI backend is not installed yet. "
+            "Click “Install / update ComfyUI backend” in Settings."
+        )
+    host, port = _host_port_from_url(base)
+    if host not in ("127.0.0.1", "localhost", "0.0.0.0"):
+        raise sdcpp.EngineError(
+            f"Cannot auto-start a remote ComfyUI server ({base}). "
+            "Use http://127.0.0.1:8188 for the managed local backend."
+        )
+    cfg_path = write_extra_model_paths()
+    root = addons.root("comfyui-backend")
+    py = addons.python("comfyui-backend")
+    main_py = root / "source" / "main.py"
+    prefs = settings.load_prefs()
+    env = settings.child_env(settings.generation_gpu_index(prefs))
+    env["PYTHONUNBUFFERED"] = "1"
+    cmd = [
+        str(py), "-u", str(main_py),
+        "--listen", host,
+        "--port", str(port),
+        "--extra-model-paths-config", str(cfg_path),
+        "--disable-auto-launch",
+    ]
+    if log:
+        log(f"Starting managed ComfyUI backend on {base}…")
+    with _PROC_LOCK:
+        if _MANAGED_PROC is not None and _MANAGED_PROC.poll() is None:
+            close_worker(_MANAGED_PROC)
+        log_path = settings.TMP_DIR / "comfyui_server.log"
+        settings.TMP_DIR.mkdir(parents=True, exist_ok=True)
+        log_file = open(log_path, "wb")
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(root / "source"),
+            env=env,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+        log_file.close()
+        _MANAGED_PROC = proc
+        _MANAGED_URL = base
+
+    deadline = time.monotonic() + float(timeout)
+    while time.monotonic() < deadline:
+        if sdcpp.was_cancelled():
+            stop_managed()
+            raise sdcpp.EngineError("ComfyUI startup cancelled.")
+        if proc.poll() is not None:
+            tail = ""
+            try:
+                tail = (settings.TMP_DIR / "comfyui_server.log").read_text(
+                    encoding="utf-8", errors="replace"
+                )[-600:]
+            except OSError:
+                pass
+            stop_managed()
+            raise sdcpp.EngineError(
+                f"Managed ComfyUI server exited during startup (code {proc.returncode}).\n{tail}"
+            )
+        if is_running(base, timeout=1.5):
+            if log:
+                log(f"Managed ComfyUI backend ready at {base}.")
+            return f"Managed ComfyUI server started at {base}."
+        time.sleep(0.5)
+
+    stop_managed()
+    raise sdcpp.EngineError(
+        f"Managed ComfyUI server did not respond on {base} within {int(timeout)}s. "
+        f"Check {settings.TMP_DIR / 'comfyui_server.log'}."
+    )
+
+
+def ensure_running(url: str | None = None, log: Callable[[str], None] | None = None) -> str:
+    """Return a reachable ComfyUI URL, auto-starting the managed server when installed."""
+    base = normalize_url(url)
+    if is_running(base, timeout=2.0):
+        return base
+    if is_managed_installed():
+        start_managed(base, log=log)
+        return base
+    raise sdcpp.EngineError(
+        f"ComfyUI is not running at {base} and the managed ComfyUI backend is not installed. "
+        "Open Settings → Generation backend → ComfyUI and click “Install / update ComfyUI backend”."
+    )
+
+
 def check_connection(url: str | None = None) -> tuple[bool, str]:
     """Probe a running ComfyUI server and refresh ``comfyui_extra_model_paths.yaml``."""
     base = normalize_url(url)
     cfg_path = write_extra_model_paths()
+    installed = is_managed_installed()
     try:
         stats = _get_json(f"{base}/system_stats", timeout=5.0)
-    except sdcpp.EngineError as exc:
+    except sdcpp.EngineError:
+        if installed:
+            return (
+                False,
+                f"Managed ComfyUI backend is **installed** (`{addons.root('comfyui-backend')}`), "
+                f"currently stopped. Click **Start ComfyUI** or just generate — it auto-starts on demand.",
+            )
         return (
             False,
-            f"ComfyUI unreachable at `{base}` ({exc}).  \n"
-            f"Start ComfyUI with shared weights:  \n"
-            f"`python main.py --extra-model-paths-config \"{cfg_path}\"`",
+            f"ComfyUI is not installed and no external server responded at `{base}`.  \n"
+            "Click **Install / update ComfyUI backend** above for 1-click setup "
+            f"(or start your own server with `--extra-model-paths-config \"{cfg_path}\"`).",
         )
     sys_info = stats.get("system") or {}
     version = sys_info.get("comfyui_version") or "unknown"
@@ -213,12 +369,12 @@ def check_connection(url: str | None = None) -> tuple[bool, str]:
         gpu_desc = f" · {dev.get('name', 'GPU')} ({vram:.1f} GB VRAM)"
     has_gguf = _node_info(base, "UnetLoaderGGUF", timeout=4.0) is not None
     has_h3 = _node_info(base, "MiniMaxH3ImageConditioning", timeout=4.0) is not None
+    kind = "managed" if installed else "external"
     notes = [
-        f"Connected to **ComfyUI {version}** at `{base}`{gpu_desc}.",
+        f"Connected to **ComfyUI {version}** ({kind}) at `{base}`{gpu_desc}.",
         f"- GGUF loaders (`ComfyUI-GGUF`): **{'available' if has_gguf else 'not installed (safetensors models only)'}**",
         f"- Native MiniMax H3 Image nodes: **{'available' if has_h3 else 'not found (update ComfyUI)'}**",
-        f"- Shared model config written to `{cfg_path}`. Launch ComfyUI with:  \n"
-        f"  `python main.py --extra-model-paths-config \"{cfg_path}\"`",
+        f"- Shared models config: `{cfg_path}`",
     ]
     return True, "\n".join(notes)
 
@@ -525,8 +681,8 @@ def generate(
     if vae is None:
         raise sdcpp.EngineError("ComfyUI backend requires a VAE file for this model.")
 
-    # Verify connectivity before uploading or queuing.
-    _get_json(f"{base}/system_stats", timeout=5.0)
+    # Ensure ComfyUI is reachable (auto-starting our managed server if installed).
+    ensure_running(base, log=log)
 
     diff_gguf = diffusion.suffix.lower() == ".gguf"
     enc_gguf = bool(text_encoder and text_encoder.suffix.lower() == ".gguf")

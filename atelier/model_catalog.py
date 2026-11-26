@@ -61,6 +61,9 @@ def packages(prefs=None):
                 "Prompt-free 5B one-step diffusion upscaler (×2 / ×4) by Kandinsky Lab (MIT + Apache-2.0 FLUX.1 VAE). "
                 "1024 px Hanning-blended tiles with calibrated creativity 0–8 and automatic sequential offload "
                 "for 11–12 GB GPUs. Isolated Diffusers 0.41+ runtime + 10.42 GB of pinned weights."),
+        Package("addon:comfyui-backend", "ComfyUI backend · local inference server", "Toolkit",
+                "Managed isolated ComfyUI + ComfyUI-GGUF runtime for Settings → Generation backend. "
+                "Keeps models cached in RAM/VRAM between runs and shares Turbo-Slop's models/ folder."),
         Package("video:minimax-h3", "MiniMax H3 Video & HyperFlow Flash", "Video & 3D",
                 "Synchronized 24 fps video + stereo audio via native sd-cli (--mode vid_gen). "
                 "HyperFlow H3 Flash Q4_K_M (9.05 GB, 4-8 steps) + Sol-H3-VAE (1.99 GB) + shared H3 encoder "
@@ -141,6 +144,9 @@ def ready(key, variant=None):
     if key == "addon:kandinsky-sr":
         from . import kandinsky_sr
         return kandinsky_sr.ready()
+    if key == "addon:comfyui-backend":
+        from .engine import comfy_backend
+        return comfy_backend.is_managed_installed()
     if key == "video:minimax-h3":
         from . import h3_video
         return h3_video.ready(variant)
@@ -216,6 +222,9 @@ def install(key, variant=None, log=print):
                 command=["setup_tools.py",name]
         elif key.startswith("addon:"):
             name=key[6:]
+            if name == "comfyui-backend":
+                from .engine import comfy_backend
+                comfy_backend.stop_managed()
             command=["setup_sam2.py", name] if name == "sam2" else ["setup_media.py", name]
         elif key.startswith("splat:"):
             command=["setup_image_splats.py",key[6:]]

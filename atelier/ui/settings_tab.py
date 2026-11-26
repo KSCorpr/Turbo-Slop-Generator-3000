@@ -14,7 +14,7 @@ import threading
 
 import gradio as gr
 
-from .. import benchmark, diagnostics, hardware, registry, settings, system_profile, taesd, sage_attention
+from .. import benchmark, diagnostics, hardware, model_catalog, registry, settings, system_profile, taesd, sage_attention
 from ..i18n import t
 from .theme import THEME_JS
 from . import widgets
@@ -212,42 +212,87 @@ def build_settings_tab():
         backend_val = prefs.get("generation_backend") or "sdcpp"
         backend = gr.Radio(
             [("sd.cpp (built-in)", "sdcpp"),
-             ("ComfyUI (local server)", "comfyui")],
+             ("ComfyUI (1-click managed or local server)", "comfyui")],
             value=backend_val,
             label="Generation backend",
             elem_id="generation-backend",
-            info="Choose sd.cpp (standalone binary) or a running ComfyUI server. "
+            info="Choose sd.cpp (standalone binary) or ComfyUI (1-click managed install or external server). "
                  "ComfyUI keeps models cached in RAM/VRAM between runs and shares this app's models/ folder.",
         )
+
+        def _comfy_summary(url: str | None = None) -> str:
+            clean = comfy_backend.normalize_url(url)
+            cfg = comfy_backend.extra_model_paths_file()
+            if comfy_backend.is_managed_installed():
+                return (
+                    f"Managed ComfyUI backend is **installed** (auto-starts on demand at `{clean}`).  \n"
+                    f"Shared model paths config: `{cfg}`"
+                )
+            return (
+                "ComfyUI backend is **not installed yet**. Click **Install / update ComfyUI backend** "
+                "for a 1-click isolated setup (ComfyUI + ComfyUI-GGUF + CUDA PyTorch), "
+                f"or point the URL below to an external server (`--extra-model-paths-config \"{cfg}\"`)."
+            )
+
         with gr.Group(visible=(backend_val == "comfyui")) as comfy_group:
             with gr.Row():
-                comfy_url = gr.Textbox(
-                    value=prefs.get("comfyui_url") or comfy_backend.DEFAULT_URL,
-                    label="ComfyUI server URL",
-                    placeholder=comfy_backend.DEFAULT_URL,
-                    elem_id="comfyui-url",
-                    scale=3,
+                comfy_install = gr.Button(
+                    "Install / update ComfyUI backend",
+                    variant="primary",
+                    size="sm",
+                    elem_id="comfyui-install",
+                )
+                comfy_start = gr.Button(
+                    "Start ComfyUI",
+                    size="sm",
+                    elem_id="comfyui-start",
+                )
+                comfy_stop = gr.Button(
+                    "Stop ComfyUI",
+                    size="sm",
+                    elem_id="comfyui-stop",
                 )
                 comfy_test = gr.Button(
-                    "Test connection & write extra_model_paths.yaml",
+                    "Test connection",
                     size="sm",
-                    scale=2,
+                    elem_id="comfyui-test",
                 )
+            comfy_url = gr.Textbox(
+                value=prefs.get("comfyui_url") or comfy_backend.DEFAULT_URL,
+                label="ComfyUI server URL (managed port or external server)",
+                placeholder=comfy_backend.DEFAULT_URL,
+                elem_id="comfyui-url",
+            )
             comfy_status = gr.Markdown(
-                f"Share downloaded weights with ComfyUI via `{comfy_backend.extra_model_paths_file()}` "
-                "(click the test button to generate/refresh it).",
+                _comfy_summary(prefs.get("comfyui_url")),
                 elem_id="comfyui-status",
+            )
+            comfy_log = gr.Textbox(
+                label="ComfyUI install log",
+                lines=5,
+                max_lines=10,
+                autoscroll=True,
+                interactive=False,
+                visible=False,
+                elem_id="comfyui-log",
             )
 
         def on_backend_change(choice, url):
             clean_url = comfy_backend.normalize_url(url)
             _save(generation_backend=choice, comfyui_url=clean_url)
             if choice == "comfyui":
-                cfg = comfy_backend.write_extra_model_paths()
-                note = (f"ComfyUI selected (`{clean_url}`). Shared model config written to `{cfg}`.  \n"
-                        f"Launch ComfyUI with: `python main.py --extra-model-paths-config \"{cfg}\"`")
-                return gr.update(visible=True), note, _said(_OK + "Generation backend switched to ComfyUI.")
-            return gr.update(visible=False), gr.update(), _said(_OK + "Generation backend switched to sd.cpp.")
+                comfy_backend.write_extra_model_paths()
+                return (
+                    gr.update(visible=True),
+                    _comfy_summary(clean_url),
+                    _said(_OK + "Generation backend switched to ComfyUI."),
+                )
+            comfy_backend.stop_managed()
+            return (
+                gr.update(visible=False),
+                gr.update(),
+                _said(_OK + "Generation backend switched to sd.cpp (managed ComfyUI stopped)."),
+            )
 
         def on_comfy_url_change(url):
             clean_url = comfy_backend.normalize_url(url)
@@ -260,9 +305,53 @@ def build_settings_tab():
             _, message = comfy_backend.check_connection(clean_url)
             return message
 
+        def install_comfyui(url):
+            from .media_tabs import stream_task
+            clean_url = comfy_backend.normalize_url(url)
+            _save(comfyui_url=clean_url)
+            comfy_backend.write_extra_model_paths()
+            for state, _, text in stream_task(
+                lambda report: model_catalog.install("addon:comfyui-backend", log=report)
+            ):
+                if state == "Completed.":
+                    yield (
+                        f"ComfyUI backend installed!  \n{_comfy_summary(clean_url)}",
+                        gr.update(value=text, visible=True),
+                        _said(_OK + "ComfyUI backend installed and ready."),
+                    )
+                elif state.startswith("Failed:"):
+                    yield (
+                        f"⚠️ {state}",
+                        gr.update(value=text, visible=True),
+                        _said(f"⚠️ {state}"),
+                    )
+                else:
+                    yield (
+                        "**Installing ComfyUI backend…** (downloading ComfyUI, ComfyUI-GGUF & PyTorch)",
+                        gr.update(value=text, visible=True),
+                        gr.update(),
+                    )
+
+        def start_comfyui(url):
+            clean_url = comfy_backend.normalize_url(url)
+            _save(comfyui_url=clean_url)
+            try:
+                msg = comfy_backend.start_managed(clean_url)
+                _, detail = comfy_backend.check_connection(clean_url)
+                return detail, _said(_OK + msg)
+            except Exception as exc:
+                return f"⚠️ {exc}", _said(f"⚠️ {exc}")
+
+        def stop_comfyui(url):
+            msg = comfy_backend.stop_managed()
+            return f"{msg}  \n{_comfy_summary(url)}", _said(_OK + msg)
+
         backend.input(on_backend_change, [backend, comfy_url], [comfy_group, comfy_status, status], queue=False)
         comfy_url.submit(on_comfy_url_change, comfy_url, status, queue=False)
         comfy_url.blur(on_comfy_url_change, comfy_url, status, queue=False)
+        comfy_install.click(install_comfyui, comfy_url, [comfy_status, comfy_log, status], **widgets.GPU_QUEUE)
+        comfy_start.click(start_comfyui, comfy_url, [comfy_status, status], **widgets.GPU_QUEUE)
+        comfy_stop.click(stop_comfyui, comfy_url, [comfy_status, status], queue=False)
         comfy_test.click(on_comfy_test, comfy_url, comfy_status, queue=False)
 
         mode = gr.Radio(

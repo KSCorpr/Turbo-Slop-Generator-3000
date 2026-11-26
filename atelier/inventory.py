@@ -146,6 +146,10 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item("kandinsky_sr_models", "Kandinsky ImageSR 2.0 weights (~10.42 GB)", "Models",
                     [addons.root("kandinsky-sr") / "models"],
                     note="5B baked Kandinsky 5 transformer + FLUX.1-schnell VAE (MIT + Apache-2.0)."))
+    out.append(Item("engine_comfyui_backend", "ComfyUI backend runtime (+ ComfyUI-GGUF)", "Engines",
+                    [addons.root("comfyui-backend") / part for part in
+                     (".venv", "source", "installed.json", "constraints.txt")],
+                    note="Reinstallable: Settings → Generation backend → ComfyUI → Install / update."))
     from . import image_splats
     out.append(Item("engine_image_splats", "TripoSplat runtime", "Engines",
                     [image_splats.root()], note="Isolated runtime. Weights are listed separately."))

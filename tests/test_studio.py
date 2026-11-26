@@ -291,12 +291,13 @@ class StudioWiringTests(unittest.TestCase):
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
         names = {"do_generate", "run", "do_outpaint", "do_png_style", "do_h3_video",
                  "install_h3_video", "run_steppe", "install_steppe", "run_upscale", "install_ksr",
+                 "install_comfyui", "start_comfyui",
                  "do_generate3d", "do_depth", "do_bg",
                  "do_describe", "_do_bench", "_on_click", "run_seed", "run_splat",
                  "install_seed", "install_splat", "generate_image_splats", "install_image_splats",
                  "install_sam2", "handler", "deleter", "install_catalog_package", "consolidate_catalog_weights"}
         found = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") in names]
-        self.assertGreaterEqual(len(found), 29)
+        self.assertGreaterEqual(len(found), 31)
         for fn in found:
             self.assertEqual(fn.concurrency_id, widgets.GPU_QUEUE["concurrency_id"], fn.name)
             self.assertEqual(fn.concurrency_limit, 1, fn.name)

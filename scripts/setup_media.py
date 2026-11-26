@@ -370,9 +370,52 @@ def install_kandinsky_sr():
           "All inference runs offline.", flush=True)
 
 
+def install_comfyui_backend():
+    target = addons.root("comfyui-backend")
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / "installed.json"
+    marker.unlink(missing_ok=True)
+    py = environment("comfyui-backend")
+    constraints = target / "constraints.txt"
+    extra_idx: list[str] = []
+    if platform.system() == "Darwin":
+        pip(py, "torch", "torchvision", "torchaudio")
+        constraints.write_text("", encoding="utf-8")
+    else:
+        # PyTorch CUDA 12.8 supports Turing (RTX 2080 Ti), Ampere (RTX 3060),
+        # Ada and Blackwell while enabling comfy-kitchen native INT8/W4A8 kernels.
+        cu_url = "https://download.pytorch.org/whl/cu128"
+        constraints.write_text(
+            "torch==2.7.1+cu128\ntorchvision==0.22.1+cu128\ntorchaudio==2.7.1+cu128\n",
+            encoding="utf-8",
+        )
+        pip(py, "torch==2.7.1+cu128", "torchvision==0.22.1+cu128", "torchaudio==2.7.1+cu128",
+            "--index-url", cu_url)
+        extra_idx = ["--extra-index-url", cu_url]
+    _install_source("Comfy-Org/ComfyUI", addons.COMFYUI_BACKEND_COMMIT, target / "source")
+    gguf_dir = target / "source" / "custom_nodes" / "ComfyUI-GGUF"
+    gguf_dir.parent.mkdir(parents=True, exist_ok=True)
+    _install_source("city96/ComfyUI-GGUF", addons.COMFYUI_GGUF_COMMIT, gguf_dir)
+    req_args = ["-c", constraints, *extra_idx] if constraints.read_text(encoding="utf-8").strip() else []
+    pip(py, *req_args, "-r", target / "source" / "requirements.txt",
+        "-r", gguf_dir / "requirements.txt")
+    run(py, "-c",
+        "import torch, gguf; "
+        "dev = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'; "
+        "print('ComfyUI backend ready:', torch.__version__, 'on', dev)")
+    marker.write_text(json.dumps({
+        "commit": addons.COMFYUI_BACKEND_COMMIT,
+        "gguf_commit": addons.COMFYUI_GGUF_COMMIT,
+    }), encoding="utf-8")
+    print("ComfyUI backend installed (+ ComfyUI-GGUF). "
+          "Turbo-Slop-Generator will auto-start it when you generate with ComfyUI.", flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "steppe", "kandinsky-sr", "splat"])
+    parser.add_argument("tool", choices=[
+        "seedvr2", "seedvr2-convrot", "vosr", "steppe", "kandinsky-sr", "comfyui-backend", "splat",
+    ])
     parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
     parser.add_argument("--variant", default="200m-1step")
     parser.add_argument("--optimizations", action="store_true",
@@ -384,6 +427,7 @@ def main(argv=None):
      "vosr": install_vosr,
      "steppe": lambda: install_steppe(args.variant),
      "kandinsky-sr": install_kandinsky_sr,
+     "comfyui-backend": install_comfyui_backend,
      "seedvr2-convrot": lambda: install_seed_convrot(args.precision)}[args.tool]()
 
 
