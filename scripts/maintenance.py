@@ -103,6 +103,7 @@ REMOVED_FEATURES = [
          'tests/test_semantic_layers.py',
          'tests/test_svg.py',
          'tests/test_xanax_prompt.py',
+         'atelier/ui/xanax_tab.py',
          'tests/test_masks.py',
          'scripts/setup_layers.py',
          'atelier/ui/vector_tab.py',

@@ -289,8 +289,9 @@ class StudioWiringTests(unittest.TestCase):
         self.assertTrue(any(isinstance(block, gr.Checkbox) and "Edit mode" in block.label for block in krea_inputs))
 
     def test_every_inference_entry_uses_the_same_gpu_slot(self):
-        names = {"do_generate", "do_xanax", "run", "do_outpaint", "do_png_style", "do_h3_video",
-                 "install_h3_video", "run_steppe", "install_steppe", "do_generate3d", "do_depth", "do_bg",
+        names = {"do_generate", "run", "do_outpaint", "do_png_style", "do_h3_video",
+                 "install_h3_video", "run_steppe", "install_steppe", "run_upscale", "install_ksr",
+                 "do_generate3d", "do_depth", "do_bg",
                  "do_describe", "_do_bench", "_on_click", "run_seed", "run_splat",
                  "install_seed", "install_splat", "generate_image_splats", "install_image_splats",
                  "install_sam2", "handler", "deleter", "install_catalog_package", "consolidate_catalog_weights"}
@@ -299,6 +300,27 @@ class StudioWiringTests(unittest.TestCase):
         for fn in found:
             self.assertEqual(fn.concurrency_id, widgets.GPU_QUEUE["concurrency_id"], fn.name)
             self.assertEqual(fn.concurrency_limit, 1, fn.name)
+
+    def test_xanax_tab_removed_and_its_system_prompt_is_a_preset_for_all_image_models(self):
+        from atelier import styles
+
+        tab_labels = {getattr(b, "label", None) for b in self.demo.blocks.values() if isinstance(b, gr.Tab)}
+        self.assertNotIn("Xanax", tab_labels)
+        self.assertNotIn("💊 Xanax", tab_labels)
+
+        preset_name = "💊 Xanax — Provincial France 1995-2005 (amateur snapshot)"
+        self.assertIn(preset_name, styles.list_styles())
+        self.assertIn("cheap low-end consumer point-and-shoot camera", styles.get_style(preset_name))
+        self.assertIn("no post-processing", styles.get_style(preset_name))
+
+        preset_menus = [
+            b for b in self.demo.blocks.values()
+            if isinstance(b, gr.Dropdown) and b.label == "Saved presets"
+        ]
+        self.assertEqual(len(preset_menus), len(registry.load_base_models(settings.load_prefs())))
+        for menu in preset_menus:
+            values = [v for _, v in menu.choices] if menu.choices and isinstance(menu.choices[0], tuple) else list(menu.choices)
+            self.assertIn(preset_name, values)
 
     def test_style_choices_are_lazy_but_available_on_open(self):
         functions = [fn for fn in self.demo.fns.values() if getattr(fn.fn, "__name__", "") == "load_style_choices"]

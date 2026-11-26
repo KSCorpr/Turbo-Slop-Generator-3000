@@ -3,8 +3,7 @@
 
 Onglets : Génération (Flux.2 Klein 9B / Qwen Image 2.1 Turbo /
 MOSS / Fibo 2 / Krea 2,
-GGUF) · Xanax (style figé) ·
-Catalogue de modèles ·
+GGUF) · Catalogue de modèles ·
 Toolkit (profondeur, détourage, SAM, upscale) · Outpaint · Image → 3D · Réglages.
 """
 from __future__ import annotations
@@ -233,7 +232,6 @@ from atelier.ui.media_tabs import build_seedvr2_tab, build_splat_tab
 from atelier.ui.kandinsky_sr_tab import build_kandinsky_sr_tab
 from atelier.ui.vosr_tab import build_vosr_tab
 from atelier.ui.image_splats_tab import build_image_splats_tab
-from atelier.ui.xanax_tab import build_xanax_tab
 
 # Force le thème choisi (clair/sombre) quel que soit le réglage du navigateur/OS.
 def _head_for(mode: str) -> str:
@@ -340,7 +338,6 @@ def build_app() -> gr.Blocks:
                             model_id, label, pending_toolkit=pending_toolkit, tabs=tabs,
                             pending_3d=pending_3d, pending_outpaint=pending_outpaint,
                             model_links=model_links)
-                    build_xanax_tab("Xanax")
 
             # « Outils » : tout ce qui part d'une image existante. Les envois
             # « depuis la génération » visent l'onglet racine ; chaque sous-onglet
