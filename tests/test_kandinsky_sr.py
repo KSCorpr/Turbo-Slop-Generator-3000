@@ -159,6 +159,56 @@ class KandinskySRTests(unittest.TestCase):
             fake_torch = type("T", (), {"cuda": _FakeCuda(gib)})()
             self.assertEqual(run_kandinsky_sr._resolve_memory_mode(fake_torch, "auto"), expected)
 
+    def test_runner_dtype_uses_fp16_on_turing_and_bf16_on_ampere(self):
+        def make_torch(cap):
+            cuda = type("C", (), {
+                "is_available": staticmethod(lambda: True),
+                "is_bf16_supported": staticmethod(lambda: True),  # emulated True even on sm_75
+                "get_device_capability": staticmethod(lambda _idx=0: cap),
+            })()
+            return type("T", (), {
+                "cuda": cuda, "bfloat16": "bf16", "float16": "fp16", "float32": "fp32",
+            })()
+
+        self.assertEqual(run_kandinsky_sr._resolve_dtype(make_torch((7, 5)), "auto"), "fp16")
+        self.assertEqual(run_kandinsky_sr._resolve_dtype(make_torch((8, 6)), "auto"), "bf16")
+        self.assertEqual(run_kandinsky_sr._resolve_dtype(make_torch((7, 5)), "bf16"), "bf16")
+
+    def test_runner_configure_memory_prefers_block_group_offload_and_fp32_vae_on_fp16(self):
+        calls = []
+
+        class _FakeTransformer:
+            def enable_group_offload(self, **kwargs):
+                calls.append(("group_offload", kwargs))
+
+        class _FakeVae:
+            def to(self, *args, **kwargs):
+                calls.append(("vae_to", args, kwargs))
+                return self
+
+        class _FakePipe:
+            def __init__(self):
+                self.transformer = _FakeTransformer()
+                self.vae = _FakeVae()
+
+            def enable_sequential_cpu_offload(self):
+                calls.append(("sequential",))
+
+        fake_torch = type("T", (), {
+            "float16": "fp16",
+            "float32": "fp32",
+            "bfloat16": "bf16",
+            "device": staticmethod(lambda name: f"dev:{name}"),
+        })()
+        mode = run_kandinsky_sr._configure_memory(_FakePipe(), fake_torch, "sequential", "cuda", "fp16")
+        self.assertEqual(mode, "block_stream")
+        self.assertEqual(calls[0], ("vae_to", (), {"dtype": "fp32"}))
+        self.assertEqual(calls[1][0], "group_offload")
+        self.assertEqual(calls[1][1]["offload_type"], "block_level")
+        self.assertEqual(calls[1][1]["num_blocks_per_group"], 1)
+        self.assertTrue(calls[1][1]["use_stream"])
+        self.assertEqual(calls[2], ("vae_to", ("dev:cuda",), {}))
+
     def test_ui_tab_size_and_creativity_helpers_and_controls(self):
         self.assertIn("128 × 96 → **512 × 384 px**", kandinsky_sr_tab.size_info(self.source, 4))
         self.assertIn("Import", kandinsky_sr_tab.size_info(None, 4))
