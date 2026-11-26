@@ -347,9 +347,32 @@ def install_steppe(variant="200m-1step"):
     print("Steppe-Wan2.1 installed. Use Tools & 3D → Steppe-Wan2.1 upscale.", flush=True)
 
 
+def install_kandinsky_sr():
+    from atelier import kandinsky_sr
+    target = addons.root("kandinsky-sr")
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / "installed.json"
+    marker.unlink(missing_ok=True)
+    py = environment("kandinsky-sr")
+    # CUDA 12.6 keeps GTX 1080 (Pascal), RTX 2080 Ti (Turing) and RTX 3060 (Ampere) working.
+    constraints = target / "constraints.txt"
+    constraints.write_text("torch==2.7.1+cu126\n", encoding="utf-8")
+    pip(py, "torch==2.7.1+cu126", "--index-url", "https://download.pytorch.org/whl/cu126")
+    _install_source(kandinsky_sr.SOURCE_REPO, kandinsky_sr.SOURCE_COMMIT, target / "source")
+    pip(py, "-c", constraints, str(target / "source"))
+    wrapper = ROOT / "scripts/tools/run_kandinsky_sr.py"
+    # Verify GPU, Diffusers 0.41+ and KandinskyImageSRPipeline before the 10.42 GB download.
+    run(py, wrapper, "--addon-root", target, "--probe")
+    kandinsky_sr.download_models()
+    marker.write_text(json.dumps({"commit": kandinsky_sr.SOURCE_COMMIT,
+                                  "revision": kandinsky_sr.MODEL_REVISION}), encoding="utf-8")
+    print("Kandinsky ImageSR 2.0 installed. Use Tools & 3D → Kandinsky SR 2.0 upscale. "
+          "All inference runs offline.", flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "steppe", "splat"])
+    parser.add_argument("tool", choices=["seedvr2", "seedvr2-convrot", "vosr", "steppe", "kandinsky-sr", "splat"])
     parser.add_argument("--precision", choices=["int8", "w4a8"], default="w4a8")
     parser.add_argument("--variant", default="200m-1step")
     parser.add_argument("--optimizations", action="store_true",
@@ -360,6 +383,7 @@ def main(argv=None):
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "vosr": install_vosr,
      "steppe": lambda: install_steppe(args.variant),
+     "kandinsky-sr": install_kandinsky_sr,
      "seedvr2-convrot": lambda: install_seed_convrot(args.precision)}[args.tool]()
 
 

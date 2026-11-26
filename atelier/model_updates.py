@@ -126,9 +126,11 @@ def discover():
         for path in _files(root):
             add(path, repo, path.relative_to(root).as_posix(), revision)
     # VOSR's bundle uses nested repo paths, whereas the DMD LoRA is renamed.
-    from . import vosr, moss_dmd
+    from . import vosr, kandinsky_sr, moss_dmd
     for filename in vosr.FILES:
         add(vosr.model_dir() / filename, vosr.MODEL_REPO, filename, vosr.MODEL_REVISION)
+    for filename in kandinsky_sr.FILES:
+        add(kandinsky_sr.model_dir() / filename, kandinsky_sr.MODEL_REPO, filename, kandinsky_sr.MODEL_REVISION)
     add(moss_dmd.path(), moss_dmd.REPO, moss_dmd.FILENAME, moss_dmd.REVISION)
     for key, spec in addons.SEED_MODELS.items():
         add(addons.root("seedvr2") / "models" / spec, "AInVFX/SeedVR2_comfyUI", spec)

@@ -139,6 +139,13 @@ def items(prefs: dict | None = None) -> list[Item]:
     out.append(Item("vosr_models", "VOSR 2.0 weights (~6.97 GB)", "Models",
                     [addons.root("vosr") / "models"],
                     note="DiT, DINOv2 and dedicated Qwen 2D VAE; one shared bundle for all VOSR controls."))
+    out.append(Item("engine_kandinsky_sr", "Kandinsky ImageSR 2.0 runtime", "Engines",
+                    [addons.root("kandinsky-sr") / part for part in
+                     (".venv", "source", "installed.json", "constraints.txt")],
+                    note="Reinstallable: Models → Kandinsky ImageSR 2.0 → Install / repair."))
+    out.append(Item("kandinsky_sr_models", "Kandinsky ImageSR 2.0 weights (~10.42 GB)", "Models",
+                    [addons.root("kandinsky-sr") / "models"],
+                    note="5B baked Kandinsky 5 transformer + FLUX.1-schnell VAE (MIT + Apache-2.0)."))
     from . import image_splats
     out.append(Item("engine_image_splats", "TripoSplat runtime", "Engines",
                     [image_splats.root()], note="Isolated runtime. Weights are listed separately."))

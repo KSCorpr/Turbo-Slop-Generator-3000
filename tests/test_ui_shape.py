@@ -161,7 +161,7 @@ class AccordionBudgetTests(unittest.TestCase):
                 if tab not in set(self.generative)}
         total = sum(len(labels) for labels in rest.values())
         self.assertLessEqual(
-            total, 27,
+            total, 28,
             "trop de replis hors génération :\n" +
             "\n".join(f"  {tab} : {len(labels)}"
                        for tab, labels in sorted(rest.items())))

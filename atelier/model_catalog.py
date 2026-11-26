@@ -57,6 +57,10 @@ def packages(prefs=None):
                 "×2 / ×4 still images and 2× resolution + 2× FPS video interpolation in 1 step. "
                 "Isolated CUDA 12.6 runtime + 508 MB Wan 2.1 VAE + selected checkpoint.",
                 tuple((lbl, key) for key, (_, lbl) in _steppe_variants())),
+        Package("addon:kandinsky-sr", "Kandinsky ImageSR 2.0 · 1-step upscaler", "Toolkit",
+                "Prompt-free 5B one-step diffusion upscaler (×2 / ×4) by Kandinsky Lab (MIT + Apache-2.0 FLUX.1 VAE). "
+                "1024 px Hanning-blended tiles with calibrated creativity 0–8 and automatic sequential offload "
+                "for 11–12 GB GPUs. Isolated Diffusers 0.41+ runtime + 10.42 GB of pinned weights."),
         Package("video:minimax-h3", "MiniMax H3 Video & HyperFlow Flash", "Video & 3D",
                 "Synchronized 24 fps video + stereo audio via native sd-cli (--mode vid_gen). "
                 "HyperFlow H3 Flash Q4_K_M (9.05 GB, 4-8 steps) + Sol-H3-VAE (1.99 GB) + shared H3 encoder "
@@ -134,6 +138,9 @@ def ready(key, variant=None):
     if key == "addon:steppe":
         from . import steppe
         return steppe.ready(variant)
+    if key == "addon:kandinsky-sr":
+        from . import kandinsky_sr
+        return kandinsky_sr.ready()
     if key == "video:minimax-h3":
         from . import h3_video
         return h3_video.ready(variant)

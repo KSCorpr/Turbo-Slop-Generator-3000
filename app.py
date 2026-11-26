@@ -230,6 +230,7 @@ from atelier.ui.history_tab import build_history_tab
 from atelier.ui.widgets import ImageHandoff
 from atelier.ui.toolkit_tab import build_toolkit_tab
 from atelier.ui.media_tabs import build_seedvr2_tab, build_splat_tab
+from atelier.ui.kandinsky_sr_tab import build_kandinsky_sr_tab
 from atelier.ui.vosr_tab import build_vosr_tab
 from atelier.ui.image_splats_tab import build_image_splats_tab
 from atelier.ui.xanax_tab import build_xanax_tab
@@ -359,6 +360,7 @@ def build_app() -> gr.Blocks:
                     build_image_splats_tab()
                     build_splat_tab()
                     build_vosr_tab()
+                    build_kandinsky_sr_tab()
                     build_steppe_tab()
                     build_seedvr2_tab()
 
