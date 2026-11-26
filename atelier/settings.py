@@ -233,6 +233,9 @@ def child_env(gpu_index: "int | None" = None) -> dict:
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"   # stdout/stderr de l'enfant en UTF-8
     env["PYTHONUTF8"] = "1"             # mode UTF-8 global (PEP 540)
+    # Keep uv's wheel cache on the same drive as tools_repo/ so Windows installs
+    # on D:/ or X:/ can hardlink cleanly instead of copying gigabytes from C:/.
+    env.setdefault("UV_CACHE_DIR", str(TMP_DIR / "uv-cache"))
     if gpu_index is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
     return env

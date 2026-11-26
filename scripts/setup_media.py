@@ -357,6 +357,7 @@ def install_kandinsky_sr():
     # CUDA 12.6 keeps GTX 1080 (Pascal), RTX 2080 Ti (Turing) and RTX 3060 (Ampere) working.
     constraints = target / "constraints.txt"
     constraints.write_text("torch==2.7.1+cu126\n", encoding="utf-8")
+    print("Downloading & installing PyTorch CUDA 12.6 (~2.7 GB, this may take a few minutes)...", flush=True)
     pip(py, "torch==2.7.1+cu126", "--index-url", "https://download.pytorch.org/whl/cu126")
     _install_source(kandinsky_sr.SOURCE_REPO, kandinsky_sr.SOURCE_COMMIT, target / "source")
     pip(py, "-c", constraints, str(target / "source"))
@@ -389,6 +390,7 @@ def install_comfyui_backend():
             "torch==2.7.1+cu128\ntorchvision==0.22.1+cu128\ntorchaudio==2.7.1+cu128\n",
             encoding="utf-8",
         )
+        print("Downloading & installing PyTorch CUDA 12.8 (~2.7 GB, this may take a few minutes)...", flush=True)
         pip(py, "torch==2.7.1+cu128", "torchvision==0.22.1+cu128", "torchaudio==2.7.1+cu128",
             "--index-url", cu_url)
         extra_idx = ["--extra-index-url", cu_url]
@@ -423,6 +425,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.optimizations and args.tool != "seedvr2":
         parser.error("--optimizations is available for seedvr2 only")
+    os.environ.setdefault("UV_CACHE_DIR", str(settings.TMP_DIR / "uv-cache"))
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "vosr": install_vosr,
      "steppe": lambda: install_steppe(args.variant),
