@@ -305,7 +305,8 @@ class SettingsTabTests(unittest.TestCase):
         inputs = [b for b in self._inside((gr.Radio, gr.Checkbox, gr.Dropdown))
                   if id(b) not in folded and getattr(b, "visible", True)]
         self.assertEqual(
-            [type(b).__name__ for b in inputs], ["Radio"],
+            [(type(b).__name__, b.label) for b in inputs],
+            [("Radio", "Generation backend"), ("Radio", "System settings")],
             "réglages visibles d'emblée : " +
             ", ".join(f"{type(b).__name__}({b.label})" for b in inputs))
 

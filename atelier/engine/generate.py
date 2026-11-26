@@ -11,7 +11,7 @@ from typing import Callable
 
 from .. import hardware, registry, settings, system_profile, taesd, sage_attention, moss_dmd as moss_adapter
 from .. import kromoss, krea_distill as krea_adapter
-from . import sdcpp
+from . import comfy_backend, sdcpp
 from .sdcpp import GenRequest
 
 # Official build 896 includes the Qwen 2.1 RGBA input fix; the supported CLI
@@ -71,7 +71,12 @@ def _check_tokenizer_engine(model: registry.BaseModel, sd_cli: Path) -> None:
 
 def cancel() -> str:
     """Annule la génération en cours."""
-    return sdcpp.cancel_active()
+    msg = sdcpp.cancel_active()
+    prefs = settings.load_prefs()
+    if prefs.get("generation_backend") == "comfyui":
+        if comfy_backend.interrupt(prefs.get("comfyui_url")):
+            return "ComfyUI generation cancelled."
+    return msg
 
 
 def list_custom_models() -> list[str]:
@@ -527,8 +532,9 @@ def generate(
     # inherit the saved automatic mode, which would erase the tested flags.
     prefs = ({**prefs_override, "system_mode": "manual"}
              if prefs_override is not None else settings.load_prefs())
-    sd_cli = settings.find_sd_cli()
-    if sd_cli is None:
+    use_comfy = prefs.get("generation_backend") == "comfyui"
+    sd_cli = None if use_comfy else settings.find_sd_cli()
+    if not use_comfy and sd_cli is None:
         raise sdcpp.EngineError(
             "The sd-cli binary was not found. Run the installation "
             "(install.bat) or “python scripts/get_sdcpp.py”.")
@@ -538,14 +544,16 @@ def generate(
         raise sdcpp.EngineError(f"Unknown model: {model_id}")
 
     target_w, target_h = int(width), int(height)
-    tiny_mode = taesd.selected_mode(model_id, prefs) if taesd_mode is None else taesd_mode
+    tiny_mode = ("off" if use_comfy else
+                 (taesd.selected_mode(model_id, prefs) if taesd_mode is None else taesd_mode))
     # A preview-only choice does not load an extra network for jobs without previews.
     if tiny_mode == "preview" and preview_path is None:
         tiny_mode = "off"
-    tiny_path = taesd.require(model, tiny_mode, sd_cli, vae_override)
+    tiny_path = None if use_comfy else taesd.require(model, tiny_mode, sd_cli, vae_override)
 
-    _check_engine_build(model)
-    _check_tokenizer_engine(model, sd_cli)
+    if not use_comfy:
+        _check_engine_build(model)
+        _check_tokenizer_engine(model, sd_cli)
     dmd_adapter = kromoss if model.id == "moss-image-kromoss" else moss_adapter
     if moss_dmd:
         if model.id not in {"moss-image-sft", "moss-image-kromoss"}:
@@ -553,7 +561,7 @@ def generate(
         if (steps != 8 or cfg_scale != 1 or sampler not in (None, "", "euler")
                 or schedule not in (None, "", "auto", "discrete") or flow_shift not in (0, 5)):
             raise sdcpp.EngineError("Use DMD fast: 8 steps, CFG 1, Euler, Auto scheduler and flow shift 0 (auto) or 5.")
-        if "--lora-apply-mode" not in sdcpp.supported_options(sd_cli):
+        if not use_comfy and "--lora-apply-mode" not in sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError("MOSS DMD requires --lora-apply-mode at_runtime. Run update.bat.")
         try:
             dmd_adapter.require()
@@ -568,7 +576,7 @@ def generate(
         if (steps != 4 or cfg_scale != 1 or sampler not in (None, "", "euler")
                 or schedule not in (None, "", "auto") or flow_shift):
             raise sdcpp.EngineError("Select the four-step distillation preset to restore its fixed sampling settings.")
-        if not {"--sigmas", "--lora-apply-mode"} <= sdcpp.supported_options(sd_cli):
+        if not use_comfy and not {"--sigmas", "--lora-apply-mode"} <= sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError("The four-step LoRA needs sd.cpp with --sigmas and --lora-apply-mode. Run update.bat.")
         try:
             krea_adapter.require()
@@ -594,16 +602,18 @@ def generate(
         min_area = (int(model.defaults.get("min_generation_area") or 0)
                     if min_generation_area is None else int(min_generation_area or 0))
         width, height = _minimax_h3_canvas(target_w, target_h, multiple, min_area)
-        help_text = sdcpp.binary_help(sd_cli)
-        if "--sigmas" not in help_text or "minimax-h3-image" not in help_text:
-            raise sdcpp.EngineError(
-                f"{model.name} needs sd.cpp build {model.defaults['min_engine_build']} or newer. "
-                "Run update.bat (or ./update.sh on Linux/Mac).")
+        if not use_comfy:
+            help_text = sdcpp.binary_help(sd_cli)
+            if "--sigmas" not in help_text or "minimax-h3-image" not in help_text:
+                raise sdcpp.EngineError(
+                    f"{model.name} needs sd.cpp build {model.defaults['min_engine_build']} or newer. "
+                    "Run update.bat (or ./update.sh on Linux/Mac).")
         if steps <= 0:
             raise sdcpp.EngineError("MiniMax H3 Image steps must be positive.")
-    _check_qwen_engine(model, preview_path)
+    if not use_comfy:
+        _check_qwen_engine(model, preview_path)
     if model.id == "qwen-image-2.1-turbo":
-        if "--sigmas" not in sdcpp.supported_options(sd_cli):
+        if not use_comfy and "--sigmas" not in sdcpp.supported_options(sd_cli):
             raise sdcpp.EngineError("Qwen Image 2.1 Turbo needs sd.cpp with --sigmas. Run update.bat.")
         allowed_samplers = {p.get("sampler", "euler") for p in model.presets}
         if (steps != 8 or cfg_scale != 1.0 or sampler not in {None, "", *allowed_samplers}
@@ -629,7 +639,7 @@ def generate(
     enc, uncond = files["enc"], files["uncond"]
     t5xxl, clip_l, llm_vision = (files["t5xxl"], files["clip_l"],
                                  files["llm_vision"])
-    if model.family == "minimax_h3_image":
+    if not use_comfy and model.family == "minimax_h3_image":
         if any(p and "w4a8" in p.name.lower() for p in (diffusion, enc)):
             build = _engine_build_number()
             if build is not None and build < 1110:
@@ -644,6 +654,64 @@ def generate(
             log("⚠️ Text encoder uses Q2_K_M quantization: below-Q4 precision can "
                 "distort MiniMax H3 faces and proportions. Upgrade to Q4_K_M, P-H3 4B, "
                 "or 32B INT8 in Models.")
+
+    if use_comfy:
+        comfy_loras: list[tuple[Path, float]] = []
+        for lora_name, weight in (loras or []):
+            if not lora_name:
+                continue
+            lp = _lora_file(lora_name)
+            if lp is None:
+                raise sdcpp.EngineError(f"LoRA file not found in {settings.LORA_DIR}: {lora_name}")
+            comfy_loras.append((lp, float(weight)))
+        if moss_dmd:
+            prompt = dmd_adapter.strip_tag(prompt)
+            comfy_loras.append((dmd_adapter.path(), float(dmd_adapter.STRENGTH)))
+        if krea_distill:
+            prompt = krea_adapter.strip_tag(prompt)
+            comfy_loras.append((krea_adapter.path(), 1.0))
+        if diffusion is None:
+            raise sdcpp.EngineError(f"ComfyUI backend requires a diffusion model file for {model.name}.")
+        eff_sampler = sampler or model.defaults.get("sampler", "euler")
+        eff_schedule = "" if schedule in (None, "", "auto") else schedule
+        paths = comfy_backend.generate(
+            model=model,
+            diffusion=diffusion,
+            vae=vae,
+            text_encoder=enc,
+            loras=comfy_loras,
+            prompt=prompt,
+            negative=negative,
+            width=int(width),
+            height=int(height),
+            steps=int(steps),
+            cfg_scale=float(cfg_scale),
+            sampler=eff_sampler,
+            schedule=eff_schedule,
+            seed=int(seed),
+            batch_count=int(batch_count),
+            ref_images=references,
+            init_image=init_image,
+            strength=float(strength),
+            vae_tiling=bool(prefs.get("flags", {}).get("vae_tiling", True)),
+            url=prefs.get("comfyui_url"),
+            log=log,
+        )
+        if paths and (target_w, target_h) != (width, height):
+            _resize_minimax_outputs(paths, target_w, target_h)
+        if save_prompt and paths:
+            sidecar_req = GenRequest(
+                diffusion_model=diffusion, vae=vae, text_encoder=enc,
+                prompt=prompt, negative=negative, steps=int(steps),
+                cfg_scale=float(cfg_scale), sampler=eff_sampler,
+                schedule=eff_schedule, flow_shift=float(flow_shift or 0.0),
+                width=int(width), height=int(height), seed=int(seed),
+                batch_count=int(batch_count), init_image=init_image,
+                strength=float(strength), ref_image=ref_image,
+            )
+            _write_prompt_sidecars(paths, sidecar_req, model, int(seed),
+                                   output_size=(target_w, target_h))
+        return paths
 
     automatic = prefs_override is None and prefs.get("system_mode") == "auto"
     plan = (system_profile.plan_for_model(

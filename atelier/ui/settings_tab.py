@@ -199,6 +199,8 @@ def _bias_note(bias: str, prefs: dict | None = None) -> str:
 
 
 def build_settings_tab():
+    from ..engine import comfy_backend
+
     with gr.Tab("⚙️ Settings") as settings_tab:
         prefs = settings.load_prefs()
         gpus = hardware.detect_gpus()
@@ -206,6 +208,63 @@ def build_settings_tab():
 
         headline = gr.Markdown(_headline(prefs))
         status = gr.Markdown("", elem_classes="feedback", visible=False)
+
+        backend_val = prefs.get("generation_backend") or "sdcpp"
+        backend = gr.Radio(
+            [("sd.cpp (built-in)", "sdcpp"),
+             ("ComfyUI (local server)", "comfyui")],
+            value=backend_val,
+            label="Generation backend",
+            elem_id="generation-backend",
+            info="Choose sd.cpp (standalone binary) or a running ComfyUI server. "
+                 "ComfyUI keeps models cached in RAM/VRAM between runs and shares this app's models/ folder.",
+        )
+        with gr.Group(visible=(backend_val == "comfyui")) as comfy_group:
+            with gr.Row():
+                comfy_url = gr.Textbox(
+                    value=prefs.get("comfyui_url") or comfy_backend.DEFAULT_URL,
+                    label="ComfyUI server URL",
+                    placeholder=comfy_backend.DEFAULT_URL,
+                    elem_id="comfyui-url",
+                    scale=3,
+                )
+                comfy_test = gr.Button(
+                    "Test connection & write extra_model_paths.yaml",
+                    size="sm",
+                    scale=2,
+                )
+            comfy_status = gr.Markdown(
+                f"Share downloaded weights with ComfyUI via `{comfy_backend.extra_model_paths_file()}` "
+                "(click the test button to generate/refresh it).",
+                elem_id="comfyui-status",
+            )
+
+        def on_backend_change(choice, url):
+            clean_url = comfy_backend.normalize_url(url)
+            _save(generation_backend=choice, comfyui_url=clean_url)
+            if choice == "comfyui":
+                cfg = comfy_backend.write_extra_model_paths()
+                note = (f"ComfyUI selected (`{clean_url}`). Shared model config written to `{cfg}`.  \n"
+                        f"Launch ComfyUI with: `python main.py --extra-model-paths-config \"{cfg}\"`")
+                return gr.update(visible=True), note, _said(_OK + "Generation backend switched to ComfyUI.")
+            return gr.update(visible=False), gr.update(), _said(_OK + "Generation backend switched to sd.cpp.")
+
+        def on_comfy_url_change(url):
+            clean_url = comfy_backend.normalize_url(url)
+            _save(comfyui_url=clean_url)
+            return _said(_OK + f"ComfyUI URL saved: {clean_url}")
+
+        def on_comfy_test(url):
+            clean_url = comfy_backend.normalize_url(url)
+            _save(comfyui_url=clean_url)
+            _, message = comfy_backend.check_connection(clean_url)
+            return message
+
+        backend.input(on_backend_change, [backend, comfy_url], [comfy_group, comfy_status, status], queue=False)
+        comfy_url.submit(on_comfy_url_change, comfy_url, status, queue=False)
+        comfy_url.blur(on_comfy_url_change, comfy_url, status, queue=False)
+        comfy_test.click(on_comfy_test, comfy_url, comfy_status, queue=False)
+
         mode = gr.Radio(
             [("Automatic for each model (recommended)", "auto"),
              ("Manual / measured configuration", "manual")],

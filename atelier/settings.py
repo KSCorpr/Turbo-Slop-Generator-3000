@@ -68,6 +68,10 @@ DEFAULT_PREFS: dict[str, Any] = {
     # Les anciennes préférences restent intactes pour pouvoir revenir au manuel.
     "system_mode": "auto",
     "hardware_bias": "balanced",  # mémoire | balanced | qualité, même en auto
+    # Moteur d'inférence pour la génération d'images : "sdcpp" (intégré) ou
+    # "comfyui" (API HTTP locale, ex. http://127.0.0.1:8188).
+    "generation_backend": "sdcpp",
+    "comfyui_url": "http://127.0.0.1:8188",
     # EXPÉRIMENTAL : GPU dédié à l'encodeur de texte dans sd.cpp (--backend te=).
     # None = comportement normal (encodeur sur le GPU principal / déchargé RAM).
     "encoder_gpu_index": None,
