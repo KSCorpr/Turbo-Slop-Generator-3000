@@ -43,6 +43,8 @@ def install(name):
 
 
 if __name__ == "__main__":
+    from atelier import settings
+    settings.configure_local_caches(create=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("engine", choices=["sam2"])
     install(parser.parse_args().engine)

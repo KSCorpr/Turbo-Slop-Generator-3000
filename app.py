@@ -44,6 +44,9 @@ sys.path.insert(0, _ROOT)
 # --------------------------------------------------------------------------- #
 os.environ["GRADIO_TEMP_DIR"] = os.path.join(_ROOT, "tmp", "gradio")
 os.makedirs(os.environ["GRADIO_TEMP_DIR"], exist_ok=True)
+from atelier import settings as _settings
+
+_settings.configure_local_caches(create=True)
 for _proxy_key in ("NO_PROXY", "no_proxy"):
     _proxy_val = os.environ.get(_proxy_key)
     if _proxy_val and "[" in _proxy_val:

@@ -403,6 +403,101 @@ def clean_pycache() -> None:
     print(OK + f"{n} __pycache__ folder(s) purged.")
 
 
+def _merge_dir(src: Path, dst: Path) -> bool:
+    """Move ``src`` into ``dst`` on the same filesystem without overwriting existing files."""
+    if not src.is_dir():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if not dst.exists():
+        try:
+            shutil.move(str(src), str(dst))
+            return True
+        except OSError:
+            return False
+    moved = False
+    for child in list(src.iterdir()):
+        target = dst / child.name
+        if target.exists():
+            continue
+        try:
+            shutil.move(str(child), str(target))
+            moved = True
+        except OSError:
+            pass
+    try:
+        if not any(src.iterdir()):
+            src.rmdir()
+    except OSError:
+        pass
+    return moved
+
+
+def migrate_legacy_caches(root: Path | None = None) -> int:
+    """Move legacy in-app caches (tmp/uv-cache, hf_cache/) into .cache/ before tmp cleanup."""
+    base = ROOT if root is None else Path(root)
+    cache = base / ".cache"
+    moved = 0
+    for old, new in (
+        (base / "tmp" / "uv-cache", cache / "uv"),
+        (base / "hf_cache", cache / "huggingface"),
+    ):
+        if _merge_dir(old, new):
+            moved += 1
+            print(OK + f"migrated legacy cache {old.relative_to(base)} -> {new.relative_to(base)}.")
+    return moved
+
+
+def _external_cache_candidates(base: Path) -> list[Path]:
+    home = Path.home()
+    candidates: list[Path] = [
+        home / ".cache" / "uv",
+        home / ".cache" / "pip",
+        home / ".cache" / "huggingface",
+        home / ".cache" / "torch",
+    ]
+    local_app = os.environ.get("LOCALAPPDATA")
+    if local_app:
+        la = Path(local_app)
+        candidates += [la / "uv" / "cache", la / "pip" / "Cache"]
+    resolved_base = base.resolve()
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for p in candidates:
+        try:
+            rp = p.resolve()
+        except OSError:
+            continue
+        if rp in seen or not rp.is_dir():
+            continue
+        if rp == resolved_base or resolved_base in rp.parents:
+            continue
+        seen.add(rp)
+        unique.append(rp)
+    return unique
+
+
+def fix_local_caches(root: Path | None = None) -> None:
+    """Ensure all caches live inside the app folder and pin local pip configs."""
+    from atelier import settings
+    base = ROOT if root is None else Path(root)
+    print("• Local in-app caches (.cache/, runtime/uv-python, tmp/)…")
+    settings.configure_local_caches(root=base, create=True)
+    written = settings.sync_local_pip_configs(root=base)
+    print(OK + f"all caches pinned inside {base / '.cache'} "
+          f"({len(written)} local pip config(s) synced).")
+    external = []
+    for folder in _external_cache_candidates(base):
+        sz = _dir_size(folder)
+        if sz >= 10 * 1024 * 1024:
+            external.append((folder, sz))
+    if external:
+        total = sum(sz for _, sz in external)
+        print(INFO + f"found {_human(total)} of older external cache(s) outside the app folder "
+              "(not deleted automatically in case other apps use them):")
+        for folder, sz in external:
+            print(f"    - {folder} ({_human(sz)})")
+
+
 def clean_tmp() -> None:
     print("• tmp/ folder…")
     tmp = ROOT / "tmp"
@@ -1086,7 +1181,9 @@ def main() -> int:
     print("=" * 60)
     recoverable = clean_removed_features(purge)
     clean_pycache()
+    migrate_legacy_caches()
     clean_tmp()
+    fix_local_caches()
     check_catalog()
     recoverable += report_orphan_addons(purge)
     recoverable += report_orphan_models(prune_models)

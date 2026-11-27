@@ -121,6 +121,7 @@ def environment(name):
     probe = _probe_environment(py)
     if probe.returncode != 0:
         raise RuntimeError(f"Could not verify the new Python environment at {venv}.\n{probe.stderr.strip()}")
+    settings.sync_local_pip_configs()
     return py
 
 
@@ -425,7 +426,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.optimizations and args.tool != "seedvr2":
         parser.error("--optimizations is available for seedvr2 only")
-    os.environ.setdefault("UV_CACHE_DIR", str(settings.TMP_DIR / "uv-cache"))
+    settings.configure_local_caches(create=True)
     {"seedvr2": install_seed_optimizations if args.optimizations else install_seed, "splat": install_splat,
      "vosr": install_vosr,
      "steppe": lambda: install_steppe(args.variant),

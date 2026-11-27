@@ -668,7 +668,45 @@ def selected_steps(args) -> dict:
     return {name: True for name in STEPS}
 
 
+def _configure_local_caches() -> None:
+    """Keep all caches and temp files inside ROOT during updates."""
+    cache = ROOT / ".cache"
+    tmp = ROOT / "tmp"
+    runtime = ROOT / "runtime"
+    hf = cache / "huggingface"
+    hf_hub = hf / "hub"
+    sys_tmp = cache / "tmp"
+    mapping = {
+        "UV_CACHE_DIR": str(cache / "uv"),
+        "UV_PYTHON_INSTALL_DIR": str(runtime / "uv-python"),
+        "PIP_CACHE_DIR": str(cache / "pip"),
+        "HF_HOME": str(hf),
+        "HF_HUB_CACHE": str(hf_hub),
+        "HUGGINGFACE_HUB_CACHE": str(hf_hub),
+        "HF_DATASETS_CACHE": str(hf / "datasets"),
+        "TORCH_HOME": str(cache / "torch"),
+        "TRITON_CACHE_DIR": str(cache / "triton"),
+        "TORCHINDUCTOR_CACHE_DIR": str(cache / "torchinductor"),
+        "CUDA_CACHE_PATH": str(cache / "nv"),
+        "XDG_CACHE_HOME": str(cache / "xdg"),
+        "MPLCONFIGDIR": str(cache / "matplotlib"),
+        "NUMBA_CACHE_DIR": str(cache / "numba"),
+        "GRADIO_TEMP_DIR": str(tmp / "gradio"),
+        "TMP": str(sys_tmp),
+        "TEMP": str(sys_tmp),
+        "TMPDIR": str(sys_tmp),
+    }
+    for key, value in mapping.items():
+        os.environ[key] = value
+    for path in (cache, runtime / "uv-python", tmp / "gradio", sys_tmp):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+
+
 def main() -> int:
+    _configure_local_caches()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
                     help="show what the code update would change, write "

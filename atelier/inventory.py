@@ -262,6 +262,11 @@ def items(prefs: dict | None = None) -> list[Item]:
                   "cache. Safe with the application CLOSED; while it is "
                   "running, images already on screen turn into broken icons "
                   "until the page is reloaded."),
+        Item("cache", "App caches (.cache/ — uv, pip, Hugging Face, Torch, Triton)", "Your data",
+             [settings.CACHE_DIR],
+             note="Local package/wheel and JIT caches kept inside the app folder "
+                  "for fast same-drive hardlinks. Safe to clear when closed; "
+                  "models and Python runtimes are not affected."),
     ]
     return out
 

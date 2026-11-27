@@ -48,6 +48,7 @@ def install(backend):
 
 
 if __name__ == "__main__":
+    settings.configure_local_caches(create=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("backend", choices=models.BACKENDS)
     install(parser.parse_args().backend)

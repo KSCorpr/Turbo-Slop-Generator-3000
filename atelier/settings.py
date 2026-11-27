@@ -18,6 +18,8 @@ LORA_DIR = ROOT / "loras"
 BIN_DIR = ROOT / "bin"
 OUTPUT_DIR = ROOT / "outputs"
 TMP_DIR = ROOT / "tmp"
+CACHE_DIR = ROOT / ".cache"
+RUNTIME_DIR = ROOT / "runtime"
 USERDATA_DIR = ROOT / "userdata"
 
 CONFIG_DIR = ROOT / "config"
@@ -155,8 +157,101 @@ def served_paths() -> list[str]:
 
 def ensure_dirs() -> None:
     for d in (MODELS_DIR, CUSTOM_DIR, LORA_DIR, BIN_DIR, OUTPUT_DIR, TMP_DIR,
-              USERDATA_DIR):
+              CACHE_DIR, USERDATA_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def local_cache_env(root: Path | None = None) -> dict[str, str]:
+    """Return every cache and temp env var anchored inside the app directory.
+
+    Keeping uv, pip, Hugging Face, PyTorch, Triton, CUDA, XDG, Gradio and OS
+    temp folders on the same filesystem as the app avoids cross-drive hardlink
+    fallbacks (e.g. C: vs D:/X:), speeds up installs/loads, and leaves nothing
+    behind outside the app folder.
+    """
+    if root is None:
+        cache = CACHE_DIR
+        tmp = TMP_DIR
+        runtime = RUNTIME_DIR
+    else:
+        base = Path(root)
+        cache = base / ".cache"
+        tmp = base / "tmp"
+        runtime = base / "runtime"
+    hf = cache / "huggingface"
+    hf_hub = hf / "hub"
+    sys_tmp = cache / "tmp"
+    return {
+        "UV_CACHE_DIR": str(cache / "uv"),
+        "UV_PYTHON_INSTALL_DIR": str(runtime / "uv-python"),
+        "PIP_CACHE_DIR": str(cache / "pip"),
+        "HF_HOME": str(hf),
+        "HF_HUB_CACHE": str(hf_hub),
+        "HUGGINGFACE_HUB_CACHE": str(hf_hub),
+        "HF_DATASETS_CACHE": str(hf / "datasets"),
+        "TORCH_HOME": str(cache / "torch"),
+        "TRITON_CACHE_DIR": str(cache / "triton"),
+        "TORCHINDUCTOR_CACHE_DIR": str(cache / "torchinductor"),
+        "CUDA_CACHE_PATH": str(cache / "nv"),
+        "XDG_CACHE_HOME": str(cache / "xdg"),
+        "MPLCONFIGDIR": str(cache / "matplotlib"),
+        "NUMBA_CACHE_DIR": str(cache / "numba"),
+        "GRADIO_TEMP_DIR": str(tmp / "gradio"),
+        "TMP": str(sys_tmp),
+        "TEMP": str(sys_tmp),
+        "TMPDIR": str(sys_tmp),
+    }
+
+
+def configure_local_caches(
+    env: dict[str, str] | None = None,
+    *,
+    root: Path | None = None,
+    create: bool = True,
+) -> dict[str, str]:
+    """Force all cache and temp variables inside the app directory."""
+    import os
+    target = os.environ if env is None else env
+    mapping = local_cache_env(root)
+    for key, value in mapping.items():
+        target[key] = value
+    if create:
+        for path in set(mapping.values()):
+            try:
+                Path(path).mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+    return mapping
+
+
+def sync_local_pip_configs(root: Path | None = None) -> list[Path]:
+    """Pin pip's cache-dir inside every local Python environment under the app."""
+    import os
+    base = ROOT if root is None else Path(root)
+    cache_dir = (CACHE_DIR if root is None else base / ".cache") / "pip"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cfg_name = "pip.ini" if os.name == "nt" else "pip.conf"
+    content = f"[global]\ncache-dir = {cache_dir}\n"
+    candidates: list[Path] = [base / "python", base / "venv", base / ".venv"]
+    tools_repo = base / "tools_repo"
+    if tools_repo.is_dir():
+        for entry in sorted(tools_repo.iterdir()):
+            if entry.is_dir():
+                candidates.append(entry / ".venv")
+    written: list[Path] = []
+    for env_dir in candidates:
+        if not env_dir.is_dir():
+            continue
+        cfg = env_dir / cfg_name
+        try:
+            if cfg.is_file() and cfg.read_text(encoding="utf-8") == content:
+                written.append(cfg)
+                continue
+            cfg.write_text(content, encoding="utf-8")
+            written.append(cfg)
+        except OSError:
+            pass
+    return written
 
 
 @lru_cache(maxsize=4)
@@ -233,9 +328,11 @@ def child_env(gpu_index: "int | None" = None) -> dict:
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"   # stdout/stderr de l'enfant en UTF-8
     env["PYTHONUTF8"] = "1"             # mode UTF-8 global (PEP 540)
-    # Keep uv's wheel cache on the same drive as tools_repo/ so Windows installs
-    # on D:/ or X:/ can hardlink cleanly instead of copying gigabytes from C:/.
-    env.setdefault("UV_CACHE_DIR", str(TMP_DIR / "uv-cache"))
+    mapping = configure_local_caches(env, create=False)
+    try:
+        Path(mapping["TMP"]).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     if gpu_index is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
     return env
@@ -247,6 +344,7 @@ def configure_hf_env() -> None:
     HTTP séquentiel : les téléchargements contrôlés n'utilisent pas Xet.
     """
     import os
+    mapping = configure_local_caches(create=True)
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
     os.environ["HF_HUB_DISABLE_XET"] = "1"
     os.environ["HF_XET_HIGH_PERFORMANCE"] = "0"
@@ -256,6 +354,8 @@ def configure_hf_env() -> None:
     import sys
     constants = sys.modules.get("huggingface_hub.constants")
     if constants is not None:
+        constants.HF_HOME = mapping["HF_HOME"]
+        constants.HF_HUB_CACHE = mapping["HF_HUB_CACHE"]
         constants.HF_HUB_DISABLE_XET = True
         constants.HF_HUB_ENABLE_HF_TRANSFER = False
         constants.HF_HUB_DISABLE_IMPLICIT_TOKEN = True
