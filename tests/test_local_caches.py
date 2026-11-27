@@ -98,8 +98,13 @@ class LocalCacheIsolationTests(unittest.TestCase):
 
         old_env = dict(os.environ)
         try:
-            with patch.object(maintenance, "_external_cache_candidates", return_value=[]):
-                maintenance.fix_local_caches(self.root)
+            fake_local = self.root.parent / f"{self.root.name}_localappdata"
+            (fake_local / "uv" / "cache").mkdir(parents=True, exist_ok=True)
+            self.addCleanup(lambda: __import__("shutil").rmtree(fake_local, ignore_errors=True))
+            os.environ["LOCALAPPDATA"] = str(fake_local)
+            found = maintenance._external_cache_candidates(self.root)
+            self.assertIn((fake_local / "uv" / "cache").resolve(), found)
+            maintenance.fix_local_caches(self.root)
         finally:
             os.environ.clear()
             os.environ.update(old_env)
